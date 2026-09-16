@@ -13,6 +13,10 @@ from the harness.
 5. Run the quality gate once on a clean tree and paste its final line into `AGENTS.md`, so any
    later failure is attributable.
 
+The deny rules in `settings.json` stop agents reading files they should never load. Keep the
+secrets entries in every repo, and prune the generated-directory entries to what this repo
+actually generates, adding any it generates that the template does not list.
+
 If the repo already has `.cursor/rules/` or another agent's instruction files, migrate the
 generic content into the harness with the `harness-authoring` skill and leave only repo facts
 here. Two copies of a rule drift.

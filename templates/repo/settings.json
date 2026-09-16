@@ -5,6 +5,22 @@
       "Bash(pnpm run quality)",
       "Bash(pnpm test *)",
       "Bash(pnpm install)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/id_rsa*)",
+      "Read(./**/*.p12)",
+      "Read(./**/.netrc)",
+      "Read(./node_modules/**)",
+      "Read(./target/**)",
+      "Read(./dist/**)",
+      "Read(./build/**)",
+      "Read(./data/**)",
+      "Read(./renders/**)",
+      "Read(./.venv/**)"
     ]
   }
 }

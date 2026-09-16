@@ -44,7 +44,8 @@ is `settings.json`, because Claude Code writes to it too.
 - Anything about one person. Identity is rendered into `~/.claude/CLAUDE.personal.md` from
   config; personal rules sit beside the harness links as plain files.
 - Anything about one project. That belongs in the project's `AGENTS.md`; `templates/repo/`
-  shows the shape.
+  shows the shape. Its `settings.json` keeps the files an agent must never read out of reach with
+  `Read` deny rules, because Claude Code has no ignore file and a deny rule is the mechanism.
 - Credentials, MCP server configurations, or anything else that carries a token.
 - A planning framework. The harness works with or without one; `docs/bmad.md` records how one
   is kept out of the way.
