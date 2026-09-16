@@ -68,7 +68,7 @@ class AgentSyncTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
-        self._old_home = os.environ.get("HOME")
+        self._old_environ = dict(os.environ)
         os.environ["HOME"] = str(self.home)
         for k in list(os.environ):
             if k.startswith("HARNESS_"):
@@ -76,8 +76,8 @@ class AgentSyncTests(unittest.TestCase):
         os.environ["HARNESS_QUIET"] = "1"
 
     def tearDown(self):
-        if self._old_home is not None:
-            os.environ["HOME"] = self._old_home
+        os.environ.clear()
+        os.environ.update(self._old_environ)
         self.tmp.cleanup()
 
     def _sync(self, adopt=False):
