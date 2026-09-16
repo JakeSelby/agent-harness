@@ -26,7 +26,7 @@ is `settings.json`, because Claude Code writes to it too.
 
 - **Rules** are for behaviour you want on every turn: how to read files without flooding the
   transcript, how to present a decision, what counts as verified. Each costs context on every
-  turn, so there are nine and they are short.
+  turn, so there are ten and they are short.
 - **Stances** are rules a reasonable person might hold the other way. Instead of arguing in
   the file, the harness ships variants and you pick one in config. Licensing, commit style,
   testing philosophy, autonomy level, plan ceremony, delegation tiers, build-versus-buy.
@@ -40,18 +40,20 @@ is `settings.json`, because Claude Code writes to it too.
   list is what makes a read-only agent read-only. Frontmatter `model` beats the
   `CLAUDE_CODE_SUBAGENT_MODEL` environment variable, and a project overrides any of them by
   placing a same-named file in its own `.claude/agents/`.
-- **Commands** are the ritual in four keystrokes, each one composing skills you already have.
+- **Commands** are the ritual in five keystrokes, each one composing skills you already have.
   `/research` splits a question into at most three dimensions, fans out read-only gatherers and
   returns one synthesized digest. `/plan` runs `plan-authoring`, writes the plan under
   `.claude/plans/` and stops at the build gate. `/build` takes the approved plan into its own
   worktree, implements it with tests, runs the repo's gate and opens the pull request.
   `/review` puts a fresh-context reviewer on the diff and reports findings only. They run in
-  that order, and the worktree is created at build, never earlier.
+  that order, and the worktree is created at build, never earlier. `/handoff` closes the session
+  out, and is described under the handoff loop below.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
   that checks every plan file against the card contract, a classifier that lets read-only shell
-  commands through in plan mode, a session-start check for drift and env overrides, a scanner
-  that flags instruction-shaped text in `Bash`, `WebFetch` and `Read` output, and a stop gate
-  that runs a repository's own quality gate before a turn is allowed to end.
+  commands through in plan mode, an output filter that trims a verbose test or build run, a
+  session-start check for drift, env overrides and the repository handoff, a scanner that flags
+  instruction-shaped text in `Bash`, `WebFetch` and `Read` output, a stop gate that runs a
+  repository's own quality gate before a turn is allowed to end, and a session-end usage logger.
 
   The scanner is advisory: on a match it appends one line naming the tool and the patterns it
   matched — control tags, "ignore previous instructions", directives addressed to the agent,
@@ -89,6 +91,21 @@ at run time. The hook emits `updatedInput` and no permission decision: the hooks
 does not say how two `PreToolUse` hooks on `Bash` combine their output, so this one leaves the
 read-only classifier's decision alone.
 
+## The handoff loop
+
+A long task rarely fits one session, so the harness carries the state across the boundary in a
+file rather than in the transcript. `/handoff` overwrites `.claude/progress.md` at the repository
+root with what was done, what is open, the one command to run next, the decisions only the user
+can settle, and what the session learned; the file is a snapshot, so the command never appends.
+The session-start hook reads it back on the next start, prints its first eighty lines and the
+last five commits, and Claude Code adds that to the context before the first prompt. The file is
+in the global git ignore, so it stays out of every repository it appears in. Learnings that
+outlive the current state are promoted by the same command into a dated file under
+`docs/solutions/`, which makes a correction an artifact the next session can read instead of a
+prompt the user retypes. That promotion is explicit and belongs to `/handoff`: no hook appends to
+`docs/solutions/` on its own, because a learning worth keeping is a judgment and an automatic
+appender fills the folder with restatements of the obvious.
+
 ## What the harness deliberately does not contain
 
 - Anything about one person. Identity is rendered into `~/.claude/CLAUDE.personal.md` from
@@ -110,7 +127,7 @@ repo never falls behind the live harness.
 
 ## The always-loaded cap
 
-`CLAUDE.md`, the nine rules and the selected stances are re-read on every turn of every session,
+`CLAUDE.md`, the ten rules and the selected stances are re-read on every turn of every session,
 so their combined size is a standing tax on every task the agent does. `harness lint` enforces a
 cap of 200 lines on that set, counting the *longest* variant of each stance dimension so no
 configuration a user can select is ever over it. The rules therefore carry operative lines only —

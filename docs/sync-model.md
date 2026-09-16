@@ -54,7 +54,8 @@ pending template change.
   chosen stance, then the contents of `~/.codex/AGENTS.personal.md`. A hand-written file is
   never overwritten; `--adopt-codex` moves it to `AGENTS.personal.md` once. Owned keys in
   `~/.codex/config.toml` are added or updated in place.
-- **Global git ignore** — `.claude/plans/` and `.design-loop/` are appended when missing.
+- **Global git ignore** — the `gitignore_entries` list in `claude/OWNERSHIP.json` is appended
+  when missing: `.claude/plans/`, `.claude/progress.md`, `.design-loop/`.
 - **PATH** — on macOS with zsh, `~/.local/bin` is added to `.zprofile` if nothing mentions it,
   because the Claude Code native launcher lives there.
 - **Pre-commit hook** — `git config core.hooksPath .githooks` is set on the harness checkout,

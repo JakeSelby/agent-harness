@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `permissions.deny` rules in the settings template for credential files and generated
+  directories, so the file tools and the Bash commands that read files are both covered.
+- Three subagent definitions — `gatherer`, `reviewer` and `log-compressor` — carrying their
+  model, effort level and tool list, so the delegation tiers hold without a retyped brief.
+- A `sandbox` stance and skill: container or built-in sandbox posture for an unattended loop.
+- A `filter-output` PreToolUse hook that pipes a test, build, lint or type-check run through a
+  line filter, keeping failures, summaries and the tail while preserving the exit status.
+- A `cost` stance with `frugal`, `balanced` and `max` variants, and a `cache-hygiene` rule.
+- A `neutralize` PostToolUse hook that flags instruction-shaped text in `Bash`, `WebFetch` and
+  `Read` output, advisory only, never blocking or rewriting a result.
+- A `stop-gate` Stop hook that runs the fenced `## Gate` block of a repository's `AGENTS.md`
+  and refuses to end the turn while it is red, bounded by a block count and a time budget.
+- Four slash commands — `/research`, `/plan`, `/build` and `/review` — each composing skills
+  the harness already ships.
+- A `usage-log` SessionEnd hook and `harness usage`, reporting per-session tokens and cache hit
+  rate from a local file; see `docs/usage.md`.
+- A `/handoff` command that writes `.claude/progress.md` and promotes durable learnings into a
+  dated file under `docs/solutions/`, and a SessionStart hook that reads that progress file and
+  the last five commits back as context. The progress file is added to the global git ignore.
+
+### Fixed
+
+- The agent sync tests restore the environment they change, so a later test in the same run is
+  no longer affected by them.
+
 ### Changed
 
 - Always-loaded context (`claude/CLAUDE.md`, every rule, and the longest variant of each stance) is

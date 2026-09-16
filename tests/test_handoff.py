@@ -1,0 +1,231 @@
+# SPDX-License-Identifier: MIT
+"""Unit tests for the handoff loop: the progress block in the session hook, the `/handoff`
+command, its gitignore entry, and the counts the docs state about the tree.
+
+The hook runs as a subprocess with HOME pointed at a temporary directory, so it finds no
+manifest and no config and reports only the handoff. The commit identity is assembled at run
+time, so this file carries no address-shaped literal for the lint to find.
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
+spec = importlib.util.spec_from_loader("harness", loader)
+harness = importlib.util.module_from_spec(spec)
+loader.exec_module(harness)
+
+HOOK = REPO / "claude" / "hooks" / "harness-session.py"
+COMMAND = REPO / "claude" / "commands" / "handoff.md"
+IDENTITY = "handoff" + "@" + "example" + ".invalid"
+SECTIONS = ["## Done", "## Open", "## Next command", "## Decisions needed", "## Learnings"]
+WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+         8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve", 13: "thirteen",
+         14: "fourteen", 15: "fifteen", 16: "sixteen", 17: "seventeen", 18: "eighteen",
+         19: "nineteen", 20: "twenty"}
+
+
+def counts():
+    stances = REPO / "claude" / "stances"
+    dims = [p for p in stances.iterdir() if p.is_dir()]
+    return {
+        "rules": len(list((REPO / "claude" / "rules").glob("*.md"))),
+        "stance_dims": len(dims),
+        "stance_variants": sum(len(list(d.glob("*.md"))) for d in dims),
+        "skills": len([p for p in (REPO / "claude" / "skills").iterdir() if p.is_dir()]),
+        "commands": len(list((REPO / "claude" / "commands").glob("*.md"))),
+        "hooks": len(json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())["claude"]["hook_ids"]),
+    }
+
+
+class SessionHookTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        self.home = base / "home"
+        self.home.mkdir()
+        self.repo = base / "repo"
+        self.repo.mkdir()
+        self.git("init")
+        (self.repo / "file.txt").write_text("one\n")
+        self.git("add", "-A")
+        self.git("commit", "-m", "the handoff fixture commit")
+
+    def env(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env.update({
+            "HOME": str(self.home),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_AUTHOR_NAME": "Handoff Fixture",
+            "GIT_COMMITTER_NAME": "Handoff Fixture",
+            "GIT_AUTHOR_EMAIL": IDENTITY,
+            "GIT_COMMITTER_EMAIL": IDENTITY,
+        })
+        return env
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.repo), *args], env=self.env(),
+                       capture_output=True, text=True, check=True)
+
+    def write_progress(self, text):
+        d = self.repo / ".claude"
+        d.mkdir(exist_ok=True)
+        (d / "progress.md").write_text(text, encoding="utf-8")
+
+    def run_hook(self, cwd=None):
+        cwd = str(cwd or self.repo)
+        payload = json.dumps({"hook_event_name": "SessionStart", "source": "startup", "cwd": cwd})
+        return subprocess.run([sys.executable, str(HOOK)], input=payload, cwd=cwd,
+                              env=self.env(), capture_output=True, text=True, timeout=30)
+
+    def context(self, out):
+        self.assertEqual(out.returncode, 0, msg=out.stderr)
+        return json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    def test_the_progress_file_and_the_recent_commits_are_injected(self):
+        self.write_progress("# Handoff 2026-01-02\n\n## Next command\n\npython3 -m unittest\n")
+        ctx = self.context(self.run_hook())
+        self.assertIn(".claude/progress.md", ctx)
+        self.assertIn("## Next command", ctx)
+        self.assertIn("python3 -m unittest", ctx)
+        self.assertIn("the handoff fixture commit", ctx)
+
+    def test_only_the_first_eighty_lines_of_the_progress_file_are_injected(self):
+        self.write_progress("\n".join(f"line-{i:03d}" for i in range(1, 101)) + "\n")
+        ctx = self.context(self.run_hook())
+        self.assertIn("line-080", ctx)
+        self.assertNotIn("line-081", ctx)
+
+    def test_nothing_is_printed_when_the_repository_has_no_progress_file(self):
+        out = self.run_hook()
+        self.assertEqual(out.returncode, 0, msg=out.stderr)
+        self.assertEqual(out.stdout.strip(), "")
+
+    def test_an_empty_progress_file_prints_nothing(self):
+        self.write_progress("\n\n")
+        out = self.run_hook()
+        self.assertEqual(out.returncode, 0, msg=out.stderr)
+        self.assertEqual(out.stdout.strip(), "")
+
+    def test_a_cwd_outside_a_repository_exits_zero_and_prints_nothing(self):
+        outside = Path(self.tmp.name) / "outside"
+        outside.mkdir()
+        out = self.run_hook(cwd=outside)
+        self.assertEqual(out.returncode, 0, msg=out.stderr)
+        self.assertEqual(out.stdout.strip(), "")
+
+
+class HandoffCommandTests(unittest.TestCase):
+    def setUp(self):
+        text = COMMAND.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("---\n"))
+        head, _, self.body = text[4:].partition("\n---\n")
+        self.front = {}
+        for line in head.splitlines():
+            key, sep, value = line.partition(":")
+            if sep:
+                self.front[key.strip()] = value.strip()
+
+    def test_frontmatter_declares_a_description_and_an_argument_hint(self):
+        self.assertTrue(self.front.get("description"))
+        self.assertTrue(self.front.get("argument-hint"))
+        self.assertIn("$ARGUMENTS", self.body)
+
+    def test_the_body_names_the_progress_file_and_every_required_section(self):
+        self.assertIn(".claude/progress.md", self.body)
+        self.assertIn("# Handoff <ISO date>", self.body)
+        for section in SECTIONS:
+            self.assertIn(section, self.body, msg=section)
+
+    def test_the_body_says_to_overwrite_and_where_learnings_go(self):
+        self.assertIn("never append", self.body)
+        self.assertIn("docs/solutions/<yyyy-mm-dd>-<slug>.md", self.body)
+
+
+class OwnershipTests(unittest.TestCase):
+    def test_the_progress_file_is_in_the_global_gitignore_entries(self):
+        ownership = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
+        self.assertIn(".claude/progress.md", ownership["gitignore_entries"])
+
+
+class GitignoreSyncTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        self._saved = {k: v for k, v in os.environ.items() if k.startswith("HARNESS_") or k == "HOME"}
+        self.addCleanup(self._restore)
+        for k in list(os.environ):
+            if k.startswith("HARNESS_"):
+                del os.environ[k]
+        os.environ["HOME"] = str(self.home)
+        os.environ["HARNESS_QUIET"] = "1"
+
+    def _restore(self):
+        for k in list(os.environ):
+            if k.startswith("HARNESS_") or k == "HOME":
+                del os.environ[k]
+        os.environ.update(self._saved)
+
+    def test_sync_ignores_the_progress_file_and_links_every_command(self):
+        rc = harness.cmd_sync(harness.argparse.Namespace(
+            dry_run=False, adopt=True, adopt_codex=False, print_only=False))
+        self.assertEqual(rc, 0)
+        ignore = (self.home / ".config" / "git" / "ignore").read_text().splitlines()
+        self.assertIn(".claude/progress.md", ignore)
+        live = self.home / ".claude" / "commands"
+        names = {p.name for p in (REPO / "claude" / "commands").glob("*.md")}
+        self.assertEqual(len(names), counts()["commands"])
+        for name in names:
+            self.assertTrue((live / name).is_symlink(), msg=name)
+
+
+class DocumentedCountTests(unittest.TestCase):
+    """Every number the docs state about the tree is derived from the tree here, so a layer
+    added without a doc edit fails the suite instead of going stale in silence."""
+
+    def setUp(self):
+        self.n = counts()
+        self.readme = (REPO / "README.md").read_text(encoding="utf-8")
+        self.how = (REPO / "docs" / "how-it-works.md").read_text(encoding="utf-8")
+        self.ownership_doc = (REPO / "docs" / "settings-ownership.md").read_text(encoding="utf-8")
+
+    def test_readme_layer_table_counts_match_the_tree(self):
+        self.assertIn(f"| **Rules** ({self.n['rules']}) |", self.readme)
+        self.assertIn(f"| **Stances** ({self.n['stance_dims']}, {self.n['stance_variants']} variants) |", self.readme)
+        self.assertIn(f"| **Skills** ({self.n['skills']}) |", self.readme)
+        self.assertIn(f"| **Commands** ({self.n['commands']}) |", self.readme)
+        self.assertIn(f"| **Hooks** ({self.n['hooks']}) |", self.readme)
+
+    def test_readme_names_every_command_and_counts_the_hooks_in_words(self):
+        for path in sorted((REPO / "claude" / "commands").glob("*.md")):
+            self.assertIn(f"`/{path.stem}`", self.readme, msg=path.name)
+        self.assertIn(f"lists its {WORDS[self.n['hooks']]} hooks", self.readme)
+
+    def test_how_it_works_counts_the_rules_and_the_commands_in_words(self):
+        self.assertIn(f"there are {WORDS[self.n['rules']]} and they are short", self.how)
+        self.assertIn(f"the {WORDS[self.n['rules']]} rules", self.how)
+        self.assertIn(f"the ritual in {WORDS[self.n['commands']]} keystrokes", self.how)
+
+    def test_how_it_works_describes_the_handoff_loop(self):
+        self.assertIn("## The handoff loop", self.how)
+        self.assertIn(".claude/progress.md", self.how)
+        self.assertIn("docs/solutions/", self.how)
+
+    def test_settings_ownership_lists_every_registered_hook(self):
+        ids = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())["claude"]["hook_ids"]
+        self.assertIn(f"**Hooks**: {WORDS[len(ids)]} entries", self.ownership_doc)
+        for hook_id in ids:
+            self.assertIn(f"`{hook_id}`", self.ownership_doc, msg=hook_id)
+
+
+if __name__ == "__main__":
+    unittest.main()

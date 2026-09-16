@@ -26,5 +26,5 @@
     "posture_keys": ["approval_policy", "sandbox_mode"],
     "generated_files": ["AGENTS.md"]
   },
-  "gitignore_entries": [".claude/plans/", ".design-loop/"]
+  "gitignore_entries": [".claude/plans/", ".claude/progress.md", ".design-loop/"]
 }
