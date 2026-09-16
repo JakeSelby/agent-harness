@@ -27,6 +27,15 @@ All notable changes to this project are documented here. The format follows
 - A `/handoff` command that writes `.claude/progress.md` and promotes durable learnings into a
   dated file under `docs/solutions/`, and a SessionStart hook that reads that progress file and
   the last five commits back as context. The progress file is added to the global git ignore.
+- A `builder` agent carrying the standing implementation brief — a worktree of its own, tests
+  with every change, the repository's gate, one local Conventional Commit and no push — so
+  `/build` spawns it and verifies the gate itself instead of retyping the steps.
+- A `spec-reviewer` agent that reports scope deviations only, and a two-stage `/review` that runs
+  it before the quality `reviewer`, each in a context that has not seen the other's findings.
+- A `planner` agent carrying the Review Card contract, so `/plan` can hand the file-writing to a
+  fresh context and keep its own for the review conversation.
+- A `design-judge` agent carrying the design loop's scored critique and its hard gates, so the
+  independent judge is a fixed definition the skill names rather than a rubric pasted each round.
 
 ### Fixed
 
