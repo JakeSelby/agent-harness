@@ -76,6 +76,18 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/usage-log.py # harness:usage-log",
+            "timeout": 2,
+            "statusMessage": "Recording session usage"
+          }
+        ]
+      }
     ]
   },
   "permissions": {
