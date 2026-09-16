@@ -70,6 +70,7 @@ sync model and the ownership contract are in [docs/](docs/):
 - [sync-model.md](docs/sync-model.md) — links, adoption, the settings merge, other surfaces
 - [settings-ownership.md](docs/settings-ownership.md) — exactly which keys the harness may write
 - [preferences.md](docs/preferences.md) — identity, stances, posture, env overrides
+- [sandboxing.md](docs/sandboxing.md) — fencing an unattended loop, and why sync writes no key
 - [workspaces.md](docs/workspaces.md) — multi-root workspaces and session stores
 - [bmad.md](docs/bmad.md) — keeping a planning framework out of the way
 - [comparison.md](docs/comparison.md) — what to compare against other harnesses
