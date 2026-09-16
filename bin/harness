@@ -421,6 +421,23 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
     _record(manifest, "links", {"path": str(path), "target": str(target)})
 
 
+def link_dir_files(source: Path, dest: Path, manifest: Dict[str, Any], dry: bool, adopt: bool,
+                   report: List[str]) -> None:
+    """One link per file, so anything the user keeps in the destination directory survives."""
+    wanted = set()
+    if source.is_dir():
+        for f in sorted(p_ for p_ in source.iterdir() if p_.is_file()):
+            link = dest / f.name
+            wanted.add(str(link))
+            ensure_link(link, f, manifest, dry, adopt, report)
+    for old in list(manifest.get("links", [])):
+        if Path(old["path"]).parent == dest and old["path"] not in wanted:
+            say(f"  unlink  {old['path']} (no longer in the harness)")
+            if not dry and Path(old["path"]).is_symlink():
+                Path(old["path"]).unlink()
+            manifest["links"].remove(old)
+
+
 def adopt_legacy(path: Path, manifest: Dict[str, Any], dry: bool, adopt: bool, report: List[str]) -> None:
     """A plain file the harness now supplies elsewhere; move it aside so it does not load twice."""
     if not path.exists() or path.is_symlink():
@@ -568,6 +585,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     ensure_link(cd / "hooks" / "harness", REPO / "claude" / "hooks", manifest, dry, args.adopt, report)
     for style in sorted((REPO / "claude" / "output-styles").glob("*.md")):
         ensure_link(cd / "output-styles" / style.name, style, manifest, dry, args.adopt, report)
+    link_dir_files(REPO / "claude" / "commands", cd / "commands", manifest, dry, args.adopt, report)
     ensure_link(cd / "CLAUDE.md", REPO / "claude" / "CLAUDE.md", manifest, dry, args.adopt, report)
 
     # Personal file.
