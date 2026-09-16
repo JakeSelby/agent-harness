@@ -3,7 +3,7 @@
   "claude": {
     "owned_keys": ["outputStyle", "plansDirectory", "useAutoModeDuringPlan", "showThinkingSummaries"],
     "posture_keys": ["permissions.defaultMode"],
-    "allow_rules": "every entry in settings.template.json permissions.allow, merged as a set; entries the user added are kept",
+    "allow_rules": "every entry in settings.template.json permissions.allow, merged as a set; entries the user added are kept; an entry a previous template added and this one dropped is removed",
     "agents": "every file in claude/agents/, linked into ~/.claude/agents/",
     "hook_ids": {
       "readonly-bash": {"event": "PreToolUse", "always": true},

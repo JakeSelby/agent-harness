@@ -57,6 +57,17 @@ class SettingsMergeTests(unittest.TestCase):
         for rule in TEMPLATE["permissions"]["allow"]:
             self.assertIn(rule, allow)
 
+    def test_retired_template_rules_are_dropped_and_user_rules_kept(self):
+        live = {"permissions": {"allow": ["Bash(awk *)", "Bash(my-tool *)"]}}
+        applied = {"template": {"allow": ["Bash(awk *)", "Read(~/**)"]}}
+        retired = harness.retired_allow_rules(applied, TEMPLATE)
+        self.assertEqual(retired, ["Bash(awk *)"])
+        merged = harness.merge_claude_settings(live, TEMPLATE, CFG, retired=retired)
+        allow = merged["permissions"]["allow"]
+        self.assertNotIn("Bash(awk *)", allow)
+        self.assertIn("Bash(my-tool *)", allow)
+        self.assertEqual(harness.retired_allow_rules({}, TEMPLATE), [])
+
     def test_never_touched_keys_survive(self):
         live = {"model": "some-model", "theme": "dark", "permissions": {"defaultMode": "bypassPermissions"}}
         merged = harness.merge_claude_settings(live, TEMPLATE, CFG)

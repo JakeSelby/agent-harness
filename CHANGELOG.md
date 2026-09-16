@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The `readonly-bash` hook approved several commands that write or execute: a second command
+  after a newline, `awk` scripts calling `system()` or redirecting output, `env` with a program
+  argument, `fd -x`, `rg --pre`, `sed -n` scripts using `w` or `e`, `sort -o`, `tree -o`,
+  `yq -i`, `git grep --open-files-in-pager`, a `PATH=` or `GIT_*=` prefix, any binary run by
+  absolute path with a read-only name, and the `>|`, `&>>`, `>&` and `<>` redirections. Each now
+  falls through to the permission prompt. `tests/test_readonly_bash.py` pins the corpus.
+- The settings template no longer carries the allow rules that granted the same primitives
+  without the hook: `Bash(awk *)`, `Bash(sort *)`, `Bash(sed -n *)`, `Bash(fd *)`, `Bash(rg *)`,
+  `Bash(tree *)`, `Bash(file *)`, `Bash(date *)` and the leading-wildcard `Bash(* --version)`.
+  The hook approves the safe invocations of every one of them.
+
+### Changed
+
+- `harness sync` removes an allow rule that an earlier template added and the current one has
+  dropped, while still keeping rules the user added themselves.
+
 ## [0.2.0] — 2026-09-16
 
 ### Added

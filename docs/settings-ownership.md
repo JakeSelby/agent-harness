@@ -12,7 +12,12 @@ changing the template.
 - **Allow rules**: the template's list is merged as a set into `permissions.allow`. The list is
   what lets plan mode run read-only commands without prompting: reads anywhere under home,
   read-only shell tools the built-in set misses, read forms of `gh`, `npm`, `cargo`, `uv`,
-  `WebSearch`, and documentation and registry domains for `WebFetch`.
+  `WebSearch`, and documentation and registry domains for `WebFetch`. Rules you added yourself
+  are kept. A rule that an earlier template carried and the current one has dropped is removed
+  at the next sync, so a rule withdrawn here does not outlive it in your settings. Tools whose
+  read-only form depends on their flags (`sort`, `sed`, `awk`, `fd`, `rg`, `tree`) are not in
+  the list; the `readonly-bash` hook approves their safe invocations and lets `sort -o`,
+  `sed w`, `fd -x` and the like fall through to the prompt.
 - **Hooks**: seven entries carrying `# harness:<id>` markers — `readonly-bash` and
   `filter-output` (PreToolUse), `plan-card` (PostToolUse, only under the `review-card` plan
   ceremony), `neutralize` (PostToolUse), `session` (SessionStart), `stop-gate` (Stop),
