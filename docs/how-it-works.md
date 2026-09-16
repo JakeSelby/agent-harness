@@ -47,6 +47,20 @@ is `settings.json`, because Claude Code writes to it too.
 - **Settings** are the tool configuration that makes the above work: hook registrations, a
   read-only allowlist so plan mode does not prompt, the output style selection.
 
+## Filtering verbose output
+
+The `filter-output` hook rewrites a Bash command that runs tests, a build, a lint or a
+type-check — `pytest`, `cargo test`, `npm test`, `go test` and their neighbours — so the run
+pipes through `claude/hooks/filter-lines.py`, which keeps failures, tracebacks, summary lines
+and the last twenty lines and drops the rest; `set -o pipefail` keeps the real exit status. The
+rewrite is skipped when the command already pipes to `head`, `tail`, `grep`, `less` or `wc`,
+redirects to a file, or passes `--watch`, so piping to `tail -50` yourself is how you see a run
+whole — there is no environment switch to turn the filter off. Both scripts live in
+`claude/hooks/`, which is linked as a directory, so the hook resolves the filter beside itself
+at run time. The hook emits `updatedInput` and no permission decision: the hooks documentation
+does not say how two `PreToolUse` hooks on `Bash` combine their output, so this one leaves the
+read-only classifier's decision alone.
+
 ## What the harness deliberately does not contain
 
 - Anything about one person. Identity is rendered into `~/.claude/CLAUDE.personal.md` from

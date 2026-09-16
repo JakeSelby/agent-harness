@@ -15,6 +15,17 @@
             "statusMessage": "Checking read-only command"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/filter-output.py # harness:filter-output",
+            "timeout": 5,
+            "statusMessage": "Filtering verbose output"
+          }
+        ]
       }
     ],
     "PostToolUse": [

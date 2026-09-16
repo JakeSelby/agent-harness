@@ -7,6 +7,7 @@
     "agents": "every file in claude/agents/, linked into ~/.claude/agents/",
     "hook_ids": {
       "readonly-bash": {"event": "PreToolUse", "always": true},
+      "filter-output": {"event": "PreToolUse", "always": true},
       "plan-card": {"event": "PostToolUse", "stance": "plan-ceremony", "variant": "review-card"},
       "session": {"event": "SessionStart", "always": true}
     },
