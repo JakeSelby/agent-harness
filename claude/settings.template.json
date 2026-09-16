@@ -26,6 +26,17 @@
             "statusMessage": "Filtering verbose output"
           }
         ]
+      },
+      {
+        "matcher": "WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/allow-plan-webfetch.py # harness:plan-webfetch",
+            "timeout": 5,
+            "statusMessage": "Checking plan-mode web research"
+          }
+        ]
       }
     ],
     "PostToolUse": [

@@ -56,7 +56,8 @@ is `settings.json`, because Claude Code writes to it too.
   out, and is described under the handoff loop below.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
   that checks every plan file against the card contract, a classifier that lets read-only shell
-  commands through in plan mode, an output filter that trims a verbose test or build run, a
+  commands through in plan mode, an approver that lets `WebFetch` through in plan mode so
+  research does not prompt, an output filter that trims a verbose test or build run, a
   session-start check for drift, env overrides and the repository handoff, a scanner that flags
   instruction-shaped text in `Bash`, `WebFetch` and `Read` output, a stop gate that runs a
   repository's own quality gate before a turn is allowed to end, and a session-end usage logger.

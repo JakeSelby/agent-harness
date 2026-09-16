@@ -13,11 +13,11 @@ changing the template.
   what lets plan mode run read-only commands without prompting: reads anywhere under home,
   read-only shell tools the built-in set misses, read forms of `gh`, `npm`, `cargo`, `uv`,
   `WebSearch`, and documentation and registry domains for `WebFetch`.
-- **Hooks**: seven entries carrying `# harness:<id>` markers — `readonly-bash` and
-  `filter-output` (PreToolUse), `plan-card` (PostToolUse, only under the `review-card` plan
-  ceremony), `neutralize` (PostToolUse), `session` (SessionStart), `stop-gate` (Stop),
-  `usage-log` (SessionEnd). `claude/OWNERSHIP.json` lists them under `hook_ids`; that list is
-  the one to read, and this page follows it.
+- **Hooks**: eight entries carrying `# harness:<id>` markers — `readonly-bash`,
+  `filter-output` and `plan-webfetch` (PreToolUse), `plan-card` (PostToolUse, only under the
+  `review-card` plan ceremony), `neutralize` (PostToolUse), `session` (SessionStart),
+  `stop-gate` (Stop), `usage-log` (SessionEnd). `claude/OWNERSHIP.json` lists them under
+  `hook_ids`; that list is the one to read, and this page follows it.
 - **Never touched**: `model`, `theme`, `viewMode`, `effortLevel`, `alwaysThinkingEnabled`,
   `skipDangerousModePermissionPrompt`, `env`, `permissions.deny`, `permissions.ask`, and any
   key not named here.
