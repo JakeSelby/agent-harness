@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The `stop-gate` hook runs a repository's `## Gate` block only in a folder whose trust dialog
+  has been accepted in Claude Code, or whose root is listed by the new `harness trust <path>`
+  command, so a freshly cloned repository can no longer run commands on the first Stop. Until
+  then it skips with a note on stderr.
+
 ## [0.2.0] — 2026-09-16
 
 ### Added

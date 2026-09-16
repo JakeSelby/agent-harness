@@ -72,7 +72,11 @@ is `settings.json`, because Claude Code writes to it too.
 
   The stop gate is opt-in per repository: it runs the fenced block under the `## Gate` heading
   of that repo's `AGENTS.md`, one shell command per line, and does nothing where no such block
-  exists. It hashes `HEAD` together with the working tree, so a tree unchanged since the last
+  exists. Because that block is the repository's own text, the gate runs only in a folder you
+  have already trusted through Claude Code's own dialog, the same consent that lets a
+  repository's `.claude/settings.json` hooks run, or whose root you have listed with
+  `bin/harness trust <path>`; in a fresh clone it skips with a note on stderr until you do
+  one or the other. It hashes `HEAD` together with the working tree, so a tree unchanged since the last
   green run skips the commands entirely. A red gate blocks the turn with the failing command,
   its exit code and the tail of its output; after eight consecutive blocks it releases the turn
   anyway, so a gate that can never pass cannot trap a session. A gate that outruns its time
