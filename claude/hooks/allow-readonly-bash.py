@@ -7,16 +7,22 @@ and friends cannot be expressed as a prefix rule without a wildcard before the
 subcommand, which Claude Code warns about and which would also match writes.
 
 Behaviour:
-  - Approves only when EVERY line and EVERY segment of a compound command is
-    read-only under the grammar below. Anything else returns no decision and
-    falls through to the normal permission flow. This hook never denies.
+  - Approves only when EVERY command that would run is read-only under the grammar
+    below. Compound commands are decomposed first: pipelines and `;`/`&&`/`||`
+    sequences, newlines, `for`/`while`/`until`/`if` blocks, subshell `( ... )` and
+    group `{ ...; }`, and command substitutions `$(...)` / backticks / `<(...)` are
+    each verified, recursively, and the whole thing is approved only if every part
+    is. Anything the grammar cannot prove read-only returns no decision and falls
+    through to the normal permission flow. This hook never denies.
   - Output redirections to a file (`>`, `>>`, `>|`, `&>`, `>&`, `<>`) are never
-    approved here; `/dev/null` and fd duplication (`2>&1`) are.
-  - Subshells, `bash -c`, `eval`, `xargs` with flags, `sudo`, `find -exec` and
-    `find -delete` are never approved here, nor are the write or exec flags of
-    otherwise read-only tools (`sort -o`, `fd -x`, `rg --pre`, `sed w`, awk's
-    `system()`), programs run by path outside the system bin directories, or
-    environment prefixes other than locale, terminal and `PAGER=cat`.
+    approved here; `/dev/null` and fd duplication (`2>&1`) are. Heredocs and
+    backslash continuations are not modelled and fall through.
+  - Subshells that run a write, `bash -c`, `eval`, `xargs`, `sudo`, `find -exec`
+    and `find -delete`, and a command built from a substitution's output are never
+    approved here; nor are the write or exec flags of otherwise read-only tools
+    (`sort -o`, `fd -x`, `rg --pre`, `sed w`, awk's `system()`), a program run by
+    path outside the system bin directories, or an environment assignment that
+    steers a later command (`PATH`, `GIT_*`, `NODE_OPTIONS` and the like).
 
 Test: echo '{"tool_name":"Bash","tool_input":{"command":"git -C /x status"}}' | python3 allow-readonly-bash.py
 """
@@ -35,6 +41,7 @@ PLAIN = {
     "tr", "jq", "column", "nl", "od", "strings", "md5", "md5sum",
     "shasum", "sha256sum", "diff", "cmp", "comm", "tac", "rev", "seq", "expr",
     "cd", "arch", "nproc", "lsof", "ps", "top", "uptime",
+    "read", "fold", "paste", "join", "look", "hexdump", "base64", "cksum",
 }
 
 # Read-only unless one of these flags appears: a long option matched by prefix, or a
@@ -74,13 +81,16 @@ PREFIXED = [
     ("aws", r"^sts get-caller-identity(\s|$)"),
 ]
 
-# Environment assignments that cannot change what an approved program does. PATH,
-# GIT_*, LD_*, NODE_OPTIONS and the like are not here: they redirect an approved
-# program to code of the caller's choosing.
-SAFE_ENV = re.compile(
-    r"^(LANG|LC_[A-Z]+|NO_COLOR|CLICOLOR|TERM|TZ|COLUMNS|LINES)=[^;`$()|&<>]*$"
-    r"|^(PAGER|GIT_PAGER)=(cat)?$"
+# Variables that change which program runs or what it executes: assigning one, even
+# without `export`, is a way to steer an approved command. `PAGER=cat` is the one
+# idiom worth keeping.
+DANGEROUS_ENV = re.compile(
+    r"^(PATH|LD_|DYLD_|GIT_|PAGER|LESS|EDITOR|VISUAL|NODE_OPTIONS|PYTHON|PERL|RUBY|BASH_ENV|"
+    r"ENV$|IFS|CDPATH|GLOBIGNORE|HOME|SHELL|TMPDIR|PS4|PROMPT_COMMAND|AWKPATH|AWKLIBPATH|"
+    r"GREP_OPTIONS|BROWSER|MANPATH|GH_|NPM_|CARGO|RUSTC|GOFLAGS|GOENV|UV_|HOMEBREW|SSH_|"
+    r"PYENV|NVM|JAVA|_JAVA|CLASSPATH|JQ_)"
 )
+PAGER_OK = re.compile(r"^(PAGER|GIT_PAGER)=(cat)?$")
 
 # A program named by absolute path is approved only from these directories; a
 # repository can ship a `bin/cat` of its own.
@@ -100,14 +110,34 @@ GIT_ARGS_WRITE = re.compile(r"^(--output|--open-files-in-pager|-O)")
 AWK_FORBIDDEN = re.compile(r"system\s*\(|getline|[|>]|@load|@include|^-[filE]|^--(file|include|load|exec)")
 
 FIND_FORBIDDEN = {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"}
-OPERATORS = {";", "&&", "||", "|", "|&", "&"}
 NEVER = {"sudo", "eval", "exec", "bash", "sh", "zsh", "xargs", "source", "."}
 
-# Redirection tokens that are safe on their own: fd duplication and input redirects
-# (the operand of an input redirect is read, never written).
+# Metacharacters that separate commands wherever they appear.
+ALWAYS_DELIM = {";", "&&", "||", "|", "|&", "&", "(", ")", ";;"}
+# Reserved words are structural only in command position (see command_ok). As an
+# argument, e.g. `grep -q done`, the same word is ordinary data.
+#   WORD_DROP    separate commands but carry none to check.
+#   WORD_COND    introduce a condition command whose remainder must be checked.
+#   WORD_HEADER  introduce a loop/case header whose words are data, not commands.
+WORD_DROP = {"do", "done", "then", "fi", "else", "esac", "{", "}"}
+WORD_COND = {"while", "until", "if", "elif"}
+WORD_HEADER = {"for", "select", "case"}
+
+NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_PLACEHOLDER = "__ROSUB__"  # stands in for a verified substitution; never a real command
+
+# Redirection tokens that are safe on their own: input redirects (their operand is
+# read, never written) and fd duplication.
 READ_REDIRECTS = {"<", "<<", "<<<", "<&"}
 WRITE_REDIRECTS = re.compile(r"^\d*(>|>>|&>|>&)$")
 PUNCTUATION_RUN = re.compile(r"^\d*[<>&|]+$")
+
+
+def assignment_ok(token):
+    """`NAME=value` may precede a command, or stand alone, only when NAME cannot
+    steer what a later approved command runs."""
+    return PAGER_OK.match(token) is not None or DANGEROUS_ENV.match(token) is None
 
 
 def flags_hit(args, longs, shorts):
@@ -374,19 +404,23 @@ def strip_redirects(tokens):
 
 
 def segment_ok(tokens):
+    """True when a single simple command (already free of substitutions and of the
+    structural keywords) is read-only."""
     tokens = strip_redirects(tokens)
     if not tokens:
         return False
-    # Strip leading env assignments that cannot redirect an approved program.
-    while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
-        if not SAFE_ENV.match(tokens[0]):
+    # Strip leading assignments (LANG=C, S=/path, NAME=value cmd ...). A segment
+    # that is nothing but assignments runs no command, so it is read-only — unless
+    # the variable steers a command that runs later in the same call.
+    while tokens and ASSIGN_RE.match(tokens[0]):
+        if not assignment_ok(tokens[0]):
             return False
         tokens = tokens[1:]
     if not tokens:
-        return False
+        return True
     for t in tokens:
         if "$(" in t or "`" in t or "<(" in t or ">(" in t:
-            return False
+            return False  # an unextracted substitution: fail closed
     head = tokens[0]
     if "/" in head:
         base, _, prog = head.rpartition("/")
@@ -400,15 +434,16 @@ def segment_ok(tokens):
     if prog in ("timeout", "time", "nice", "nohup", "stdbuf", "command", "noglob"):
         return segment_ok(args[1:] if prog == "timeout" and args else args)
     if prog == "env":
-        while args and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", args[0]):
-            if not SAFE_ENV.match(args[0]):
+        while args and ASSIGN_RE.match(args[0]):
+            if not assignment_ok(args[0]):
                 return False
             args = args[1:]
         if not args:
             return True
         return not args[0].startswith("-") and segment_ok(args)
     if prog == "export":
-        return len(args) == 1 and SAFE_ENV.match(args[0]) is not None
+        return bool(args) and all(
+            NAME_RE.match(a.split("=", 1)[0]) is not None and assignment_ok(a) for a in args)
     if prog == "find":
         return not any(a in FIND_FORBIDDEN for a in args)
     if prog in PLAIN:
@@ -438,39 +473,175 @@ def segment_ok(tokens):
     return False
 
 
-def line_ok(cmd):
+def _match_paren(s, start):
+    """s[start] == '('. Return the index of the matching ')', or None. Quote-aware."""
+    depth = 0
+    i = start
+    n = len(s)
+    sq = dq = False
+    while i < n:
+        c = s[i]
+        if sq:
+            if c == "'":
+                sq = False
+        elif dq:
+            if c == "\\":
+                i += 2
+                continue
+            if c == '"':
+                dq = False
+        else:
+            if c == "'":
+                sq = True
+            elif c == '"':
+                dq = True
+            elif c == "\\":
+                i += 2
+                continue
+            elif c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth == 0:
+                    return i
+        i += 1
+    return None
+
+
+def _strip_subs(cmd, depth):
+    """Replace every command/process/arithmetic substitution in `cmd` with a
+    placeholder, verifying each command substitution is itself read-only. Returns
+    the rewritten string, or None if any substitution is not read-only or the text
+    does not parse."""
+    out = []
+    i = 0
+    n = len(cmd)
+    sq = dq = False
+    while i < n:
+        c = cmd[i]
+        if sq:
+            out.append(c)
+            if c == "'":
+                sq = False
+            i += 1
+            continue
+        if c == "'" and not dq:
+            sq = True
+            out.append(c)
+            i += 1
+            continue
+        if c == '"':
+            dq = not dq
+            out.append(c)
+            i += 1
+            continue
+        if c == "\\":
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if c == "`":
+            j = i + 1
+            while j < n and cmd[j] != "`":
+                j += 2 if cmd[j] == "\\" else 1
+            if j >= n:
+                return None
+            inner = cmd[i + 1:j].replace("\\`", "`").replace("\\$", "$")
+            if not command_ok(inner, depth + 1):
+                return None
+            out.append(_PLACEHOLDER)
+            i = j + 1
+            continue
+        if cmd.startswith("$(", i):
+            end = _match_paren(cmd, i + 1)
+            if end is None:
+                return None
+            inner = cmd[i + 2:end]
+            if not inner.startswith("("):  # a plain '(' opener is arithmetic $(( )), no command
+                if not command_ok(inner, depth + 1):
+                    return None
+            out.append(_PLACEHOLDER)
+            i = end + 1
+            continue
+        if c in "<>" and not dq and cmd.startswith("(", i + 1):
+            end = _match_paren(cmd, i + 1)
+            if end is None:
+                return None
+            inner = cmd[i + 2:end]
+            if not command_ok(inner, depth + 1):
+                return None
+            out.append(_PLACEHOLDER)
+            i = end + 1
+            continue
+        out.append(c)
+        i += 1
+    if sq or dq:
+        return None
+    return "".join(out)
+
+
+def _header_ok(tokens):
+    """A `for NAME [in WORDS]` / `select NAME ...` header runs no command; its words
+    are data. Accept the well-formed shapes; reject C-style `for (( ))` and `case`."""
+    kw = tokens[0]
+    if kw in ("for", "select"):
+        if len(tokens) < 2 or not NAME_RE.match(tokens[1]):
+            return False
+        return len(tokens) == 2 or tokens[2] == "in"
+    return False  # `case` headers are not decomposed here; fail closed
+
+
+def command_ok(cmd, depth=0):
+    if depth > 6 or len(cmd) > 10000:
+        return False
+    cmd = _strip_subs(cmd, depth)
+    if cmd is None:
+        return False
+    # A newline separates commands for bash but is whitespace to shlex, so it is
+    # made a `;` here. A backslash continuation is not modelled and falls through.
+    if re.search(r"\\\r?\n", cmd):
+        return False
+    cmd = cmd.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ; ")
     try:
         lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
         tokens = list(lex)
     except ValueError:
         return False
-    segments, cur = [], []
+    segments = []
+    cur = []
     for t in tokens:
-        if t in OPERATORS:
-            segments.append(cur)
-            cur = []
-        elif t in ("(", ")", "{", "}"):
-            return False
+        if t in ALWAYS_DELIM:
+            if cur:
+                segments.append(cur)
+                cur = []
+            continue
+        if not cur:  # command position: reserved words are structural here only
+            if t in WORD_DROP:
+                continue
+            if t in WORD_COND or t in WORD_HEADER:
+                cur = [t]
+                continue
+        cur.append(t)
+    if cur:
+        segments.append(cur)
+    if not segments:
+        return False
+    for seg in segments:
+        head = seg[0]
+        if head in WORD_HEADER:
+            if not _header_ok(seg):
+                return False
+        elif head in WORD_COND:
+            rest = seg[1:]
+            if rest and rest[0] == "!":
+                rest = rest[1:]
+            if not rest or not segment_ok(rest):
+                return False
         else:
-            cur.append(t)
-    segments.append(cur)
-    if len(segments) > 1 and any(not s for s in segments):
-        return False  # dangling or leading operator: Claude Code treats it as unparseable
-    return bool(segments) and all(segment_ok(s) for s in segments)
-
-
-def command_ok(cmd):
-    if len(cmd) > 10000:
-        return False
-    # A newline is a command separator to bash but whitespace to shlex, so every
-    # line is judged on its own; a continuation or a quoted newline falls through.
-    lines = [ln for ln in cmd.replace("\r", "\n").split("\n") if ln.strip()]
-    if not lines:
-        return False
-    if any(ln.rstrip().endswith("\\") for ln in lines):
-        return False
-    return all(line_ok(ln) for ln in lines)
+            rest = seg[1:] if head == "!" else seg
+            if not rest or not segment_ok(rest):
+                return False
+    return True
 
 
 def main():

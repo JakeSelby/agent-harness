@@ -18,11 +18,11 @@ changing the template.
   read-only form depends on their flags (`sort`, `sed`, `awk`, `fd`, `rg`, `tree`) are not in
   the list; the `readonly-bash` hook approves their safe invocations and lets `sort -o`,
   `sed w`, `fd -x` and the like fall through to the prompt.
-- **Hooks**: seven entries carrying `# harness:<id>` markers — `readonly-bash` and
-  `filter-output` (PreToolUse), `plan-card` (PostToolUse, only under the `review-card` plan
-  ceremony), `neutralize` (PostToolUse), `session` (SessionStart), `stop-gate` (Stop),
-  `usage-log` (SessionEnd). `claude/OWNERSHIP.json` lists them under `hook_ids`; that list is
-  the one to read, and this page follows it.
+- **Hooks**: eight entries carrying `# harness:<id>` markers — `readonly-bash`,
+  `filter-output` and `plan-webfetch` (PreToolUse), `plan-card` (PostToolUse, only under the
+  `review-card` plan ceremony), `neutralize` (PostToolUse), `session` (SessionStart),
+  `stop-gate` (Stop), `usage-log` (SessionEnd). `claude/OWNERSHIP.json` lists them under
+  `hook_ids`; that list is the one to read, and this page follows it.
 - **Never touched**: `model`, `theme`, `viewMode`, `effortLevel`, `alwaysThinkingEnabled`,
   `skipDangerousModePermissionPrompt`, `env`, `permissions.deny`, `permissions.ask`, and any
   key not named here.
