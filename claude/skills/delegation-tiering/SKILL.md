@@ -297,10 +297,10 @@ re-delegate its whole assignment.
 ## Why the tiered stance reads the way it does
 
 **Drop effort before you drop tier — where the dial exists.** A stronger model at low effort
-beats a weaker model at default effort on both quality and cost per solved task. The effort
-dial is available on workflow stages and on the session itself. A plain subagent spawn has only
-the tier dial — so there, a gathering task gets the tier below the session model, and the
-effort economy is realised at the session, not the subagent.
+beats a weaker model at default effort on both quality and cost per solved task. A plain spawn
+has only the tier dial, so the tiers ship as frontmatter in `claude/agents/`: `gatherer` (one
+tier down, low effort, read-only), `reviewer` (`inherit`, high effort, fresh context) and
+`log-compressor` (two tiers down, no verdict). Spawn one by name, not a hand-written brief.
 
 **Never spawn subagents on the orchestrator's own tier when that tier is rate-limited or
 capacity-gated.** One notch down costs a few points; two notches costs many. Step once.
