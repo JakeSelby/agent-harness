@@ -12,6 +12,7 @@ only, Python 3.9+.
     harness doctor
     harness uninstall
     harness lint    [PATH]
+    harness usage   [--days N] [--by day|repo|model] [--rescan]
     harness workspace create NAME FOLDER... [--no-harness] [--force]
     harness config get KEY
     harness --version
@@ -1029,6 +1030,58 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Summarize the session records the usage-log hook writes. Local file only."""
+    path = state_dir() / "usage.jsonl"
+    if getattr(args, "rescan", False):
+        hook = REPO / "claude" / "hooks" / "usage-log.py"
+        out = subprocess.run([sys.executable, str(hook), "--rescan", str(args.days)], capture_output=True, text=True)
+        say((out.stdout or out.stderr).strip() or "rescan found no transcripts")
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - max(args.days, 0) * 86400))
+    groups: Dict[str, List[int]] = {}
+    for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict) or (row.get("ended") or "") < cutoff:
+            continue
+        if args.by == "repo":
+            key = row.get("repo") or "(no repo)"
+        elif args.by == "model":
+            key = "+".join(row.get("models") or []) or "(unknown)"
+        else:
+            key = (row.get("ended") or "")[:10]
+        acc = groups.setdefault(key, [0, 0, 0, 0, 0])
+        acc[0] += 1
+        for i, name in enumerate(("input", "output", "cache_read", "cache_write")):
+            try:
+                acc[i + 1] += int(row.get(name) or 0)
+            except (TypeError, ValueError):
+                pass
+    if not groups:
+        say(f"no sessions recorded in the last {args.days} day(s); looked in {path}")
+        return 0
+
+    def line_for(label: str, acc: List[int]) -> str:
+        served = acc[1] + acc[3] + acc[4]
+        hit = acc[3] / served if served else 0.0
+        return (f"{label[:34]:<34}{acc[0]:>9}{acc[1]:>12,}{acc[2]:>12,}"
+                f"{acc[3]:>14,}{acc[4]:>14,}{hit:>7.0%}")
+
+    head = (f"{args.by:<34}{'sessions':>9}{'input':>12}{'output':>12}"
+            f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}")
+    say(head)
+    say("-" * len(head))
+    total = [0, 0, 0, 0, 0]
+    for key in sorted(groups):
+        total = [t + a for t, a in zip(total, groups[key])]
+        say(line_for(key, groups[key]))
+    say("-" * len(head))
+    say(line_for("TOTAL", total))
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="harness", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=f"agent-harness {VERSION}")
@@ -1065,6 +1118,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("path", nargs="?")
     p.add_argument("--staged", action="store_true", help="only the files staged in git (used by the pre-commit hook)")
     p.set_defaults(func=cmd_lint)
+
+    p = sub.add_parser("usage", help="summarize recorded session tokens and cache hit rate")
+    p.add_argument("--days", type=int, default=30)
+    p.add_argument("--by", choices=["day", "repo", "model"], default="day")
+    p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
+    p.set_defaults(func=cmd_usage)
 
     p = sub.add_parser("workspace", help="create a multi-root workspace with a shared session store")
     p.add_argument("action")

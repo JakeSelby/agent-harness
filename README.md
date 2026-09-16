@@ -34,8 +34,9 @@ again, and start a session. `/context` lists the harness rules; `/hooks` lists i
 An agent can do all of this from this README; the CLI is Python 3.9 standard library and
 every step is idempotent.
 
-`bin/harness doctor` reports versions, logins, links and drift. `bin/harness uninstall` puts
-everything back.
+`bin/harness doctor` reports versions, logins, links and drift. `bin/harness usage` summarizes
+per-session tokens and cache hit rate from a local file ([docs/usage.md](docs/usage.md)).
+`bin/harness uninstall` puts everything back.
 
 ## What you get
 
