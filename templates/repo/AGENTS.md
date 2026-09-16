@@ -18,6 +18,16 @@ file carries only what is true of this repo.
 **Expected clean-tree output** of the quality gate on an unmodified checkout, so a failure is
 attributable: `<paste the final line, e.g. "All checks passed!", and the test count>`.
 
+## Gate
+
+```sh
+<quality gate>       # e.g. ruff check .
+<test>               # the fast suite, not the full integration run
+```
+
+The `stop-gate` hook runs this block when the tree has changed since its last green run,
+blocks the turn while it is red, and releases after eight consecutive blocks.
+
 ## Conventions
 
 - Toolchain and framework versions are pinned in `<file>`; upgrade on this project's schedule.

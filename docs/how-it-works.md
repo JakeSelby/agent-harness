@@ -49,8 +49,9 @@ is `settings.json`, because Claude Code writes to it too.
   that order, and the worktree is created at build, never earlier.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
   that checks every plan file against the card contract, a classifier that lets read-only shell
-  commands through in plan mode, a session-start check for drift and env overrides, and a
-  scanner that flags instruction-shaped text in `Bash`, `WebFetch` and `Read` output.
+  commands through in plan mode, a session-start check for drift and env overrides, a scanner
+  that flags instruction-shaped text in `Bash`, `WebFetch` and `Read` output, and a stop gate
+  that runs a repository's own quality gate before a turn is allowed to end.
 
   The scanner is advisory: on a match it appends one line naming the tool and the patterns it
   matched — control tags, "ignore previous instructions", directives addressed to the agent,
@@ -60,6 +61,15 @@ is `settings.json`, because Claude Code writes to it too.
   so this one mirrors its wording for the tool results that arrive unwrapped. A commit trailer on
   its own does not trip it: `Co-Authored-By` counts only within three lines of wording that tells
   the reader to use it.
+
+  The stop gate is opt-in per repository: it runs the fenced block under the `## Gate` heading
+  of that repo's `AGENTS.md`, one shell command per line, and does nothing where no such block
+  exists. It hashes `HEAD` together with the working tree, so a tree unchanged since the last
+  green run skips the commands entirely. A red gate blocks the turn with the failing command,
+  its exit code and the tail of its output; after eight consecutive blocks it releases the turn
+  anyway, so a gate that can never pass cannot trap a session. A gate that outruns its time
+  budget releases the same way. The green hash and the block count live under
+  `~/.local/state/agent-harness/stop-gate/`.
 - **The output style** is the shape of every reply: verdict first, registers separated, action
   items in one place.
 - **Settings** are the tool configuration that makes the above work: hook registrations, a

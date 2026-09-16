@@ -64,6 +64,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/stop-gate.py # harness:stop-gate",
+            "timeout": 300,
+            "statusMessage": "Running the repo gate"
+          }
+        ]
+      }
     ]
   },
   "permissions": {
