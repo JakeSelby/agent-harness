@@ -311,3 +311,19 @@ options in workflow scripts.
 
 **Session model everywhere**, the alternative stance, keeps subagents on the session model and
 spends the effort dial instead, with the number of agents kept small.
+
+## Cost posture
+
+The `cost` stance is the other half of a delegation decision: `delegation` picks the tier, `cost`
+picks how much you spend at it.
+
+| | `frugal` | `balanced` | `max` |
+| --- | --- | --- | --- |
+| Session effort | low, except design and adversarial review | medium | model default |
+| Parallel fan-out | 3 | 6 | as the task needs |
+| Fast mode | never | off unless asked | allowed |
+| Compaction | `/clear` only | `/clear` at task end | `/compact` allowed |
+
+Under `frugal`, subagents are gatherers only and agent teams are off, so an up-class trigger is
+answered by raising the session's own effort rather than by spawning. Neither stance names a
+model id; agent definitions carry those. Cache costs: `cache-hygiene.md`.

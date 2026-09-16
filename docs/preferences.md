@@ -27,6 +27,7 @@ one-line file so `/context` shows the choice explicitly.
 | `delegation` | `tiered`, `session-model`, `off` | `tiered` |
 | `testing` | `required`, `pragmatic`, `off` | `required` |
 | `autonomy` | `execute`, `confirm-writes`, `ask` | `execute` |
+| `cost` | `frugal`, `balanced`, `max` | `balanced` |
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
 `HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start
@@ -102,6 +103,13 @@ the explicit go-ahead.
 **Build versus buy.** The user has heard the maintenance-burden argument and rejects its premise:
 code is cheap now, and an agent-assisted person can maintain custom code fine in three years.
 Capability ceilings are the argument class that decides.
+
+**Cost.** `cost` governs how much you spend, never which model: agent definitions carry model ids.
+`frugal` runs the session at low effort outside design and adversarial review, keeps subagents to
+gatherers with a fan-out of three, never turns on fast mode, and ends a task with `/clear`.
+`balanced` is the shipped default — medium effort, fan-out of six, fast mode off unless asked.
+`max` spends the model's default effort, fans out as widely as the task needs, and allows fast mode
+and compaction. How it meets the tier decision is in the `delegation-tiering` skill.
 
 **Delegation.** The evidence for the tier bands, the cost-per-solved-task numbers and the
 boundaries where they stop holding are in the `delegation-tiering` skill, not here.
