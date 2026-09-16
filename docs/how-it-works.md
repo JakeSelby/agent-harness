@@ -12,6 +12,7 @@ generic parts live in one git checkout and the personal parts live outside it.
 ~/.claude/rules/harness-stances/ ▶ claude/stances/<p>/<v>.md one chosen variant per preference
 ~/.claude/rules/*.md                                          your own personal rules, untouched
 ~/.claude/skills/<name>/ ────────▶ claude/skills/<name>/     procedures, loaded on invocation
+~/.claude/agents/<name>.md ──────▶ claude/agents/*.md        subagent definitions, spawned by name
 ~/.claude/hooks/harness/ ────────▶ claude/hooks/*.py         run at lifecycle points, no judgment involved
 ~/.claude/output-styles/scannable.md ▶ claude/output-styles/ the shape of every reply
 ~/.claude/settings.json  ◀ merge ─ claude/settings.template.json  only the keys OWNERSHIP.json names
@@ -31,6 +32,13 @@ is `settings.json`, because Claude Code writes to it too.
 - **Skills** are procedures. They cost one line of description until invoked, so they can be
   long: how to write a plan someone can review in one screen, how to run a design loop with an
   independent judge, how to contribute to someone else's repo.
+- **Agents** are subagent definitions the harness ships so the delegation tiers are enforced by
+  frontmatter instead of by a brief someone retypes: `gatherer` for read-only gathering,
+  `reviewer` for fresh-context adversarial review, `log-compressor` for reducing a test or build
+  log to its failures. Each carries its model, its effort level and its tool list, and the tool
+  list is what makes a read-only agent read-only. Frontmatter `model` beats the
+  `CLAUDE_CODE_SUBAGENT_MODEL` environment variable, and a project overrides any of them by
+  placing a same-named file in its own `.claude/agents/`.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
   that checks every plan file against the card contract, a classifier that lets read-only shell
   commands through in plan mode, a session-start check for drift and env overrides.

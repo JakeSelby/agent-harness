@@ -530,7 +530,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     report: List[str] = []
     cd = claude_dir()
     if not dry:
-        for sub in ("rules", "skills", "hooks", "output-styles", "plans"):
+        for sub in ("rules", "skills", "agents", "hooks", "output-styles", "plans"):
             (cd / sub).mkdir(parents=True, exist_ok=True)
         (cd / "rules" / "harness-stances").mkdir(exist_ok=True)
         state_dir().mkdir(parents=True, exist_ok=True)
@@ -560,6 +560,8 @@ def cmd_sync(args: argparse.Namespace) -> int:
             manifest["links"].remove(old)
     for skill in sorted(p_ for p_ in (REPO / "claude" / "skills").iterdir() if p_.is_dir()):
         ensure_link(cd / "skills" / skill.name, skill, manifest, dry, args.adopt, report)
+    for agent in sorted((REPO / "claude" / "agents").glob("*.md")):
+        ensure_link(cd / "agents" / agent.name, agent, manifest, dry, args.adopt, report)
     ensure_link(cd / "hooks" / "harness", REPO / "claude" / "hooks", manifest, dry, args.adopt, report)
     for style in sorted((REPO / "claude" / "output-styles").glob("*.md")):
         ensure_link(cd / "output-styles" / style.name, style, manifest, dry, args.adopt, report)
