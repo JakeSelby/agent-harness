@@ -1,11 +1,8 @@
 # Commits stance: Conventional Commits, gated pushes
 
-- **Conventional Commits for every commit**, in every repo: `type(scope): summary`, with
-  `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci` as the usual types.
-- **Before pushing, run the repo's quality gate on `HEAD`** in the exact checkout you are about
-  to push. The gate is whatever the repo's agent instructions name; if they name nothing, run
-  what CI runs.
-- **Never push to a default branch directly.** Branch first, open a PR, merge through it. A
-  repo's own instructions may override this for repos without a review gate.
-- **No attribution trailers.** Commit messages carry the change, not the tool.
-- **`AGENTS.md` and `CLAUDE.md` are one file, symlinked**, so different agents cannot drift.
+**Conventional Commits for every commit**, in every repo: `type(scope): summary`. **Before pushing,
+run the repo's quality gate on `HEAD`** in the exact checkout you will push — whatever its agent
+instructions name, or what CI runs if they name nothing. **Never push to a default branch
+directly:** branch, open a PR, merge through it, unless a repo without a review gate says
+otherwise. **No attribution trailers.** **`AGENTS.md` and `CLAUDE.md` are one file, symlinked**, so
+different agents cannot drift.

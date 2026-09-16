@@ -73,6 +73,12 @@ SECRET_PATTERNS = [
     r"(?i)client_secret\s*[:=]", r"-----BEGIN [A-Z ]*PRIVATE KEY-----", r"xox[bp]-", r"ghp_[A-Za-z0-9]{20,}",
     r"sk-[A-Za-z0-9]{20,}",
 ]
+# Everything in `claude/CLAUDE.md`, `claude/rules/` and one variant of every stance is re-read on
+# every turn of every session, so its size is a standing tax on every task. The cap is enforced by
+# `harness lint`; the stance count uses the LONGEST variant of each dimension, so no selection a
+# user can make is ever over it. Rationale: docs/how-it-works.md.
+ALWAYS_LOADED_CAP = 200
+
 NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates"}
 NAME_FORBIDDEN_FILES = {"config.example.json"}
 LINT_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".pytest_cache"}
@@ -850,6 +856,48 @@ def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -
     return lint_files(root, sorted(p for p in root.rglob("*") if p.is_file()), terms)
 
 
+def _line_count(path: Path) -> int:
+    return len(path.read_text(encoding="utf-8").splitlines())
+
+
+def always_loaded_lines(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
+    """Line counts of everything loaded on every turn, as (total, [(group, lines)]).
+
+    The stance total is the worst case — the longest variant of each dimension — so the cap holds
+    for every selection a user could make, not only the default one.
+    """
+    groups: List[Tuple[str, int]] = []
+    claude_md = root / "claude" / "CLAUDE.md"
+    if claude_md.is_file():
+        groups.append(("claude/CLAUDE.md", _line_count(claude_md)))
+    rules = sorted((root / "claude" / "rules").glob("*.md"))
+    if rules:
+        plural = "file" if len(rules) == 1 else "files"
+        groups.append((f"claude/rules/ ({len(rules)} {plural})", sum(_line_count(p) for p in rules)))
+    stances = root / "claude" / "stances"
+    if stances.is_dir():
+        for d in sorted(p for p in stances.iterdir() if p.is_dir()):
+            variants = sorted(d.glob("*.md"))
+            if not variants:
+                continue
+            worst = max(variants, key=lambda p: (_line_count(p), p.name))
+            groups.append((f"claude/stances/{d.name}/ (longest: {worst.name})", _line_count(worst)))
+    return sum(n for _, n in groups), groups
+
+
+def check_context_cap(root: Path) -> List[str]:
+    """Fail when always-loaded context exceeds the cap, printing the breakdown."""
+    total, groups = always_loaded_lines(root)
+    if not groups or total <= ALWAYS_LOADED_CAP:
+        return []
+    hits = [f"context-cap: always-loaded context is {total} lines, over the {ALWAYS_LOADED_CAP}-line cap"]
+    for name, n in sorted(groups, key=lambda g: (-g[1], g[0])):
+        hits.append(f"context-cap:   {n:4d}  {name}")
+    hits.append("context-cap: keep the operative lines in the rule and move the rest into the skill it "
+                "points at (see the harness-authoring skill)")
+    return hits
+
+
 def lint_staged(root: Path) -> List[str]:
     out = subprocess.run(["git", "-C", str(root), "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
                          capture_output=True, text=True, timeout=10)
@@ -865,6 +913,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     else:
         hits = lint_tree(root)
         scope = str(root)
+    hits = hits + check_context_cap(root)
     for h in hits:
         say(h)
     everywhere, _ = load_lint_terms()
@@ -989,7 +1038,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = sub.add_parser("uninstall", help="remove links and owned settings, restore adopted files")
     p.set_defaults(func=cmd_uninstall)
 
-    p = sub.add_parser("lint", help="scan for personal-data shapes, your lint terms, and secret patterns")
+    p = sub.add_parser("lint", help="scan for personal-data shapes, lint terms, secret patterns, and the context cap")
     p.add_argument("path", nargs="?")
     p.add_argument("--staged", action="store_true", help="only the files staged in git (used by the pre-commit hook)")
     p.set_defaults(func=cmd_lint)

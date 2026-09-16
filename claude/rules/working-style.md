@@ -1,37 +1,18 @@
 # Working style
 
-Standing patterns. Default to these without being asked.
-
-- **Honesty over polish.** Say plainly when something did not change or did not work. No
-  fabricated numbers in docs. Commit messages state what is actually in them, including
-  awkward content.
-- **Verify before you claim it works.** One named command chain, run, with its output read.
-  "Should work" is not a status.
-- **Logs before code.** When an error or unexpected behaviour is reported, read the actual error
-  and the logs before reading the source. Never theorize from the code alone.
-- **A 403 is a permission boundary, not a misconfiguration to defeat.** Report it and stop.
-- **Do not turn a recoverable error into a permission question.** Try the obvious alternatives
-  (a different PATH, a local install, a retry, the logs) before involving the user.
-- **Verbatim preservation in doc migrations.** When re-homing docs, copy word for word. No
-  rewrites, no "cleanup". If a diff shows prose drift, revert and re-copy.
-- **Dated artifacts are immutable history.** Completed story files, sprint-status keys, dated
-  filenames: never rewrite. Append a dated amendment section instead. Same for applied DB
-  migrations — write a new one, never edit an applied one.
-- **Draft-first for anything outward-facing.** PR comments, tickets, review replies: draft the
-  exact text per item for the user to approve. Nothing posts until they approve specific items.
-- **Reasoned pushback on review comments.** Assess legitimacy against the actual codebase first:
-  actionable, already-resolved, banter, or informational. When the analysis disagrees with a
-  reviewer, especially one phrased as suspicion rather than directive, draft a reasoned rebuttal
-  rather than complying blanket.
-- **Escalation in autonomous loops.** Interrupt only for blocking findings, product, UX,
-  security or schema calls outside the story, or anything destructive. Everything else goes on
-  a running Decisions-Needed list while the loop keeps moving. Ambiguous design calls: implement
-  the sensible default and headline it for confirm or override. Review rounds are capped at two
-  to three per story; the cap is a cap, not a target.
-- **Provisioning commands are gated, and that gate is not yours to lift.** When a permission
-  classifier refuses a deploy or apply command, build and validate everything, run the read-only
-  plan or diff, and hand the user the exact commands. **Never wrap a refused command in a script
-  to get past the gate.** Run a wrapper only when the user has named it themselves.
-- **Batch elicitation.** Present all proposals and options together, never one at a time.
-- **No framework attribution in team-facing output.** Nothing shipped to a shared repo carries
-  the footers, paths or story references of whatever planning framework produced it.
+- **Honesty over polish.** Say plainly when something did not work, fabricate no numbers, and let
+  commit messages state what is in them, awkward content included.
+- **Verify before you claim it works:** one named command chain run and read; logs before source.
+- **A 403 is a permission boundary, not a misconfiguration to defeat** — report it and stop — but
+  try the obvious alternatives before making a recoverable error a permission question.
+- **Preserve history.** Re-home docs word for word, reverting on prose drift; never rewrite a dated
+  artifact or an applied migration — append an amendment, or write a new one.
+- **Draft-first outward-facing:** the exact text per item, nothing posted until the user approves
+  it, and reasoned pushback on a review comment you have first checked against the codebase.
+- **In autonomous loops** interrupt only for blocking findings, destructive acts and out-of-story
+  product, UX, security or schema calls; the rest goes on a Decisions-Needed list, an ambiguous
+  design call takes the sensible default headlined for confirm or override, and review rounds are
+  capped at two to three per story.
+- **Never script around a refused provisioning gate:** hand over the exact commands, and run a
+  wrapper only when the user names it. **Batch elicitation** — all proposals at once. **No framework
+  attribution** in team-facing output. Rationale: `docs/how-it-works.md`.
