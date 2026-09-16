@@ -33,11 +33,12 @@ once this checkout is trusted: accept Claude Code's folder dialog or run `bin/ha
 
 - **This checkout is live.** `harness sync` symlinks `claude/rules`, each `claude/skills/*`,
   `claude/hooks` and the output style into `~/.claude`. An edit here is in effect in the next
-  session with no further step; a half-finished rule is live too. Work on `main` for content;
-  use a worktree and a PR for code.
-- **Content changes** (rules, stances, skill text, docs) commit straight to `main` and push.
-- **Code changes** (`bin/harness`, `claude/hooks/*.py`, `tests/`) go through a PR so CI gates
-  them; every code change carries a test.
+  session with no further step; a half-finished rule is live too. Work in a worktree branched
+  off `main`, so the live checkout only ever carries merged content.
+- **Every change lands through a pull request.** The `main` ruleset requires green `lint` and
+  `test` checks on an up-to-date branch and a squash merge; there is no direct push.
+- **Code changes** (`bin/harness`, `claude/hooks/*.py`, `tests/`) carry a test with every
+  change. Content changes (rules, stances, skill text, docs) are gated by the lint and review.
 - Nothing personal, nothing project-specific, nothing copyleft. The lint enforces the first;
   review enforces the rest.
 

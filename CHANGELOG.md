@@ -57,7 +57,7 @@ All notable changes to this project are documented here. The format follows
   directories, so the file tools and the Bash commands that read files are both covered.
 - Three subagent definitions — `gatherer`, `reviewer` and `log-compressor` — carrying their
   model, effort level and tool list, so the delegation tiers hold without a retyped brief.
-- A `sandbox` stance and skill: container or built-in sandbox posture for an unattended loop.
+- A `sandbox` skill: container or built-in sandbox posture for an unattended loop.
 - A `filter-output` PreToolUse hook that pipes a test, build, lint or type-check run through a
   line filter, keeping failures, summaries and the tail while preserving the exit status.
 - A `cost` stance with `frugal`, `balanced` and `max` variants, and a `cache-hygiene` rule.
