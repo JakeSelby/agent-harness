@@ -42,7 +42,9 @@ every step is idempotent.
 `bin/harness doctor` reports versions, logins, links and drift. `bin/harness usage` summarizes
 per-session tokens and cache hit rate from a local file ([docs/usage.md](docs/usage.md)).
 `bin/harness trust <repo>` lets the stop gate run that repository's own `## Gate` block.
-`bin/harness uninstall` puts everything back.
+`bin/harness uninstall` puts everything back, leaving only your config, your personal file and
+the checkout. `bin/harness --help` lists every command and `bin/harness <command> --help` its
+flags; `bin/harness config get <key>` prints a value the way sync resolved it.
 
 ## What you get
 

@@ -24,3 +24,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: Sync dry run against the example config
+        run: |
+          mkdir -p ~/.config/agent-harness
+          cp config.example.json ~/.config/agent-harness/config.json
+          python3 bin/harness sync --dry-run

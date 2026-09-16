@@ -60,6 +60,30 @@ class TrustTests(TempHome):
         self.assertEqual(harness.trusted_path().read_text().splitlines(), [str(loose.resolve())])
 
 
+class UninstallSharedFilesTests(TempHome):
+    def test_the_path_block_is_removed_and_the_rest_of_zprofile_kept(self):
+        z = self.home / ".zprofile"
+        z.write_text("export EDITOR=vim\n\n" + harness.PATH_BLOCK + "alias ll='ls -l'\n")
+        self.assertTrue(harness.remove_local_bin_from_path())
+        self.assertEqual(z.read_text(), "export EDITOR=vim\n\nalias ll='ls -l'\n")
+        self.assertFalse(harness.remove_local_bin_from_path())
+
+    def test_the_ignore_block_is_removed_and_user_lines_kept(self):
+        g = harness.global_gitignore_path()
+        g.parent.mkdir(parents=True)
+        entries = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())["gitignore_entries"]
+        g.write_text(".DS_Store\n" + harness.IGNORE_MARKER + "\n" + "\n".join(entries) + "\nmine/\n")
+        self.assertTrue(harness.remove_gitignore_entries())
+        self.assertEqual(g.read_text(), ".DS_Store\nmine/\n")
+        self.assertFalse(harness.remove_gitignore_entries())
+
+    def test_sync_then_uninstall_leaves_no_ignore_block(self):
+        harness.ensure_gitignore_entries(dry=False)
+        self.assertIn(harness.IGNORE_MARKER, harness.global_gitignore_path().read_text())
+        harness.remove_gitignore_entries()
+        self.assertEqual(harness.global_gitignore_path().read_text(), "")
+
+
 class SettingsMergeTests(unittest.TestCase):
     def test_merge_is_idempotent(self):
         once = harness.merge_claude_settings({}, TEMPLATE, CFG)

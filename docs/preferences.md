@@ -37,6 +37,12 @@ session without a re-sync.
 
 The `plan-ceremony` stance also decides whether the plan-card validator hook is registered.
 
+## Other surfaces
+
+`"vscode": { "manage": true }` and `"codex": { "manage": true }` in the config file let sync
+write the owned VS Code keys and the Codex `AGENTS.md` and config keys. Set either to `false`
+to leave that surface alone; Claude Code is always managed.
+
 ## Permission posture
 
 `permissions` in config is `inherit` (default: the harness never touches permission mode),
