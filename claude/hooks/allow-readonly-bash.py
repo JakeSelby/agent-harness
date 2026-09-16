@@ -16,7 +16,9 @@ Behaviour:
     through to the normal permission flow. This hook never denies.
   - Output redirections to a file (`>`, `>>`, `>|`, `&>`, `>&`, `<>`) are never
     approved here; `/dev/null` and fd duplication (`2>&1`) are. Heredocs and
-    backslash continuations are not modelled and fall through.
+    backslash continuations are not modelled and fall through. A `#` comment ends
+    at its line, as it does for bash, so nothing after a comment is hidden from
+    the check.
   - Subshells that run a write, `bash -c`, `eval`, `xargs`, `sudo`, `find -exec`
     and `find -delete`, and a command built from a substitution's output are never
     approved here; nor are the write or exec flags of otherwise read-only tools
@@ -53,7 +55,7 @@ FLAGGED = {
     "fd": (("--exec", "--exec-batch"), "xX"),
     "rg": (("--pre",), ""),
     "file": (("--compile",), "C"),
-    "date": (("--set",), "s"),
+    "date": (("--set",), "s"),  # plus: no operand other than a +FORMAT
     "sysctl": (("--write",), "w"),
     "hostname": (("--file",), "F"),
     "xxd": ((), ""),
@@ -456,6 +458,8 @@ def segment_ok(tokens):
             return False
         if prog == "sysctl" and any("=" in a for a in args):
             return False
+        if prog == "date" and any(not a.startswith("+") for a in positionals(args)):
+            return False  # a bare MMDDhhmm operand sets the clock
         return True
     if prog == "awk":
         return not any(AWK_FORBIDDEN.search(a) for a in args)
@@ -579,6 +583,33 @@ def _strip_subs(cmd, depth):
     return "".join(out)
 
 
+def _strip_comment(line):
+    """`line` without its trailing bash comment: an unquoted `#` at the start of a
+    word. Substitutions are already placeholders, so only quotes need tracking."""
+    sq = dq = False
+    i = 0
+    n = len(line)
+    while i < n:
+        c = line[i]
+        if sq:
+            sq = c != "'"
+        elif dq:
+            if c == "\\":
+                i += 1
+            elif c == '"':
+                dq = False
+        elif c == "\\":
+            i += 1
+        elif c == "'":
+            sq = True
+        elif c == '"':
+            dq = True
+        elif c == "#" and (i == 0 or line[i - 1] in " \t;|&()"):
+            return line[:i]
+        i += 1
+    return line
+
+
 def _header_ok(tokens):
     """A `for NAME [in WORDS]` / `select NAME ...` header runs no command; its words
     are data. Accept the well-formed shapes; reject C-style `for (( ))` and `case`."""
@@ -596,13 +627,17 @@ def command_ok(cmd, depth=0):
     cmd = _strip_subs(cmd, depth)
     if cmd is None:
         return False
-    # A newline separates commands for bash but is whitespace to shlex, so it is
-    # made a `;` here. A backslash continuation is not modelled and falls through.
+    # A newline separates commands for bash but is whitespace to shlex, so each
+    # line loses its comment and the lines are joined with `;`. shlex's own comment
+    # handling stays off: a `#` inside a word is part of the word, as in bash. A
+    # backslash continuation is not modelled and falls through.
     if re.search(r"\\\r?\n", cmd):
         return False
-    cmd = cmd.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ; ")
+    cmd = cmd.replace("\r\n", "\n").replace("\r", "\n")
+    cmd = " ; ".join(_strip_comment(line) for line in cmd.split("\n"))
     try:
         lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+        lex.commenters = ""
         lex.whitespace_split = True
         tokens = list(lex)
     except ValueError:
