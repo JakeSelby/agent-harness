@@ -15,7 +15,7 @@ harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
 COMMANDS = REPO / "claude" / "commands"
-EXPECTED = ["build.md", "plan.md", "research.md", "review.md"]
+EXPECTED = ["build.md", "handoff.md", "plan.md", "research.md", "review.md"]
 MAX_BODY_LINES = 35
 
 
@@ -116,7 +116,7 @@ class LinkDirFilesTests(TempHome):
 
 
 class CommandContentTests(unittest.TestCase):
-    def test_the_four_commands_are_the_ones_shipped(self):
+    def test_the_shipped_commands_are_the_expected_ones(self):
         self.assertEqual(sorted(p.name for p in COMMANDS.iterdir()), EXPECTED)
 
     def test_each_command_declares_its_frontmatter_and_takes_arguments(self):
