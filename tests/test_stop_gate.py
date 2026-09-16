@@ -28,13 +28,23 @@ class StopGateTests(unittest.TestCase):
         self.repo = base / "repo"
         self.repo.mkdir()
         self.counter = base / "runs.txt"
+        self.trust(self.repo)
         self.git("init")
         (self.repo / "file.txt").write_text("one\n")
         self.git("add", "-A")
         self.git("commit", "-m", "initial")
 
-    def env(self):
+    def trust(self, *paths, config_dir=None):
+        """Record Claude Code's folder-trust flag for each path, as the tool itself would."""
+        target = (Path(config_dir) if config_dir else self.home) / ".claude.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({"projects": {
+            str(p): {"hasTrustDialogAccepted": True} for p in paths}}))
+
+    def env(self, extra=None):
         env = dict(os.environ)
+        env.pop("CLAUDE_CONFIG_DIR", None)
+        env.update(extra or {})
         env.update({
             "HOME": str(self.home),
             "GIT_CONFIG_NOSYSTEM": "1",
@@ -57,13 +67,13 @@ class StopGateTests(unittest.TestCase):
             body += "\n" + heading + "\n\n```sh\n" + "\n".join(commands) + "\n```\n"
         (self.repo / name).write_text(body)
 
-    def run_hook(self, session="s1", payload=None, stdin=None):
+    def run_hook(self, session="s1", payload=None, stdin=None, extra_env=None):
         if stdin is None:
             body = {"session_id": session, "cwd": str(self.repo),
                     "hook_event_name": "Stop", "stop_hook_active": False}
             body.update(payload or {})
             stdin = json.dumps(body)
-        return subprocess.run([sys.executable, str(HOOK)], input=stdin, env=self.env(),
+        return subprocess.run([sys.executable, str(HOOK)], input=stdin, env=self.env(extra_env),
                               capture_output=True, text=True, timeout=180)
 
     def state_files(self):
@@ -152,6 +162,50 @@ class StopGateTests(unittest.TestCase):
         recorded = self.state()
         self.assertEqual(recorded["blocks"], 1)
         self.assertEqual(recorded["session_id"], "s2")
+
+    def test_an_untrusted_folder_never_runs_the_gate(self):
+        self.write_gate('echo run >> "%s"' % self.counter, "exit 1")
+        for absent in ((self.home / ".claude.json").unlink, lambda: self.trust()):
+            absent()
+            out = self.run_hook()
+            self.assertEqual(out.returncode, 0)
+            self.assertEqual(out.stdout.strip(), "")
+            self.assertIn("not trusted", out.stderr)
+            self.assertFalse(self.counter.exists())
+            self.assertEqual(self.state_files(), [])
+
+    def test_trust_recorded_for_another_folder_does_not_count(self):
+        self.write_gate("exit 1")
+        self.trust(Path(self.tmp.name) / "elsewhere")
+        out = self.run_hook()
+        self.assertEqual(out.stdout.strip(), "")
+        self.assertEqual(self.state_files(), [])
+
+    def test_trust_on_the_launch_directory_inside_the_repo_counts(self):
+        self.write_gate("exit 1")
+        sub = self.repo / "pkg" / "inner"
+        sub.mkdir(parents=True)
+        self.trust(self.repo / "pkg")
+        out = self.run_hook(payload={"cwd": str(sub)})
+        self.assertEqual(json.loads(out.stdout)["decision"], "block")
+
+    def test_a_root_listed_by_harness_trust_counts_without_the_dialog(self):
+        self.write_gate("exit 1")
+        (self.home / ".claude.json").unlink()
+        listed = self.home / ".config" / "agent-harness" / "trusted.txt"
+        listed.parent.mkdir(parents=True)
+        listed.write_text("# roots\n" + str(Path(self.tmp.name) / "other") + "\n")
+        self.assertEqual(self.run_hook().stdout.strip(), "")
+        listed.write_text(listed.read_text() + str(self.repo) + "\n")
+        self.assertEqual(json.loads(self.run_hook().stdout)["decision"], "block")
+
+    def test_trust_is_read_from_claude_config_dir_when_set(self):
+        self.write_gate("exit 1")
+        (self.home / ".claude.json").unlink()
+        alt = Path(self.tmp.name) / "alt-config"
+        self.trust(self.repo, config_dir=alt)
+        out = self.run_hook(extra_env={"CLAUDE_CONFIG_DIR": str(alt)})
+        self.assertEqual(json.loads(out.stdout)["decision"], "block")
 
     def test_malformed_stdin_exits_quietly(self):
         self.write_gate("exit 1")
