@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-16
+
 ### Added
 
 - `permissions.deny` rules in the settings template for credential files and generated
@@ -85,5 +87,6 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.2.0
 [0.1.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.1.1
