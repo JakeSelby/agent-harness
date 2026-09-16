@@ -4,6 +4,10 @@
 
 Opt-in per repository — the gate is the fenced block under the `## Gate` heading of the
 repo's `AGENTS.md`, one shell command per line. A repo without that block is untouched.
+Trusted folders only: the block is a repository's own text, so it runs only where Claude
+Code's folder-trust dialog has been accepted (the `hasTrustDialogAccepted` flag it records
+per project), the same consent that gates a repository's `.claude/settings.json` hooks, or
+where the root is listed in ~/.config/agent-harness/trusted.txt by `harness trust`.
 Bounded: after MAX_BLOCKS consecutive blocks the turn is released, so a gate that can never
 pass cannot trap a session. A timeout or any error releases the turn too.
 """
@@ -20,6 +24,7 @@ BUDGET_SECONDS = 240
 TAIL_LINES = 30
 GATE_FILES = ("AGENTS.md", "CLAUDE.md")
 STATE = Path.home() / ".local" / "state" / "agent-harness" / "stop-gate"
+TRUSTED = Path.home() / ".config" / "agent-harness" / "trusted.txt"
 
 
 def git(root, *args):
@@ -34,6 +39,49 @@ def git(root, *args):
 def git_root(cwd):
     root = git(cwd, "rev-parse", "--show-toplevel").strip()
     return root or None
+
+
+def claude_config():
+    """Claude Code's per-user state file, honouring CLAUDE_CONFIG_DIR."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(config_dir) if config_dir else Path.home()) / ".claude.json"
+
+
+def listed_roots():
+    """Roots recorded by `harness trust`, as written and resolved."""
+    try:
+        lines = TRUSTED.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    roots = set()
+    for ln in lines:
+        ln = ln.strip()
+        if ln and not ln.startswith("#"):
+            roots.update((ln, str(Path(ln).resolve())))
+    return roots
+
+
+def trusted(root, cwd):
+    """True when the folder-trust dialog has been accepted for the working directory, the
+    repository root, or a directory between them, or when `harness trust` listed the root."""
+    try:
+        projects = json.loads(claude_config().read_text(encoding="utf-8")).get("projects") or {}
+    except Exception:
+        projects = {}
+    if not isinstance(projects, dict):
+        projects = {}
+    top = Path(root).resolve()
+    if listed_roots() & {str(Path(root)), str(top)}:
+        return True
+    keys = {str(Path(root)), str(top)}
+    path = Path(cwd)
+    while path.resolve() == top or top in path.resolve().parents:
+        keys.update((str(path), str(path.resolve())))  # symlinked temp dirs record either form
+        if path.resolve() == top:
+            break
+        path = path.parent
+    return any(isinstance(projects.get(k), dict) and projects[k].get("hasTrustDialogAccepted") is True
+               for k in keys)
 
 
 def gate_file(root):
@@ -140,11 +188,16 @@ def main():
         return
     if not isinstance(payload, dict):
         return
-    root = git_root(payload.get("cwd") or os.getcwd())
+    cwd = payload.get("cwd") or os.getcwd()
+    root = git_root(cwd)
     if not root:
         return
     commands = gate_commands(root)
     if not commands:
+        return
+    if not trusted(root, cwd):
+        sys.stderr.write("stop-gate: folder not trusted in Claude Code and not listed by "
+                         "`harness trust`; gate skipped\n")
         return
 
     current = tree_hash(root)

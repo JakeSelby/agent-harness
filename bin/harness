@@ -155,6 +155,11 @@ def applied_path() -> Path:
     return state_dir() / "applied.json"
 
 
+def trusted_path() -> Path:
+    """Repository roots whose `## Gate` block the stop-gate hook may run, one per line."""
+    return home() / ".config" / "agent-harness" / "trusted.txt"
+
+
 def vscode_settings_path() -> Path:
     if os.environ.get("HARNESS_VSCODE_SETTINGS"):
         return Path(os.environ["HARNESS_VSCODE_SETTINGS"])
@@ -1040,6 +1045,26 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_trust(args: argparse.Namespace) -> int:
+    """Record (or with --remove, forget) a repository root the stop-gate hook may run a gate in."""
+    start = Path(args.path).expanduser() if args.path else Path.cwd()
+    probe = subprocess.run(["git", "-C", str(start), "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True)
+    root = Path(probe.stdout.strip()) if probe.returncode == 0 and probe.stdout.strip() else start.resolve()
+    path = trusted_path()
+    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+    roots = [ln for ln in lines if ln and not ln.startswith("#")]
+    if args.remove:
+        roots = [r for r in roots if Path(r) != root]
+    elif str(root) not in roots:
+        roots.append(str(root))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(r + "\n" for r in roots), encoding="utf-8")
+    say(("forgot " if args.remove else "trusted ") + str(root))
+    say(f"  {path}: {len(roots)} root(s)")
+    return 0
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
     """Summarize the session records the usage-log hook writes. Local file only."""
     path = state_dir() / "usage.jsonl"
@@ -1134,6 +1159,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--by", choices=["day", "repo", "model"], default="day")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
     p.set_defaults(func=cmd_usage)
+
+    p = sub.add_parser("trust", help="let the stop-gate hook run a repository's `## Gate` block (default: the current repo)")
+    p.add_argument("path", nargs="?")
+    p.add_argument("--remove", action="store_true", help="forget the root instead")
+    p.set_defaults(func=cmd_trust)
 
     p = sub.add_parser("workspace", help="create a multi-root workspace with a shared session store")
     p.add_argument("action")

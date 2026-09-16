@@ -42,6 +42,24 @@ class TempHome(unittest.TestCase):
         self.tmp.cleanup()
 
 
+class TrustTests(TempHome):
+    def test_trust_records_the_git_root_and_remove_forgets_it(self):
+        repo = self.home / "work" / "repo"
+        (repo / "sub").mkdir(parents=True)
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        ns = harness.argparse.Namespace
+        self.assertEqual(harness.cmd_trust(ns(path=str(repo / "sub"), remove=False)), 0)
+        self.assertEqual(harness.cmd_trust(ns(path=str(repo), remove=False)), 0)
+        listed = harness.trusted_path().read_text().splitlines()
+        self.assertEqual(listed, [str(repo.resolve())])
+        loose = self.home / "loose"
+        loose.mkdir()
+        harness.cmd_trust(ns(path=str(loose), remove=False))
+        self.assertEqual(len(harness.trusted_path().read_text().splitlines()), 2)
+        harness.cmd_trust(ns(path=str(repo), remove=True))
+        self.assertEqual(harness.trusted_path().read_text().splitlines(), [str(loose.resolve())])
+
+
 class SettingsMergeTests(unittest.TestCase):
     def test_merge_is_idempotent(self):
         once = harness.merge_claude_settings({}, TEMPLATE, CFG)

@@ -26,7 +26,8 @@ python3 -m unittest discover -s tests
 ```
 
 The `stop-gate` hook runs this block when the tree has changed since its last green run,
-blocks the turn while it is red, and releases after eight consecutive blocks.
+blocks the turn while it is red, and releases after eight consecutive blocks. It runs only
+once this checkout is trusted: accept Claude Code's folder dialog or run `bin/harness trust .`.
 
 ## How the checkout is used
 
