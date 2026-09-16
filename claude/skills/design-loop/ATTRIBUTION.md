@@ -1,6 +1,7 @@
 # Attribution
 
-Recorded per `~/.claude/rules/licensing.md` and the `licensing-review` procedure. This skill is a
+Recorded per the chosen `licensing` stance (`~/.claude/rules/harness-stances/licensing.md`) and
+the `licensing-review` procedure. This skill is a
 development tool and is not shipped in any product; the record is kept because the policy applies
 to copied material regardless of destination.
 
