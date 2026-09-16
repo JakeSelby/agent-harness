@@ -30,7 +30,7 @@ import sys
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
@@ -281,7 +281,10 @@ def _is_harness_entry(entry: Dict[str, Any]) -> bool:
     return False
 
 
-def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: Dict[str, Any],
+                          retired: Iterable[str] = ()) -> Dict[str, Any]:
+    """`retired` names allow rules an earlier template added that this one no longer carries;
+    they are removed so a rule withdrawn upstream does not outlive it in a user's settings."""
     out = deepcopy(live) if live else {}
     ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
     owned = ownership.get("claude", {}).get("owned_keys", [])
@@ -292,7 +295,7 @@ def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: D
     p = posture(cfg)
     if p != "inherit":
         perms["defaultMode"] = POSTURES[p]["claude"]
-    allow = list(perms.get("allow", []))
+    allow = [r for r in perms.get("allow", []) if r not in set(retired)]
     for rule in template.get("permissions", {}).get("allow", []):
         if rule not in allow:
             allow.append(rule)
@@ -340,6 +343,13 @@ def strip_claude_settings(live: Dict[str, Any], template: Dict[str, Any]) -> Dic
     if not hooks:
         out.pop("hooks", None)
     return out
+
+
+def retired_allow_rules(applied: Dict[str, Any], template: Dict[str, Any]) -> List[str]:
+    """Allow rules the last synced template carried that the current template has dropped."""
+    previous = (applied.get("template") or {}).get("allow") or []
+    current = set(template.get("permissions", {}).get("allow", []))
+    return [r for r in previous if r not in current]
 
 
 def claude_projection(settings: Dict[str, Any], template: Dict[str, Any]) -> Dict[str, Any]:
@@ -603,8 +613,8 @@ def cmd_sync(args: argparse.Namespace) -> int:
     settings_file = cd / "settings.json"
     live = read_json(settings_file) or {}
     mtime = settings_file.stat().st_mtime if settings_file.exists() else None
-    merged = merge_claude_settings(live, template, cfg)
     applied = read_json(applied_path()) or {}
+    merged = merge_claude_settings(live, template, cfg, retired=retired_allow_rules(applied, template))
     if merged != live:
         say(f"  merge   {settings_file}")
         if not dry:

@@ -9,16 +9,20 @@ subcommand, which Claude Code warns about and which would also match writes.
 Behaviour:
   - Approves only when EVERY command that would run is read-only under the grammar
     below. Compound commands are decomposed first: pipelines and `;`/`&&`/`||`
-    sequences, `for`/`while`/`until`/`if` blocks, subshell `( ... )` and group
-    `{ ...; }`, and command substitutions `$(...)` / backticks / `<(...)` are each
-    verified, recursively, and the whole thing is approved only if every part is.
-    Anything the grammar cannot prove read-only returns no decision and falls
+    sequences, newlines, `for`/`while`/`until`/`if` blocks, subshell `( ... )` and
+    group `{ ...; }`, and command substitutions `$(...)` / backticks / `<(...)` are
+    each verified, recursively, and the whole thing is approved only if every part
+    is. Anything the grammar cannot prove read-only returns no decision and falls
     through to the normal permission flow. This hook never denies.
-  - Output redirections to a file (`>`, `>>`) are never approved here; `/dev/null`
-    and fd-only forms are.
+  - Output redirections to a file (`>`, `>>`, `>|`, `&>`, `>&`, `<>`) are never
+    approved here; `/dev/null` and fd duplication (`2>&1`) are. Heredocs and
+    backslash continuations are not modelled and fall through.
   - Subshells that run a write, `bash -c`, `eval`, `xargs`, `sudo`, `find -exec`
     and `find -delete`, and a command built from a substitution's output are never
-    approved here.
+    approved here; nor are the write or exec flags of otherwise read-only tools
+    (`sort -o`, `fd -x`, `rg --pre`, `sed w`, awk's `system()`), a program run by
+    path outside the system bin directories, or an environment assignment that
+    steers a later command (`PATH`, `GIT_*`, `NODE_OPTIONS` and the like).
 
 Test: echo '{"tool_name":"Bash","tool_input":{"command":"git -C /x status"}}' | python3 allow-readonly-bash.py
 """
@@ -30,20 +34,36 @@ import sys
 # Commands that are read-only regardless of arguments. Claude Code still checks
 # redirect targets on its own; we refuse file redirects below anyway.
 PLAIN = {
-    "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "find", "fd",
-    "tree", "stat", "file", "du", "df", "pwd", "echo", "printf", "true", "false",
-    "test", "[", "which", "type", "whoami", "id", "uname", "sw_vers", "date", "env",
-    "printenv", "basename", "dirname", "realpath", "readlink", "sort", "uniq", "cut",
-    "tr", "awk", "jq", "yq", "column", "nl", "od", "xxd", "strings", "md5", "md5sum",
+    "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "find",
+    "stat", "du", "df", "pwd", "echo", "printf", "true", "false",
+    "test", "[", "which", "type", "whoami", "id", "uname", "sw_vers",
+    "printenv", "basename", "dirname", "realpath", "readlink", "uniq", "cut",
+    "tr", "jq", "column", "nl", "od", "strings", "md5", "md5sum",
     "shasum", "sha256sum", "diff", "cmp", "comm", "tac", "rev", "seq", "expr",
-    "cd", "hostname", "arch", "nproc", "sysctl", "lsof", "ps", "top", "uptime",
+    "cd", "arch", "nproc", "lsof", "ps", "top", "uptime",
     "read", "fold", "paste", "join", "look", "hexdump", "base64", "cksum",
 }
+
+# Read-only unless one of these flags appears: a long option matched by prefix, or a
+# letter anywhere in a short-option cluster, so `-Hx` is caught the same as `-x`.
+FLAGGED = {
+    "sort": (("--output", "--compress-program"), "o"),
+    "tree": ((), "o"),
+    "yq": (("--inplace", "--split-exp"), "is"),
+    "fd": (("--exec", "--exec-batch"), "xX"),
+    "rg": (("--pre",), ""),
+    "file": (("--compile",), "C"),
+    "date": (("--set",), "s"),
+    "sysctl": (("--write",), "w"),
+    "hostname": (("--file",), "F"),
+    "xxd": ((), ""),
+}
+# Operands beyond this count name an output file (`xxd in out`) or set state (`hostname x`).
+POSITIONAL_MAX = {"xxd": 1, "hostname": 0}
 
 # Commands read-only only when the arguments match the given regex
 # (matched against the argument string after the program name).
 PREFIXED = [
-    ("sed", r"^-n(\s|$)"),
     ("gh", r"^(auth status|repo view|repo list|pr view|pr list|pr diff|pr checks|pr status|"
            r"issue view|issue list|run list|run view|release list|release view|label list|"
            r"search \S+|api (-X GET |--method GET )?\S+$|--version)"),
@@ -57,11 +77,24 @@ PREFIXED = [
     ("node", r"^--version$"),
     ("claude", r"^--version$"),
     ("rustc", r"^--version$"),
-    ("go", r"^(version|env)(\s|$)"),
-    ("export", r"^([A-Za-z_][A-Za-z0-9_]*(=\S*)?\s*)+$"),
     ("brew", r"^(list|info|--version|--prefix)(\s|$)"),
     ("aws", r"^sts get-caller-identity(\s|$)"),
 ]
+
+# Variables that change which program runs or what it executes: assigning one, even
+# without `export`, is a way to steer an approved command. `PAGER=cat` is the one
+# idiom worth keeping.
+DANGEROUS_ENV = re.compile(
+    r"^(PATH|LD_|DYLD_|GIT_|PAGER|LESS|EDITOR|VISUAL|NODE_OPTIONS|PYTHON|PERL|RUBY|BASH_ENV|"
+    r"ENV$|IFS|CDPATH|GLOBIGNORE|HOME|SHELL|TMPDIR|PS4|PROMPT_COMMAND|AWKPATH|AWKLIBPATH|"
+    r"GREP_OPTIONS|BROWSER|MANPATH|GH_|NPM_|CARGO|RUSTC|GOFLAGS|GOENV|UV_|HOMEBREW|SSH_|"
+    r"PYENV|NVM|JAVA|_JAVA|CLASSPATH|JQ_)"
+)
+PAGER_OK = re.compile(r"^(PAGER|GIT_PAGER)=(cat)?$")
+
+# A program named by absolute path is approved only from these directories; a
+# repository can ship a `bin/cat` of its own.
+SAFE_BIN_DIRS = {"/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/sbin", "/usr/sbin"}
 
 # git subcommands that are read-only with any arguments.
 GIT_ANY = {
@@ -71,7 +104,10 @@ GIT_ANY = {
     "diff-files", "grep", "whatchanged", "version", "--version", "help",
 }
 
-GIT_ARGS_WRITE = re.compile(r"^--output")
+GIT_ARGS_WRITE = re.compile(r"^(--output|--open-files-in-pager|-O)")
+
+# awk: shell escapes, file output, script files and extension loading.
+AWK_FORBIDDEN = re.compile(r"system\s*\(|getline|[|>]|@load|@include|^-[filE]|^--(file|include|load|exec)")
 
 FIND_FORBIDDEN = {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"}
 NEVER = {"sudo", "eval", "exec", "bash", "sh", "zsh", "xargs", "source", "."}
@@ -90,6 +126,199 @@ WORD_HEADER = {"for", "select", "case"}
 NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PLACEHOLDER = "__ROSUB__"  # stands in for a verified substitution; never a real command
+
+# Redirection tokens that are safe on their own: input redirects (their operand is
+# read, never written) and fd duplication.
+READ_REDIRECTS = {"<", "<<", "<<<", "<&"}
+WRITE_REDIRECTS = re.compile(r"^\d*(>|>>|&>|>&)$")
+PUNCTUATION_RUN = re.compile(r"^\d*[<>&|]+$")
+
+
+def assignment_ok(token):
+    """`NAME=value` may precede a command, or stand alone, only when NAME cannot
+    steer what a later approved command runs."""
+    return PAGER_OK.match(token) is not None or DANGEROUS_ENV.match(token) is None
+
+
+def flags_hit(args, longs, shorts):
+    for a in args:
+        if a == "--":
+            break
+        if a.startswith("--"):
+            if any(a.startswith(l) for l in longs):
+                return True
+        elif a.startswith("-") and len(a) > 1:
+            if any(ch in shorts for ch in a[1:]):
+                return True
+    return False
+
+
+def positionals(args):
+    out, opts_done = [], False
+    for a in args:
+        if a == "--":
+            opts_done = True
+        elif opts_done or not a.startswith("-"):
+            out.append(a)
+    return out
+
+
+def _skip_delimited(s, i, delim):
+    """Index just past the next unescaped `delim` from s[i], honouring bracket
+    expressions; None when the section never closes."""
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "[":
+            j = i + 1
+            if j < n and s[j] == "^":
+                j += 1
+            if j < n and s[j] == "]":
+                j += 1
+            while j < n and s[j] != "]":
+                j += 1
+            if j >= n:
+                return None
+            i = j + 1
+            continue
+        if c == delim:
+            return i + 1
+        i += 1
+    return None
+
+
+def sed_script_ok(s):
+    """True when a sed script only prints, edits the pattern space, branches or
+    quits — never `w`, `W`, `e` or the `w`/`e` flags of `s`."""
+    n = len(s)
+    i = 0
+    while i < n:
+        c = s[i]
+        if c in " \t\n;":
+            i += 1
+            continue
+        if c == "#":
+            while i < n and s[i] != "\n":
+                i += 1
+            continue
+        # Addresses: N, $, /re/, \cREc, optional ~step, I/M flags, a comma and a second one.
+        while i < n:
+            c = s[i]
+            if c.isdigit() or c in "$+~":
+                while i < n and (s[i].isdigit() or s[i] in "$~+"):
+                    i += 1
+            elif c == "/":
+                i = _skip_delimited(s, i + 1, "/")
+            elif c == "\\" and i + 1 < n:
+                i = _skip_delimited(s, i + 2, s[i + 1])
+            else:
+                break
+            if i is None:
+                return False
+            while i < n and s[i] in "IM":
+                i += 1
+            while i < n and s[i] in " \t":
+                i += 1
+            if i < n and s[i] == ",":
+                i += 1
+                while i < n and s[i] in " \t":
+                    i += 1
+                continue
+            break
+        while i < n and s[i] in " \t!":
+            i += 1
+        if i >= n:
+            return True
+        cmd = s[i]
+        i += 1
+        if cmd in "wWe":
+            return False
+        if cmd in "{}pPnNdDhHgGxz=F":
+            continue
+        if cmd in ":btT" or cmd in "rR" or cmd in "aic":
+            while i < n and s[i] != "\n":
+                i += 1
+            continue
+        if cmd in "qQlLv":
+            while i < n and s[i].isdigit():
+                i += 1
+            continue
+        if cmd in "sy":
+            if i >= n:
+                return False
+            delim = s[i]
+            i = _skip_delimited(s, i + 1, delim)
+            if i is None:
+                return False
+            i = _skip_delimited(s, i, delim)
+            if i is None:
+                return False
+            if cmd == "s":
+                while i < n and s[i] in "gpImM0123456789":
+                    i += 1
+                if i < n and s[i] not in " \t\n;}":
+                    return False  # `e`, `w file`, or a flag this parser does not know
+            continue
+        return False
+    return True
+
+
+def sed_ok(args):
+    """`sed -n` with inline scripts that never write or execute: no -i, no -f, no w/e."""
+    scripts, files, i, saw_n = [], [], 0, False
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            files.extend(args[i + 1:])
+            break
+        if a.startswith("--"):
+            name, eq, value = a.partition("=")
+            if name in ("--quiet", "--silent"):
+                saw_n = True
+            elif name == "--expression":
+                if eq:
+                    scripts.append(value)
+                elif i + 1 < len(args):
+                    scripts.append(args[i + 1])
+                    i += 1
+                else:
+                    return False
+            elif name in ("--regexp-extended", "--separate", "--unbuffered", "--null-data",
+                          "--posix", "--debug", "--sandbox", "--line-length"):
+                if name == "--line-length" and not eq:
+                    i += 1
+            else:
+                return False
+        elif a.startswith("-") and len(a) > 1:
+            letters = a[1:]
+            for k, ch in enumerate(letters):
+                if ch == "n":
+                    saw_n = True
+                elif ch in "Ersuz":
+                    pass
+                elif ch == "e":
+                    rest = letters[k + 1:]
+                    if rest:
+                        scripts.append(rest)
+                    elif i + 1 < len(args):
+                        scripts.append(args[i + 1])
+                        i += 1
+                    else:
+                        return False
+                    break
+                elif ch == "l":
+                    if not letters[k + 1:]:
+                        i += 1
+                    break
+                else:
+                    return False  # -i, -f, and anything unknown
+        else:
+            (files if scripts else scripts).append(a)
+        i += 1
+    return saw_n and bool(scripts) and all(sed_script_ok(s) for s in scripts)
 
 
 def git_ok(args):
@@ -152,59 +381,94 @@ def git_ok(args):
     return False
 
 
-def segment_ok(tokens):
-    """True when a single simple command (already free of substitutions and of the
-    structural keywords) is read-only."""
-    # Refuse file redirections; allow fd-only forms and /dev/null.
+def strip_redirects(tokens):
+    """Tokens with safe redirections removed; None when any redirection writes a file."""
     cleaned = []
     i = 0
     while i < len(tokens):
         t = tokens[i]
-        if t in (">", ">>", "<", "<<", "<<<", "2>", "&>", ">&", "<&"):
-            target = tokens[i + 1] if i + 1 < len(tokens) else ""
-            if t in (">", ">>", "2>", "&>") and target != "/dev/null":
-                return False
-            i += 2
-            continue
-        if re.match(r"^\d*>&\d+$", t) or t in ("2>&1", "1>&2"):
+        if not PUNCTUATION_RUN.match(t):
+            cleaned.append(t)
             i += 1
             continue
-        if re.match(r"^\d*>>?$", t):
-            target = tokens[i + 1] if i + 1 < len(tokens) else ""
-            if target != "/dev/null":
-                return False
+        target = tokens[i + 1] if i + 1 < len(tokens) else ""
+        if t in READ_REDIRECTS:
             i += 2
-            continue
-        cleaned.append(t)
-        i += 1
-    tokens = cleaned
+        elif re.match(r"^\d*>&$", t) and re.match(r"^\d+$", target):
+            i += 2  # 2>&1
+        elif WRITE_REDIRECTS.match(t) and target == "/dev/null":
+            i += 2
+        else:
+            return None  # a file is written, or an operator this hook does not model
+    return cleaned
+
+
+def segment_ok(tokens):
+    """True when a single simple command (already free of substitutions and of the
+    structural keywords) is read-only."""
+    tokens = strip_redirects(tokens)
     if not tokens:
         return False
     # Strip leading assignments (LANG=C, S=/path, NAME=value cmd ...). A segment
-    # that is nothing but assignments runs no command, so it is read-only.
+    # that is nothing but assignments runs no command, so it is read-only — unless
+    # the variable steers a command that runs later in the same call.
     while tokens and ASSIGN_RE.match(tokens[0]):
+        if not assignment_ok(tokens[0]):
+            return False
         tokens = tokens[1:]
     if not tokens:
         return True
     for t in tokens:
         if "$(" in t or "`" in t or "<(" in t or ">(" in t:
             return False  # an unextracted substitution: fail closed
-    prog = tokens[0].rsplit("/", 1)[-1] if tokens[0].startswith("/") else tokens[0]
+    head = tokens[0]
+    if "/" in head:
+        base, _, prog = head.rpartition("/")
+        if base not in SAFE_BIN_DIRS:
+            return False  # a relative path, or a binary outside the system directories
+    else:
+        prog = head
     args = tokens[1:]
     if prog in NEVER:
         return False
     if prog in ("timeout", "time", "nice", "nohup", "stdbuf", "command", "noglob"):
         return segment_ok(args[1:] if prog == "timeout" and args else args)
+    if prog == "env":
+        while args and ASSIGN_RE.match(args[0]):
+            if not assignment_ok(args[0]):
+                return False
+            args = args[1:]
+        if not args:
+            return True
+        return not args[0].startswith("-") and segment_ok(args)
+    if prog == "export":
+        return bool(args) and all(
+            NAME_RE.match(a.split("=", 1)[0]) is not None and assignment_ok(a) for a in args)
     if prog == "find":
         return not any(a in FIND_FORBIDDEN for a in args)
     if prog in PLAIN:
         return True
+    if prog in FLAGGED:
+        longs, shorts = FLAGGED[prog]
+        if flags_hit(args, longs, shorts):
+            return False
+        if prog in POSITIONAL_MAX and len(positionals(args)) > POSITIONAL_MAX[prog]:
+            return False
+        if prog == "sysctl" and any("=" in a for a in args):
+            return False
+        return True
+    if prog == "awk":
+        return not any(AWK_FORBIDDEN.search(a) for a in args)
+    if prog == "sed":
+        return sed_ok(args)
     if prog == "git":
         return git_ok(args)
+    if prog == "go":
+        return bool(args) and (args[0] == "version" or (args[0] == "env" and not flags_hit(args[1:], (), "wu")))
     for name, pattern in PREFIXED:
         if prog == name:
             return re.match(pattern, " ".join(args)) is not None
-    if args == ["--version"]:
+    if args == ["--version"] and "/" not in head:
         return True
     return False
 
@@ -332,6 +596,11 @@ def command_ok(cmd, depth=0):
     cmd = _strip_subs(cmd, depth)
     if cmd is None:
         return False
+    # A newline separates commands for bash but is whitespace to shlex, so it is
+    # made a `;` here. A backslash continuation is not modelled and falls through.
+    if re.search(r"\\\r?\n", cmd):
+        return False
+    cmd = cmd.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ; ")
     try:
         lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
