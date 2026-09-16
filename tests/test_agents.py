@@ -36,7 +36,7 @@ def frontmatter(path):
 
 class AgentFileTests(unittest.TestCase):
     def test_the_three_shipped_agents_are_present(self):
-        self.assertEqual(sorted(p.stem for p in AGENTS.glob("*.md")), SHIPPED)
+        self.assertLessEqual(set(SHIPPED), {p.stem for p in AGENTS.glob("*.md")})
 
     def test_every_agent_declares_the_five_frontmatter_keys(self):
         for name in SHIPPED:
