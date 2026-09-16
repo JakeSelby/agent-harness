@@ -34,18 +34,24 @@ is `settings.json`, because Claude Code writes to it too.
   long: how to write a plan someone can review in one screen, how to run a design loop with an
   independent judge, how to contribute to someone else's repo.
 - **Agents** are subagent definitions the harness ships so the delegation tiers are enforced by
-  frontmatter instead of by a brief someone retypes: `gatherer` for read-only gathering,
-  `reviewer` for fresh-context adversarial review, `log-compressor` for reducing a test or build
-  log to its failures. Each carries its model, its effort level and its tool list, and the tool
-  list is what makes a read-only agent read-only. Frontmatter `model` beats the
-  `CLAUDE_CODE_SUBAGENT_MODEL` environment variable, and a project overrides any of them by
-  placing a same-named file in its own `.claude/agents/`.
+  frontmatter instead of by a brief someone retypes: `builder` for implementing one issue or plan
+  in a worktree of its own, `design-judge` for scoring a render against the design loop's rubric,
+  `gatherer` for read-only gathering, `log-compressor` for reducing a test or build log to its
+  failures, `planner` for writing a plan file to the Review Card contract, `reviewer` for
+  fresh-context adversarial review, `spec-reviewer` for checking a diff against what was actually
+  asked for. Each carries its model, its effort level and its tool list, and the tool list is what
+  makes a read-only agent read-only. `builder` is the only one holding `Edit` and `Write`
+  together, because implementation is the one delegated job that has to change existing files; it
+  commits locally and never pushes, which is how writes stay single-threaded while several agents
+  run at once. Frontmatter `model` beats the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable,
+  and a project overrides any of them by placing a same-named file in its own `.claude/agents/`.
 - **Commands** are the ritual in five keystrokes, each one composing skills you already have.
   `/research` splits a question into at most three dimensions, fans out read-only gatherers and
   returns one synthesized digest. `/plan` runs `plan-authoring`, writes the plan under
   `.claude/plans/` and stops at the build gate. `/build` takes the approved plan into its own
   worktree, implements it with tests, runs the repo's gate and opens the pull request.
-  `/review` puts a fresh-context reviewer on the diff and reports findings only. They run in
+  `/review` makes two passes over the diff, `spec-reviewer` on scope and then `reviewer` on
+  quality, each in its own fresh context, and reports findings only. They run in
   that order, and the worktree is created at build, never earlier. `/handoff` closes the session
   out, and is described under the handoff loop below.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
