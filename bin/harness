@@ -40,7 +40,10 @@ POSTURES = {
     "auto": {"claude": "auto", "vscode": None, "codex": ("on-failure", "workspace-write")},
     "manual": {"claude": "default", "vscode": "default", "codex": ("untrusted", "read-only")},
 }
-HARNESS_HOOK_BASENAMES = ["validate-plan-card.py", "allow-readonly-bash.py", "harness-session.py"]
+HARNESS_HOOK_BASENAMES = [
+    "validate-plan-card.py", "allow-readonly-bash.py", "harness-session.py",
+    "neutralize-tool-output.py",
+]
 LEGACY_RULES = [
     "decisions-and-plans.md", "delegation.md", "git-conventions.md", "licensing.md",
     "research-limits.md", "transcript-hygiene.md", "voice-and-format.md", "working-style.md",
