@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-16
+
+### Added
+
+- `harness trust <path>` records a repository root whose `## Gate` block the stop gate may
+  run, and `--remove` forgets it; the list lives in `~/.config/agent-harness/trusted.txt`.
+
 ### Security
 
 - The `stop-gate` hook runs a repository's `## Gate` block only in a folder whose trust dialog
@@ -133,7 +140,8 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.0
 [0.3.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.2.0
 [0.1.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.1.1
