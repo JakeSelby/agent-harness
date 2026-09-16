@@ -18,6 +18,16 @@ bin/harness doctor                        # versions, logins, links, drift
 skipped tests. Tests run under the system Python 3.9 and under a current Python; keep the
 code free of syntax newer than 3.9.
 
+## Gate
+
+```sh
+python3 bin/harness lint
+python3 -m unittest discover -s tests
+```
+
+The `stop-gate` hook runs this block when the tree has changed since its last green run,
+blocks the turn while it is red, and releases after eight consecutive blocks.
+
 ## How the checkout is used
 
 - **This checkout is live.** `harness sync` symlinks `claude/rules`, each `claude/skills/*`,
