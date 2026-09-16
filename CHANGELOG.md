@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-16
+
+### Added
+
+- A `plan-webfetch` PreToolUse hook that approves `WebFetch` while in plan mode, for
+  `http`/`https` URLs only, so gathering context for a plan no longer prompts for every
+  documentation URL. Every other permission mode is unchanged, and the `neutralize` hook still
+  scans the fetched text (#37).
+
+### Changed
+
+- The `readonly-bash` hook now decomposes compound commands — `;`/`&&`/pipelines,
+  `for`/`while`/`until`/`if` blocks, subshell `( )` and group `{ }`, and command substitutions
+  `$(...)`, backticks and `<(...)` — and approves the whole only when every command inside is
+  read-only, so plan mode stops prompting for read-only loops and substitutions. A write
+  anywhere still falls through, and a reserved word used as an argument, such as `grep -q done`,
+  is treated as data rather than syntax (#37).
+
 ## [0.2.0] — 2026-09-16
 
 ### Added
@@ -87,6 +105,7 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.2.0
 [0.1.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.1.1
