@@ -11,7 +11,7 @@ target. Changing framing between rounds makes scores meaningless.
 Look for an existing way to run and capture before building one:
 
 - A project skill covering launch or rendering
-- The `run` skill, which launches the app and can screenshot it
+- Claude Code's built-in `run` skill, which launches the app and can screenshot it
 - Existing render or gallery scripts in the repo
 
 Use what exists. A one-off script that duplicates the repo's renderer will drift from it.

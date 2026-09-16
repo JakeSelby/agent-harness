@@ -66,7 +66,7 @@ Prefer an approved reference plate or a prior blessed render as the target.
 Two reasons, both load-bearing:
 
 - **Licensing.** Generated image → image-to-3D → shipped asset is a derivation chain on unresolved
-  terms. `~/.claude/rules/licensing.md` keeps unresolved material out of production.
+  terms. The chosen `licensing` stance keeps unresolved material out of production.
 - **Correctness.** An image model does not respect real-world scale, LOD budget or readability at
   playable zoom. Matching its frame produces a beautiful hero shot that is wrong in the game.
 
