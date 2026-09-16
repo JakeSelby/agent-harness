@@ -39,6 +39,17 @@
             "statusMessage": "Checking plan Review Card"
           }
         ]
+      },
+      {
+        "matcher": "Bash|WebFetch|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/neutralize-tool-output.py # harness:neutralize",
+            "timeout": 5,
+            "statusMessage": "Scanning tool output"
+          }
+        ]
       }
     ],
     "SessionStart": [

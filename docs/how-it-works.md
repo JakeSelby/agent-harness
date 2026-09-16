@@ -41,7 +41,17 @@ is `settings.json`, because Claude Code writes to it too.
   placing a same-named file in its own `.claude/agents/`.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
   that checks every plan file against the card contract, a classifier that lets read-only shell
-  commands through in plan mode, a session-start check for drift and env overrides.
+  commands through in plan mode, a session-start check for drift and env overrides, and a
+  scanner that flags instruction-shaped text in `Bash`, `WebFetch` and `Read` output.
+
+  The scanner is advisory: on a match it appends one line naming the tool and the patterns it
+  matched — control tags, "ignore previous instructions", directives addressed to the agent,
+  attribution instructions, environment-update mimicry, and edits to settings or permissions —
+  and it never blocks a call or rewrites a result. Claude Code already wraps subagent returns in
+  a notice of that shape, but the wrapper is built into the tool rather than supplied by a hook,
+  so this one mirrors its wording for the tool results that arrive unwrapped. A commit trailer on
+  its own does not trip it: `Co-Authored-By` counts only within three lines of wording that tells
+  the reader to use it.
 - **The output style** is the shape of every reply: verdict first, registers separated, action
   items in one place.
 - **Settings** are the tool configuration that makes the above work: hook registrations, a
