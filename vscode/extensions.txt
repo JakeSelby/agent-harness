@@ -1,0 +1,9 @@
+anthropic.claude-code
+openai.chatgpt
+bierner.markdown-mermaid
+bierner.markdown-preview-github-styles
+bierner.github-markdown-preview
+bierner.markdown-checkbox
+bierner.markdown-footnotes
+bierner.markdown-emoji
+github.vscode-github-actions

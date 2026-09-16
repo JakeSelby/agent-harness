@@ -1,0 +1,113 @@
+{
+  "outputStyle": "Scannable",
+  "plansDirectory": ".claude/plans",
+  "useAutoModeDuringPlan": true,
+  "showThinkingSummaries": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/allow-readonly-bash.py # harness:readonly-bash",
+            "timeout": 5,
+            "statusMessage": "Checking read-only command"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/validate-plan-card.py # harness:plan-card",
+            "timeout": 10,
+            "statusMessage": "Checking plan Review Card"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/harness-session.py # harness:session",
+            "timeout": 5,
+            "statusMessage": "Checking harness drift"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read(~/**)",
+      "Read(//private/tmp/**)",
+      "Read(//tmp/**)",
+      "Bash(sed -n *)",
+      "Bash(awk *)",
+      "Bash(jq *)",
+      "Bash(rg *)",
+      "Bash(fd *)",
+      "Bash(tree *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(cut *)",
+      "Bash(tr *)",
+      "Bash(file *)",
+      "Bash(basename *)",
+      "Bash(dirname *)",
+      "Bash(realpath *)",
+      "Bash(readlink *)",
+      "Bash(date *)",
+      "Bash(uname *)",
+      "Bash(sw_vers *)",
+      "Bash(printenv *)",
+      "Bash(env)",
+      "Bash(type *)",
+      "Bash(command -v *)",
+      "Bash(* --version)",
+      "Bash(gh auth status *)",
+      "Bash(gh repo view *)",
+      "Bash(gh repo list *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)",
+      "Bash(gh release list *)",
+      "Bash(npm view *)",
+      "Bash(npm ls *)",
+      "Bash(npm outdated *)",
+      "Bash(pnpm ls *)",
+      "Bash(cargo metadata *)",
+      "Bash(cargo tree *)",
+      "Bash(uv pip list *)",
+      "Bash(uv tree *)",
+      "Bash(brew list *)",
+      "Bash(brew info *)",
+      "WebSearch",
+      "WebFetch(domain:code.claude.com)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:docs.claude.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:registry.npmjs.org)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:opensource.org)",
+      "WebFetch(domain:spdx.org)",
+      "WebFetch(domain:choosealicense.com)"
+    ]
+  }
+}

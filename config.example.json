@@ -1,0 +1,22 @@
+{
+  "identity": {
+    "name": "Your Name",
+    "pronouns": "they/them",
+    "role": "One line about what you do, so the agent pitches its answers right.",
+    "github": "your-github-handle",
+    "timezone": "UTC"
+  },
+  "stances": {
+    "licensing": "permissive-commercial",
+    "build-vs-buy": "capability-ceiling",
+    "commits": "conventional-attributed",
+    "plan-ceremony": "review-card",
+    "delegation": "tiered",
+    "testing": "required",
+    "autonomy": "execute"
+  },
+  "permissions": "inherit",
+  "permissions_bypass_acknowledged": false,
+  "vscode": { "manage": true },
+  "codex": { "manage": true }
+}

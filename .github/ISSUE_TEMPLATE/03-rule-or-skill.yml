@@ -1,0 +1,30 @@
+name: Rule or skill proposal
+description: Propose the text of a new rule, stance variant or skill.
+labels: ["rule"]
+body:
+  - type: dropdown
+    id: rung
+    attributes:
+      label: Where it lands
+      options:
+        - Core rule (loads every turn for everyone)
+        - Stance variant (a preference, opt-in)
+        - Skill (a procedure, loads on invocation)
+        - Hook (must run regardless of judgment)
+    validations:
+      required: true
+  - type: textarea
+    id: text
+    attributes:
+      label: Proposed text
+      description: Second person, no names, no paths under a home directory.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it is generic
+      description: Why would a developer on a different stack, in a different company, want this? If a reasonable engineer might want the opposite, it is a stance.
+    validations:
+      required: true

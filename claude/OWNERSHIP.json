@@ -1,0 +1,24 @@
+{
+  "_comment": "What `harness sync` may write and what it must never touch. Everything not listed as owned is left exactly as found.",
+  "claude": {
+    "owned_keys": ["outputStyle", "plansDirectory", "useAutoModeDuringPlan", "showThinkingSummaries"],
+    "posture_keys": ["permissions.defaultMode"],
+    "allow_rules": "every entry in settings.template.json permissions.allow, merged as a set; entries the user added are kept",
+    "hook_ids": {
+      "readonly-bash": {"event": "PreToolUse", "always": true},
+      "plan-card": {"event": "PostToolUse", "stance": "plan-ceremony", "variant": "review-card"},
+      "session": {"event": "SessionStart", "always": true}
+    },
+    "never_touch": ["model", "theme", "viewMode", "effortLevel", "alwaysThinkingEnabled", "skipDangerousModePermissionPrompt", "env", "permissions.deny", "permissions.ask", "autoUpdatesChannel", "remoteControlAtStartup", "agentPushNotifEnabled"]
+  },
+  "vscode": {
+    "owned_keys": ["claudeCode.focusView", "claudeCode.preferredLocation", "claudeCode.hideOnboarding"],
+    "posture_keys": ["claudeCode.initialPermissionMode", "claudeCode.allowDangerouslySkipPermissions"]
+  },
+  "codex": {
+    "owned_keys": ["project_doc_fallback_filenames"],
+    "posture_keys": ["approval_policy", "sandbox_mode"],
+    "generated_files": ["AGENTS.md"]
+  },
+  "gitignore_entries": [".claude/plans/", ".design-loop/"]
+}

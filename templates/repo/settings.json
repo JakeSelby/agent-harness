@@ -1,0 +1,10 @@
+{
+  "_comment": "Project-level Claude Code settings starter. Copy to .claude/settings.json. Keep allow rules narrow: name the exact scripts agents run here.",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm run quality)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm install)"
+    ]
+  }
+}

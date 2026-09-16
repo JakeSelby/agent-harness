@@ -1,0 +1,11 @@
+# agent-harness: the keys `harness sync` owns in ~/.codex/config.toml.
+# Your model, reasoning effort, notify hooks, MCP servers, plugins and per-project trust
+# live in the same file and are never touched by the harness.
+
+# Codex reads AGENTS.md per repo; fall back to CLAUDE.md so both agents read one file.
+project_doc_fallback_filenames = ["CLAUDE.md"]
+
+# Written only when `permissions` in ~/.config/agent-harness/config.json is not "inherit":
+#   bypass -> approval_policy = "never",       sandbox_mode = "danger-full-access"
+#   auto   -> approval_policy = "on-failure",  sandbox_mode = "workspace-write"
+#   manual -> approval_policy = "untrusted",   sandbox_mode = "read-only"

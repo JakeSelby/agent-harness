@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Lint every staged file for personal-data shapes, your lint terms and secret patterns.
+# Installed by `harness sync` via `git config core.hooksPath .githooks`.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+python3 bin/harness lint --staged

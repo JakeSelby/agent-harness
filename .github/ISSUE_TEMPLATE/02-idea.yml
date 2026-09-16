@@ -1,0 +1,24 @@
+name: Idea
+description: Something the harness should do differently, or a behaviour you want from your agent.
+labels: ["idea"]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: The behaviour you want
+      description: What should the agent do, in what situation?
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What it does today, and what you tried
+      description: Which rule, stance or skill is involved, if you know.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Does this feel like a preference or a universal?
+      options:
+        - A preference (would be a stance variant)
+        - Universal (would be a rule or a skill)
+        - Not sure

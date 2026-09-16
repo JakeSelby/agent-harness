@@ -1,0 +1,27 @@
+name: Bug
+description: The installer, a hook, or a rule did something wrong.
+labels: ["bug"]
+body:
+  - type: input
+    id: command
+    attributes:
+      label: What you ran
+      placeholder: bin/harness sync --adopt
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened, and what you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `bin/harness doctor`
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: OS and Claude Code version
+      placeholder: macOS 15.5, Claude Code 2.1.218

@@ -1,0 +1,14 @@
+# Copy to ~/.config/agent-harness/lint-terms.txt and list the things that must never appear
+# in the harness tree: your employer, your town, your cloud account ids, private hostnames,
+# your email's local part. One per line, case-insensitive. The file lives outside the repo on
+# purpose: a denylist of real values is itself a disclosure if it is ever committed.
+#
+# A line starting with "docs-ok:" names a project that may be mentioned under docs/ (for
+# provenance) but nowhere in installed content.
+#
+# The lint also checks shapes with no configuration: 12-digit account ids, email addresses,
+# home-directory paths, cloud ARNs, hosted-zone ids, identity-provider tenant ids, private IPs,
+# and secret patterns (AWS keys, bearer tokens, private keys, API keys).
+example-employer
+example-town
+docs-ok:example-project
