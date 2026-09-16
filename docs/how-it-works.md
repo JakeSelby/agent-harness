@@ -13,6 +13,7 @@ generic parts live in one git checkout and the personal parts live outside it.
 ~/.claude/rules/*.md                                          your own personal rules, untouched
 ~/.claude/skills/<name>/ ────────▶ claude/skills/<name>/     procedures, loaded on invocation
 ~/.claude/agents/<name>.md ──────▶ claude/agents/*.md        subagent definitions, spawned by name
+~/.claude/commands/<name>.md ────▶ claude/commands/*.md      slash commands, one per keystroke
 ~/.claude/hooks/harness/ ────────▶ claude/hooks/*.py         run at lifecycle points, no judgment involved
 ~/.claude/output-styles/scannable.md ▶ claude/output-styles/ the shape of every reply
 ~/.claude/settings.json  ◀ merge ─ claude/settings.template.json  only the keys OWNERSHIP.json names
@@ -39,6 +40,13 @@ is `settings.json`, because Claude Code writes to it too.
   list is what makes a read-only agent read-only. Frontmatter `model` beats the
   `CLAUDE_CODE_SUBAGENT_MODEL` environment variable, and a project overrides any of them by
   placing a same-named file in its own `.claude/agents/`.
+- **Commands** are the ritual in four keystrokes, each one composing skills you already have.
+  `/research` splits a question into at most three dimensions, fans out read-only gatherers and
+  returns one synthesized digest. `/plan` runs `plan-authoring`, writes the plan under
+  `.claude/plans/` and stops at the build gate. `/build` takes the approved plan into its own
+  worktree, implements it with tests, runs the repo's gate and opens the pull request.
+  `/review` puts a fresh-context reviewer on the diff and reports findings only. They run in
+  that order, and the worktree is created at build, never earlier.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
   that checks every plan file against the card contract, a classifier that lets read-only shell
   commands through in plan mode, a session-start check for drift and env overrides, and a
