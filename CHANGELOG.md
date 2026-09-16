@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-16
+
+### Security
+
+- The `readonly-bash` hook approved any command placed after a `#` comment and a newline: the
+  lines were joined with `;` before tokenizing, so shlex's comment handling swallowed the rest
+  and only the benign prefix was judged. Each line now loses its own comment first and a `#`
+  inside a word stays part of the word, as in bash. Found by an independent review of 0.4.0.
+
+### Fixed
+
+- A bare `date MMDDhhmm` operand, which sets the system clock, falls through to the prompt.
+- `harness uninstall` removes the PATH line it added to `~/.zprofile` and the ignore block it
+  added to `~/.config/git/ignore`, leaving every other line in place.
+
+### Changed
+
+- CI runs `harness sync --dry-run` against the example config, as CONTRIBUTING said it did.
+- The README points at `--help` for the full command surface and names `config get`;
+  `docs/preferences.md` documents the `vscode.manage` and `codex.manage` keys.
+
 ## [0.4.0] — 2026-09-16
 
 ### Added
@@ -140,7 +161,8 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.1
 [0.4.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.0
 [0.3.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.2.0
