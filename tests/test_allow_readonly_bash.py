@@ -203,11 +203,15 @@ APPROVED = [
     "ls\npwd", "export LANG=C", "jq . f.json", "yq '.a' f.yml", "xxd f | head", "hostname -f",
     "sysctl -n hw.ncpu", "go env GOPATH", "go version", "python3 --version",
     "find . -name '*.py'", "which python3", "wc -l f", "grep '<div>' page.html",
+    "ls # a comment", "ls # note\npwd", "grep '#include' f", "grep -n \"#\" f", "echo \\#x",
+    "date +%Y", "date -u", "date -v +1d",
 ]
 
 REFUSED = [
-    # a second command on a new line, or a continuation
+    # a second command on a new line, after a comment, or a continuation
     "ls\nrm -rf /tmp/pwned", "echo hi\nchmod 777 x", "ls \\\n-la", "ls\r\nrm x",
+    "cat f #\ngit push", "ls #\nrm -rf /tmp/x", "ls#\nrm x", "ls #\r\nrm x",
+    "echo $(ls #\nrm x)", "ls && echo ok #\nrm x", "ls;#\nrm x",
     # awk escapes
     "awk 'BEGIN{system(\"id\")}'", "awk 'BEGIN{print \"x\" > \"/tmp/evil\"}'",
     "awk '{print | \"sh\"}'", "awk -f evil.awk", "awk '@load \"x\"'",
@@ -231,7 +235,7 @@ REFUSED = [
     "sort -o /tmp/evil f", "sort f -o /tmp/evil", "sort -ro /tmp/x f", "sort --output=/tmp/x f",
     "tree -o /tmp/evil", "yq -i '.a=1' f", "yq -s '.a' f", "yq -Pi . f", "xxd in out",
     "hostname evil", "hostname -F f", "sysctl -w kern.x=1", "sysctl kern.x=1",
-    "file -C -m magic", "date -s '2020-01-01'",
+    "file -C -m magic", "date -s '2020-01-01'", "date " + "0101" + "00002020", "date -- 1231235925",
     # programs by path
     "/tmp/evil/ls", "/" + "Users/x/repo/bin/cat f", "./bin/evil --version", "bin/harness lint",
     # redirections that write
