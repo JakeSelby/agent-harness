@@ -13,7 +13,8 @@
     "plan-ceremony": "review-card",
     "delegation": "tiered",
     "testing": "required",
-    "autonomy": "execute"
+    "autonomy": "execute",
+    "cost": "balanced"
   },
   "permissions": "inherit",
   "permissions_bypass_acknowledged": false,

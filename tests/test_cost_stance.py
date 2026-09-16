@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: MIT
+"""Unit tests for the cost stance and the cache-hygiene rule.
+
+Run: python3 -m unittest discover tests
+"""
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
+spec = importlib.util.spec_from_loader("harness", loader)
+harness = importlib.util.module_from_spec(spec)
+loader.exec_module(harness)
+
+COST = REPO / "claude" / "stances" / "cost"
+# One line under the cap is reserved for the next rule change; the lint cap itself is 200.
+BUDGET = 196
+
+
+class TempHome(unittest.TestCase):
+    """A home with no real config, so a machine's own stance selection cannot mask the defaults."""
+
+    config = None
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self._old_home = os.environ.get("HOME")
+        os.environ["HOME"] = self.tmp.name
+        if self.config is not None:
+            d = Path(self.tmp.name) / ".config" / "agent-harness"
+            d.mkdir(parents=True)
+            (d / "config.json").write_text(json.dumps(self.config))
+
+    def tearDown(self):
+        if self._old_home is not None:
+            os.environ["HOME"] = self._old_home
+        self.tmp.cleanup()
+
+    def scrubbed_env(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env["HOME"] = self.tmp.name
+        return env
+
+
+class CostStanceTests(TempHome):
+    def test_dimension_is_registered_with_three_variants(self):
+        self.assertIn("cost", harness.STANCE_NAMES)
+        self.assertEqual(sorted(p.stem for p in COST.glob("*.md")), ["balanced", "frugal", "max"])
+
+    def test_default_is_balanced(self):
+        cfg = harness.load_config(env={})
+        self.assertEqual(cfg["stances"]["cost"], "balanced")
+        self.assertEqual(harness.resolve_stances(cfg)["cost"], COST / "balanced.md")
+
+    def test_env_override_selects_a_variant(self):
+        cfg = harness.load_config(env={"HARNESS_STANCE_COST": "frugal"})
+        self.assertEqual(cfg["stances"]["cost"], "frugal")
+        self.assertEqual(harness.resolve_stances(cfg)["cost"], COST / "frugal.md")
+
+    def test_unknown_variant_fails_loudly(self):
+        with self.assertRaises(SystemExit):
+            harness.resolve_stances(harness.load_config(env={"HARNESS_STANCE_COST": "cheap"}))
+
+
+class CostConfigFileTests(TempHome):
+    config = {"stances": {"cost": "max"}}
+
+    def test_config_file_selects_a_variant_and_env_beats_it(self):
+        self.assertEqual(harness.load_config(env={})["stances"]["cost"], "max")
+        cfg = harness.load_config(env={"HARNESS_STANCE_COST": "frugal"})
+        self.assertEqual(cfg["stances"]["cost"], "frugal")
+
+    def test_config_get_resolves_the_dimension(self):
+        out = subprocess.run(
+            [sys.executable, str(REPO / "bin" / "harness"), "config", "get", "stances.cost"],
+            capture_output=True, text=True, env=self.scrubbed_env(),
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip(), "max", out.stderr)
+
+
+class CostBudgetTests(unittest.TestCase):
+    def test_always_loaded_total_leaves_room_under_the_cap(self):
+        total, groups = harness.always_loaded_lines(REPO)
+        self.assertLessEqual(total, BUDGET, msg=f"{total} lines: {groups}")
+        self.assertLessEqual(BUDGET, harness.ALWAYS_LOADED_CAP)
+
+    def test_every_cost_variant_stays_short(self):
+        for path in sorted(COST.glob("*.md")):
+            with self.subTest(variant=path.stem):
+                self.assertLessEqual(len(path.read_text().splitlines()), 8)
+
+    def test_cache_hygiene_rule_stays_short(self):
+        rule = REPO / "claude" / "rules" / "cache-hygiene.md"
+        self.assertLessEqual(len(rule.read_text().splitlines()), 5)
+
+
+if __name__ == "__main__":
+    unittest.main()
