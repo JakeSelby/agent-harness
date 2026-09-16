@@ -178,9 +178,8 @@ shape, so it has to stay small enough to hold in working memory.
 
 ## Delegating
 
-A subagent writing a plan never loads the user's rules. Paste the `TEMPLATE.md` card skeleton
-into its prompt along with the line cap and the no-Context rule — or reformat its output
-yourself before the reviewer sees it.
+A subagent writing a plan never loads the user's rules. Spawn the `planner` agent, which carries
+this contract in its own body and returns the chat message ready to post.
 
 ## Self-check before handing it over
 
