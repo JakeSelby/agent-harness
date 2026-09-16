@@ -71,9 +71,9 @@ the user is a personal file, outside the repo.
    link or the settings entry.
 3. `bin/harness lint` — fails on personal strings and secret patterns.
 4. Commit with a Conventional Commit. Then, by who you are:
-   - **Maintainer:** content changes (rules, stances, skill text, docs) commit to `main` and
-     push. Code changes (`bin/harness`, hooks, tests) go on a branch in a worktree and open a
-     PR so CI gates them.
+   - **Maintainer:** every change goes on a branch in a worktree and opens a PR; the `main`
+     ruleset requires green checks and a squash merge. Code changes (`bin/harness`, hooks,
+     tests) carry a test; content changes are gated by the lint and review.
    - **Fork user:** commit to your fork's `main`, which is your live harness. If the change is
      worth sharing, `git fetch upstream && git rebase upstream/main`, push a branch to the fork,
      and `gh pr create --repo <owner>/agent-harness`.

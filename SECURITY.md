@@ -28,7 +28,9 @@ You will get an acknowledgement within a week and a fix or a decision within thi
 list of real values: it matches personal-data shapes and secret patterns everywhere in the tree
 with no file exempt, and reads the maintainer's own terms from an untracked file outside the
 repository. GitHub secret scanning with push protection is enabled. The read-only hook is
-tested against a corpus of write-capable commands and never returns a deny, so a bug in it can
-only fall through to the normal permission prompt. The `bypass` permission posture requires an
-explicit acknowledgement in the config file and is documented as unsuitable for any machine
-that touches regulated data.
+tested against a corpus of write-capable commands (`tests/test_allow_readonly_bash.py`) and
+never returns a deny, so a bug in it can only fall through to the normal permission prompt.
+The stop gate runs a repository's own `## Gate` commands only in a folder trusted through
+Claude Code's dialog or `harness trust`, so a clone cannot run code on the first Stop. The
+`bypass` permission posture requires an explicit acknowledgement in the config file and is
+documented as unsuitable for any machine that touches regulated data.

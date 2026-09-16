@@ -29,6 +29,11 @@ Or, if the tools are already installed, just link the harness in:
 bin/harness sync --adopt     # --adopt moves any pre-existing ~/.claude files aside (recorded, reversible)
 ```
 
+`install` is macOS-first: there it adds the Homebrew packages (`gh` among them) and VS Code with
+its extensions; on Linux it adds only Claude Code and Codex before syncing, so install `gh` and
+your editor yourself. Both platforms run the vendors' own `curl | bash` installers for Homebrew
+and Claude Code; read `bin/harness` first if that matters to you.
+
 Then edit `~/.config/agent-harness/config.json` (your name, your stances), run `bin/harness sync`
 again, and start a session. `/context` lists the harness rules; `/hooks` lists its eight hooks.
 An agent can do all of this from this README; the CLI is Python 3.9 standard library and
