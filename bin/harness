@@ -531,7 +531,47 @@ def ensure_gitignore_entries(dry: bool) -> None:
         with open(path, "a", encoding="utf-8") as fh:
             if existing and existing[-1] != "":
                 fh.write("\n")
-            fh.write("# agent-harness\n" + "\n".join(missing) + "\n")
+            fh.write(IGNORE_MARKER + "\n" + "\n".join(missing) + "\n")
+
+
+PATH_BLOCK = '# agent-harness: Claude Code native launcher lives here\nexport PATH="$HOME/.local/bin:$PATH"\n'
+IGNORE_MARKER = "# agent-harness"
+
+
+def remove_local_bin_from_path() -> bool:
+    """Undo ensure_local_bin_on_path: drop the exact block sync appended, nothing else."""
+    f = home() / ".zprofile"
+    if not f.exists():
+        return False
+    text = f.read_text(encoding="utf-8")
+    if PATH_BLOCK not in text:
+        return False
+    f.write_text(text.replace("\n" + PATH_BLOCK, "\n", 1).replace(PATH_BLOCK, "", 1), encoding="utf-8")
+    return True
+
+
+def remove_gitignore_entries() -> bool:
+    """Undo ensure_gitignore_entries: drop the marker line and the harness entries that
+    follow it, leaving every other line in place."""
+    ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
+    entries = set(ownership.get("gitignore_entries", []))
+    path = global_gitignore_path()
+    if not path.exists():
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if IGNORE_MARKER not in lines:
+        return False
+    out, i = [], 0
+    while i < len(lines):
+        if lines[i] == IGNORE_MARKER:
+            i += 1
+            while i < len(lines) and lines[i] in entries:
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    path.write_text("".join(ln + "\n" for ln in out), encoding="utf-8")
+    return True
 
 
 def ensure_local_bin_on_path(dry: bool) -> None:
@@ -545,7 +585,7 @@ def ensure_local_bin_on_path(dry: bool) -> None:
     say(f"  path    ~/.local/bin added to PATH in {target}")
     if not dry:
         with open(target, "a", encoding="utf-8") as fh:
-            fh.write('\n# agent-harness: Claude Code native launcher lives here\nexport PATH="$HOME/.local/bin:$PATH"\n')
+            fh.write("\n" + PATH_BLOCK)
 
 
 # --------------------------------------------------------------------------- commands
@@ -833,6 +873,10 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         if pc.exists():
             shutil.move(str(pc), str(agents))
         say(f"  restore {agents}")
+    if remove_gitignore_entries():
+        say(f"  restore {global_gitignore_path()}")
+    if remove_local_bin_from_path():
+        say(f"  restore {home() / '.zprofile'}")
     for f in (manifest_path(), applied_path()):
         if f.exists():
             f.unlink()

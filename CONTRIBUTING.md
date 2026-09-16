@@ -53,7 +53,8 @@ python3 -m unittest discover tests     # merge, link, config and lint logic
 bin/harness sync --dry-run             # for content changes: the stance and link plan still resolves
 ```
 
-CI runs exactly these, and `harness sync` installs `.githooks/pre-commit` in the checkout so
+CI runs exactly these (the sync dry run against the example config), and `harness sync`
+installs `.githooks/pre-commit` in the checkout so
 every commit is linted before it exists. The lint is strict on purpose and carries **no list of
 real values**: it matches shapes (12-digit account ids, email addresses, home-directory paths,
 cloud ARNs, hosted-zone ids, identity-provider tenants, private IPs, secret patterns), derives
