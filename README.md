@@ -41,9 +41,9 @@ everything back.
 
 | Layer | What it does | Where |
 | --- | --- | --- |
-| **Rules** (9) | Behaviour on every turn: read narrowly, never reprint subagent output, verdict first, verify before claiming, no secrets in tracked files | `claude/rules/` |
+| **Rules** (9) | Behaviour on every turn: read narrowly, never reprint subagent output, verdict first, verify before claiming, no secrets in tracked files. Operative lines only — with `CLAUDE.md` and the selected stances they are capped at 200 lines, enforced by the lint | `claude/rules/` |
 | **Stances** (7, 20 variants) | Preferences a reasonable engineer might hold the other way: licensing, commit style, plan ceremony, delegation tiers, testing, autonomy, build-vs-buy | `claude/stances/` |
-| **Skills** (10) | Procedures loaded on demand: one-screen plan authoring, delegation tiering, design loop with an independent judge, licensing review, migration safety, upstream contribution, worktree per agent, spike contract, harness authoring, workflow status | `claude/skills/` |
+| **Skills** (12) | Procedures loaded on demand, carrying the reasoning the rules point at: one-screen plan authoring, delegation tiering, transcript hygiene, API verification, design loop with an independent judge, licensing review, migration safety, upstream contribution, worktree per agent, spike contract, harness authoring, workflow status | `claude/skills/` |
 | **Hooks** (3) | Enforced, not advised: a plan-card validator, a read-only command classifier so plan mode stops prompting, a session-start drift and override check | `claude/hooks/` |
 | **Output style** | Scannable: verdict first, registers separated, action items in one place | `claude/output-styles/` |
 | **Settings** | Only the keys the harness owns, merged into yours: hooks, a read-only allowlist, the output style | `claude/settings.template.json` |

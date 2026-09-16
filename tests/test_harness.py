@@ -245,6 +245,65 @@ class LintTests(TempHome):
             os.environ["HOME"] = str(self.home)
 
 
+class ContextCapTests(TempHome):
+    """The always-loaded set is CLAUDE.md + every rule + the longest variant of each stance."""
+
+    def _tree(self, rule_lines, stance_variants):
+        root = Path(self.tmp.name) / "tree"
+        (root / "claude" / "rules").mkdir(parents=True)
+        (root / "claude" / "CLAUDE.md").write_text("# Global instructions\n\nshort.\n")
+        (root / "claude" / "rules" / "a.md").write_text("\n".join(["line"] * rule_lines) + "\n")
+        d = root / "claude" / "stances" / "testing"
+        d.mkdir(parents=True)
+        for name, n in stance_variants.items():
+            (d / f"{name}.md").write_text("\n".join(["line"] * n) + "\n")
+        return root
+
+    def test_repo_is_under_the_cap(self):
+        total, groups = harness.always_loaded_lines(REPO)
+        self.assertLessEqual(total, harness.ALWAYS_LOADED_CAP, msg=f"{total} lines: {groups}")
+        self.assertEqual(harness.check_context_cap(REPO), [])
+
+    def test_breakdown_covers_claude_md_rules_and_one_variant_per_stance(self):
+        total, groups = harness.always_loaded_lines(REPO)
+        names = [g[0] for g in groups]
+        self.assertIn("claude/CLAUDE.md", names)
+        self.assertTrue(any(n.startswith("claude/rules/") for n in names))
+        dims = sorted(p.name for p in (REPO / "claude" / "stances").iterdir() if p.is_dir())
+        for dim in dims:
+            self.assertEqual(len([n for n in names if n.startswith(f"claude/stances/{dim}/")]), 1)
+        self.assertEqual(total, sum(g[1] for g in groups))
+
+    def test_the_longest_stance_variant_is_the_one_counted(self):
+        root = self._tree(3, {"off": 2, "required": 9, "pragmatic": 5})
+        total, groups = harness.always_loaded_lines(root)
+        stance = [g for g in groups if g[0].startswith("claude/stances/testing/")][0]
+        self.assertIn("required.md", stance[0])
+        self.assertEqual(stance[1], 9)
+        self.assertEqual(total, 3 + 3 + 9)  # CLAUDE.md, the rule, the worst variant
+
+    def test_over_cap_tree_fails_and_the_breakdown_names_the_offender(self):
+        root = self._tree(harness.ALWAYS_LOADED_CAP + 20, {"off": 2})
+        hits = harness.check_context_cap(root)
+        self.assertTrue(hits)
+        self.assertIn(f"over the {harness.ALWAYS_LOADED_CAP}-line cap", hits[0])
+        self.assertTrue(any("claude/rules/" in h for h in hits[1:]), msg=str(hits))
+        biggest = hits[1]
+        self.assertIn("claude/rules/", biggest)
+        self.assertIn(str(harness.ALWAYS_LOADED_CAP + 20), biggest)
+
+    def test_cap_is_reported_by_the_lint_command(self):
+        root = self._tree(harness.ALWAYS_LOADED_CAP + 20, {"off": 2})
+        rc = harness.cmd_lint(harness.argparse.Namespace(path=str(root), staged=False))
+        self.assertEqual(rc, 1)
+        self.assertEqual(harness.cmd_lint(harness.argparse.Namespace(path=str(REPO), staged=False)), 0)
+
+    def test_a_tree_without_harness_content_is_not_flagged(self):
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir()
+        self.assertEqual(harness.check_context_cap(empty), [])
+
+
 class CliTests(unittest.TestCase):
     def test_version_and_help(self):
         out = subprocess.run([sys.executable, str(REPO / "bin" / "harness"), "--version"], capture_output=True, text=True)

@@ -6,7 +6,7 @@ generic parts live in one git checkout and the personal parts live outside it.
 ## The layers, in load order
 
 ```
-~/.claude/CLAUDE.md ─────────────▶ claude/CLAUDE.md          global instructions + the placement ladder
+~/.claude/CLAUDE.md ─────────────▶ claude/CLAUDE.md          global instructions, delegation, the cap
    └─ @~/.claude/CLAUDE.personal.md                           rendered from config; yours, untracked
 ~/.claude/rules/harness/ ────────▶ claude/rules/*.md         core rules, every session
 ~/.claude/rules/harness-stances/ ▶ claude/stances/<p>/<v>.md one chosen variant per preference
@@ -56,3 +56,53 @@ with no step. `harness diff` reports the other direction: a setting changed thro
 own UI shows as "live-only" so it can be brought back into the repo. The `harness-authoring`
 skill routes every "add a rule" request through the checkout, the lint, and a commit, so the
 repo never falls behind the live harness.
+
+## The always-loaded cap
+
+`CLAUDE.md`, the nine rules and the selected stances are re-read on every turn of every session,
+so their combined size is a standing tax on every task the agent does. `harness lint` enforces a
+cap of 200 lines on that set, counting the *longest* variant of each stance dimension so no
+configuration a user can select is ever over it. The rules therefore carry operative lines only —
+the instruction, stated once, in second person — and each ends with a pointer to the skill or doc
+that holds its reasoning, its examples and its evidence. That is progressive disclosure: a skill
+costs one line of description until something invokes it, so the detail is available when it is
+needed and absent when it is not. When a rule grows past its share of the cap, it is telling you
+it wanted to be a skill.
+
+## Rationale relocated from the rules
+
+The sentences below explain rules that now state only the instruction.
+
+- **Never open a PR on unverified work**, because a PR that fails lint burns a reviewer's
+  attention on nothing. Record the expected clean-tree output in the repo's agent instructions the
+  first time you run the gates: the exact "all checks passed" line, the test count, the known
+  benign warning. Then any deviation is yours, and you can tell a pre-existing failure from one
+  you caused. Test auth anonymously, with redirects not followed: a test that follows redirects to
+  a login page and asserts 200 proves nothing.
+- **Reasoned pushback on review comments** means assessing legitimacy against the actual codebase
+  first — actionable, already-resolved, banter, or informational — and, when the analysis disagrees
+  with a reviewer (especially one phrased as suspicion rather than directive), drafting a reasoned
+  rebuttal rather than complying blanket.
+- **Provisioning commands are gated, and that gate is not yours to lift.** When a permission
+  classifier refuses a deploy or apply command, build and validate everything, run the read-only
+  plan or diff, and hand the user the exact commands. Run a wrapper only when the user has named it
+  themselves.
+- **Escalate sparingly in autonomous loops.** Review rounds are capped at two to three per story;
+  the cap is a cap, not a target.
+- **"Should work" is not a status**, and when an error is reported you read the actual error and
+  the logs before the source — never theorize from the code alone.
+- **A secret in a committed file does not become unleaked when you delete it**; history keeps it,
+  which is why the credential must be rotated before anything else happens. Agent rule directories
+  are the case that rule exists for: they feel private and are not. Read credentials from the
+  environment instead:
+
+  ```bash
+  # Correct
+  curl -H "Authorization: token $SERVICE_TOKEN" ...
+
+  # Wrong — never do this
+  curl -H "Authorization: token abc123def456" ...
+  ```
+
+  Cloud CLIs resolve credentials from a profile or a secret store; use `--profile` or an
+  environment variable, never a pasted key.

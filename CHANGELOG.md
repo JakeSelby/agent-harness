@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Always-loaded context (`claude/CLAUDE.md`, every rule, and the longest variant of each stance) is
+  capped at 200 lines and `harness lint` fails with a per-group breakdown when it is exceeded. The
+  rules keep their operative lines and point at the skill holding the reasoning; the rationale,
+  examples and evidence moved verbatim into `delegation-tiering`, `plan-authoring`,
+  `harness-authoring`, the new `transcript-hygiene` and `api-verification` skills,
+  `docs/how-it-works.md` and `docs/preferences.md`. 583 lines before, 185 after.
+
 ## [0.1.1] — 2026-09-16
 
 The repository was re-created with a fresh history for this release. The 0.1.0 tag and its
