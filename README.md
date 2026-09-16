@@ -30,7 +30,7 @@ bin/harness sync --adopt     # --adopt moves any pre-existing ~/.claude files as
 ```
 
 Then edit `~/.config/agent-harness/config.json` (your name, your stances), run `bin/harness sync`
-again, and start a session. `/context` lists the harness rules; `/hooks` lists its seven hooks.
+again, and start a session. `/context` lists the harness rules; `/hooks` lists its eight hooks.
 An agent can do all of this from this README; the CLI is Python 3.9 standard library and
 every step is idempotent.
 
@@ -47,7 +47,7 @@ per-session tokens and cache hit rate from a local file ([docs/usage.md](docs/us
 | **Skills** (13) | Procedures loaded on demand, carrying the reasoning the rules point at: one-screen plan authoring, delegation tiering, transcript hygiene, API verification, design loop with an independent judge, licensing review, migration safety, sandboxing an unattended loop, upstream contribution, worktree per agent, spike contract, harness authoring, workflow status | `claude/skills/` |
 | **Agents** (7) | Subagent definitions carrying their model, effort level and tool list, so the delegation tiers hold without a retyped brief: `builder` implements one issue in a worktree and commits without pushing, `design-judge` scores a render against the rubric, `gatherer` gathers read-only, `log-compressor` reduces a run to its failures, `planner` writes the plan file, `reviewer` reviews a diff in a fresh context, `spec-reviewer` checks that diff against what was asked for | `claude/agents/` |
 | **Commands** (5) | The ritual in five keystrokes: `/research` fans out read-only gatherers for one digest, `/plan` writes the Review Card and stops at the build gate, `/build` implements in a worktree and opens the PR, `/review` makes two fresh-context passes over the diff, scope then quality, `/handoff` writes the progress file the next session reads | `claude/commands/` |
-| **Hooks** (7) | Enforced, not advised: a plan-card validator, a read-only command classifier so plan mode stops prompting, an output filter, a tool-output scanner, a session-start drift, override and handoff check, a stop gate that runs the repo's own gate, a usage logger | `claude/hooks/` |
+| **Hooks** (8) | Enforced, not advised: a plan-card validator, a read-only command classifier so plan mode stops prompting, a plan-mode web-research approver, an output filter, a tool-output scanner, a session-start drift, override and handoff check, a stop gate that runs the repo's own gate, a usage logger | `claude/hooks/` |
 | **Output style** | Scannable: verdict first, registers separated, action items in one place | `claude/output-styles/` |
 | **Settings** | Only the keys the harness owns, merged into yours: hooks, a read-only allowlist, the output style | `claude/settings.template.json` |
 | **VS Code, Codex** | Owned editor keys and the extension list; a generated `AGENTS.md` and owned config keys for Codex | `vscode/`, `codex/` |
