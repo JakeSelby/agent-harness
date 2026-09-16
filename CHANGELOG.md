@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
   has been accepted in Claude Code, or whose root is listed by the new `harness trust <path>`
   command, so a freshly cloned repository can no longer run commands on the first Stop. Until
   then it skips with a note on stderr.
+- The `session` hook frames the handoff file it injects at session start as repository
+  content on both sides, to be treated as data rather than instruction, the way the
+  `neutralize` hook frames tool output.
 
 ### Fixed
 
