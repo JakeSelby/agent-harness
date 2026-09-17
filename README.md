@@ -12,6 +12,10 @@ scrolling), **predictable** (it delegates, verifies and asks the same way every 
 VS Code and Codex to match, and it keeps itself honest: the git checkout *is* the live
 configuration, so every change is a commit.
 
+The Claude Code config with a test suite: provably read-only shell approval, graded prompts
+before irreversible commands, a CI-enforced 200-line context budget, every rule measured by a
+detector, one-screen plans, symlinked in, uninstalled clean.
+
 It grew out of one person's daily setup. Everything personal was stripped, everything
 opinionated became a switch, and the result is meant to be forked, compared with, and argued
 about.
@@ -54,7 +58,7 @@ flags; `bin/harness config get <key>` prints a value the way sync resolved it.
 
 | Layer | What it does | Where |
 | --- | --- | --- |
-| **Rules** (10) | Behaviour on every turn: read narrowly, never reprint subagent output, verdict first, verify before claiming, no secrets in tracked files. Operative lines only — with `CLAUDE.md` and the selected stances they are capped at 200 lines, enforced by the lint | `claude/rules/` |
+| **Rules** (10) | Behaviour on every turn: read narrowly, never reprint subagent output, verdict first, verify before claiming, no secrets in tracked files. Operative lines only — with `CLAUDE.md` and the selected stances they are capped at 200 lines, enforced by the lint, and every rule names a detector the session-end worker runs, so `harness usage --rules` shows which rules bite | `claude/rules/` |
 | **Stances** (8, 23 variants) | Preferences a reasonable engineer might hold the other way: licensing, commit style, plan ceremony, delegation tiers, testing, autonomy, build-vs-buy, cost | `claude/stances/` |
 | **Skills** (13) | Procedures loaded on demand, carrying the reasoning the rules point at: one-screen plan authoring, delegation tiering, transcript hygiene, API verification, design loop with an independent judge, licensing review, migration safety, sandboxing an unattended loop, upstream contribution, worktree per agent, spike contract, harness authoring, workflow status | `claude/skills/` |
 | **Agents** (7) | Subagent definitions carrying their model, effort level and tool list, so the delegation tiers hold without a retyped brief: `builder` implements one issue in a worktree and commits without pushing, `design-judge` scores a render against the rubric, `gatherer` gathers read-only, `log-compressor` reduces a run to its failures, `planner` writes the plan file, `reviewer` reviews a diff in a fresh context, `spec-reviewer` checks that diff against what was asked for | `claude/agents/` |

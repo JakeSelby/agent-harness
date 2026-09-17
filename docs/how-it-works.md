@@ -107,7 +107,34 @@ whole — there is no environment switch to turn the filter off. Both scripts li
 `claude/hooks/`, which is linked as a directory, so the hook resolves the filter beside itself
 at run time. The hook emits `updatedInput` and no permission decision: the hooks documentation
 does not say how two `PreToolUse` hooks on `Bash` combine their output, so this one leaves the
-read-only classifier's decision alone.
+read-only classifier's decision alone. The command grader below is silent on a read-only
+command for the same reason, so no two of the three `Bash` hooks ever answer one command with a
+decision.
+
+## Command grades
+
+The `grade-bash` hook grades every Bash command on the read-only grammar's decomposition: 0 when
+the classifier proves it read-only, 1 for a local write, 2 for a command that changes shared
+state elsewhere (a push, a pull request, a publish, a mutating API call), 3 for one that cannot
+be undone (a force-push, `reset --hard`, `rm -rf` outside the tree, a `DROP`, a migration, a
+deploy, a cloud delete, `sudo`). An unknown command grades 1, never 3: a false low grade is the
+missed prompt native gives today, and the corpus grows from each miss. The autonomy stance sets
+the gate — `execute` on grade 3, `confirm-writes` on 2 and up, `ask` on 1 and up — and the
+hook's reason names the verb, the target and the consequence in one line, which is the preview
+the stance text promised.
+
+Which decision the hook emits depends on the permission mode, because the hooks reference is
+explicit about two things. In `bypassPermissions` and in `auto` mode, "The `"ask"` decision is
+ignored", so a prompting hook there is silent; but "A hook that returns `permissionDecision:
+"deny"` blocks the tool even in `bypassPermissions` mode or with
+`--dangerously-skip-permissions`". So in the prompting modes the hook asks, and in `auto` and
+`bypassPermissions` it denies with the same reason plus the confirm path: the agent asks in
+chat, and on a yes re-runs the command prefixed `HARNESS_CONFIRMED=1`, which the hook lets
+through at any grade and the rule telemetry counts. That is the one thing on the machine that
+stops a force-push in the modes most sessions now run in, and it is why the stance is enforced
+rather than advised. `PreToolUse` carries no `additionalContext`, so the reason line is the
+whole channel. The quotes are from `https://code.claude.com/docs/en/hooks` and
+`https://code.claude.com/docs/en/hooks-guide`, read on 2026-09-16.
 
 ## The handoff loop
 
@@ -154,6 +181,13 @@ that holds its reasoning, its examples and its evidence. That is progressive dis
 costs one line of description until something invokes it, so the detail is available when it is
 needed and absent when it is not. When a rule grows past its share of the cap, it is telling you
 it wanted to be a skill.
+
+Which rules earn their lines is measurable. Every rule has a deterministic detector in
+`claude/hooks/rule-detectors.py`, or an explicit opt-out with a reason, and the lint fails on a
+rule with neither. The session-end worker runs the registry over each transcript and
+`harness usage --rules` reports which detectors fire and how often: a rule that trips in most
+sessions is prose that failed and wants to be a hook, and one unobserved for a month can leave
+the 200 lines. [usage.md](usage.md) has the record fields and the thresholds.
 
 ## Rationale relocated from the rules
 
