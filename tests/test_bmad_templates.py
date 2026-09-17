@@ -169,6 +169,21 @@ class ApplyTests(Quiet):
         self.assertFalse((self.custom / "bmad-build-auto.user.toml").exists())
         self.assertTrue((self.custom / "bmad-build.user.toml").exists())
 
+    def test_apply_skips_a_drifting_template_and_installs_the_rest(self):
+        keys, entries = SURFACE["bmad-build"]
+        drifted = dict(SURFACE)
+        drifted["bmad-build"] = (keys, {(a, i.replace("blind-hunter", "blind-seeker")) for a, i in entries})
+        install(self.base, drifted)
+        actions = harness.bmad_apply(self.base, force=False)
+        self.assertFalse((self.custom / "bmad-build.user.toml").exists())
+        self.assertTrue((self.custom / "bmad-code-review.user.toml").exists())
+        self.assertTrue(any(a.strip().startswith("skipped") and "bmad-build.user.toml" in a for a in actions), actions)
+        self.assertEqual(self.bmad("check"), 1)
+
+    def test_apply_is_silent_when_everything_is_in_place(self):
+        self.assertTrue(harness.bmad_apply(self.base, force=False))
+        self.assertEqual(harness.bmad_apply(self.base, force=False), [])
+
     def test_apply_keeps_a_differing_override_unless_forced(self):
         self.custom.mkdir(parents=True)
         mine = self.custom / "bmad-build.user.toml"

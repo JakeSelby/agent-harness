@@ -45,6 +45,15 @@ def counts():
     }
 
 
+def bmad_fixture():
+    """The fixture install and pinned surface from the template tests, whichever way tests are run."""
+    try:
+        from test_bmad_templates import install, SURFACE
+    except ImportError:
+        from tests.test_bmad_templates import install, SURFACE
+    return install, SURFACE
+
+
 class SessionHookTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -89,6 +98,46 @@ class SessionHookTests(unittest.TestCase):
     def context(self, out):
         self.assertEqual(out.returncode, 0, msg=out.stderr)
         return json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    def text(self, out):
+        self.assertEqual(out.returncode, 0, msg=out.stderr)
+        if not out.stdout.strip():
+            return ""
+        return json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    def manifest(self):
+        d = self.home / ".local" / "state" / "agent-harness"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "manifest.json").write_text(json.dumps({"repo": str(REPO)}))
+
+    def framework(self, surfaces=None):
+        install, surface = bmad_fixture()
+        install(self.repo, surface if surfaces is None else surfaces)
+        self.manifest()
+
+    def test_a_framework_repository_gets_the_overrides_once(self):
+        self.framework()
+        first = self.text(self.run_hook())
+        self.assertIn("BMad overrides", first)
+        self.assertIn("wrote _bmad/custom/bmad-build.user.toml", first)
+        for name in ("bmad-build", "bmad-build-auto", "bmad-code-review"):
+            self.assertTrue((self.repo / "_bmad" / "custom" / f"{name}.user.toml").exists(), name)
+        self.assertNotIn("BMad overrides", self.text(self.run_hook()))
+
+    def test_a_drifting_install_is_reported_and_left_alone(self):
+        _, surface = bmad_fixture()
+        keys, entries = surface["bmad-build"]
+        drifted = dict(surface)
+        drifted["bmad-build"] = (keys, {(a, i.replace("blind-hunter", "blind-seeker")) for a, i in entries})
+        self.framework(drifted)
+        text = self.text(self.run_hook())
+        self.assertIn("skipped _bmad/custom/bmad-build.user.toml", text)
+        self.assertIn("drift:", text)
+        self.assertFalse((self.repo / "_bmad" / "custom" / "bmad-build.user.toml").exists())
+
+    def test_a_repository_without_the_framework_is_silent_about_it(self):
+        self.manifest()
+        self.assertNotIn("BMad overrides", self.text(self.run_hook()))
 
     def test_the_progress_file_and_the_recent_commits_are_injected(self):
         self.write_progress("# Handoff 2026-01-02\n\n## Next command\n\npython3 -m unittest\n")

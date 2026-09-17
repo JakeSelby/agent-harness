@@ -54,10 +54,12 @@ copies a framework file.
   review layers of `bmad-build`, `bmad-build-auto` and `bmad-code-review` run as `reviewer`, the
   acceptance and intent layers as `spec-reviewer`, and the implementation handoff on the
   builder's tier. `harness bmad apply <repo>` installs them into `_bmad/custom/` as user
-  overrides: the framework keeps them across reinstalls and its own `.gitignore` keeps them
-  out of the repo, so run it once per clone that runs the framework, or rename a file to
+  overrides, and the `harness-session` hook runs it for the repository each session starts
+  in, so a fresh clone has them from its first session and says so once. The framework keeps
+  them across reinstalls and its own `.gitignore` keeps them out of the repo; rename a file to
   `<skill>.toml` to commit it for a team whose members all run the harness. An existing
-  override is never replaced without `--force`.
+  override is never replaced without `--force`, and a template whose keys or layer ids the
+  installed skill no longer declares is skipped rather than written.
 - **`harness bmad check <repo>`** compares every key and layer id the templates rely on with the
   installed skill's `customize.toml`. The framework's renderer drops a key it does not declare
   and appends an unknown layer id beside the renamed original, so after an upgrade this is the
