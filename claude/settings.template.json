@@ -28,6 +28,17 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/grade-bash.py # harness:grade-bash",
+            "timeout": 5,
+            "statusMessage": "Grading command reversibility"
+          }
+        ]
+      },
+      {
         "matcher": "WebFetch",
         "hooks": [
           {

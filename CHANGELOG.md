@@ -12,6 +12,12 @@ All notable changes to this project are documented here. The format follows
   detectors over a session transcript, one or more per always-loaded rule, with an explicit
   opt-out list for the three rules nothing in a transcript can decide. `harness lint` now fails
   on a rule with neither, and reads its secret patterns from the same module. (#58)
+- A tenth hook, `grade-bash`: every Bash command is graded 0–3 on the read-only grammar's
+  decomposition (read-only, local, remote-mutating, irreversible) and the autonomy stance sets
+  the gate: `execute` on grade 3, `confirm-writes` on 2 and up, `ask` on 1 and up. Prompting
+  modes get `ask` with a one-line reason; `auto` and `bypassPermissions`, where a hook's `ask`
+  is ignored, get `deny` with the same reason and a chat-confirmed re-run prefixed
+  `HARNESS_CONFIRMED=1`. (#60)
 
 ## [0.5.1] — 2026-09-16
 
