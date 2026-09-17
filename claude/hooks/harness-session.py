@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""SessionStart hook: report harness drift, per-session HARNESS_* overrides, and the handoff.
+"""SessionStart hook: report harness drift, per-session HARNESS_* overrides, and the handoff,
+and install the BMad override templates where the repository runs the framework.
 
 Silent when there is nothing to say, so a clean session costs no context. Never fails.
 """
@@ -99,6 +100,30 @@ def handoff_lines(cwd):
     return lines
 
 
+def bmad_lines(repo, cwd):
+    """Install the harness's BMad override templates into the session's repository when it runs
+    the framework (`_bmad/` plus projected skills), and say so only when a file was written,
+    kept because it differs, or skipped for drift. A repository without the framework, or with
+    everything already in place, costs no context."""
+    root = git(cwd, "rev-parse", "--show-toplevel").strip()
+    if not root or not (Path(root) / "_bmad").is_dir() or not (Path(root) / ".claude" / "skills").is_dir():
+        return []
+    tool = Path(repo) / "bin" / "harness"
+    if not tool.exists():
+        return []
+    env = {k: v for k, v in os.environ.items() if k != "HARNESS_QUIET"}
+    try:
+        out = subprocess.run([sys.executable, str(tool), "bmad", "apply", root], env=env,
+                             capture_output=True, text=True, timeout=remaining(2))
+    except Exception:
+        return []
+    notable = [ln.strip() for ln in (out.stdout or "").splitlines()
+               if ln.strip().startswith(("wrote ", "kept ", "skipped ", "drift: "))]
+    if not notable:
+        return []
+    return ["BMad overrides (harness bmad apply): " + "; ".join(notable)]
+
+
 def payload():
     try:
         if sys.stdin.isatty():
@@ -118,10 +143,16 @@ def main():
         if d:
             lines.append("agent-harness drift: " + d)
     lines.extend(override_lines(config))
+    cwd = payload().get("cwd") or os.getcwd()
     try:
-        lines.extend(handoff_lines(payload().get("cwd") or os.getcwd()))
+        lines.extend(handoff_lines(cwd))
     except Exception:
         pass
+    if manifest and manifest.get("repo"):
+        try:
+            lines.extend(bmad_lines(manifest["repo"], cwd))
+        except Exception:
+            pass
     if not lines:
         return
     print(json.dumps({

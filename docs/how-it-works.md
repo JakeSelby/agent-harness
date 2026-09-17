@@ -64,7 +64,8 @@ is `settings.json`, because Claude Code writes to it too.
   commands through in plan mode, an approver that lets `WebFetch` through in plan mode so
   research does not prompt, a tierer that applies the delegation stance to any subagent spawn
   that names no agent definition, an output filter that trims a verbose test or build run, a
-  session-start check for drift, env overrides and the repository handoff, a scanner that flags
+  session-start check for drift, env overrides and the repository handoff, which also installs
+  the framework override templates in a repository that runs one, a scanner that flags
   instruction-shaped text in `Bash`, `WebFetch` and `Read` output, a stop gate that runs a
   repository's own quality gate before a turn is allowed to end, and a session-end usage logger.
 

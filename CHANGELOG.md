@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format follows
   `tier-agent-spawns` hook leaves a bare spawn on the session model: the framework's lenses
   are judgment work its overrides cannot rename, and its own rule is same capability. The
   builder-routing question is closed in `docs/bmad.md`.
+- The `harness-session` hook runs `harness bmad apply` for the repository a session starts in
+  when it carries a framework install, and reports once when it wrote, kept or skipped a file.
+  `apply` now skips a template whose keys or layer ids the installed skill no longer declares,
+  so an upstream rename never leaves two copies of a review layer running.
 
 ## [0.4.1] — 2026-09-16
 
