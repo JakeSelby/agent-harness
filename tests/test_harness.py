@@ -8,10 +8,12 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -355,6 +357,54 @@ class ContextCapTests(TempHome):
         empty = Path(self.tmp.name) / "empty"
         empty.mkdir()
         self.assertEqual(harness.check_context_cap(empty), [])
+
+
+class DetectorCoverageTests(TempHome):
+    """Every rule file names a detector in the registry, or opts out with a reason."""
+
+    def _copy(self):
+        root = Path(self.tmp.name) / "copy"
+        (root / "claude" / "hooks").mkdir(parents=True)
+        shutil.copytree(REPO / "claude" / "rules", root / "claude" / "rules")
+        shutil.copy2(REPO / "claude" / "hooks" / "rule-detectors.py",
+                     root / "claude" / "hooks" / "rule-detectors.py")
+        shutil.copy2(REPO / "claude" / "hooks" / "allow-readonly-bash.py",
+                     root / "claude" / "hooks" / "allow-readonly-bash.py")
+        return root
+
+    def test_the_real_tree_is_covered(self):
+        self.assertEqual(harness.check_detectors(REPO), [])
+        self.assertEqual(harness.lint_tree(REPO, NO_TERMS), [])
+
+    def test_a_rule_with_no_detector_and_no_opt_out_fails_the_lint(self):
+        root = self._copy()
+        (root / "claude" / "rules" / "brand-new.md").write_text("# Brand new\n\n- Do the thing.\n")
+        hits = harness.check_detectors(root)
+        self.assertTrue(any("brand-new.md" in h for h in hits), msg=str(hits))
+        self.assertTrue(any("OPT_OUT" in h for h in hits))
+        self.assertTrue(any("brand-new.md" in h for h in harness.lint_tree(root, NO_TERMS)))
+
+    def test_a_missing_registry_is_itself_a_finding(self):
+        root = self._copy()
+        (root / "claude" / "hooks" / "rule-detectors.py").unlink()
+        self.assertTrue(any("rule-detectors.py" in h for h in harness.check_detectors(root)))
+
+    def test_a_tree_with_no_rules_is_not_flagged(self):
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir()
+        self.assertEqual(harness.check_detectors(empty), [])
+
+    def test_the_lint_reads_its_secret_patterns_from_the_registry(self):
+        module = harness.load_detectors(REPO)
+        self.assertEqual(harness.SECRET_PATTERNS, module.SECRET_PATTERNS)
+        self.assertTrue(harness.SECRET_PATTERNS)
+
+    def test_an_empty_secret_list_is_a_finding_not_a_pass(self):
+        # The pre-commit path lints staged files only and never calls check_detectors,
+        # so a registry that fails to import must surface here rather than skip secrets.
+        with unittest.mock.patch.object(harness, "SECRET_PATTERNS", []):
+            hits = harness.lint_files(REPO, [REPO / "README.md"], NO_TERMS)
+        self.assertTrue(any("rule-detectors.py" in h for h in hits), msg=str(hits))
 
 
 class CliTests(unittest.TestCase):

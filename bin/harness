@@ -72,12 +72,30 @@ SHAPE_PATTERNS = [
     ("identity-provider tenant", r"\b[a-z0-9-]+\.(?:us|eu|au|jp)\.auth0\.com\b|\bdev-[a-z0-9]{16}\b"),
     ("private IPv4 address", r"\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(?:\.\d{1,3})?\b"),
 ]
-# The second pattern is split so this file does not contain the literal it hunts for.
-SECRET_PATTERNS = [
-    r"AKIA[0-9A-Z]{16}", r"(?i)aws_secret" r"_access_key", r"Bearer [A-Za-z0-9._-]{20,}",
-    r"(?i)client_secret\s*[:=]", r"-----BEGIN [A-Z ]*PRIVATE KEY-----", r"xox[bp]-", r"ghp_[A-Za-z0-9]{20,}",
-    r"sk-[A-Za-z0-9]{20,}",
-]
+
+
+def load_detectors(root: Path = REPO):
+    """The rule-detector registry from `root`'s checkout, or None when it has none.
+
+    The registry is the single source of both `SECRET_PATTERNS` and the rule-coverage
+    check, so the lint and the detector can never drift apart.
+    """
+    import importlib.util
+
+    path = root / "claude" / "hooks" / "rule-detectors.py"
+    if not path.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("harness_rule_detectors", str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+# Secret shapes live in claude/hooks/rule-detectors.py; the lint and the detector share one list.
+SECRET_PATTERNS = getattr(load_detectors(), "SECRET_PATTERNS", [])
 # Everything in `claude/CLAUDE.md`, `claude/rules/` and one variant of every stance is re-read on
 # every turn of every session, so its size is a standing tax on every task. The cap is enforced by
 # `harness lint`; the stance count uses the LONGEST variant of each dimension, so no selection a
@@ -893,6 +911,9 @@ def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], L
     docs_only = [re.compile(r"(?i)\b" + re.escape(t) + r"\b") for t in docs_ok]
     shapes = [(label, re.compile(p)) for label, p in SHAPE_PATTERNS]
     secrets = [re.compile(p) for p in SECRET_PATTERNS]
+    if not secrets:
+        # An empty list would pass every file silently; say so instead, on every lint path.
+        hits.append("secrets: pattern list unavailable, claude/hooks/rule-detectors.py did not import")
     for path in files:
         if not path.is_file() or path.is_symlink():
             continue
@@ -926,6 +947,30 @@ def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], L
     return hits
 
 
+def check_detectors(root: Path) -> List[str]:
+    """Fail when a rule file has neither a detector nor an explicit opt-out.
+
+    A rule nobody can measure is a rule nobody can prune; `harness usage --rules` reports
+    the hits, and this check is what keeps the registry honest as rules are added.
+    """
+    rules = sorted(p.stem for p in (root / "claude" / "rules").glob("*.md"))
+    if not rules:
+        return []
+    module = load_detectors(root)
+    if module is None:
+        return ["detectors: claude/hooks/rule-detectors.py is missing or does not import"]
+    measured = {d.rule for d in module.DETECTORS.values()}
+    hits = []
+    for stem in rules:
+        if stem in measured or stem in module.OPT_OUT:
+            continue
+        hits.append(f"detectors: claude/rules/{stem}.md has no detector and no OPT_OUT entry")
+    if hits:
+        hits.append("detectors: add a Detector with rule=\"<stem>\" to DETECTORS, or an OPT_OUT "
+                    "entry giving the one-line reason nothing in a transcript can decide it")
+    return hits
+
+
 def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -> List[str]:
     """Lint everything git would commit: tracked files plus untracked files that are not ignored.
     Outside a git repository, every file."""
@@ -934,10 +979,10 @@ def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -
                              capture_output=True, text=True, timeout=10)
         if out.returncode == 0:
             files = sorted(root / f for f in out.stdout.split("\0") if f)
-            return lint_files(root, files, terms)
+            return lint_files(root, files, terms) + check_detectors(root)
     except Exception:
         pass
-    return lint_files(root, sorted(p for p in root.rglob("*") if p.is_file()), terms)
+    return lint_files(root, sorted(p for p in root.rglob("*") if p.is_file()), terms) + check_detectors(root)
 
 
 def _line_count(path: Path) -> int:

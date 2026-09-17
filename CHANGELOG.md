@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A rule-detector registry (`claude/hooks/rule-detectors.py`): fourteen deterministic
+  detectors over a session transcript, one or more per always-loaded rule, with an explicit
+  opt-out list for the three rules nothing in a transcript can decide. `harness lint` now fails
+  on a rule with neither, and reads its secret patterns from the same module. (#58)
+
 ## [0.5.1] — 2026-09-16
 
 ### Changed
