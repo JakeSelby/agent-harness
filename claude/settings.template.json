@@ -57,6 +57,12 @@
             "command": "python3 ~/.claude/hooks/harness/tier-agent-spawns.py # harness:tier-spawns",
             "timeout": 5,
             "statusMessage": "Applying the delegation stance"
+          },
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/brief-guard.py # harness:brief-guard",
+            "timeout": 5,
+            "statusMessage": "Bounding the subagent brief"
           }
         ]
       }
