@@ -3,7 +3,6 @@
 [![CI](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Docs](https://img.shields.io/badge/docs-agent--harness.jakeselby.com-amber.svg)](https://agent-harness.jakeselby.com/)
 [![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
 
 An installable harness for Claude Code: the rules, preference stances, skills, hooks, output
@@ -15,8 +14,7 @@ configuration, so every change is a commit.
 
 It grew out of one person's daily setup. Everything personal was stripped, everything
 opinionated became a switch, and the result is meant to be forked, compared with, and argued
-about. The searchable reference, one page per rule, stance, skill, agent, command and hook,
-is at [agent-harness.jakeselby.com](https://agent-harness.jakeselby.com/).
+about.
 
 Browse every rule, stance, skill, agent, command and hook, with a link from each page to its
 source at the tagged release, at [agent-harness.jakeselby.com](https://agent-harness.jakeselby.com).
