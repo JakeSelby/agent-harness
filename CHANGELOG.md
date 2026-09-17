@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-17
+
 ### Added
 
 - A rule-detector registry (`claude/hooks/rule-detectors.py`): fourteen deterministic
@@ -22,6 +24,12 @@ All notable changes to this project are documented here. The format follows
   per session; `harness usage --rules [--by rule|repo|stance]` reports hits, sessions and share per
   detector, marks `promote?` above 30 percent of at least 20 sessions and `unobserved` at zero over
   at least 20, and `--rescan` backfills from existing transcripts. (#59)
+
+### Changed
+
+- The README leads with the positioning line; the docs explain command grades, the ask-versus-deny
+  split per permission mode with the hooks-reference quotes, and rule telemetry as the signal for
+  pruning the always-loaded rules. (#61)
 
 ## [0.5.1] — 2026-09-16
 
@@ -210,7 +218,8 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.6.0
 [0.5.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.5.1
 [0.5.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.5.0
 [0.4.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.1
