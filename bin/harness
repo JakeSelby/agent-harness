@@ -1155,15 +1155,109 @@ def cmd_trust(args: argparse.Namespace) -> int:
     return 0
 
 
+# A rule that trips in more than this share of sessions is prose the agent keeps walking past,
+# and wants to be a hook; one with no hit at all over a full window can leave the 200 lines.
+# Both need a window wide enough for the share to mean anything.
+RULE_PROMOTE_SHARE = 0.30
+RULE_MIN_SESSIONS = 20
+
+
+def rule_ids(rows: List[Dict[str, Any]]) -> List[str]:
+    """Every detector id to report on: the registry's, so a rule with no hit is still a line,
+    plus any id a record carries that the registry no longer defines."""
+    module = load_detectors()
+    ids = set(getattr(module, "DETECTORS", {}) or {})
+    for row in rows:
+        ids.update(k for k in (row.get("rules") or {}) if isinstance(k, str))
+    return sorted(ids)
+
+
+def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
+    """`usage --rules`: hits per detector, or per repo or stance variant.
+
+    Only a record that carries a `rules` map is evidence. One written before the detectors
+    existed, or one whose registry would not import, is absent from every count and from the
+    denominator: counting it as a session with no hit would turn a gap into a clean bill.
+    """
+    measured = [r for r in rows if isinstance(r.get("rules"), dict)]
+    legacy = sum(1 for r in rows if not isinstance(r.get("rules"), dict) and not r.get("rules_error"))
+    errored = sum(1 for r in rows if r.get("rules_error"))
+    if legacy or errored:
+        say(f"{legacy + errored} session(s) in the window carry no rule data "
+            f"({legacy} recorded before detectors, {errored} rules_error); run --rescan to backfill")
+    if not measured:
+        say(f"no measured sessions in the last {days} day(s)")
+        return 0
+
+    if by == "rule":
+        total = len(measured)
+        head = f"{'detector':<38}{'hits':>7}{'sessions':>10}{'of':>6}{'share':>8}  note"
+        say(head)
+        say("-" * len(head))
+        for did in rule_ids(measured):
+            hits = sum(int(r["rules"].get(did) or 0) for r in measured)
+            seen = sum(1 for r in measured if int(r["rules"].get(did) or 0) > 0)
+            share = seen / total if total else 0.0
+            note = ""
+            if total >= RULE_MIN_SESSIONS:
+                note = "promote?" if share > RULE_PROMOTE_SHARE else ("unobserved" if not hits else "")
+            say(f"{did[:38]:<38}{hits:>7}{seen:>10}{total:>6}{share:>8.0%}  {note}".rstrip())
+        return 0
+
+    if by == "stance":
+        # A rescan stamps the stances of the minute it ran, not of the session it read, so a
+        # session grouped by them would be filed under a variant it may never have run under.
+        guessed = [r for r in measured if r.get("stances_source") == "rescan"]
+        if guessed:
+            say(f"{len(guessed)} rescanned session(s) excluded: stance not known at the time")
+        measured = [r for r in measured if r.get("stances_source") != "rescan"]
+        if not measured:
+            say(f"no sessions with a known stance in the last {days} day(s)")
+            return 0
+
+    groups: Dict[str, List[Any]] = {}
+    for row in measured:
+        if by == "stance":
+            stances = row.get("stances") if isinstance(row.get("stances"), dict) else {}
+            keys = [f"{k}={v}" for k, v in sorted(stances.items())] or ["(no stances)"]
+        else:
+            keys = [row.get("repo") or "(no repo)"]
+        for key in keys:
+            acc = groups.setdefault(key, [0, {}])
+            acc[0] += 1
+            for did, n in row["rules"].items():
+                acc[1][did] = acc[1].get(did, 0) + int(n or 0)
+    head = f"{by:<42}{'sessions':>9}{'hits':>7}  top detectors"
+    say(head)
+    say("-" * len(head))
+    for key in sorted(groups):
+        sessions, counts = groups[key]
+        top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        say(f"{key[:42]:<42}{sessions:>9}{sum(counts.values()):>7}  "
+            + (", ".join(f"{d} {n}" for d, n in top) or "-"))
+    return 0
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
     """Summarize the session records the usage-log hook writes. Local file only."""
     path = state_dir() / "usage.jsonl"
+    by = getattr(args, "by", "day")
+    rules_mode = getattr(args, "rules", False) or by in ("rule", "stance")
+    if rules_mode and by == "model":
+        # Reporting something else silently would be worse than refusing: a rule hit belongs
+        # to a session, and a session's hits cannot be attributed to one of its models.
+        print("usage --rules groups by rule, repo or stance; --by model is not one of them",
+              file=sys.stderr)
+        return 2
+    if rules_mode and by == "day":
+        by = "rule"
     if getattr(args, "rescan", False):
         hook = REPO / "claude" / "hooks" / "usage-log.py"
         out = subprocess.run([sys.executable, str(hook), "--rescan", str(args.days)], capture_output=True, text=True)
         say((out.stdout or out.stderr).strip() or "rescan found no transcripts")
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - max(args.days, 0) * 86400))
     groups: Dict[str, List[int]] = {}
+    kept: List[Dict[str, Any]] = []
     for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
         try:
             row = json.loads(line)
@@ -1171,9 +1265,12 @@ def cmd_usage(args: argparse.Namespace) -> int:
             continue
         if not isinstance(row, dict) or (row.get("ended") or "") < cutoff:
             continue
-        if args.by == "repo":
+        if rules_mode:
+            kept.append(row)
+            continue
+        if by == "repo":
             key = row.get("repo") or "(no repo)"
-        elif args.by == "model":
+        elif by == "model":
             key = "+".join(row.get("models") or []) or "(unknown)"
         else:
             key = (row.get("ended") or "")[:10]
@@ -1184,6 +1281,8 @@ def cmd_usage(args: argparse.Namespace) -> int:
                 acc[i + 1] += int(row.get(name) or 0)
             except (TypeError, ValueError):
                 pass
+    if rules_mode:
+        return rule_report(kept, by, args.days)
     if not groups:
         say(f"no sessions recorded in the last {args.days} day(s); looked in {path}")
         return 0
@@ -1194,7 +1293,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
         return (f"{label[:34]:<34}{acc[0]:>9}{acc[1]:>12,}{acc[2]:>12,}"
                 f"{acc[3]:>14,}{acc[4]:>14,}{hit:>7.0%}")
 
-    head = (f"{args.by:<34}{'sessions':>9}{'input':>12}{'output':>12}"
+    head = (f"{by:<34}{'sessions':>9}{'input':>12}{'output':>12}"
             f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}")
     say(head)
     say("-" * len(head))
@@ -1390,7 +1489,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p = sub.add_parser("usage", help="summarize recorded session tokens and cache hit rate")
     p.add_argument("--days", type=int, default=30)
-    p.add_argument("--by", choices=["day", "repo", "model"], default="day")
+    p.add_argument("--by", choices=["day", "repo", "model", "rule", "stance"], default="day")
+    p.add_argument("--rules", action="store_true",
+                   help="report rule-detector hits instead of tokens (--by rule, repo or stance)")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
     p.set_defaults(func=cmd_usage)
 
