@@ -91,6 +91,13 @@ WORD_CAP_RE = re.compile(
     r"|cap[^.\n]{0,40}?\d+\s*[- ]?words?"
     r"|word\s+cap\s*(?:of\s+)?\d+)"
 )
+# The autonomy gate's two marks: the prefix the model re-runs a denied command behind, and the
+# signature the grade hook writes into the reason it denies with. The marker pattern mirrors
+# `grade-bash.py`'s own `MARKER_RE`, so what the gate lets through is what this counts; a
+# quoted value (`HARNESS_CONFIRMED="1"`) is not the marker there and is not one here.
+_COMMENT_RE = re.compile(r"^(?:\s*(?:#[^\n]*)?\n)+")
+_CONFIRMED_RE = re.compile(r"^\s*(?:env\s+)?HARNESS_CONFIRMED=1\s*;?\s*")
+GRADE_SIGNATURE = "(grade-bash hook,"
 # A path that says it holds a credential, by basename; see `_is_secret_path`.
 ENV_EXAMPLES = frozenset(("example", "sample", "template", "dist"))
 KEY_SUFFIXES = (".pem", ".p12", ".pfx")
@@ -774,6 +781,30 @@ def missing_trailer(events, ctx):
     return hits
 
 
+def confirmed_irreversible(events, ctx):
+    """A command re-run behind the marker, which is a grade-3 action the user said yes to.
+
+    `env` may carry the assignment, as the shell allows, and leading blank or comment lines
+    are nothing the shell runs; anything else before the marker means the gate saw a different
+    command from this one, so a marker buried mid-command confirms nothing and counts nothing.
+    """
+    return [_hit(p.event) for p in ctx.bash
+            if _CONFIRMED_RE.match(_COMMENT_RE.sub("", p.command))]
+
+
+def denied_by_grade(events, ctx):
+    """A Bash result carrying the grade hook's signature: the gate fired and the command
+    never ran. The hook signs its own deny reason, so the string is the evidence — the
+    detector never imports it, and reads no other hook's output as a denial."""
+    hits = []
+    for event in events:
+        if event.get("kind") != "tool_result" or event.get("tool_name") != "Bash":
+            continue
+        if GRADE_SIGNATURE in _text(event.get("text")):
+            hits.append((event.get("turn", 0), event.get("tool_use_id") or None))
+    return hits
+
+
 class Detector(object):
     """One rule, one observable, one function over the event list and its parse."""
 
@@ -806,6 +837,8 @@ _REGISTRY = [
     Detector("cache-hygiene/compact", "cache-hygiene", "session", compaction),
     Detector("voice/banned-opener", "voice-and-format", "assistant-final", banned_opener),
     Detector("voice/second-table", "voice-and-format", "assistant-final", second_table),
+    Detector("autonomy/confirmed-irreversible", "autonomy", "bash", confirmed_irreversible),
+    Detector("autonomy/denied-by-grade", "autonomy", "bash", denied_by_grade),
     Detector("commits/non-conventional", "commits", "bash", non_conventional, _COMMITS_ON),
     Detector("commits/missing-trailer", "commits", "bash", missing_trailer, _COMMITS_ATTRIBUTED),
 ]

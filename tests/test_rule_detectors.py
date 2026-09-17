@@ -78,6 +78,11 @@ MULTILINE_LONG_FLAG = 'git commit --message="feat(cli): add a flag\n\n%s"' % TRA
 SUB_MESSAGE = 'git commit -m "$(cat msg.txt)"'
 SUB_HEREDOC_MESSAGE = "git commit -m \"$(cat <<'EOF' | head -1\nfixed the thing\nEOF\n)\""
 HUGE = "echo " + "x" * (100 * 1024)
+# The deny reason the grade hook writes. The parenthesised signature is what the detector
+# matches, because the hook is what signs it; `test_the_deny_signature_is_the_one_the_grade_hook_writes`
+# holds the two together.
+DENIED = ("grade 3, irreversible: git push --force origin main rewrites remote history "
+          "(grade-bash hook, autonomy=execute)")
 
 
 CASES = {
@@ -191,6 +196,25 @@ CASES = {
         ([say("| a | b |\n| - | - |\n\ntext")], 0),
         ([say("no tables here")], 0),
     ],
+    "autonomy/confirmed-irreversible": [
+        ([bash("HARNESS_CONFIRMED=1 git push --force origin main")], 1),
+        ([bash("env HARNESS_CONFIRMED=1 terraform apply")], 1),
+        ([bash("# confirmed in chat\nHARNESS_CONFIRMED=1 git reset --hard")], 1),
+        ([bash("git push --force origin main")], 0),
+        # The marker is a prefix, not a word anywhere in the line: the gate graded the text
+        # that began with it, so anything before it went ungraded.
+        ([bash("echo HARNESS_CONFIRMED=1")], 0),
+        ([bash("git fetch && HARNESS_CONFIRMED=1 git push --force")], 0),
+        # Not the marker the hook strips either: the shell assigns the string, quotes and all.
+        ([bash('HARNESS_CONFIRMED="1" git push --force')], 0),
+    ],
+    "autonomy/denied-by-grade": [
+        ([tool_result(DENIED, tool_name="Bash", tool_use_id="tu4")], 1),
+        ([tool_result("Files changed: 3", tool_name="Bash")], 0),
+        # Another hook's output, and another tool's, are not this gate firing.
+        ([tool_result(DENIED, tool_name="Agent")], 0),
+        ([tool_result("permission denied", tool_name="Bash")], 0),
+    ],
     "commits/non-conventional": [
         ([bash("git commit -m 'fixed the thing'")], 1),
         ([bash('git commit -m "fixed the thing"')], 1),
@@ -300,6 +324,33 @@ class RegistryTests(unittest.TestCase):
         for path in sorted((REPO / "claude" / "rules").glob("*.md")):
             with self.subTest(rule=path.stem):
                 self.assertTrue(path.stem in measured or path.stem in rd.OPT_OUT)
+
+    def test_the_deny_signature_is_the_one_the_grade_hook_writes(self):
+        """The detector matches a string, not a module, so only a test holds it to the hook."""
+        path = REPO / "claude" / "hooks" / "grade-bash.py"
+        hook_spec = importlib.util.spec_from_file_location("grade_bash", path)
+        grade = importlib.util.module_from_spec(hook_spec)
+        hook_spec.loader.exec_module(grade)
+        self.assertIn(grade.HOOK, rd.GRADE_SIGNATURE)
+        emitted = grade.reason(3, "git push", "--force origin main", "git-push", "execute")
+        self.assertIn(rd.GRADE_SIGNATURE, emitted)
+        self.assertEqual(len(rd.run([tool_result(emitted, tool_name="Bash")], STANCES)
+                                    .get("autonomy/denied-by-grade", [])), 1)
+
+    def test_the_confirm_marker_is_the_one_the_grade_hook_strips(self):
+        path = REPO / "claude" / "hooks" / "grade-bash.py"
+        hook_spec = importlib.util.spec_from_file_location("grade_bash", path)
+        grade = importlib.util.module_from_spec(hook_spec)
+        hook_spec.loader.exec_module(grade)
+        for command in ("HARNESS_CONFIRMED=1 git push --force", "env HARNESS_CONFIRMED=1 rm -rf /"):
+            with self.subTest(command=command):
+                self.assertTrue(grade.strip_marker(command)[1])
+                self.assertEqual(len(rd.run([bash(command)], STANCES)
+                                        .get("autonomy/confirmed-irreversible", [])), 1)
+        for command in ('HARNESS_CONFIRMED="1" git push --force', "echo HARNESS_CONFIRMED=1"):
+            with self.subTest(command=command):
+                self.assertFalse(grade.strip_marker(command)[1])
+                self.assertNotIn("autonomy/confirmed-irreversible", rd.run([bash(command)], STANCES))
 
     def test_the_banned_openers_are_the_ones_the_output_style_names(self):
         style = (REPO / "claude" / "output-styles" / "scannable.md").read_text(encoding="utf-8")

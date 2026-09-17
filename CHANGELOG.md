@@ -18,6 +18,10 @@ All notable changes to this project are documented here. The format follows
   modes get `ask` with a one-line reason; `auto` and `bypassPermissions`, where a hook's `ask`
   is ignored, get `deny` with the same reason and a chat-confirmed re-run prefixed
   `HARNESS_CONFIRMED=1`. (#60)
+- The session-end worker runs the detector registry and records `rules`, `counts` and `stances`
+  per session; `harness usage --rules [--by rule|repo|stance]` reports hits, sessions and share per
+  detector, marks `promote?` above 30 percent of at least 20 sessions and `unobserved` at zero over
+  at least 20, and `--rescan` backfills from existing transcripts. (#59)
 
 ## [0.5.1] — 2026-09-16
 
