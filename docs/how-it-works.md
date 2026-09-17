@@ -93,7 +93,7 @@ is `settings.json`, because Claude Code writes to it too.
 - **The output style** is the shape of every reply: verdict first, registers separated, action
   items in one place.
 - **Settings** are the tool configuration that makes the above work: hook registrations, a
-  read-only allowlist so plan mode does not prompt, the output style selection.
+  read-only allowlist so read-only commands do not prompt, the output style selection.
 
 ## Filtering verbose output
 
