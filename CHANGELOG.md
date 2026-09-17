@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-09-17
+
 ### Fixed
 
 - The instruction to gather with subagents unasked no longer loads under every stance. It sat in
@@ -233,7 +235,8 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.6.1
 [0.6.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.6.0
 [0.5.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.5.1
 [0.5.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.5.0
