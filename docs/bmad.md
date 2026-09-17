@@ -32,10 +32,46 @@ the framework's files.
 - **Nothing framework-shaped in team-facing output.** No attribution footers, no `_bmad/`
   paths, no story references in anything shipped to a shared repo.
 
-## Why the harness does not ship framework extensions
+## Keeping the delegation stance in charge
 
-Almost every customisation in practice is a path redirect or a project persona. The portable
-part is this pattern. Redistributing modified copies of a framework that ships new versions
-weekly would turn every upstream release into harness maintenance, and it would make the
-harness harder to compare with others on the things that matter: legibility, delegation, the
-plan gate, permission posture.
+A framework's skills spawn subagents by saying so in prose: "launch a context-free subagent
+with this prompt". In Claude Code that is an `Agent` call with no `subagent_type` and no
+`model`, so it runs as `general-purpose`, on the session model, with every tool, and the
+frontmatter that carries the harness's tiers never applies. Two pieces close that, and neither
+copies a framework file.
+
+- **The `tier-agent-spawns` hook** runs on every `Agent` call. A call that names an agent
+  definition or passes a model is left alone; a bare one gets the `delegation` stance: one tier
+  below the session under `tiered`, untouched under `session-model`, a prompt under `off`. The
+  session model is read from the transcript's newest assistant record, so a spawn in the very
+  first assistant turn of a session is left alone. One tier down is right for gathering and
+  wrong for judgment, which is what the second piece is for.
+- **Override templates** under `templates/bmad/custom/` use the framework's own customization
+  contract to name the harness's agents where the framework's spawns are judgment work: the
+  review layers of `bmad-build`, `bmad-build-auto` and `bmad-code-review` run as `reviewer`, the
+  acceptance and intent layers as `spec-reviewer`, and the implementation handoff on the
+  builder's tier. `harness bmad apply <repo>` installs them into `_bmad/custom/` as user
+  overrides: the framework keeps them across reinstalls and its own `.gitignore` keeps them
+  out of the repo, so run it once per clone that runs the framework, or rename a file to
+  `<skill>.toml` to commit it for a team whose members all run the harness. An existing
+  override is never replaced without `--force`.
+- **`harness bmad check <repo>`** compares every key and layer id the templates rely on with the
+  installed skill's `customize.toml`. The framework's renderer drops a key it does not declare
+  and appends an unknown layer id beside the renamed original, so after an upgrade this is the
+  command that says whether the routing still holds.
+
+Research fan-outs (`bmad-deep-recon`) need no override: their researchers are bare spawns, and
+one tier below the session is what the skill's own guidance asks for. Routing the
+implementation handoff to the `builder` agent proper is a follow-up: `builder` commits in its
+own worktree while the framework's review step diffs the tree it ran in, so the handoff would
+also have to bring the branch back.
+
+## What the harness ships for a framework, and what it does not
+
+Almost every customisation in practice is a path redirect, a project persona, or a spawn
+routing. The portable part is the pattern above and the override templates, which are files of
+your own in the framework's override format, not modified copies of its files. Redistributing a
+framework that ships new versions weekly would turn every upstream release into harness
+maintenance, and it would make the harness harder to compare with others on the things that
+matter: legibility, delegation, the plan gate, permission posture. The templates carry a check
+instead of a copy: when a release renames a key, `harness bmad check` says so.

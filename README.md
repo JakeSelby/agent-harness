@@ -39,7 +39,7 @@ your editor yourself. Both platforms run the vendors' own `curl | bash` installe
 and Claude Code; read `bin/harness` first if that matters to you.
 
 Then edit `~/.config/agent-harness/config.json` (your name, your stances), run `bin/harness sync`
-again, and start a session. `/context` lists the harness rules; `/hooks` lists its eight hooks.
+again, and start a session. `/context` lists the harness rules; `/hooks` lists its nine hooks.
 An agent can do all of this from this README; the CLI is Python 3.9 standard library and
 every step is idempotent.
 
@@ -59,11 +59,11 @@ flags; `bin/harness config get <key>` prints a value the way sync resolved it.
 | **Skills** (13) | Procedures loaded on demand, carrying the reasoning the rules point at: one-screen plan authoring, delegation tiering, transcript hygiene, API verification, design loop with an independent judge, licensing review, migration safety, sandboxing an unattended loop, upstream contribution, worktree per agent, spike contract, harness authoring, workflow status | `claude/skills/` |
 | **Agents** (7) | Subagent definitions carrying their model, effort level and tool list, so the delegation tiers hold without a retyped brief: `builder` implements one issue in a worktree and commits without pushing, `design-judge` scores a render against the rubric, `gatherer` gathers read-only, `log-compressor` reduces a run to its failures, `planner` writes the plan file, `reviewer` reviews a diff in a fresh context, `spec-reviewer` checks that diff against what was asked for | `claude/agents/` |
 | **Commands** (5) | The ritual in five keystrokes: `/research` fans out read-only gatherers for one digest, `/plan` writes the Review Card and stops at the build gate, `/build` implements in a worktree and opens the PR, `/review` makes two fresh-context passes over the diff, scope then quality, `/handoff` writes the progress file the next session reads | `claude/commands/` |
-| **Hooks** (8) | Enforced, not advised: a plan-card validator, a read-only command classifier so plan mode stops prompting, a plan-mode web-research approver, an output filter, a tool-output scanner, a session-start drift, override and handoff check, a stop gate that runs the repo's own gate, a usage logger | `claude/hooks/` |
+| **Hooks** (9) | Enforced, not advised: a plan-card validator, a read-only command classifier so plan mode stops prompting, a plan-mode web-research approver, a spawn tierer that applies the delegation stance to subagents any skill launches, an output filter, a tool-output scanner, a session-start drift, override and handoff check, a stop gate that runs the repo's own gate, a usage logger | `claude/hooks/` |
 | **Output style** | Scannable: verdict first, registers separated, action items in one place | `claude/output-styles/` |
 | **Settings** | Only the keys the harness owns, merged into yours: hooks, a read-only allowlist, the output style | `claude/settings.template.json` |
 | **VS Code, Codex** | Owned editor keys and the extension list; a generated `AGENTS.md` and owned config keys for Codex | `vscode/`, `codex/` |
-| **Repo starter** | What a repository needs so agents work well in it, given the global rules already load | `templates/repo/` |
+| **Repo starter** | What a repository needs so agents work well in it, given the global rules already load, and the override set that puts a BMad install's subagents under the same tiers | `templates/repo/`, `templates/bmad/` |
 
 ## How it works
 

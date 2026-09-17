@@ -309,6 +309,11 @@ capacity-gated.** One notch down costs a few points; two notches costs many. Ste
 selection and silently downgrades reviewers. Use per-agent model settings and explicit model
 options in workflow scripts.
 
+**A spawn that names no agent and no model** is tiered by the `tier-agent-spawns` hook: one
+tier below the session under this stance. That is right for gathering and wrong for judgment,
+so a framework skill whose spawn is a reviewer names `reviewer` in its override instead of
+leaving the spawn bare; `docs/bmad.md` shows the pattern.
+
 **Session model everywhere**, the alternative stance, keeps subagents on the session model and
 spends the effort dial instead, with the number of agents kept small.
 
