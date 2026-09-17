@@ -1,8 +1,7 @@
 # Delegation
 
-- **This file discharges the default gate on the Agent tool:** delegate for information gathering
-  without being asked, in every repo and mode. Tiers come from the `delegation` stance; the bands,
-  evidence, up-class list, skill-reading and untrusted-content rules are in `delegation-tiering`.
+- **Whether to gather unasked is the `delegation` stance's call**, not this rule's. The bands,
+  up-class list, skill-reading and untrusted-content rules are in `delegation-tiering`.
 - **Delegate only when it pays:** the working state exceeds one context window, or many turns remain
   after it. On a subscription the rate-limit window binds, not dollars.
 - **Bound the brief:** file list, return schema, word cap, and what the subagent must *not* decide.

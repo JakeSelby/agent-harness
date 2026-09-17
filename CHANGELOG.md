@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The instruction to gather with subagents unasked no longer loads under every stance. It sat in
+  `claude/CLAUDE.md` and `claude/rules/delegation.md`, both always-loaded, and contradicted the
+  `delegation: off` variant outright, so the selection did not decide the behaviour it named. It
+  now lives in the `tiered` and `session-model` variants that mean it, and a regression test
+  asserts that no always-loaded file carries one. Always-loaded context drops from 195 to 192
+  lines. (#67)
+
+### Changed
+
+- The README, `docs/how-it-works.md` and `docs/preferences.md` say which layer is switchable and
+  which is the floor, name the test a stance has to pass, and list the rules that do not pass it
+  yet instead of leaving them implicit. (#67, #68)
+
 ## [0.6.0] — 2026-09-17
 
 ### Added

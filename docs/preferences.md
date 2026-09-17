@@ -130,3 +130,14 @@ one tier down under `tiered` (the session model inside a framework repo), untouc
 A stance is right when a competent engineer could reasonably want the opposite. Add the
 variants under `claude/stances/<name>/`, add the name to `STANCE_NAMES` in `bin/harness`, add
 the default to `config.example.json`, add a row here, and add a line to the CHANGELOG.
+
+## What is deliberately not a stance
+
+The always-loaded rules in `claude/rules/` do not switch. A rule has to hold whichever way every
+stance is thrown, which is what lets the harness install for someone whose preferences nobody
+knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
+want the opposite, it belongs in `claude/stances/`, not `claude/rules/`.
+
+Two rules do not pass that test yet, tracked rather than hidden. `voice-and-format.md` hard-wires
+the Scannable output style (#68), and `conciseness.md` is comment and doc style. `cache-hygiene.md`
+is cost-dimension content the `cost` stance already points at.

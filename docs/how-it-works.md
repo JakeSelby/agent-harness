@@ -95,6 +95,28 @@ is `settings.json`, because Claude Code writes to it too.
 - **Settings** are the tool configuration that makes the above work: hook registrations, a
   read-only allowlist so read-only commands do not prompt, the output style selection.
 
+## Which opinions are switches
+
+Two layers hold opinions and they are not equally negotiable.
+
+**Stances are switches.** Eight dimensions, twenty-three variants, one selection per dimension in
+config, resolved at sync and symlinked into `~/.claude/rules/harness-stances/`. The selection is
+recorded in the sync manifest, so `harness diff` reports "stance selection changed since last
+sync", and the detector registry reads the same map, so a detector for a dimension switched off
+stops counting. A switch is a value you can diff and measure.
+
+**Rules are the floor and do not switch.** All ten link as one directory and load on every turn.
+The test for which side a line belongs on is in [preferences.md](preferences.md): a stance is right
+when a competent engineer could reasonably want the opposite. A rule has to be what stays true
+whichever way every switch is thrown, which is also what makes the harness safe to install for
+someone whose preferences nobody knows.
+
+Applied honestly, the test convicts one rule today: `voice-and-format.md` hard-wires the Scannable
+output style, and issue #68 tracks turning it into a `voice` dimension. `conciseness.md` and
+`cache-hygiene.md` are the next candidates. The instruction to gather with subagents unasked used
+to fail it as well, contradicting the `delegation: off` variant outright; it now lives in the two
+variants that mean it (#67).
+
 ## Filtering verbose output
 
 The `filter-output` hook rewrites a Bash command that runs tests, a build, a lint or a
