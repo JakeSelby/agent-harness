@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `commit-msg` hook in `templates/repo/hooks/`, installed per repository, refusing a subject
+  that is not a Conventional Commit. It reads the `commits` stance and does nothing under `off`
+  or `as-you-go`; under `conventional-attributed` it also warns on a missing `Co-Authored-By:`
+  trailer, which it cannot add because the model name is session state a git hook cannot see.
+  Adapted from `unclebob/swarm-forge`, which appends its byline the same way. A git hook was the
+  right surface because it sees the final message however it was written, where the
+  `commits/non-conventional` detector parses only `-m` and undercounts. (#71)
+
 ## [0.6.1] — 2026-09-17
 
 ### Fixed
