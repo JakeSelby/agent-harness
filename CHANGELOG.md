@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- An eleventh hook, `brief-guard`: PreToolUse on `Agent`, it appends a 400-word return bound to
+  a subagent brief that states none, rather than asking the orchestrator to write one.
+  `transcript-hygiene/brief-without-cap` fired 536 times across 30 percent of sessions, so the
+  prose was not working. What counts as a bound and which agents are exempt are imported from
+  `rule-detectors.py` rather than copied, and a test asserts the appended text satisfies the
+  detector, since a bound the detector cannot see would never move the number. Adapted from
+  `unclebob/swarm-forge`, whose handoff helper fills the commit SHA so the agent never types
+  one. No-op under `delegation: off`, where `tier-agent-spawns` already gates the spawn. (#72)
+
 - A `commit-msg` hook in `templates/repo/hooks/`, installed per repository, refusing a subject
   that is not a Conventional Commit. It reads the `commits` stance and does nothing under `off`
   or `as-you-go`; under `conventional-attributed` it also warns on a missing `Co-Authored-By:`
