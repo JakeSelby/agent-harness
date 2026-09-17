@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-09-16
+
+### Changed
+
+- Provenance credits a year of coding agents, most of it in Cursor and the last two months in
+  Claude Code, rather than a year in `~/.claude`.
+- The README and the comparison no longer claim the read-only hook is what stops plan mode
+  prompting: Claude Code's own classifier does that by default in auto mode. The hook's value
+  is deterministic, no-round-trip approval that also covers Manual mode and API, Bedrock and
+  Vertex sessions.
+
 ## [0.5.0] — 2026-09-16
 
 ### Added
@@ -182,7 +193,8 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.5.1
 [0.5.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.5.0
 [0.4.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.1
 [0.4.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.0
