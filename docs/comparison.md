@@ -23,6 +23,12 @@ Each is observable in a transcript, not a matter of taste.
 - **How the harness updates itself.** Whether "add a rule" lands in a repo with a lint and a
   commit, or in a home directory nobody reviews.
 - **What is enforced versus advised.** Hooks enforce; rules advise. Count each.
+- **Whether the rules are measured.** A rule nobody can observe is a rule nobody can prune.
+  Here every rule names a deterministic detector over the transcript or opts out with a reason,
+  the lint enforces that, and `harness usage --rules` reports which rules fire.
+- **Whether irreversible commands are graded before they run.** A native prompt cannot tell
+  `git push` from `git push --force`. Here a hook grades every command 0–3 and asks, or denies
+  with a reason in the modes that never prompt, according to the autonomy stance.
 
 Send a comparison, or a counter-example, as an Idea issue. The point of publishing the harness
 is to find out which of these hold up outside one person's workflow.

@@ -97,7 +97,9 @@ edit always is. The anti-patterns `execute` rules out: ending with "run this in 
 setup you can perform, pasting install or start instructions instead of running them, and asking
 "say the word and I'll…" for work you can do in the same turn. An autonomy level granted for one
 scope does not extend to the next, so never widen your own permissions or record a governance rule
-for yourself unless the user asks.
+for yourself unless the user asks. The `grade-bash` hook enforces the stance: it grades every
+shell command 0–3 and gates at grade 3 under `execute`, 2 and up under `confirm-writes`, 1 and up
+under `ask`; [how-it-works.md](how-it-works.md#command-grades) explains the grades and the modes.
 
 **Plan ceremony.** `review-card` makes plan mode feel like a design review: the approach in chat, a
 link to the plan file, an explicit build gate, then autonomous implementation. The card is a review
