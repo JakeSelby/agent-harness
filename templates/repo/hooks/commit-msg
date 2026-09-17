@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""commit-msg hook: refuse a subject that is not a Conventional Commit.
+
+Installed per repository rather than by `harness sync`, because a git hook lives in the
+repository it guards. `templates/repo/README.md` carries the install line.
+
+Why a git hook and not a PreToolUse Bash hook: git hands this script the final message
+whatever produced it, so `-m`, `-F`, a heredoc and the editor are all covered. Parsing
+`git commit` off the command line sees only `-m`, which is why the harness's own
+`commits/non-conventional` detector undercounts.
+
+The `commits` stance decides what runs. `conventional` and `conventional-attributed`
+enforce the subject; `conventional-attributed` also warns on a missing `Co-Authored-By:`
+trailer, which it cannot add, because the model name is session state a git hook cannot see.
+"""
+import json
+import os
+import re
+import sys
+
+CONVENTIONAL_RE = re.compile(
+    r"^(feat|fix|chore|docs|refactor|test|perf|build|ci|style|revert)(\([^)]+\))?!?: \S")
+TRAILER_RE = re.compile(r"(?im)^\s*Co-Authored-By:")
+# Subjects git or a rebase writes, which carry no convention of their own.
+EXEMPT_RE = re.compile(r"^(Merge |Revert \"|fixup! |squash! |amend! )")
+
+ENFORCING = ("conventional", "conventional-attributed")
+DEFAULT_VARIANT = "conventional-attributed"
+TYPES = "feat|fix|chore|docs|refactor|test|perf|build|ci|style|revert"
+
+
+def variant():
+    """The selected `commits` stance: session override, then config, then the default."""
+    override = (os.environ.get("HARNESS_STANCE_COMMITS") or "").strip()
+    if override:
+        return override
+    path = os.path.join(os.path.expanduser("~"), ".config", "agent-harness", "config.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            selected = (json.load(fh).get("stances") or {}).get("commits")
+    except (OSError, ValueError):
+        # No harness on this machine, or a config we cannot parse. The hook was installed
+        # deliberately, so fall back to the default rather than silently passing everything.
+        return DEFAULT_VARIANT
+    return selected or DEFAULT_VARIANT
+
+
+def subject_of(text):
+    """The first line git keeps: comment lines and leading blanks are not part of the message."""
+    for line in text.splitlines():
+        if line.startswith("#"):
+            continue
+        if line.strip():
+            return line.rstrip()
+    return ""
+
+
+def main(argv):
+    if len(argv) < 2:
+        sys.stderr.write("commit-msg: no message file given\n")
+        return 1
+    selected = variant()
+    if selected not in ENFORCING:
+        return 0
+    try:
+        with open(argv[1], encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError as exc:
+        sys.stderr.write("commit-msg: cannot read %s: %s\n" % (argv[1], exc))
+        return 1
+    subject = subject_of(text)
+    if not subject or EXEMPT_RE.match(subject):
+        # An empty message aborts in git itself; a merge or fixup subject is git's to write.
+        return 0
+    if not CONVENTIONAL_RE.match(subject):
+        sys.stderr.write(
+            "commit-msg: the subject is not a Conventional Commit.\n"
+            "  got:      %s\n"
+            "  expected: type(scope): summary\n"
+            "  types:    %s\n"
+            "  stance:   commits=%s (HARNESS_STANCE_COMMITS=off skips this for one command)\n"
+            % (subject, TYPES.replace("|", ", "), selected))
+        return 1
+    if selected == "conventional-attributed" and not TRAILER_RE.search(text):
+        sys.stderr.write(
+            "commit-msg: warning, no Co-Authored-By: trailer under commits=%s.\n" % selected)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
