@@ -6,29 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-16
+
 ### Added
 
 - A `tier-agent-spawns` hook (`PreToolUse` on `Agent`) applies the `delegation` stance to every
   subagent spawn that names no agent definition and no model, which is what a planning
   framework's or a plugin's "launch a subagent" produces: one tier below the session under
   `tiered`, untouched under `session-model`, a prompt under `off`. Frontmatter and explicit
-  model choices are left alone.
-- `templates/bmad/custom/` carries override files for BMad's `bmad-build`, `bmad-build-auto` and
-  `bmad-code-review` that run their review layers as the `reviewer` and `spec-reviewer` agents
-  and the implementation handoff on the builder's tier. `harness bmad apply` installs them into
-  a repository's `_bmad/custom/` and `harness bmad check` reports every key or layer id the
-  installed skill no longer declares.
-
-### Changed
-
-- Inside a repository that carries a framework runtime (`_bmad/scripts/`), the
-  `tier-agent-spawns` hook leaves a bare spawn on the session model: the framework's lenses
-  are judgment work its overrides cannot rename, and its own rule is same capability. The
-  builder-routing question is closed in `docs/bmad.md`.
-- The `harness-session` hook runs `harness bmad apply` for the repository a session starts in
-  when it carries a framework install, and reports once when it wrote, kept or skipped a file.
-  `apply` now skips a template whose keys or layer ids the installed skill no longer declares,
-  so an upstream rename never leaves two copies of a review layer running.
+  model choices are left alone. Inside a repository that carries a framework runtime
+  (`_bmad/scripts/` or `_bmad/core/`), a bare spawn keeps the session model: the framework's
+  lenses are judgment work its overrides cannot rename, and its own rule is same capability.
+- `templates/bmad/custom/` carries override files in BMad's own format for `bmad-build`,
+  `bmad-build-auto` and `bmad-code-review` that run their review layers as the `reviewer` and
+  `spec-reviewer` agents and the implementation handoff on the builder's tier. `harness bmad
+  apply` installs them into a repository's `_bmad/custom/`, skipping a template whose keys or
+  layer ids the installed skill no longer declares, and `harness bmad check` reports that drift.
+  The `harness-session` hook runs `apply` for the repository a session starts in and says so
+  once when it wrote, kept or skipped a file.
+- `docs/bmad.md` records how the two pieces keep the delegation stance in charge of a
+  framework's spawns, and why the implementation handoff is not routed to `builder`.
 
 ## [0.4.1] — 2026-09-16
 
@@ -185,7 +182,8 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.5.0
 [0.4.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.1
 [0.4.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.4.0
 [0.3.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.3.0
