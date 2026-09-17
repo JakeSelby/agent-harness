@@ -15,7 +15,9 @@ Each is observable in a transcript, not a matter of taste.
   on, and whether the return is bounded in the brief. Also whether anything found in a
   subagent's summary can be executed directly (here: never).
 - **Permission posture in plan mode.** Whether exploring a codebase prompts on every read-only
-  command. The read-only hook and allowlist here make plan mode prompt-free for exploration.
+  command. The read-only hook here approves shell commands deterministically, with no model round trip,
+  so exploration never prompts in Manual mode or on API, Bedrock and Vertex sessions, where
+  Claude Code's own classifier is not on; in auto mode it skips the classifier's round trip.
 - **How preferences are handled.** Baked into the rules, or separable. Stances make the
   preference layer explicit and swappable, and keep a fork mergeable.
 - **How the harness updates itself.** Whether "add a rule" lands in a repo with a lint and a

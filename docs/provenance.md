@@ -4,10 +4,10 @@ Every file here was written or rewritten for this repository, in second person, 
 personal left in it. This page records where the ideas came from, as history.
 
 - **Core rules** (`working-style`, `decisions-and-plans`, `delegation`, `transcript-hygiene`,
-  `voice-and-format`, `research-and-verification`) grew out of a personal `~/.claude/rules/`
-  directory built over a year of running agents across a strategy game (Sovereign), an
-  executive-assistant app (Consul), a governance MCP server (Cortex), and volunteer data
-  work.
+  `voice-and-format`, `research-and-verification`) grew out of a personal rules directory
+  built over a year of running coding agents, most of it in Cursor and the last two months in
+  Claude Code, across a strategy game (Sovereign), an executive-assistant app (Consul), a
+  governance MCP server (Cortex), and volunteer data work.
 - **`conciseness` and `verification`** were first written as guest-contributor rules for a
   fork of an open-source data-pipeline library, where the cost of a sloppy PR is someone else's
   time.
