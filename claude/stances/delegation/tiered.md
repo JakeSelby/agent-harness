@@ -1,5 +1,8 @@
 # Delegation stance: tiered models
 
+**Gather with subagents without waiting to be asked** — locating files, reading, grepping,
+extracting, summarizing — in every repo and mode. Keep judgment in the session.
+
 **Drop effort before you drop tier, where the dial exists.** The tiers ship as frontmatter in
 `claude/agents/`: `gatherer` (grep, read, extract, summarize a named list) one tier below the
 session model, `log-compressor` and single-call work two tiers below, the orchestrator and all
