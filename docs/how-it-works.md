@@ -47,7 +47,9 @@ is `settings.json`, because Claude Code writes to it too.
   and a project overrides any of them by placing a same-named file in its own `.claude/agents/`.
   A spawn that names no definition and no model, which is what a framework's "launch a subagent"
   produces, is tiered by the `tier-agent-spawns` hook instead: one tier below the session under
-  `tiered`, untouched under `session-model`, a prompt under `off`.
+  `tiered`, untouched under `session-model`, a prompt under `off`. Inside a repository that
+  carries a framework runtime a bare spawn keeps the session model, the framework's own rule;
+  `docs/bmad.md` says why.
 - **Commands** are the ritual in five keystrokes, each one composing skills you already have.
   `/research` splits a question into at most three dimensions, fans out read-only gatherers and
   returns one synthesized digest. `/plan` runs `plan-authoring`, writes the plan under

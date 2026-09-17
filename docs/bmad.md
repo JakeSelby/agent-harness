@@ -44,8 +44,11 @@ copies a framework file.
   definition or passes a model is left alone; a bare one gets the `delegation` stance: one tier
   below the session under `tiered`, untouched under `session-model`, a prompt under `off`. The
   session model is read from the transcript's newest assistant record, so a spawn in the very
-  first assistant turn of a session is left alone. One tier down is right for gathering and
-  wrong for judgment, which is what the second piece is for.
+  first assistant turn of a session is left alone. Inside a repository that carries the
+  framework's runtime (`_bmad/scripts/`), a bare spawn keeps the session model instead: the
+  framework's finalize reviewers, validators and lenses launch from step logic or prompt-only
+  lists that no override can rename, and its own rule is same capability. The second piece
+  names the harness's agents where the recipe allows, which is what carries tools and effort.
 - **Override templates** under `templates/bmad/custom/` use the framework's own customization
   contract to name the harness's agents where the framework's spawns are judgment work: the
   review layers of `bmad-build`, `bmad-build-auto` and `bmad-code-review` run as `reviewer`, the
@@ -60,11 +63,13 @@ copies a framework file.
   and appends an unknown layer id beside the renamed original, so after an upgrade this is the
   command that says whether the routing still holds.
 
-Research fan-outs (`bmad-deep-recon`) need no override: their researchers are bare spawns, and
-one tier below the session is what the skill's own guidance asks for. Routing the
-implementation handoff to the `builder` agent proper is a follow-up: `builder` commits in its
-own worktree while the framework's review step diffs the tree it ran in, so the handoff would
-also have to bring the branch back.
+Research fan-outs (`bmad-deep-recon`) have no template: their researchers are bare spawns and
+keep the session model like every other bare spawn in a framework repo; the skill's own
+`subagent_models` knob is the place to make them cheaper. Routing the implementation handoff
+to the `builder` agent was considered and rejected: the framework's review step diffs the tree
+it ran in against `baseline_commit`, so the implementer has to work in place, the pinned
+handoff already carries the builder's tier, and what `builder` adds (isolation, one commit,
+the repo gate) the framework does itself later in the run.
 
 ## What the harness ships for a framework, and what it does not
 

@@ -123,6 +123,34 @@ class TierSpawnsTests(unittest.TestCase):
         del payload["transcript_path"]
         self.assertIsNone(self.run_hook(payload))
 
+    # --- framework repositories ---
+    def framework(self, *parts):
+        root = self.home / "repo"
+        root.joinpath(*parts).mkdir(parents=True, exist_ok=True)
+        return root
+
+    def test_framework_repo_keeps_bare_spawns_on_the_session_model(self):
+        self.write_transcript(record("assistant", "claude-fable-5-1"))
+        for marker in (("_bmad", "scripts"), ("_bmad", "core")):
+            with self.subTest(marker=marker):
+                nested = self.framework(*marker) / "crates" / "core"
+                nested.mkdir(parents=True, exist_ok=True)
+                payload = dict(self.spawn(prompt="x"), cwd=str(nested))
+                self.assertIsNone(self.run_hook(payload))
+                out = self.run_hook(payload, env={"HARNESS_STANCE_DELEGATION": "off"})
+                self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
+
+    def test_a_worktree_with_only_custom_overrides_is_still_tiered(self):
+        self.write_transcript(record("assistant", "claude-fable-5-1"))
+        payload = dict(self.spawn(prompt="x"), cwd=str(self.framework("_bmad", "custom")))
+        self.assertEqual(self.rewritten(payload), "opus")
+
+    def test_a_missing_or_malformed_cwd_is_tiered_as_usual(self):
+        self.write_transcript(record("assistant", "claude-opus-5"))
+        for cwd in (str(self.home / "nowhere"), 42, None):
+            with self.subTest(cwd=cwd):
+                self.assertEqual(self.rewritten(dict(self.spawn(prompt="x"), cwd=cwd)), "sonnet")
+
     # --- other stances ---
     def test_session_model_stance_never_rewrites(self):
         self.config("session-model")

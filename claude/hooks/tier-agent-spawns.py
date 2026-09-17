@@ -16,6 +16,13 @@ What a bare spawn gets depends on the `delegation` stance, read from
     session-model  leave it alone
     off            ask before every spawn, named or not
 
+A repository that carries a planning-framework runtime (`_bmad/scripts/` or `_bmad/core/`
+at or above `cwd`) is a framework repo: a bare spawn there keeps the session model under
+`tiered`, because the framework's lenses are judgment work its override contract cannot
+rename, and its own rule is same capability. The framework's override templates name the
+harness's agents where the recipe allows, which is what carries tools and effort. A
+worktree of such a repo commits only `_bmad/custom/`, so the tier-down applies there.
+
 The session model is read from the newest main-line assistant record in the transcript, which
 Claude Code writes once a response has started executing tools, so a spawn in a session's very
 first response is left alone: nothing else says what the session runs on (the `model` key in
@@ -34,6 +41,7 @@ LADDER = ["fable", "opus", "sonnet", "haiku"]
 DEFAULT_STANCE = "tiered"
 TAIL_BYTES = 1 << 20
 HOOK = "tier-agent-spawns hook"
+FRAMEWORK_MARKERS = (("_bmad", "scripts"), ("_bmad", "core"))
 
 
 def load(path):
@@ -91,6 +99,19 @@ def transcript_model(path):
     return None
 
 
+def framework_root(cwd):
+    """The nearest directory at or above cwd that carries a framework runtime, or None."""
+    try:
+        start = Path(cwd).resolve()
+    except Exception:
+        return None
+    for candidate in (start, *start.parents):
+        for parts in FRAMEWORK_MARKERS:
+            if candidate.joinpath(*parts).is_dir():
+                return candidate
+    return None
+
+
 def is_bare(tool_input):
     kind = tool_input.get("subagent_type")
     return not tool_input.get("model") and (not kind or kind == "general-purpose")
@@ -122,6 +143,8 @@ def main():
         })
         return
     if variant != "tiered" or not is_bare(tool_input):
+        return
+    if framework_root(payload.get("cwd")):
         return
     current = tier_of(transcript_model(payload.get("transcript_path")))
     if current is None or current == LADDER[-1]:
