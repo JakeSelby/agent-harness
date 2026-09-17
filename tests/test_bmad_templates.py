@@ -98,6 +98,22 @@ class TemplateTests(unittest.TestCase):
                 self.assertEqual(text.count("[[workflow.") - text.count("[[workflow.oneshot"), text.count("{diff_file}"))
                 self.assertIn("{claims_file}", text)
 
+    def test_the_handoff_runs_on_the_builder_tier(self):
+        builder = (REPO / "claude" / "agents" / "builder.md").read_text(encoding="utf-8")
+        tier = re.search(r"^model: (\w+)$", builder, re.M).group(1)
+        for skill in ("bmad-build", "bmad-build-auto"):
+            with self.subTest(skill=skill):
+                self.assertIn(f"`model` set to `{tier}`", TEMPLATES[skill].read_text(encoding="utf-8"))
+
+    def test_surface_reader_handles_every_fence_and_a_commented_header(self):
+        text = ("[workflow] # team\n"
+                "a = '''\nid = \"inside\"\n'''\n"
+                'b = """one line"""\n'
+                "[[workflow.review_layers]] # shipped\n"
+                'id = "x"\n')
+        self.assertEqual(harness.toml_surface(text),
+                         ({"workflow.a", "workflow.b"}, {("workflow.review_layers", "x")}))
+
     def test_surface_reader_skips_fenced_strings_and_comments(self):
         text = '[workflow]\n# id = "comment"\nkey = """\nid = "inside"\n"""\n[[workflow.lenses]]\ncode = "adversarial"\n'
         self.assertEqual(harness.toml_surface(text), ({"workflow.key"}, {("workflow.lenses", "adversarial")}))

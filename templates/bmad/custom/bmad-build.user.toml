@@ -7,6 +7,7 @@
 
 [workflow]
 
+# `opus` is the `builder` agent's own frontmatter tier; a harness test pins the two together.
 implementation_handoff = """
 Launch a subagent with no prior conversation context, with `model` set to `opus`, and this prompt:
 

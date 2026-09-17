@@ -1172,8 +1172,9 @@ def toml_surface(text: str) -> Tuple[set, set]:
     """The keys and the (array, id) entries an override TOML declares, read by shape alone.
 
     Enough to compare a sparse override with the base `customize.toml` a skill ships, which is
-    the whole contract: a key or an id the base lacks is one an upstream release renamed, and
-    the framework's renderer would ignore it silently. Python 3.9 has no TOML parser."""
+    the whole contract: the framework's renderer drops a key the base lacks and appends an id
+    the base lacks beside the renamed original, so after an upstream rename the routing quietly
+    stops applying. Python 3.9 has no TOML parser."""
     keys: set = set()
     entries: set = set()
     table = None
@@ -1187,11 +1188,12 @@ def toml_surface(text: str) -> Tuple[set, set]:
             continue
         if not line or line.startswith("#"):
             continue
-        m = re.match(r"^\[\[([\w.-]+)\]\]$", line)
+        header = re.sub(r"\s+#.*$", "", line)
+        m = re.match(r"^\[\[([\w.-]+)\]\]$", header)
         if m:
             array, table = m.group(1), None
             continue
-        m = re.match(r"^\[([\w.-]+)\]$", line)
+        m = re.match(r"^\[([\w.-]+)\]$", header)
         if m:
             table, array = m.group(1), None
             continue
