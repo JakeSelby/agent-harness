@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A `code-quality-instruments` skill: branch coverage over line coverage, mutation score as the
+  only instrument here that measures assertions rather than execution, complexity joined to
+  coverage to rank the risky functions, and duplication as a refactor signal that is never a gate.
+  Carries per-language instruments for Python, TypeScript, Rust and Go, and the operating rules
+  that keep them usable: mutate the diff rather than the tree, run one instrument at a time, bound
+  the workers. The `testing: required` variant gains a one-line pointer, which is the whole
+  always-loaded cost. Adapted from `unclebob/swarm-forge`, whose engineering article pins real
+  instruments per language where our stance only asked that tests exist. (#73)
+
 - An eleventh hook, `brief-guard`: PreToolUse on `Agent`, it appends a 400-word return bound to
   a subagent brief that states none, rather than asking the orchestrator to write one.
   `transcript-hygiene/brief-without-cap` fired 536 times across 30 percent of sessions, so the
