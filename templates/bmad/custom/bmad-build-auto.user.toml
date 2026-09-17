@@ -1,0 +1,57 @@
+# Routes bmad-build-auto's spawns through the harness's agent definitions so the delegation
+# stance reaches them: review layers run as `reviewer`, the intent layer as `spec-reviewer`,
+# and the implementation subagent runs on the builder's tier. Installed into `_bmad/custom/`
+# by `harness bmad apply`; `harness bmad check` reports when an upstream release renames a key
+# or a layer id. Keys and ids mirror the skill's own customize.toml; an entry with a matching
+# id replaces the shipped one, so every field the layer needs is repeated here. Why:
+# docs/bmad.md in the harness checkout.
+
+[workflow]
+
+implementation_handoff = """
+Launch a subagent with no prior conversation context, with `model` set to `opus`, and this prompt:
+
+> Read {spec_file} in full and implement it. The spec is the only source of truth; load every file its frontmatter `context:` lists before you start.
+>
+> When you finish, report what you changed, how you verified it, and anything left incomplete or risky.
+"""
+
+[[workflow.review_layers]]
+id = "blind-hunter"
+name = "Blind Hunter"
+instruction = """
+Launch the `reviewer` agent (subagent_type: reviewer) with no prior conversation context, with this prompt:
+
+Review the unified diff at `{diff_file}`. Read that file, it is the content under review, then read the changed files around the hunks. Hunt for what is missing as well as what is wrong. Return a Markdown list of findings and nothing else; if the diff is empty, say so and stop. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
+"""
+
+[[workflow.review_layers]]
+id = "edge-case-hunter"
+name = "Edge Case Hunter"
+instruction = """
+Launch the `reviewer` agent (subagent_type: reviewer) with no prior conversation context, with this prompt:
+
+Read `{skill-root}/review-prompts/edge-case-hunter.md` completely and follow it as your review instructions; if it is unreadable, report that exact failure and stop. Leave `{claims_file}` unread until those instructions call for it. The content under review is the unified diff at `{diff_file}`; read that file. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
+"""
+
+[[workflow.review_layers]]
+id = "verification-gap"
+name = "Verification Gap Reviewer"
+instruction = """
+Launch the `reviewer` agent (subagent_type: reviewer) with no prior conversation context, with this prompt:
+
+Read `{skill-root}/review-prompts/verification-gap.md` completely and follow it as your review instructions; if it is unreadable, report that exact failure and stop. The content under review is the unified diff at `{diff_file}`; read that file. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
+"""
+
+[[workflow.review_layers]]
+id = "intent-alignment"
+name = "Intent Alignment Auditor"
+instruction = """
+Launch the `spec-reviewer` agent (subagent_type: spec-reviewer) with no prior conversation context, with this prompt:
+
+The spec is the verbatim intent this work started from, quoted here in full:
+
+{verbatim_intent}
+
+The diff is the unified diff at `{diff_file}`; read that file, it is the change under review. Judge the diff against that intent only: what it does that the intent did not ask for, what the intent asked for that it does not do, and what the intent expects that the diff and its tests do not prove. Do not invoke any skill and do not spawn subagents of your own. Return your lists as text in your final message, not through any findings-reporting tool.
+"""

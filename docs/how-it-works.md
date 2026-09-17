@@ -45,6 +45,9 @@ is `settings.json`, because Claude Code writes to it too.
   commits locally and never pushes, which is how writes stay single-threaded while several agents
   run at once. Frontmatter `model` beats the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable,
   and a project overrides any of them by placing a same-named file in its own `.claude/agents/`.
+  A spawn that names no definition and no model, which is what a framework's "launch a subagent"
+  produces, is tiered by the `tier-agent-spawns` hook instead: one tier below the session under
+  `tiered`, untouched under `session-model`, a prompt under `off`.
 - **Commands** are the ritual in five keystrokes, each one composing skills you already have.
   `/research` splits a question into at most three dimensions, fans out read-only gatherers and
   returns one synthesized digest. `/plan` runs `plan-authoring`, writes the plan under
@@ -57,7 +60,8 @@ is `settings.json`, because Claude Code writes to it too.
 - **Hooks** are the things that must happen regardless of what the model decides: a validator
   that checks every plan file against the card contract, a classifier that lets read-only shell
   commands through in plan mode, an approver that lets `WebFetch` through in plan mode so
-  research does not prompt, an output filter that trims a verbose test or build run, a
+  research does not prompt, a tierer that applies the delegation stance to any subagent spawn
+  that names no agent definition, an output filter that trims a verbose test or build run, a
   session-start check for drift, env overrides and the repository handoff, a scanner that flags
   instruction-shaped text in `Bash`, `WebFetch` and `Read` output, a stop gate that runs a
   repository's own quality gate before a turn is allowed to end, and a session-end usage logger.

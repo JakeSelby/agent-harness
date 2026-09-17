@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `tier-agent-spawns` hook (`PreToolUse` on `Agent`) applies the `delegation` stance to every
+  subagent spawn that names no agent definition and no model, which is what a planning
+  framework's or a plugin's "launch a subagent" produces: one tier below the session under
+  `tiered`, untouched under `session-model`, a prompt under `off`. Frontmatter and explicit
+  model choices are left alone.
+- `templates/bmad/custom/` carries override files for BMad's `bmad-build`, `bmad-build-auto` and
+  `bmad-code-review` that run their review layers as the `reviewer` and `spec-reviewer` agents
+  and the implementation handoff on the builder's tier. `harness bmad apply` installs them into
+  a repository's `_bmad/custom/` and `harness bmad check` reports every key or layer id the
+  installed skill no longer declares.
+
 ## [0.4.1] — 2026-09-16
 
 ### Security

@@ -37,6 +37,17 @@
             "statusMessage": "Checking plan-mode web research"
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/harness/tier-agent-spawns.py # harness:tier-spawns",
+            "timeout": 5,
+            "statusMessage": "Applying the delegation stance"
+          }
+        ]
       }
     ],
     "PostToolUse": [

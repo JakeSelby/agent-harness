@@ -9,6 +9,7 @@
       "readonly-bash": {"event": "PreToolUse", "always": true},
       "filter-output": {"event": "PreToolUse", "always": true},
       "plan-webfetch": {"event": "PreToolUse", "always": true},
+      "tier-spawns": {"event": "PreToolUse", "always": true},
       "plan-card": {"event": "PostToolUse", "stance": "plan-ceremony", "variant": "review-card"},
       "neutralize": {"event": "PostToolUse", "always": true},
       "session": {"event": "SessionStart", "always": true},

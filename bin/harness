@@ -15,6 +15,7 @@ only, Python 3.9+.
     harness usage   [--days N] [--by day|repo|model] [--rescan]
     harness workspace create NAME FOLDER... [--no-harness] [--force]
     harness config get KEY
+    harness bmad    check|apply [REPO] [--force]
     harness --version
 """
 from __future__ import annotations
@@ -1161,6 +1162,126 @@ def cmd_usage(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- bmad
+
+BMAD_TEMPLATES = REPO / "templates" / "bmad" / "custom"
+BMAD_SUFFIX = ".user.toml"
+
+
+def toml_surface(text: str) -> Tuple[set, set]:
+    """The keys and the (array, id) entries an override TOML declares, read by shape alone.
+
+    Enough to compare a sparse override with the base `customize.toml` a skill ships, which is
+    the whole contract: a key or an id the base lacks is one an upstream release renamed, and
+    the framework's renderer would ignore it silently. Python 3.9 has no TOML parser."""
+    keys: set = set()
+    entries: set = set()
+    table = None
+    array = None
+    fence = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if fence:
+            if fence in line:
+                fence = None
+            continue
+        if not line or line.startswith("#"):
+            continue
+        m = re.match(r"^\[\[([\w.-]+)\]\]$", line)
+        if m:
+            array, table = m.group(1), None
+            continue
+        m = re.match(r"^\[([\w.-]+)\]$", line)
+        if m:
+            table, array = m.group(1), None
+            continue
+        m = re.match(r"^([\w-]+)\s*=\s*(.*)$", line)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2)
+        for quote in ('"""', "'''"):
+            if value.startswith(quote) and value.count(quote) == 1:
+                fence = quote
+        if array:
+            if key in ("id", "code"):
+                entries.add((array, value.strip().strip("\"'")))
+        else:
+            keys.add(f"{table}.{key}" if table else key)
+    return keys, entries
+
+
+def _bmad_root(path: Optional[str]) -> Path:
+    start = Path(path).expanduser() if path else Path.cwd()
+    probe = subprocess.run(["git", "-C", str(start), "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True)
+    return Path(probe.stdout.strip()) if probe.returncode == 0 and probe.stdout.strip() else start.resolve()
+
+
+def bmad_templates() -> List[Path]:
+    return sorted(BMAD_TEMPLATES.glob(f"*{BMAD_SUFFIX}"))
+
+
+def bmad_check(root: Path) -> Tuple[List[str], List[str]]:
+    """Status lines and drift findings, one template at a time, for the skills the repo has."""
+    lines: List[str] = []
+    drift: List[str] = []
+    for template in bmad_templates():
+        skill = template.name[: -len(BMAD_SUFFIX)]
+        base = root / ".claude" / "skills" / skill / "customize.toml"
+        if not base.exists():
+            lines.append(f"  {skill}: not installed here, skipped")
+            continue
+        text = template.read_text(encoding="utf-8")
+        want_keys, want_entries = toml_surface(text)
+        have_keys, have_entries = toml_surface(base.read_text(encoding="utf-8"))
+        for key in sorted(want_keys - have_keys):
+            drift.append(f"{skill}: key `{key}` is not in the installed customize.toml")
+        for array, ident in sorted(want_entries - have_entries):
+            drift.append(f"{skill}: `{array}` has no entry `{ident}` in the installed customize.toml")
+        installed = root / "_bmad" / "custom" / template.name
+        if not installed.exists():
+            state = "template not installed (harness bmad apply)"
+        elif installed.read_text(encoding="utf-8") == text:
+            state = "installed"
+        else:
+            state = "installed, differs from the template"
+        lines.append(f"  {skill}: {state}")
+    return lines, drift
+
+
+def cmd_bmad(args: argparse.Namespace) -> int:
+    """`check` compares the override templates with a repository's installed BMad skills;
+    `apply` installs the ones its skills declare, never replacing a differing override
+    without --force, then checks."""
+    root = _bmad_root(args.path)
+    if not (root / "_bmad").is_dir():
+        say(f"no _bmad/ directory under {root}")
+        return 1
+    if args.action == "apply":
+        dest_dir = root / "_bmad" / "custom"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for template in bmad_templates():
+            skill = template.name[: -len(BMAD_SUFFIX)]
+            if not (root / ".claude" / "skills" / skill / "customize.toml").exists():
+                continue
+            dest = dest_dir / template.name
+            text = template.read_text(encoding="utf-8")
+            if dest.exists() and dest.read_text(encoding="utf-8") == text:
+                continue
+            if dest.exists() and not args.force:
+                say(f"  kept {dest.relative_to(root)}: differs from the template (--force replaces it)")
+                continue
+            dest.write_text(text, encoding="utf-8")
+            say(f"  wrote {dest.relative_to(root)}")
+    lines, drift = bmad_check(root)
+    for line in lines:
+        say(line)
+    for finding in drift:
+        say("  drift: " + finding)
+    say(f"bmad: {len(drift)} drift finding(s) in {root}")
+    return 1 if drift else 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="harness", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=f"agent-harness {VERSION}")
@@ -1221,6 +1342,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("action")
     p.add_argument("key")
     p.set_defaults(func=cmd_config)
+
+    p = sub.add_parser("bmad", help="check or apply the BMad override templates in a repository (default: the current repo)")
+    p.add_argument("action", choices=["check", "apply"])
+    p.add_argument("path", nargs="?")
+    p.add_argument("--force", action="store_true", help="apply: replace an override that differs from the template")
+    p.set_defaults(func=cmd_bmad)
 
     args = parser.parse_args(argv)
     return args.func(args)
