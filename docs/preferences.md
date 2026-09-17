@@ -120,7 +120,8 @@ and compaction. How it meets the tier decision is in the `delegation-tiering` sk
 **Delegation.** The evidence for the tier bands, the cost-per-solved-task numbers and the
 boundaries where they stop holding are in the `delegation-tiering` skill, not here. The
 `tier-agent-spawns` hook enforces the chosen variant on spawns that name no agent definition:
-one tier down under `tiered`, untouched under `session-model`, a prompt under `off`.
+one tier down under `tiered` (the session model inside a framework repo), untouched under
+`session-model`, a prompt under `off`.
 
 ## Proposing a new stance or variant
 

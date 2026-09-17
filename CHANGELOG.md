@@ -19,6 +19,13 @@ All notable changes to this project are documented here. The format follows
   a repository's `_bmad/custom/` and `harness bmad check` reports every key or layer id the
   installed skill no longer declares.
 
+### Changed
+
+- Inside a repository that carries a framework runtime (`_bmad/scripts/`), the
+  `tier-agent-spawns` hook leaves a bare spawn on the session model: the framework's lenses
+  are judgment work its overrides cannot rename, and its own rule is same capability. The
+  builder-routing question is closed in `docs/bmad.md`.
+
 ## [0.4.1] — 2026-09-16
 
 ### Security
