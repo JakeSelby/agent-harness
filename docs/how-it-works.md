@@ -111,8 +111,9 @@ when a competent engineer could reasonably want the opposite. A rule has to be w
 whichever way every switch is thrown, which is also what makes the harness safe to install for
 someone whose preferences nobody knows.
 
-Applied honestly, the test convicts one rule today: `voice-and-format.md` hard-wires the Scannable
-output style, and issue #68 tracks turning it into a `voice` dimension. `conciseness.md` and
+Applied honestly, the test convicted `voice-and-format.md`, which hard-wired the Scannable output
+style until the `voice` dimension took it (#68). What stayed in the rule is what no variant changes:
+a subagent inherits no voice, so its brief carries the output shape itself. `conciseness.md` and
 `cache-hygiene.md` are the next candidates. The instruction to gather with subagents unasked used
 to fail it as well, contradicting the `delegation: off` variant outright; it now lives in the two
 variants that mean it (#67).

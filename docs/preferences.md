@@ -28,6 +28,7 @@ one-line file so `/context` shows the choice explicitly.
 | `testing` | `required`, `pragmatic`, `off` | `required` |
 | `autonomy` | `execute`, `confirm-writes`, `ask` | `execute` |
 | `cost` | `frugal`, `balanced`, `max` | `balanced` |
+| `voice` | `scannable`, `answer-card`, `off` | `scannable` |
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
 `HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start
@@ -118,6 +119,14 @@ gatherers with a fan-out of three, never turns on fast mode, and ends a task wit
 `balanced` is the shipped default — medium effort, fan-out of six, fast mode off unless asked.
 `max` spends the model's default effort, fans out as widely as the task needs, and allows fast mode
 and compaction. How it meets the tier decision is in the `delegation-tiering` skill.
+
+**Voice.** `voice` governs how a reply is laid out, and nothing about what the work is. `scannable`
+defers to the Scannable output style: verdict first, registers separated, at most one table.
+`answer-card` is for reading on a phone — the answer in the first line, then why, the catch, and the
+alternatives, about 150 words, no tables, with the reasoning left in the file it links rather than
+re-argued in the message. It wins over the output style where the two differ. `off` imposes no shape
+at all. The rule keeps only what no variant changes: a subagent inherits no voice, so its brief has
+to carry the output shape itself.
 
 **Delegation.** The evidence for the tier bands, the cost-per-solved-task numbers and the
 boundaries where they stop holding are in the `delegation-tiering` skill, not here. The

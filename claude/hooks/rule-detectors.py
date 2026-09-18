@@ -822,6 +822,7 @@ class Detector(object):
 
 
 _COMMITS_ON = ("commits", None)  # any variant but `off`
+_VOICE_ON = ("voice", None)  # the shape is the stance's; `off` imposes none
 _COMMITS_ATTRIBUTED = ("commits", ("conventional-attributed",))
 
 _REGISTRY = [
@@ -835,8 +836,8 @@ _REGISTRY = [
     Detector("research/search-over-cap", "research-and-verification", "session", search_over_cap),
     Detector("cache-hygiene/model-switch", "cache-hygiene", "session", model_switch),
     Detector("cache-hygiene/compact", "cache-hygiene", "session", compaction),
-    Detector("voice/banned-opener", "voice-and-format", "assistant-final", banned_opener),
-    Detector("voice/second-table", "voice-and-format", "assistant-final", second_table),
+    Detector("voice/banned-opener", "voice-and-format", "assistant-final", banned_opener, _VOICE_ON),
+    Detector("voice/second-table", "voice-and-format", "assistant-final", second_table, _VOICE_ON),
     Detector("autonomy/confirmed-irreversible", "autonomy", "bash", confirmed_irreversible),
     Detector("autonomy/denied-by-grade", "autonomy", "bash", denied_by_grade),
     Detector("commits/non-conventional", "commits", "bash", non_conventional, _COMMITS_ON),

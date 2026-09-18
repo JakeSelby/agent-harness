@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `voice` stance dimension, closing the last always-loaded rule that was a pure preference (#68).
+  `scannable` defers to the output style as before and is the default, so nothing changes for an
+  existing install. `answer-card` is for reading on a phone: the answer in the first line, then why,
+  the catch, and the alternatives, about 150 words, no tables, with the reasoning left in the file
+  it links rather than re-argued in the message. `off` imposes no shape at all. The two `voice/`
+  detectors are gated on the dimension, so a voice nobody selected is not measured as a violation.
+
+### Changed
+
+- `voice-and-format.md` drops from thirteen lines to six, keeping only what no variant changes:
+  a subagent inherits no voice, so its brief has to carry the output shape itself. Always-loaded
+  context moves 193 to 195 of the 196-line budget.
+
 ## [0.7.0] — 2026-09-17
 
 ### Added
