@@ -107,6 +107,14 @@ class NativeInstallTests(TempHome):
         return harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=False,
                                 adopt_codex=options.get("adopt_codex", False), print_only=False))
 
+    def test_session_override_does_not_change_global_projections(self):
+        with patch.dict(harness.os.environ, {"HARNESS_STANCE_DELEGATION": "off"}):
+            self.assertEqual(self.sync(), 0)
+            linked = self.home / ".claude" / "rules" / "harness-stances" / "delegation.md"
+            self.assertEqual(linked.resolve().stem, CFG["stances"]["delegation"])
+            self.assertIn("stance delegation: " + CFG["stances"]["delegation"],
+                          (self.home / ".codex" / "AGENTS.md").read_text())
+
     def test_codex_only_bootstraps_all_shared_artifacts_and_identity(self):
         harness.config_path().parent.mkdir(parents=True)
         harness.config_path().write_text(json.dumps({"claude": {"manage": False}, "identity": {"name": "Ada"}}))

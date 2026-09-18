@@ -37,3 +37,9 @@ writes retain an intent record that the next sync can reconcile.
 Unmanaged instructions and skills require explicit adoption. Adopted Codex instruction text
 is included in subsequent projections and restored on uninstall. Existing user-owned files,
 MCP/plugin settings, selected model and credentials are not replaced by a default config.
+
+`sync` installs user defaults only. Project and session stance overrides are resolved by the
+lifecycle adapter in that invocation; they never repoint global links used by another session.
+`HARNESS_PERMISSIONS` is not a way to grant native permissions to a running client. Set a durable
+posture through user configuration and sync, or use that client's own permission controls.
+Custom Claude configuration homes receive an instruction file importing their own personal file.
