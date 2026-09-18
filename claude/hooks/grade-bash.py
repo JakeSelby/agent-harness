@@ -49,9 +49,14 @@ MARKER = "HARNESS_CONFIRMED=1"
 DEFAULT_STANCE = "execute"
 THRESHOLDS = {"execute": 3, "confirm-writes": 2, "ask": 1}
 DENY_MODES = {"auto", "bypassPermissions"}
-DENY_TAIL = (" No prompt exists in this mode: ask the user in chat, and on a yes re-run the same "
-             "command prefixed with " + MARKER + ".")
+DENY_TAIL = (" Nothing can prompt in this permission mode, so the command was refused rather than"
+             " asked about. Say in chat what it would change and why that is hard to undo; if the"
+             " user says yes, run the same command again with " + MARKER + " in front of it.")
 LABELS = {1: "local write", 2: "remote-mutating", 3: "irreversible"}
+# The label above is for a log; this is the same fact for whoever is reading the prompt.
+PLAIN = {1: "this changes files on this machine",
+         2: "this changes something other people can see",
+         3: "this cannot be undone"}
 PLACEHOLDER = "__GRADESUB__"
 MAX_DEPTH = 4
 
@@ -894,8 +899,8 @@ def grade_text(cmd, cwd="", depth=0):
 def reason(grade, verb, target, family, variant):
     clause = CLAUSES.get(family) or GENERIC[grade]
     phrase = " ".join(p for p in (verb, target) if p).strip()
-    return "grade %d, %s: %s %s (%s, autonomy=%s)" % (
-        grade, LABELS[grade], phrase or "this command", clause, HOOK, variant)
+    return "grade %d, %s: %s %s — %s (%s, autonomy=%s)" % (
+        grade, LABELS[grade], phrase or "this command", clause, PLAIN[grade], HOOK, variant)
 
 
 def main():

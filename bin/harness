@@ -26,6 +26,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -873,6 +874,51 @@ def _version_of(cmd: List[str]) -> str:
         return f"error: {exc}"
 
 
+def hook_commands(settings: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    for entries in (settings.get("hooks") or {}).values():
+        for entry in entries if isinstance(entries, list) else []:
+            for hook in (entry.get("hooks") or []) if isinstance(entry, dict) else []:
+                command = hook.get("command") if isinstance(hook, dict) else None
+                if isinstance(command, str) and command.strip():
+                    out.append(command)
+    return out
+
+
+def hook_health(settings: Dict[str, Any]) -> Tuple[int, List[str]]:
+    """How many hook commands are registered, and what stops them running.
+
+    Claude Code treats a hook that fails to start as non-blocking, so a missing interpreter or an
+    unsynced script path turns every hook into a silent no-op. Two of them are guards — the
+    command grader that asks before something irreversible, and the stop gate that runs the
+    repository's own checks — so the failure mode is the guards disappearing with nothing said.
+    """
+    commands = hook_commands(settings)
+    problems: List[str] = []
+    interpreters: Dict[str, bool] = {}
+    for command in commands:
+        try:
+            parts = shlex.split(command)
+        except ValueError:
+            continue
+        if not parts:
+            continue
+        name = parts[0]
+        if name not in interpreters:
+            interpreters[name] = _tool(name) is not None or Path(name).is_file()
+        for arg in parts[1:]:
+            if not arg.endswith(".py"):
+                continue
+            script = Path(os.path.expanduser(arg))
+            note = f"script not found: {arg}"
+            if not script.exists() and note not in problems:
+                problems.append(note)
+    for name, found in interpreters.items():
+        if not found:
+            problems.append(f"interpreter not found: {name}")
+    return len(commands), problems
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"agent-harness {VERSION}")
     say(f"  repo: {REPO}")
@@ -882,8 +928,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"  gh login: {_version_of(['gh', 'auth', 'status'])}")
     say(f"  claude credentials present: {(claude_dir() / '.credentials.json').exists() or (home() / '.claude.json').exists()}")
     say(f"  codex credentials present: {(codex_dir() / 'auth.json').exists()}")
-    for hook in (REPO / "claude" / "hooks").glob("*.py"):
-        say(f"  hook {hook.name}: {'executable' if os.access(hook, os.X_OK) else 'not executable (python3 is invoked explicitly, fine)'}")
+    count, problems = hook_health(read_json(claude_dir() / "settings.json") or {})
+    if not count:
+        say("  hooks: none registered in settings.json; run `harness sync`")
+    elif problems:
+        say(f"  hooks: {count} registered, {len(problems)} of them cannot run:")
+        for problem in problems:
+            say(f"    {problem}")
+        say("    A hook that cannot start is treated as non-blocking, so these fail silently.")
+        say("    The command grader and the stop gate are hooks: those guards are off until fixed.")
+    else:
+        say(f"  hooks: {count} registered, all runnable")
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))

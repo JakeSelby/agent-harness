@@ -172,7 +172,8 @@ def reason(path, cmd, code, output):
     return (
         f"The gate in {path.name} is red: `{cmd}` exited {code}.\n\n"
         f"{tail}\n\n"
-        "Fix it and finish, or say why it cannot pass."
+        "That command is the check block this repository defines under `## Gate`, run at the end "
+        "of a turn once files have changed. Fix it and finish, or say why it cannot pass."
     )
 
 
@@ -197,7 +198,8 @@ def main():
         return
     if not trusted(root, cwd):
         sys.stderr.write("stop-gate: folder not trusted in Claude Code and not listed by "
-                         "`harness trust`; gate skipped\n")
+                         "`harness trust`; gate skipped. Run `harness trust .` in this folder to "
+                         "let it run the repository's own checks.\n")
         return
 
     current = tree_hash(root)

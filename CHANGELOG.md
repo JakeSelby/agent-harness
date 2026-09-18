@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `doctor` now reports whether each registered hook can actually run, instead of printing an
+  executable bit that never mattered. It resolves the interpreter and the script path of every
+  hook command in the live settings and names what is missing. Claude Code treats a hook that
+  fails to start as non-blocking, so a machine without `python3` on PATH, or an install that was
+  never synced, turned all eleven hooks into silent no-ops — the command grader that asks before
+  something irreversible and the stop gate that runs the repository's checks among them. Both
+  guards disappeared with nothing on screen to say so. (#85)
+
+- The two hook messages a user actually sees are written for a reader now. The grade-bash denial
+  said "No prompt exists in this mode" and told them to re-run with a marker; it now says the
+  command was refused because nothing can prompt, and what to say before running it again. Every
+  grade carries its meaning in words — "this cannot be undone" — alongside the label. The stop
+  gate says where the failing command came from, and the untrusted-folder notice names the command
+  that fixes it. (#85)
+
+### Fixed
+
 - The four commands that assume a git repository now check for one before they start, and name a
   fallback instead of stopping dead. `/build` says up front that it needs a repository, a remote
   and `gh`, offers to make the change in place when there is no repository, and stops at the local
