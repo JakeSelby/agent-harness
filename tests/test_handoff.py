@@ -232,42 +232,21 @@ class GitignoreSyncTests(unittest.TestCase):
 
 
 class DocumentedCountTests(unittest.TestCase):
-    """Every number the docs state about the tree is derived from the tree here, so a layer
-    added without a doc edit fails the suite instead of going stale in silence."""
+    def test_readme_uses_generated_inventory(self):
+        text = (REPO / "README.md").read_text()
+        self.assertIn("harness catalog", text)
+        self.assertNotRegex(text, r"\*\*(?:Rules|Skills|Stances)\*\* \([0-9]")
 
-    def setUp(self):
-        self.n = counts()
-        self.readme = (REPO / "README.md").read_text(encoding="utf-8")
-        self.how = (REPO / "docs" / "how-it-works.md").read_text(encoding="utf-8")
-        self.ownership_doc = (REPO / "docs" / "settings-ownership.md").read_text(encoding="utf-8")
+    def test_handoff_documentation_describes_shared_storage_and_migration(self):
+        text = (REPO / "docs" / "bmad.md").read_text()
+        self.assertIn(".agent-harness/progress.md", text)
+        self.assertIn(".claude/progress.md", text)
+        self.assertIn("approvals never transfer", text)
 
-    def test_readme_layer_table_counts_match_the_tree(self):
-        self.assertIn(f"| **Rules** ({self.n['rules']}) |", self.readme)
-        self.assertIn(f"| **Stances** ({self.n['stance_dims']}, {self.n['stance_variants']} variants) |", self.readme)
-        self.assertIn(f"| **Skills** ({self.n['skills']}) |", self.readme)
-        self.assertIn(f"| **Commands** ({self.n['commands']}) |", self.readme)
-        self.assertIn(f"| **Hooks** ({self.n['hooks']}) |", self.readme)
-
-    def test_readme_names_every_command_and_counts_the_hooks_in_words(self):
-        for path in sorted((REPO / "claude" / "commands").glob("*.md")):
-            self.assertIn(f"`/{path.stem}`", self.readme, msg=path.name)
-        self.assertIn(f"lists its {WORDS[self.n['hooks']]} hooks", self.readme)
-
-    def test_how_it_works_counts_the_rules_and_the_commands_in_words(self):
-        self.assertIn(f"there are {WORDS[self.n['rules']]} and they are short", self.how)
-        self.assertIn(f"the {WORDS[self.n['rules']]} rules", self.how)
-        self.assertIn(f"the ritual in {WORDS[self.n['commands']]} keystrokes", self.how)
-
-    def test_how_it_works_describes_the_handoff_loop(self):
-        self.assertIn("## The handoff loop", self.how)
-        self.assertIn(".claude/progress.md", self.how)
-        self.assertIn("docs/solutions/", self.how)
-
-    def test_settings_ownership_lists_every_registered_hook(self):
-        ids = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())["claude"]["hook_ids"]
-        self.assertIn(f"**Hooks**: {WORDS[len(ids)]} entries", self.ownership_doc)
-        for hook_id in ids:
-            self.assertIn(f"`{hook_id}`", self.ownership_doc, msg=hook_id)
+    def test_settings_ownership_names_every_native_lifecycle_event(self):
+        text = (REPO / "docs" / "settings-ownership.md").read_text()
+        for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd"):
+            self.assertIn(event, text)
 
 
 if __name__ == "__main__":

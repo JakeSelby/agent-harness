@@ -7,9 +7,9 @@ from the harness.
    apply; do not restate global rules.
 2. `ln -s AGENTS.md CLAUDE.md` so Claude Code and Codex read the same file. On Windows, write
    `@AGENTS.md` as the only line of `CLAUDE.md` instead.
-3. Copy `settings.json` to `.claude/settings.json` and replace the allow rules with the exact
+3. For Claude Code, copy `settings.json` to `.claude/settings.json` and replace the allow rules with the exact
    commands agents run in this repo.
-4. Put file-kind-specific rules in `.claude/rules/<topic>.md` with a `paths:` frontmatter glob.
+4. Keep shared project guidance in `AGENTS.md`; for Claude-specific scoped rules, put them in `.claude/rules/<topic>.md` with a `paths:` frontmatter glob.
 5. Run the quality gate once on a clean tree and paste its final line into `AGENTS.md`, so any
    later failure is attributable.
 6. Install the commit hook, which refuses a subject that is not a Conventional Commit:
@@ -23,7 +23,8 @@ from the harness.
    the final message whatever wrote it, which a hook parsing `git commit` off the command line
    does not.
 
-The deny rules in `settings.json` stop agents reading files they should never load. Keep the
+The Claude deny rules in `settings.json` apply to that runtime only. Configure and qualify
+Codex native restrictions separately; a shared instruction is not a filesystem boundary. Keep the
 secrets entries in every repo, and prune the generated-directory entries to what this repo
 actually generates, adding any it generates that the template does not list.
 

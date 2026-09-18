@@ -1,216 +1,56 @@
-# How it works
+# How the shared harness works
 
-The harness is a set of files Claude Code already knows how to read, arranged so that the
-generic parts live in one git checkout and the personal parts live outside it.
+Your preferences select behavior from a provider-independent primitive catalog. Runtime adapters
+project that selection into native instructions, skill discovery, roles, workflows, settings and
+hooks. The agent runtime remains responsible for its native permissions and restrictions.
 
-## The layers, in load order
+## The authority and its projections
 
+```mermaid
+flowchart TD
+  D[Distribution defaults] --> R[Resolve effective policy]
+  U[User preferences] --> R
+  P[Explicit project overrides] --> R
+  E[Session overrides] --> R
+  S[Shared primitive sources] --> R
+  R --> A[Runtime adapters]
+  A --> C[Claude Code]
+  A --> X[Codex]
 ```
-~/.claude/CLAUDE.md ─────────────▶ claude/CLAUDE.md          global instructions, delegation, the cap
-   └─ @~/.claude/CLAUDE.personal.md                           rendered from config; yours, untracked
-~/.claude/rules/harness/ ────────▶ claude/rules/*.md         core rules, every session
-~/.claude/rules/harness-stances/ ▶ claude/stances/<p>/<v>.md one chosen variant per preference
-~/.claude/rules/*.md                                          your own personal rules, untouched
-~/.claude/skills/<name>/ ────────▶ claude/skills/<name>/     procedures, loaded on invocation
-~/.claude/agents/<name>.md ──────▶ claude/agents/*.md        subagent definitions, spawned by name
-~/.claude/commands/<name>.md ────▶ claude/commands/*.md      slash commands, one per keystroke
-~/.claude/hooks/harness/ ────────▶ claude/hooks/*.py         run at lifecycle points, no judgment involved
-~/.claude/output-styles/scannable.md ▶ claude/output-styles/ the shape of every reply
-~/.claude/settings.json  ◀ merge ─ claude/settings.template.json  only the keys OWNERSHIP.json names
-```
 
-Arrows are symlinks, created by `harness sync`. The one file that is merged rather than linked
-is `settings.json`, because Claude Code writes to it too.
+Resolution precedence is defaults, user, explicit project, then session. User-level sync projects
+only user defaults; lifecycle hooks resolve invocation overrides without mutating global links.
+`harness stances --json` shows source, behavior and adapter coverage. Native restrictions always
+win. [Custom stance authoring](primitive-authoring.md) defines naming, roots and conflicts.
 
-## Why each layer exists
+Rules hold standing behavior. Stances make personal choices explicit and switchable. Skills hold
+procedures. Roles define responsibility, context and authority; native bindings select tools,
+models and effort. Workflows compose those pieces, while presentation defines output shape.
+All are authored under `primitives/`. The `claude/` compatibility paths are projections, not
+another source. Custom stances belong outside the distribution checkout.
 
-- **Rules** are for behaviour you want on every turn: how to read files without flooding the
-  transcript, how to present a decision, what counts as verified. Each costs context on every
-  turn, so there are ten and they are short.
-- **Stances** are rules a reasonable person might hold the other way. Instead of arguing in
-  the file, the harness ships variants and you pick one in config. Licensing, commit style,
-  testing philosophy, autonomy level, plan ceremony, delegation tiers, build-versus-buy.
-- **Skills** are procedures. They cost one line of description until invoked, so they can be
-  long: how to write a plan someone can review in one screen, how to run a design loop with an
-  independent judge, how to contribute to someone else's repo.
-- **Agents** are subagent definitions the harness ships so the delegation tiers are enforced by
-  frontmatter instead of by a brief someone retypes: `builder` for implementing one issue or plan
-  in a worktree of its own, `design-judge` for scoring a render against the design loop's rubric,
-  `gatherer` for read-only gathering, `log-compressor` for reducing a test or build log to its
-  failures, `planner` for writing a plan file to the Review Card contract, `reviewer` for
-  fresh-context adversarial review, `spec-reviewer` for checking a diff against what was actually
-  asked for. Each carries its model, its effort level and its tool list, and the tool list is what
-  makes a read-only agent read-only. `builder` is the only one holding `Edit` and `Write`
-  together, because implementation is the one delegated job that has to change existing files; it
-  commits locally and never pushes, which is how writes stay single-threaded while several agents
-  run at once. Frontmatter `model` beats the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable,
-  and a project overrides any of them by placing a same-named file in its own `.claude/agents/`.
-  A spawn that names no definition and no model, which is what a framework's "launch a subagent"
-  produces, is tiered by the `tier-agent-spawns` hook instead: one tier below the session under
-  `tiered`, untouched under `session-model`, a prompt under `off`. Inside a repository that
-  carries a framework runtime a bare spawn keeps the session model, the framework's own rule;
-  `docs/bmad.md` says why.
-- **Commands** are the ritual in five keystrokes, each one composing skills you already have.
-  `/research` splits a question into at most three dimensions, fans out read-only gatherers and
-  returns one synthesized digest. `/plan` runs `plan-authoring`, writes the plan under
-  `.claude/plans/` and stops at the build gate. `/build` takes the approved plan into its own
-  worktree, implements it with tests, runs the repo's gate and opens the pull request.
-  `/review` makes two passes over the diff, `spec-reviewer` on scope and then `reviewer` on
-  quality, each in its own fresh context, and reports findings only. They run in
-  that order, and the worktree is created at build, never earlier. `/handoff` closes the session
-  out, and is described under the handoff loop below.
-- **Hooks** are the things that must happen regardless of what the model decides: a validator
-  that checks every plan file against the card contract, a classifier that lets read-only shell
-  commands through in plan mode, an approver that lets `WebFetch` through in plan mode so
-  research does not prompt, a tierer that applies the delegation stance to any subagent spawn
-  that names no agent definition, an output filter that trims a verbose test or build run, a
-  session-start check for drift, env overrides and the repository handoff, which also installs
-  the framework override templates in a repository that runs one, a scanner that flags
-  instruction-shaped text in `Bash`, `WebFetch` and `Read` output, a stop gate that runs a
-  repository's own quality gate before a turn is allowed to end, and a session-end usage logger.
+`policy/hooks/` contains shared classifiers, gates and detectors. `lib/harness_core/lifecycle.py`
+composes decisions; each adapter translates native events. Registration is separate from trust
+and activation. Enforcement gaps belong in [runtime controls](runtime-controls.md) and the
+[compatibility catalog](compatibility.md), not in claims that all hooks always enforce policy.
 
-  The scanner is advisory: on a match it appends one line naming the tool and the patterns it
-  matched — control tags, "ignore previous instructions", directives addressed to the agent,
-  attribution instructions, environment-update mimicry, and edits to settings or permissions —
-  and it never blocks a call or rewrites a result. Claude Code already wraps subagent returns in
-  a notice of that shape, but the wrapper is built into the tool rather than supplied by a hook,
-  so this one mirrors its wording for the tool results that arrive unwrapped. A commit trailer on
-  its own does not trip it: `Co-Authored-By` counts only within three lines of wording that tells
-  the reader to use it.
+## Working with installed files
 
-  The stop gate is opt-in per repository: it runs the fenced block under the `## Gate` heading
-  of that repo's `AGENTS.md`, one shell command per line, and does nothing where no such block
-  exists. Because that block is the repository's own text, the gate runs only in a folder you
-  have already trusted through Claude Code's own dialog, the same consent that lets a
-  repository's `.claude/settings.json` hooks run, or whose root you have listed with
-  `bin/harness trust <path>`; in a fresh clone it skips with a note on stderr until you do
-  one or the other. It hashes `HEAD` together with the working tree, so a tree unchanged since the last
-  green run skips the commands entirely. A red gate blocks the turn with the failing command,
-  its exit code and the tail of its output; after eight consecutive blocks it releases the turn
-  anyway, so a gate that can never pass cannot trap a session. A gate that outruns its time
-  budget releases the same way. The green hash and the block count live under
-  `~/.local/state/agent-harness/stop-gate/`.
-- **The output style** is the shape of every reply: verdict first, registers separated, action
-  items in one place.
-- **Settings** are the tool configuration that makes the above work: hook registrations, a
-  read-only allowlist so read-only commands do not prompt, the output style selection.
+[Sync and ownership](sync-model.md) explains links, generated files, structural merges,
+configuration homes and rollback. Keep the shared checkout stable and change it through worktrees.
+`harness generate --check` detects stale source projections, and `harness diff` compares installed
+artifacts against their recorded state. Personal data stays outside the repository.
 
-## Which opinions are switches
+[BMad integration and handoffs](bmad.md) keep framework state and task continuation independent of
+runtime transcripts. [Usage](usage.md) records measurements with explicit gaps. [Preferences](preferences.md)
+explains preset choices; [the stance demonstration](stance-demo.md) shows one switch reaching both
+runtimes and a custom extension.
 
-Two layers hold opinions and they are not equally negotiable.
+## Context discipline
 
-**Stances are switches.** Eight dimensions, twenty-three variants, one selection per dimension in
-config, resolved at sync and symlinked into `~/.claude/rules/harness-stances/`. The selection is
-recorded in the sync manifest, so `harness diff` reports "stance selection changed since last
-sync", and the detector registry reads the same map, so a detector for a dimension switched off
-stops counting. A switch is a value you can diff and measure.
-
-**Rules are the floor and do not switch.** All ten link as one directory and load on every turn.
-The test for which side a line belongs on is in [preferences.md](preferences.md): a stance is right
-when a competent engineer could reasonably want the opposite. A rule has to be what stays true
-whichever way every switch is thrown, which is also what makes the harness safe to install for
-someone whose preferences nobody knows.
-
-Applied honestly, the test convicted `voice-and-format.md`, which hard-wired the Scannable output
-style until the `voice` dimension took it (#68). What stayed in the rule is what no variant changes:
-a subagent inherits no voice, so its brief carries the output shape itself. `conciseness.md` and
-`cache-hygiene.md` are the next candidates. The instruction to gather with subagents unasked used
-to fail it as well, contradicting the `delegation: off` variant outright; it now lives in the two
-variants that mean it (#67).
-
-## Filtering verbose output
-
-The `filter-output` hook rewrites a Bash command that runs tests, a build, a lint or a
-type-check — `pytest`, `cargo test`, `npm test`, `go test` and their neighbours — so the run
-pipes through `claude/hooks/filter-lines.py`, which keeps failures, tracebacks, summary lines
-and the last twenty lines and drops the rest; `set -o pipefail` keeps the real exit status. The
-rewrite is skipped when the command already pipes to `head`, `tail`, `grep`, `less` or `wc`,
-redirects to a file, or passes `--watch`, so piping to `tail -50` yourself is how you see a run
-whole — there is no environment switch to turn the filter off. Both scripts live in
-`claude/hooks/`, which is linked as a directory, so the hook resolves the filter beside itself
-at run time. The hook emits `updatedInput` and no permission decision: the hooks documentation
-does not say how two `PreToolUse` hooks on `Bash` combine their output, so this one leaves the
-read-only classifier's decision alone. The command grader below is silent on a read-only
-command for the same reason, so no two of the three `Bash` hooks ever answer one command with a
-decision.
-
-## Command grades
-
-The `grade-bash` hook grades every Bash command on the read-only grammar's decomposition: 0 when
-the classifier proves it read-only, 1 for a local write, 2 for a command that changes shared
-state elsewhere (a push, a pull request, a publish, a mutating API call), 3 for one that cannot
-be undone (a force-push, `reset --hard`, `rm -rf` outside the tree, a `DROP`, a migration, a
-deploy, a cloud delete, `sudo`). An unknown command grades 1, never 3: a false low grade is the
-missed prompt native gives today, and the corpus grows from each miss. The autonomy stance sets
-the gate — `execute` on grade 3, `confirm-writes` on 2 and up, `ask` on 1 and up — and the
-hook's reason names the verb, the target and the consequence in one line, which is the preview
-the stance text promised.
-
-Which decision the hook emits depends on the permission mode, because the hooks reference is
-explicit about two things. In `bypassPermissions` and in `auto` mode, "The `"ask"` decision is
-ignored", so a prompting hook there is silent; but "A hook that returns `permissionDecision:
-"deny"` blocks the tool even in `bypassPermissions` mode or with
-`--dangerously-skip-permissions`". So in the prompting modes the hook asks, and in `auto` and
-`bypassPermissions` it denies with the same reason plus the confirm path: the agent asks in
-chat, and on a yes re-runs the command prefixed `HARNESS_CONFIRMED=1`, which the hook lets
-through at any grade and the rule telemetry counts. That is the one thing on the machine that
-stops a force-push in the modes most sessions now run in, and it is why the stance is enforced
-rather than advised. `PreToolUse` carries no `additionalContext`, so the reason line is the
-whole channel. The quotes are from `https://code.claude.com/docs/en/hooks` and
-`https://code.claude.com/docs/en/hooks-guide`, read on 2026-09-16.
-
-## The handoff loop
-
-A long task rarely fits one session, so the harness carries the state across the boundary in a
-file rather than in the transcript. `/handoff` overwrites `.claude/progress.md` at the repository
-root with what was done, what is open, the one command to run next, the decisions only the user
-can settle, and what the session learned; the file is a snapshot, so the command never appends.
-The session-start hook reads it back on the next start, prints its first eighty lines and the
-last five commits, and Claude Code adds that to the context before the first prompt. The file is
-in the global git ignore, so it stays out of every repository it appears in. Learnings that
-outlive the current state are promoted by the same command into a dated file under
-`docs/solutions/`, which makes a correction an artifact the next session can read instead of a
-prompt the user retypes. That promotion is explicit and belongs to `/handoff`: no hook appends to
-`docs/solutions/` on its own, because a learning worth keeping is a judgment and an automatic
-appender fills the folder with restatements of the obvious.
-
-## What the harness deliberately does not contain
-
-- Anything about one person. Identity is rendered into `~/.claude/CLAUDE.personal.md` from
-  config; personal rules sit beside the harness links as plain files.
-- Anything about one project. That belongs in the project's `AGENTS.md`; `templates/repo/`
-  shows the shape. Its `settings.json` keeps the files an agent must never read out of reach with
-  `Read` deny rules, because Claude Code has no ignore file and a deny rule is the mechanism.
-- Credentials, MCP server configurations, or anything else that carries a token.
-- A planning framework. The harness works with or without one; `docs/bmad.md` records how one
-  is kept out of the way.
-
-## The dogfood loop
-
-Because the live paths are symlinks, editing a rule in the checkout changes the next session
-with no step. `harness diff` reports the other direction: a setting changed through the tool's
-own UI shows as "live-only" so it can be brought back into the repo. The `harness-authoring`
-skill routes every "add a rule" request through the checkout, the lint, and a commit, so the
-repo never falls behind the live harness.
-
-## The always-loaded cap
-
-`CLAUDE.md`, the ten rules and the selected stances are re-read on every turn of every session,
-so their combined size is a standing tax on every task the agent does. `harness lint` enforces a
-cap of 200 lines on that set, counting the *longest* variant of each stance dimension so no
-configuration a user can select is ever over it. The rules therefore carry operative lines only —
-the instruction, stated once, in second person — and each ends with a pointer to the skill or doc
-that holds its reasoning, its examples and its evidence. That is progressive disclosure: a skill
-costs one line of description until something invokes it, so the detail is available when it is
-needed and absent when it is not. When a rule grows past its share of the cap, it is telling you
-it wanted to be a skill.
-
-Which rules earn their lines is measurable. Every rule has a deterministic detector in
-`claude/hooks/rule-detectors.py`, or an explicit opt-out with a reason, and the lint fails on a
-rule with neither. The session-end worker runs the registry over each transcript and
-`harness usage --rules` reports which detectors fire and how often: a rule that trips in most
-sessions is prose that failed and wants to be a hook, and one unobserved for a month can leave
-the 200 lines. [usage.md](usage.md) has the record fields and the thresholds.
+The core instruction/rule/stance budget remains linted. Skills and detailed presentation load on
+demand. Runtime-generated instructions and native client context still require qualification;
+passing a source budget is not evidence about a model's total context or compliance.
 
 ## Rationale relocated from the rules
 

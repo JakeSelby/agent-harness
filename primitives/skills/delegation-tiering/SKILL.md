@@ -11,6 +11,14 @@ evidence, and the cases that file is too short to carry.
 Research date **2026-09-16**. Where a number is vendor-run or unreplicated it says so. Treat
 every tier boundary below as extrapolation unless it names a Claude-tier measurement.
 
+## Runtime mapping
+
+Use shared role intent and the active adapter's bindings. Provider model names and benchmark
+examples below describe their original evaluation context; they are not cross-provider
+capability equivalences. With no qualified cheaper mapping, inherit the session model and
+report the gap. Codex does not interpret Claude model aliases. Role authority remains subject
+to native restrictions; read-only defaults are not proof of confinement.
+
 ## The headline
 
 **Model tier is the third-best cost lever.** Reasoning effort beats it and prompt caching beats
@@ -81,7 +89,7 @@ Ranked by evidential strength.
 
 ### Band A — down-class freely
 
-`claude-sonnet-5`, low effort.
+The adapter’s inexpensive bounded-work mapping, at low effort when supported.
 
 | Work | Why it is safe |
 | --- | --- |
@@ -97,7 +105,7 @@ terms, or up-class.
 
 ### Band B — down-class only with a named guard
 
-`claude-opus-5` at low effort, or Band A plus a verifier.
+The adapter’s capable mapping at low effort, or Band A plus a verifier.
 
 | Work | Guard |
 | --- | --- |

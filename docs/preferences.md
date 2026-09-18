@@ -97,7 +97,7 @@ to leave that surface alone; Claude Code is always managed.
 `permissions` in config is `inherit` (default: the harness never touches permission mode),
 `bypass`, `auto` or `manual`. When set, one knob drives `permissions.defaultMode` in Claude
 Code, `claudeCode.initialPermissionMode` and `claudeCode.allowDangerouslySkipPermissions` in
-VS Code, and `approval_policy` plus `sandbox_mode` in Codex. Env: `HARNESS_PERMISSIONS`.
+VS Code, and `approval_policy` plus `sandbox_mode` in Codex. Session environment values do not grant native permissions or mutate global configuration.
 
 **`bypass` is refused unless `permissions_bypass_acknowledged` is `true` in the config file**
 (the env override cannot grant it). It turns off every permission prompt and puts Codex in
@@ -198,3 +198,9 @@ want the opposite, it belongs in `claude/stances/`, not `claude/rules/`.
 Two rules do not pass that test yet, tracked rather than hidden. `voice-and-format.md` hard-wires
 the Scannable output style (#68), and `conciseness.md` is comment and doc style. `cache-hygiene.md`
 is cost-dimension content the `cost` stance already points at.
+
+## Extend your choices
+
+Stances are custom harness primitives, not native provider features. Add dimensions, variants and
+constraints through [the authoring contract](primitive-authoring.md). Inspect effective selections
+and adapter coverage with `harness stances --json`; native restrictions remain authoritative.
