@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A `decisions/no-alternatives` detector, and `decisions-and-plans` leaves `OPT_OUT`. The rule
+  asks for "the alternatives with their honest case", and nothing measured whether a decision
+  block carried one: the opt-out reasoned from the Review Card and the chooser, and left the
+  clause that does the work unobserved. The detector fires on a final message whose batched
+  `Decisions` block or recommendation line names no other course, reading the markers out of the
+  raw text so an alternative named inside a quote still counts. A recommendation in running prose is not a
+  decision block and does not fire. (#78)
+
 - `harness init`: a first-run wizard that writes `config.json` by asking for identity one field
   at a time and offering each stance's variants with the default in brackets, so configuring the
   harness no longer means hand-editing JSON. It detects the timezone from `/etc/localtime` and the
