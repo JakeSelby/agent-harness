@@ -47,7 +47,9 @@ Read `{skill-root}/review-prompts/verification-gap.md` completely and follow it 
 id = "blind-hunter"
 name = "Blind Hunter"
 instruction = """
+Before launch, capture the repository diff against its base, including staged and unstaged changes, in a review-artifact file. Put its absolute path in the worker brief and include that directory with `--read-dir`; the worker's tools cannot produce a Git diff in every runtime.
+
 Launch harness role `reviewer` with `harness role run reviewer`, using the active `--runtime`, explicit parent `--model`, implementation `--workspace`, and a `--prompt-file` containing the brief below. Include `--read-dir` for framework and review-artifact directories outside the worktree. Read the returned result file as findings data; do not use a native subagent for this constrained role. Brief:
 
-Review the changed files in the current worktree: take the repository's diff against its base, staged and unstaged, and inspect the changed files directly. Hunt for what is missing as well as what is wrong. Return a Markdown list of findings and nothing else; if nothing changed, say so and stop. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
+Read the supplied diff artifact and inspect the changed files directly. Hunt for what is missing as well as what is wrong. Return a Markdown list of findings and nothing else; if nothing changed, say so and stop. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
 """
