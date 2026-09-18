@@ -19,7 +19,7 @@ spec = importlib.util.spec_from_loader("harness", loader)
 harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
-VOICE = REPO / "claude" / "stances" / "voice"
+VOICE = REPO / "primitives" / "stances" / "voice"
 RULE = REPO / "claude" / "rules" / "voice-and-format.md"
 # The longest variant is what the always-loaded cap charges, so it is what the budget bounds.
 LONGEST_VARIANT = 9

@@ -76,11 +76,11 @@ Every instruction has one right home. First match wins:
 3. **True of one person, one machine, or one project** → not this repository. It belongs in
    that person's `~/.claude/` or that repo's `AGENTS.md`.
 4. **A preference a reasonable engineer might hold the other way** → a variant under
-   `claude/stances/<pref>/`, plus a line in `docs/preferences.md`. Licensing, commit style,
+   `primitives/stances/<pref>/`, plus a line in `docs/preferences.md`. Licensing, commit style,
    testing philosophy and autonomy level are stances.
 5. **A procedure with steps, or something only needed on a trigger** → a skill under
-   `claude/skills/<name>/SKILL.md` with a description that says when to use it.
-6. **Short, generic, wanted on every turn** → `claude/rules/<topic>.md`. Rules cost every user
+   `primitives/skills/<name>/SKILL.md` with a description that says when to use it.
+6. **Short, generic, wanted on every turn** → `primitives/rules/<topic>.md`. Rules cost every user
    context on every turn, so the bar is high; the usual outcome is one sentence folded into an
    existing rule. `CLAUDE.md` plus every rule plus the longest variant of each stance is capped at
    200 lines and `bin/harness lint` enforces it, so a rule carries its operative lines and points
@@ -111,3 +111,6 @@ it. GitHub's Terms of Service already say the same for any repository with a lic
 "Whenever you add Content to a repository containing notice of a license, you license that
 Content under the same terms, and you agree that you have the right to license that Content
 under those terms." No CLA, no sign-off line.
+
+Shared roles and workflows are authored in `primitives/`, with native bindings in `adapters/`.
+Run `bin/harness generate` after changing them; see [primitive authoring](docs/primitive-authoring.md).

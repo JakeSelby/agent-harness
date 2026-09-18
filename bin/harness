@@ -36,6 +36,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "lib"))
+from harness_core import catalog as primitive_catalog
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -129,7 +131,7 @@ SECRET_PATTERNS = getattr(load_detectors(), "SECRET_PATTERNS", [])
 # user can make is ever over it. Rationale: docs/how-it-works.md.
 ALWAYS_LOADED_CAP = 200
 
-NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates"}
+NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates", "primitives", "adapters"}
 NAME_FORBIDDEN_FILES = {"config.example.json"}
 LINT_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".pytest_cache"}
 
@@ -269,6 +271,14 @@ def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
             cfg[key] = value
     cfg.setdefault("stances", {})
     cfg.setdefault("identity", {})
+    project_file = env.get("HARNESS_PROJECT_CONFIG")
+    if project_file:
+        project = read_json(Path(project_file).expanduser()) or {}
+        if set(project) - {"stances"}:
+            raise SystemExit("project config may select stances only; user config owns identity, targets and permissions")
+        if not isinstance(project.get("stances", {}), dict):
+            raise SystemExit("project stances must be an object")
+        cfg["stances"].update(project.get("stances", {}))
     for key, value in env.items():
         if key.startswith("HARNESS_STANCE_"):
             cfg["stances"][key[len("HARNESS_STANCE_"):].lower().replace("_", "-")] = value
@@ -288,7 +298,7 @@ def example_config() -> Dict[str, Any]:
 
 
 def stance_variants(name: str) -> List[str]:
-    return sorted(p.stem for p in (REPO / "claude" / "stances" / name).glob("*.md"))
+    return sorted(p.stem for p in (REPO / "primitives" / "stances" / name).glob("*.md"))
 
 
 def placeholder_identity(cfg: Dict[str, Any]) -> List[str]:
@@ -306,17 +316,10 @@ def placeholder_identity(cfg: Dict[str, Any]) -> List[str]:
 
 
 def resolve_stances(cfg: Dict[str, Any]) -> Dict[str, Path]:
-    out: Dict[str, Path] = {}
-    for name in STANCE_NAMES:
-        variant = cfg["stances"].get(name)
-        if not variant:
-            raise SystemExit(f"config has no variant for stance '{name}'")
-        path = REPO / "claude" / "stances" / name / f"{variant}.md"
-        if not path.exists():
-            raise SystemExit(f"stance '{name}' has no variant '{variant}'; "
-                             f"options: {', '.join(stance_variants(name))}")
-        out[name] = path
-    return out
+    try:
+        return primitive_catalog.resolve_stances(REPO, cfg)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
 
 def posture(cfg: Dict[str, Any]) -> str:
@@ -553,8 +556,7 @@ def render_codex_agents(stances: Dict[str, Path], personal: Optional[str]) -> st
     parts += [claude_md, ""]
     for rule in sorted((REPO / "claude" / "rules").glob("*.md")):
         parts += ["---", f"<!-- {rule.name} -->", rule.read_text(encoding="utf-8").rstrip(), ""]
-    for name in STANCE_NAMES:
-        path = stances[name]
+    for name, path in stances.items():
         parts += ["---", f"<!-- stance {name}: {path.stem} -->", path.read_text(encoding="utf-8").rstrip(), ""]
     if personal:
         parts += ["---", "<!-- AGENTS.personal.md -->", personal.rstrip(), ""]
@@ -852,7 +854,7 @@ def _diff_lines() -> List[str]:
                 lines.append(f"pending sync: hook {hid}")
         if applied.get("template") and applied["template"] != template_p:
             lines.append("pending sync: settings template changed since last sync")
-    stances_now = {k: cfg["stances"].get(k) for k in STANCE_NAMES}
+    stances_now = dict(cfg["stances"])
     if manifest.get("config", {}).get("stances") and manifest["config"]["stances"] != stances_now:
         lines.append("pending sync: stance selection changed since last sync")
     return lines
@@ -1158,12 +1160,49 @@ def cmd_lint(args: argparse.Namespace) -> int:
         hits = lint_tree(root)
         scope = str(root)
     hits = hits + check_context_cap(root)
+    if (root / "primitives" / "roles").is_dir():
+        hits += ["projection drift: " + name + "; run `harness generate`"
+                 for name in primitive_catalog.projection_drift(root)]
     for h in hits:
         say(h)
     everywhere, _ = load_lint_terms()
     note = "" if everywhere else " (no personal lint-terms file; shapes and secrets only)"
     say(f"lint: {len(hits)} finding(s) in {scope}{note}")
     return 1 if hits else 0
+
+
+def cmd_catalog(args: argparse.Namespace) -> int:
+    print(json.dumps(primitive_catalog.catalog(REPO), indent=2))
+    return 0
+
+
+def cmd_generate(args: argparse.Namespace) -> int:
+    changed = primitive_catalog.projection_drift(REPO)
+    if args.check:
+        for name in changed:
+            say("projection drift: " + name)
+        return 1 if changed else 0
+    for name, content in primitive_catalog.projections(REPO).items():
+        if name in changed:
+            (REPO / name).write_text(content, encoding="utf-8")
+            say("generated " + name)
+    return 0
+
+
+def cmd_stances(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    choices = resolve_stances(cfg)
+    data = {"schema_version": 1, "precedence": ["defaults", "user", "project", "session"],
+            "stances": {name: {"variant": path.stem, "source": str(path),
+                                "behavior": path.read_text(encoding="utf-8").strip()}
+                        for name, path in choices.items()}}
+    if args.json:
+        print(json.dumps(data, indent=2))
+    else:
+        for name, choice in data["stances"].items():
+            say(name + "=" + choice["variant"] + "\n" + choice["behavior"] + "\n")
+        say("Native runtime restrictions still apply; stance guidance is not proof of enforcement.")
+    return 0
 
 
 def cmd_workspace(args: argparse.Namespace) -> int:
@@ -1763,11 +1802,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--adopt-codex", action="store_true")
     p.set_defaults(func=cmd_install)
 
-    p = sub.add_parser("sync", help="link the harness into ~/.claude and merge owned settings")
+    p = sub.add_parser("sync", help="project shared primitives into selected runtimes and merge owned settings")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--adopt", action="store_true", help="move pre-existing files aside so the harness can link")
     p.add_argument("--adopt-codex", action="store_true", help="move a hand-written ~/.codex/AGENTS.md to AGENTS.personal.md")
     p.set_defaults(func=cmd_sync, print_only=False)
+
+    p = sub.add_parser("catalog", help="emit the shared primitive catalog as JSON")
+    p.set_defaults(func=cmd_catalog)
+
+    p = sub.add_parser("generate", help="regenerate native source projections from shared primitives")
+    p.add_argument("--check", action="store_true")
+    p.set_defaults(func=cmd_generate)
+
+    p = sub.add_parser("stances", help="show resolved personal stance switches and their behavior")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_stances)
 
     p = sub.add_parser("diff", help="report drift between checkout, last sync and live files")
     p.add_argument("--quiet", action="store_true")

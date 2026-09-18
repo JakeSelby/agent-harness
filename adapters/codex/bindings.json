@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "roles": {
+    "builder": {
+      "model_reasoning_effort": "medium"
+    },
+    "design-judge": {
+      "model_reasoning_effort": "high"
+    },
+    "gatherer": {
+      "model_reasoning_effort": "low"
+    },
+    "log-compressor": {
+      "model_reasoning_effort": "low"
+    },
+    "planner": {
+      "model_reasoning_effort": "high"
+    },
+    "reviewer": {
+      "model_reasoning_effort": "high"
+    },
+    "spec-reviewer": {
+      "model_reasoning_effort": "high"
+    }
+  }
+}
