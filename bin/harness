@@ -53,7 +53,25 @@ LEGACY_RULES = [
     "decisions-and-plans.md", "delegation.md", "git-conventions.md", "licensing.md",
     "research-limits.md", "transcript-hygiene.md", "voice-and-format.md", "working-style.md",
 ]
-IDENTITY_KEYS = ["name", "pronouns", "role", "github", "timezone"]
+IDENTITY_KEYS = ["name", "pronouns", "role", "github", "timezone", "expertise"]
+# What the personal file tells the agent about how much to explain. `expert` is the default, so
+# an existing config that predates the field keeps the behaviour it had.
+GUIDANCE = {
+    "expert": "Communicate at expert level unless told otherwise; skip basics and fundamentals.",
+    "beginner": (
+        "Explain as you go, in plain words: what you are about to do, and what a command will\n"
+        "change, before you run it. Define a term the first time you use it. Assume no prior\n"
+        "knowledge of programming, version control, or the command line, and never answer with\n"
+        "code alone where a sentence would do."),
+}
+# Stance overlays on top of the example file's defaults, for what the work actually is. The
+# defaults are a professional software workflow; someone not shipping software should not have to
+# discover five separate opt-outs to escape it.
+STANCE_PRESETS = {
+    "software": {},
+    "general": {"licensing": "off", "build-vs-buy": "off", "commits": "off",
+                "plan-ceremony": "light", "testing": "off"},
+}
 # Identity fields whose example value is a placeholder rather than a value someone might mean.
 # `pronouns: they/them` and `timezone: UTC` are real answers, so they are not checked.
 PLACEHOLDER_IDENTITY_KEYS = ["name", "role", "github"]
@@ -519,7 +537,8 @@ def adopt_legacy(path: Path, manifest: Dict[str, Any], dry: bool, adopt: bool, r
 
 def render_personal(cfg: Dict[str, Any], existing: Optional[str]) -> str:
     template = (REPO / "claude" / "CLAUDE.personal.template.md").read_text(encoding="utf-8")
-    identity = {k: cfg.get("identity", {}).get(k, "") for k in ("name", "pronouns", "role", "github", "timezone")}
+    identity = {k: cfg.get("identity", {}).get(k, "") for k in IDENTITY_KEYS}
+    identity["guidance"] = GUIDANCE.get(identity.get("expertise") or "expert", GUIDANCE["expert"])
     head = template.format_map(identity)
     if existing and PERSONAL_MARKER in existing:
         tail = existing.split(PERSONAL_MARKER, 1)[1]
@@ -1283,6 +1302,8 @@ def coerce_config_value(key: str, value: str) -> Any:
     if head == "identity":
         if tail not in IDENTITY_KEYS:
             raise SystemExit(f"identity has no field '{tail}'; fields: {', '.join(IDENTITY_KEYS)}")
+        if tail == "expertise" and value not in GUIDANCE:
+            raise SystemExit(f"identity.expertise is {' or '.join(sorted(GUIDANCE))}; got '{value}'")
         return value
     if head == "stances":
         if tail not in STANCE_NAMES:
@@ -1377,12 +1398,21 @@ def cmd_init(args: argparse.Namespace) -> int:
     identity["role"] = _ask("One line on what you do, so answers are pitched right", "", required=True)
     identity["github"] = _ask("GitHub handle, blank if you have none", _detect_github())
     identity["timezone"] = _ask("Timezone", _detect_timezone())
+    print("\nHow much should answers explain themselves?")
+    print("  expert   — skips fundamentals and assumes you know the tools")
+    print("  beginner — says what each step and command does, and defines terms")
+    identity["expertise"] = _ask("How much to explain", "expert", sorted(GUIDANCE))
+    print("\nWhat will you mostly use this for?")
+    print("  software — shipping code: tests required, Conventional Commits, one-screen plans")
+    print("  general  — everything else: no commit ceremony, no test gate, lighter plans")
+    preset = _ask("Mostly", "software", sorted(STANCE_PRESETS))
+    defaults = dict(example.get("stances", {}), **STANCE_PRESETS[preset])
     print("\nPreferences. Every one has a default; Enter takes it.")
     print("They are described in docs/preferences.md and can be changed later.\n")
     stances = cfg.setdefault("stances", {})
     for name in STANCE_NAMES:
         variants = stance_variants(name)
-        stances[name] = _ask(name, example.get("stances", {}).get(name, variants[0]), variants)
+        stances[name] = _ask(name, defaults.get(name, variants[0]), variants)
     write_json_atomic(path, cfg)
     print(f"\nwrote {path}")
     print("next: bin/harness sync")

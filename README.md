@@ -42,8 +42,9 @@ its extensions; on Linux it adds only Claude Code and Codex before syncing, so i
 your editor yourself. Both platforms run the vendors' own `curl | bash` installers for Homebrew
 and Claude Code; read `bin/harness` first if that matters to you.
 
-Then run `bin/harness init`, which asks for your name, what you do, and one preference at a
-time, writes the config file for you, and tells you to sync. (`bin/harness config set
+Then run `bin/harness init`, which asks for your name, what you do, how much you want explained,
+whether the work is software or everything else, and one preference at a time, writes the config
+file for you, and tells you to sync. (`bin/harness config set
 stances.testing off` changes one value later, without an editor.) Run `bin/harness sync` again
 and start a session. `/context` lists the harness rules; `/hooks` lists its eleven hooks.
 An agent can do all of this from this README; the CLI is Python 3.9 standard library and
