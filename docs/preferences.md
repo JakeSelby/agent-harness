@@ -12,6 +12,12 @@ Tracked rules never carry a name; they are written in second person.
 
 Env overrides: `HARNESS_IDENTITY_NAME`, `HARNESS_IDENTITY_PRONOUNS`, and so on.
 
+`harness init` writes the whole file by asking, and `harness config set identity.name "…"`
+changes one field. Neither needs an editor. Until `name`, `role` and `github` differ from the
+example file, `sync` and `doctor` both say so: what they hold is what the agent believes about
+you, so a config left unedited has it addressing you by the placeholder. `pronouns` and
+`timezone` are never reported, because `they/them` and `UTC` are answers someone might mean.
+
 ## Stances
 
 Each stance is a directory of variants under `claude/stances/`; config picks one and `sync`
@@ -28,6 +34,9 @@ one-line file so `/context` shows the choice explicitly.
 | `testing` | `required`, `pragmatic`, `off` | `required` |
 | `autonomy` | `execute`, `confirm-writes`, `ask` | `execute` |
 | `cost` | `frugal`, `balanced`, `max` | `balanced` |
+
+`harness config set stances.testing off` checks the variant exists before writing, and names
+the options when it does not.
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
 `HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start

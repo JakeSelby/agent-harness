@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `harness init`: a first-run wizard that writes `config.json` by asking for identity one field
+  at a time and offering each stance's variants with the default in brackets, so configuring the
+  harness no longer means hand-editing JSON. It detects the timezone from `/etc/localtime` and the
+  GitHub handle from `gh` when it is logged in, refuses to clobber an existing config without
+  `--force`, and names `config set` when there is no terminal to ask in. (#81)
+
+- `harness config set KEY VALUE`, which validates before it writes: an unknown stance variant,
+  stance, identity field, permission posture or top-level key is refused with the options named,
+  rather than being written and failing at the next sync. (#81)
+
+- `sync` and `doctor` report identity fields still carrying the example file's value. `load_config`
+  backfills from `config.example.json` and `render_personal` writes the result into always-loaded
+  context, so an unedited config had the agent address you as the placeholder name with nothing on
+  screen to say so. Reported, never fatal: a dry-run sync against the example config still
+  succeeds. (#81)
+
 ### Fixed
 
 - `bin/harness install` no longer ends in a traceback on a machine that lacks `gh` or `npm`.
