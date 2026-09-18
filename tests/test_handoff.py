@@ -115,25 +115,11 @@ class SessionHookTests(unittest.TestCase):
         install(self.repo, surface if surfaces is None else surfaces)
         self.manifest()
 
-    def test_a_framework_repository_gets_the_overrides_once(self):
+    def test_framework_check_does_not_install_configuration(self):
         self.framework()
-        first = self.text(self.run_hook())
-        self.assertIn("BMad overrides", first)
-        self.assertIn("wrote _bmad/custom/bmad-build.user.toml", first)
+        self.assertIn("BMad integration check", self.text(self.run_hook()))
         for name in ("bmad-build", "bmad-build-auto", "bmad-code-review"):
-            self.assertTrue((self.repo / "_bmad" / "custom" / f"{name}.user.toml").exists(), name)
-        self.assertNotIn("BMad overrides", self.text(self.run_hook()))
-
-    def test_a_drifting_install_is_reported_and_left_alone(self):
-        _, surface = bmad_fixture()
-        keys, entries = surface["bmad-build"]
-        drifted = dict(surface)
-        drifted["bmad-build"] = (keys, {(a, i.replace("blind-hunter", "blind-seeker")) for a, i in entries})
-        self.framework(drifted)
-        text = self.text(self.run_hook())
-        self.assertIn("skipped _bmad/custom/bmad-build.user.toml", text)
-        self.assertIn("drift:", text)
-        self.assertFalse((self.repo / "_bmad" / "custom" / "bmad-build.user.toml").exists())
+            self.assertFalse((self.repo / "_bmad" / "custom" / f"{name}.user.toml").exists())
 
     def test_a_repository_without_the_framework_is_silent_about_it(self):
         self.manifest()

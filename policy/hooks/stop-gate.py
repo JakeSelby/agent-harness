@@ -3,19 +3,20 @@
 """Stop hook: run the repository's own gate and refuse to finish while it is red.
 
 Opt-in per repository — the gate is the fenced block under the `## Gate` heading of the
-repo's `AGENTS.md`, one shell command per line. A repo without that block is untouched.
+repo's `AGENTS.md`, executed together in one shell. A repo without that block is untouched.
 Trusted folders only: the block is a repository's own text, so it runs only where Claude
 Code's folder-trust dialog has been accepted (the `hasTrustDialogAccepted` flag it records
 per project), the same consent that gates a repository's `.claude/settings.json` hooks, or
 where the root is listed in ~/.config/agent-harness/trusted.txt by `harness trust`.
 Bounded: after MAX_BLOCKS consecutive blocks the turn is released, so a gate that can never
-pass cannot trap a session. A timeout or any error releases the turn too.
+pass cannot trap a session. A timeout releases the turn as unverified; unexpected errors block. Neither records success.
 """
 import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -64,6 +65,8 @@ def listed_roots():
 def trusted(root, cwd):
     """True when the folder-trust dialog has been accepted for the working directory, the
     repository root, or a directory between them, or when `harness trust` listed the root."""
+    if os.environ.get("HARNESS_RUNTIME") == "codex":
+        return bool(listed_roots() & {str(Path(root)), str(Path(root).resolve())})
     try:
         projects = json.loads(claude_config().read_text(encoding="utf-8")).get("projects") or {}
     except Exception:
@@ -125,9 +128,26 @@ def gate_commands(root):
 
 def tree_hash(root):
     digest = hashlib.sha256()
-    digest.update(git(root, "rev-parse", "HEAD").strip().encode("utf-8"))
-    for part in (git(root, "status", "--porcelain"), git(root, "diff")):
-        digest.update(hashlib.sha256(part.encode("utf-8")).hexdigest().encode("ascii"))
+    digest.update(("gate-v2:" + str(Path(root).resolve())).encode())
+    def checked(*args):
+        return subprocess.run(["git", "-C", root, *args], capture_output=True,
+                              check=True, timeout=10).stdout
+    for args in (("rev-parse", "HEAD"), ("status", "--porcelain", "-z"),
+                 ("diff", "--binary"), ("diff", "--cached", "--binary")):
+        digest.update(hashlib.sha256(checked(*args)).digest())
+    for name in checked("ls-files", "--others", "--exclude-standard", "-z").split(b"\0"):
+        if not name:
+            continue
+        path = Path(root) / os.fsdecode(name)
+        digest.update(name + b"\0")
+        if path.is_symlink():
+            digest.update(os.fsencode(os.readlink(path)))
+        elif path.is_file():
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+    digest.update("\n".join(gate_commands(root)).encode())
+    digest.update(str(BUDGET_SECONDS).encode())
     return digest.hexdigest()
 
 
@@ -145,25 +165,26 @@ def read_state(path):
 
 
 def write_state(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".gate-", dir=str(path.parent))
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh)
-    except OSError:
-        pass
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def run_gate(root, commands):
     """The first red command as (command, exit code, output), or None when every one passes."""
-    deadline = time.monotonic() + BUDGET_SECONDS
-    for cmd in commands:
-        left = deadline - time.monotonic()
-        if left <= 0:
-            raise subprocess.TimeoutExpired(cmd, BUDGET_SECONDS)
-        out = subprocess.run(["bash", "-c", cmd], cwd=root,
-                             capture_output=True, text=True, timeout=left)
-        if out.returncode != 0:
-            return cmd, out.returncode, (out.stdout or "") + (out.stderr or "")
+    cmd = "\n".join(commands)
+    out = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", cmd], cwd=root,
+                         capture_output=True, text=True, timeout=BUDGET_SECONDS)
+    if out.returncode != 0:
+        return cmd, out.returncode, (out.stdout or "") + (out.stderr or "")
     return None
 
 
@@ -178,7 +199,8 @@ def reason(path, cmd, code, output):
 
 
 def release(path, state, session, note):
-    write_state(path, {"green_hash": state.get("green_hash"), "blocks": 0, "session_id": session})
+    write_state(path, {"green_hash": None, "status": "unverified", "reason": note,
+                       "blocks": 0, "session_id": session})
     sys.stderr.write("stop-gate: " + note + "\n")
 
 
@@ -215,7 +237,10 @@ def main():
         release(path, state, session, f"gate ran past {BUDGET_SECONDS}s; letting the turn end")
         return
     if failure is None:
-        write_state(path, {"green_hash": current, "blocks": 0, "session_id": session})
+        if tree_hash(root) != current:
+            release(path, state, session, "working tree changed during the gate; result unverified")
+            return
+        write_state(path, {"green_hash": current, "status": "passed", "blocks": 0, "session_id": session})
         return
 
     try:
@@ -226,7 +251,7 @@ def main():
     if blocks >= MAX_BLOCKS:
         release(path, state, session, f"released after {MAX_BLOCKS} blocks; gate still red")
         return
-    write_state(path, {"green_hash": state.get("green_hash"), "blocks": blocks, "session_id": session})
+    write_state(path, {"green_hash": None, "status": "failed", "blocks": blocks, "session_id": session})
     cmd, code, output = failure
     print(json.dumps({"decision": "block", "reason": reason(gate_file(root), cmd, code, output)}))
 
@@ -234,5 +259,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(json.dumps({"decision": "block", "reason": "Gate is unverified: " + str(exc)}))

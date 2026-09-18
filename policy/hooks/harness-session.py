@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """SessionStart hook: report harness drift, per-session HARNESS_* overrides, and the handoff,
-and install the BMad override templates where the repository runs the framework.
+and check BMad integration without modifying repository configuration.
 
 Silent when there is nothing to say, so a clean session costs no context. Never fails.
 """
@@ -68,7 +68,7 @@ def override_lines(config):
             if stances.get(name) != value:
                 lines.append(f"For this session the `{name}` stance is `{value}` "
                              f"(config says `{stances.get(name, 'unset')}`); follow the "
-                             f"`{value}` variant under claude/stances/{name}/ in the harness "
+                             f"`{value}` variant under primitives/stances/{name}/ in the harness "
                              "checkout instead of the linked one.")
         elif key == "HARNESS_PERMISSIONS":
             if (config or {}).get("permissions") != value:
@@ -101,27 +101,22 @@ def handoff_lines(cwd):
 
 
 def bmad_lines(repo, cwd):
-    """Install the harness's BMad override templates into the session's repository when it runs
-    the framework (`_bmad/` plus projected skills), and say so only when a file was written,
-    kept because it differs, or skipped for drift. A repository without the framework, or with
-    everything already in place, costs no context."""
+    """Report integration drift; installation requires an explicit CLI operation."""
     root = git(cwd, "rev-parse", "--show-toplevel").strip()
-    if not root or not (Path(root) / "_bmad").is_dir() or not (Path(root) / ".claude" / "skills").is_dir():
+    if not root or not (Path(root) / "_bmad").is_dir():
         return []
     tool = Path(repo) / "bin" / "harness"
     if not tool.exists():
         return []
     env = {k: v for k, v in os.environ.items() if k != "HARNESS_QUIET"}
     try:
-        out = subprocess.run([sys.executable, str(tool), "bmad", "apply", root], env=env,
+        out = subprocess.run([sys.executable, str(tool), "bmad", "check", root], env=env,
                              capture_output=True, text=True, timeout=remaining(2))
     except Exception:
         return []
     notable = [ln.strip() for ln in (out.stdout or "").splitlines()
-               if ln.strip().startswith(("wrote ", "kept ", "skipped ", "drift: "))]
-    if not notable:
-        return []
-    return ["BMad overrides (harness bmad apply): " + "; ".join(notable)]
+               if "not installed (harness" in ln or "differs" in ln or "drift:" in ln]
+    return ["BMad integration check: " + "; ".join(notable)] if notable else []
 
 
 def payload():

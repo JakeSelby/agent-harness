@@ -48,7 +48,7 @@ def main():
     if not path.endswith(".md"):
         return
     norm = path.replace(os.sep, "/")
-    if "/.claude/plans/" not in norm:
+    if "/.claude/plans/" not in norm and "/.agent-harness/plans/" not in norm:
         return
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:

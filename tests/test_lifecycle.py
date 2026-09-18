@@ -1,0 +1,79 @@
+"""Native envelopes compose shared policy without weakening permission decisions."""
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+from test_harness import harness
+from harness_core import lifecycle
+
+
+class LifecycleTests(unittest.TestCase):
+    def test_deny_wins_and_discards_rewrite(self):
+        original = {"tool_name": "exec_command", "tool_input": {"cmd": "git push"}}
+        result = lifecycle.encode_pre("codex", original, lifecycle.normalize(original), [
+            {"hookSpecificOutput": {"permissionDecision": "allow", "updatedInput": {"command": "echo ok"}}},
+            {"hookSpecificOutput": {"permissionDecision": "ask", "permissionDecisionReason": "confirm"}}])
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertNotIn("updatedInput", result["hookSpecificOutput"])
+
+    def test_independent_rewrites_survive_composition(self):
+        original = {"tool_name": "Agent", "tool_input": {"prompt": "work", "model": "old"}}
+        result = lifecycle.encode_pre("claude-code", original, lifecycle.normalize(original), [
+            {"hookSpecificOutput": {"updatedInput": {"prompt": "work", "model": "new"}}},
+            {"hookSpecificOutput": {"updatedInput": {"prompt": "bounded work", "model": "old"}}}])
+        self.assertEqual(result["hookSpecificOutput"]["updatedInput"], {"prompt": "bounded work", "model": "new"})
+
+    def test_codex_rewrite_does_not_manufacture_shell_permission(self):
+        original = {"tool_name": "exec_command", "tool_input": {"cmd": "make"}}
+        self.assertEqual(lifecycle.encode_pre("codex", original, lifecycle.normalize(original), [
+            {"hookSpecificOutput": {"updatedInput": {"command": "make | filter"}}}]), {})
+
+    def test_multi_file_patch_enumerates_all_paths(self):
+        event = lifecycle.normalize({"cwd": "/repo", "tool_name": "apply_patch", "tool_input": {
+            "command": "*** Update File: a.md\n*** Move to: b.md\n*** Add File: c.md\n"}})
+        self.assertEqual(lifecycle.patch_paths(event), ["/repo/a.md", "/repo/b.md", "/repo/c.md"])
+
+    def test_delegation_off_denies_both_native_envelopes(self):
+        with patch.object(lifecycle, "selected", return_value="off"):
+            for runtime, name, inputs in (("codex", "spawn_agent", {"message": "work"}),
+                                           ("claude-code", "Agent", {"prompt": "work"})):
+                result = lifecycle.dispatch(runtime, {"hook_event_name": "PreToolUse", "tool_name": name, "tool_input": inputs})
+                self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_registration_has_one_coordinator_per_event(self):
+        for runtime in ("codex", "claude-code"):
+            hooks = lifecycle.registration(Path("/fixture with spaces"), runtime)["hooks"]
+            self.assertEqual(len(hooks), 5)
+            self.assertTrue(all(len(entries) == len(entries[0]["hooks"]) == 1 for entries in hooks.values()))
+
+    def test_codex_transcript_cumulative_usage_and_unknown_metrics(self):
+        module = lifecycle.load("usage-log")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout.jsonl"
+            rows = [{"type": "session_meta", "payload": {"id": "fixture", "cli_version": "fixture-v1"}},
+                    {"type": "turn_context", "payload": {"model": "fixture-model"}}]
+            for total in (100, 150):
+                rows.append({"type": "event_msg", "payload": {"type": "token_count", "info": {
+                    "total_token_usage": {"input_tokens": total, "cached_input_tokens": 50, "output_tokens": 20}}}})
+            rows += [{"type": "response_item", "payload": {"type": "function_call", "call_id": "one",
+                      "name": "exec_command", "arguments": json.dumps({"cmd": "git status"})}}]
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            result = module.scan(path)
+            self.assertEqual(result["input"], 100)
+            self.assertEqual(result["output"], 20)
+            self.assertIsNone(result["cache_write"])
+            self.assertEqual(result["runtime"], "codex")
+            self.assertNotIn("rules_error", result)
+            path.write_text(json.dumps(rows[0]) + "\n")
+            self.assertIsNone(module.scan(path)["input"])
+
+    def test_usage_lock_contention_refuses_overwrite(self):
+        module = lifecycle.load("usage-log")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "usage.jsonl"
+            path.write_text("existing\n")
+            path.with_name("usage.jsonl.lock").touch()
+            with patch.object(module.time, "sleep"), self.assertRaisesRegex(RuntimeError, "lock unavailable"):
+                module.upsert({"session_id": "fixture"}, path)
+            self.assertEqual(path.read_text(), "existing\n")

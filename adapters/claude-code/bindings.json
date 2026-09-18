@@ -13,7 +13,7 @@
     },
     "gatherer": {
       "model": "opus",
-      "tools": "Read, Grep, Glob, WebFetch, WebSearch, Bash",
+      "tools": "Read, Grep, Glob, WebFetch, WebSearch",
       "effort": "low"
     },
     "log-compressor": {
@@ -28,12 +28,12 @@
     },
     "reviewer": {
       "model": "inherit",
-      "tools": "Read, Grep, Glob, Bash",
+      "tools": "Read, Grep, Glob",
       "effort": "high"
     },
     "spec-reviewer": {
       "model": "inherit",
-      "tools": "Read, Grep, Glob, Bash",
+      "tools": "Read, Grep, Glob",
       "effort": "high"
     }
   }

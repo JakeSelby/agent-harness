@@ -2,7 +2,7 @@
 name: reviewer
 description: Fresh-context adversarial review of a diff. Findings only — no restatement of the change, no fixes, no praise. Use after implementation and before a pull request, in a context that never saw the work being written.
 model: inherit
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob
 effort: high
 ---
 
