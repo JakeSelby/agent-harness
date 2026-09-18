@@ -1,5 +1,5 @@
 # Cache hygiene
 
-- **Nothing that rebuilds the cached prefix mid-task:** no model, effort or fast-mode switch, no
-  tool-set or MCP change, no `/compact`. Editing files, CLAUDE.md or permission mode keeps it.
-- **A new session starts cold**, worktrees included: batch small tasks; `/clear`, not `/compact`.
+- **Keep the cached prefix stable mid-task:** avoid model, effort, fast-mode, tool-set or MCP
+  changes. Native cache behavior differs; do not assume identical invalidation rules.
+- **New sessions start cold:** batch small tasks; use the native fresh-session control, not compaction.

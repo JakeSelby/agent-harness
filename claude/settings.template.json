@@ -1,6 +1,6 @@
 {
   "outputStyle": "Scannable",
-  "plansDirectory": ".claude/plans",
+  "plansDirectory": ".agent-harness/plans",
   "useAutoModeDuringPlan": true,
   "showThinkingSummaries": true,
   "hooks": {

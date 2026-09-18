@@ -1,6 +1,6 @@
 ---
 name: plan-authoring
-description: Write or revise a plan file, proposal, design doc or handoff that the user reviews before approving work. Carries the Review Card contract — the one-screen summary, the system diagram, the numbered steps, the decision block — and the addendum rules for everything below it. Use before writing anything into .claude/plans/, and for any markdown deliverable whose job is to get a go/no-go.
+description: Write or revise a plan file, proposal, design doc or handoff that the user reviews before approving work. Carries the Review Card contract — the one-screen summary, the system diagram, the numbered steps, the decision block — and the addendum rules for everything below it. Use before writing anything into .agent-harness/plans/, and for any markdown deliverable whose job is to get a go/no-go.
 ---
 
 The trigger lives in the `plan-ceremony` stance. This is the contract.
