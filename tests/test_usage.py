@@ -344,7 +344,7 @@ class RuleRecordTests(TempHome):
         self.assertEqual(rec["turns"], 4)
 
     def worker(self, hooks, path):
-        env = dict(os.environ, HOME=str(self.home))
+        env = dict(os.environ, HOME=str(self.home), PYTHONPATH=str(REPO / "lib"))
         out = subprocess.run([sys.executable, str(hooks / "usage-log.py"), "--worker", str(path), "s-1", ""],
                              capture_output=True, text=True, env=env, timeout=30)
         self.assertEqual(out.returncode, 0)
@@ -356,7 +356,7 @@ class RuleRecordTests(TempHome):
         (hooks / "usage-log.py").write_text(
             (REPO / "claude" / "hooks" / "usage-log.py").read_text(encoding="utf-8"), encoding="utf-8")
         path = rules_fixture(self.home / "rules.jsonl")
-        env = dict(os.environ, HOME=str(self.home))
+        env = dict(os.environ, HOME=str(self.home), PYTHONPATH=str(REPO / "lib"))
         out = subprocess.run([sys.executable, str(hooks / "usage-log.py"), "--worker", str(path), "s-1", ""],
                              capture_output=True, text=True, env=env, timeout=30)
         self.assertEqual(out.returncode, 0)
@@ -496,8 +496,8 @@ class StanceResolutionTests(TempHome):
 
     def test_the_environment_wins_over_the_config_for_a_hyphenated_dimension(self):
         self.config({"plan-ceremony": "review-card", "commits": "conventional"})
-        resolved = usage_log.stances({"HARNESS_STANCE_PLAN_CEREMONY": "lightweight"})
-        self.assertEqual(resolved["plan-ceremony"], "lightweight")
+        resolved = usage_log.stances({"HARNESS_STANCE_PLAN_CEREMONY": "light"})
+        self.assertEqual(resolved["plan-ceremony"], "light")
         self.assertEqual(resolved["commits"], "conventional")
 
 

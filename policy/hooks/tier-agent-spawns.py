@@ -36,6 +36,9 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from harness_core import preferences
+
 CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
 LADDER = ["fable", "opus", "sonnet", "haiku"]
 DEFAULT_STANCE = "tiered"
@@ -53,11 +56,7 @@ def load(path):
 
 
 def stance():
-    value = os.environ.get("HARNESS_STANCE_DELEGATION")
-    if value:
-        return value
-    config = load(CONFIG) or {}
-    return (config.get("stances") or {}).get("delegation") or DEFAULT_STANCE
+    return preferences.choice("delegation", policy=preferences.current(config_path=CONFIG))
 
 
 def tier_of(model):

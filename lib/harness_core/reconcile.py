@@ -155,6 +155,31 @@ class Store:
         if document != current or str(path) not in self.data["files"]:
             self._write(path, json.dumps(document, indent=2) + "\n", record)
 
+    def release_json(self, path, keys):
+        """Restore a field only while it still equals our last write, then stop owning it."""
+        path = Path(path)
+        record = self.data["files"].get(str(path))
+        name = json.dumps(keys)
+        if not record or record.get("kind") != "json" or name not in record["keys"]:
+            return
+        if path.is_symlink() or not path.is_file():
+            self.conflicts.append(str(path) + ": cannot release missing or redirected field")
+            return
+        document = json.loads(path.read_text())
+        old = record["keys"][name]
+        live = lookup(document, keys)
+        if live not in (old["applied"], old.get("pending_from")):
+            # The user now owns this value. Preserve it and retire our stale claim.
+            record["keys"].pop(name)
+            self.save()
+            self.conflicts.append(str(path) + ": user-edited field preserved; ownership released: " + ".".join(keys))
+            return
+        assign(document, keys, old["prior"])
+        record["keys"][name] = dict(old, applied=old["prior"], pending_from=live)
+        self._write(path, json.dumps(document, indent=2) + "\n", record)
+        record["keys"].pop(name)
+        self.save()
+
     def drift(self):
         findings = []
         for name, record in self.data["files"].items():

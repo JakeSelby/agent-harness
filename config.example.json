@@ -16,7 +16,18 @@
     "testing": "required",
     "autonomy": "execute",
     "cost": "balanced",
-    "voice": "scannable"
+    "voice": "scannable",
+    "verification": "local-first",
+    "integration-tests": "fixtures-only",
+    "external-actions": "draft-first",
+    "decision-interface": "prose",
+    "documentation": "concise-reference",
+    "document-history": "append-only",
+    "context": "cost-default",
+    "review": "scope-and-quality",
+    "review-independence": "fresh-context",
+    "change-scope": "minimal-diff",
+    "research": "source-led"
   },
   "permissions": "inherit",
   "permissions_bypass_acknowledged": false,
@@ -29,5 +40,24 @@
   "claude": {
     "manage": true
   },
-  "primitive_roots": []
+  "primitive_roots": [],
+  "budgets": {},
+  "delegation_controls": {
+    "writes": "serial",
+    "max_depth": 1
+  },
+  "observability": {
+    "enabled": true,
+    "retention_days": 0,
+    "include_repo": true,
+    "include_branch": true
+  },
+  "gates": {
+    "mode": "blocking",
+    "max_blocks": 8,
+    "timeout_seconds": 240
+  },
+  "policy_bindings": {},
+  "external_scopes": [],
+  "model_families": {}
 }

@@ -5,6 +5,10 @@ description: Decide whether to spawn a subagent and which model tier and reasoni
 
 # Delegation and model tiering
 
+Read resolved delegation_controls and review-independence first. Constrained workers never redelegate;
+parallel authorized writers require distinct linked worktrees. The historical measurements below
+do not override current selections.
+
 The operative defaults live in `~/.claude/rules/delegation.md`. This is the reasoning, the
 evidence, and the cases that file is too short to carry.
 
@@ -289,7 +293,7 @@ already defines. A plan names the skills it will run and the order they run in.
 - **Never interpose a subagent between a deterministic verifier and the decision consuming it.**
   Read the exit code or structured reporter output directly. A subagent may compress a log for
   diagnosis; it may not compress the verdict.
-- **Never verify with the same family and shared context.** Independence and a fresh context are
+- Follow review-independence: fresh-context is required for independent review; different-family is an explicit additional requirement. Independence and a fresh context are
   what make review work — up-classing is not established as a substitute.
 - **Writes stay single-threaded.** Parallel subagents contribute intelligence, not actions.
   Enforce read-only with the tool list, not with the prompt.

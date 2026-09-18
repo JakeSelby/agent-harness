@@ -5,6 +5,14 @@ description: Write or revise a plan file, proposal, design doc or handoff that t
 
 The trigger lives in the `plan-ceremony` stance. This is the contract.
 
+## Select the contract
+
+Read `harness stances --json` first. Under `plan-ceremony=light`, write a short plan with
+steps, exit tests and explicit decisions; a requested file needs a title, not a Review Card.
+The remaining card rules and examples apply only to `review-card`. Follow `decision-interface`
+for the chat interaction and `external-actions` for any publication. Existing explicit approval
+is sufficient for its scope; do not invent another build gate.
+
 ## Why this exists
 
 A plan has two audiences and they are not the same reader.
@@ -245,25 +253,10 @@ to bloat: link the artifact instead of inlining its reasoning.
 
 ### Presenting decisions
 
-**Do not use a chooser widget for substantive decisions.** Write the decision block in chat as
-the standalone final message of its turn: each question stated unambiguously, the assessment
-behind it, a recommendation with reasoning, and the alternatives with the honest case for each.
-Number them. The user answers in chat ("1 post, 2 comment, 3 issue").
-
-Two failure modes, both real. A same-turn chooser eats the assessment, because text written
-before a tool call is not reliably displayed. A next-turn chooser wastes a round trip. Chooser
-labels also truncate and cannot carry evidence or trade-offs.
-
-A chooser is reserved for trivial forks where the option labels alone carry full meaning.
-
-Batch related decisions into one block.
-
-### Pointing at an option is not a decision
-
-During design and option reviews, the user saying "this one" or pasting an image of an option
-means **put that in the doc and show me**. It is not approval to implement. Treat
-option-pointing as scope for the review artifact. Build only on an explicit "build" or
-"go with N".
+Follow the selected decision-interface: prose, structured or adaptive. Include consequences,
+a recommendation and honest alternatives. Use prose when the native UI is unavailable.
+A selection authorizes only the action explicitly presented; pointing at an example or silence
+is not authorization. Batch related questions and preserve already granted approval.
 
 ### Pre-approved plan execution
 

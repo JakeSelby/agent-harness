@@ -43,6 +43,9 @@ import shlex
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from harness_core import preferences
+
 CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
 HOOK = "grade-bash hook"
 MARKER = "HARNESS_CONFIRMED=1"
@@ -193,19 +196,7 @@ def _load(path):
 
 
 def stance():
-    """The autonomy variant, from the environment, then the config, then the default. Anything
-    malformed in the config falls back rather than turning grading off."""
-    value = os.environ.get("HARNESS_STANCE_AUTONOMY")
-    if value:
-        return value
-    config = _load(CONFIG)
-    if not isinstance(config, dict):
-        return DEFAULT_STANCE
-    stances = config.get("stances")
-    if not isinstance(stances, dict):
-        return DEFAULT_STANCE
-    value = stances.get("autonomy")
-    return value if isinstance(value, str) and value else DEFAULT_STANCE
+    return preferences.choice("autonomy", policy=preferences.current(config_path=CONFIG))
 
 
 def emit(decision, reason):
@@ -936,5 +927,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        pass  # fail open: a bug here costs a prompt, never a block
+    except Exception as exc:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "Harness preferences are unverified: " + str(exc)}}))

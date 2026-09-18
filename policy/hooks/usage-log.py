@@ -16,7 +16,11 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from harness_core import preferences
 
 FIELDS = (
     ("input", "input_tokens"),
@@ -29,16 +33,8 @@ FIELDS = (
 # `config.example.json`'s — the file the CLI layers the user config over, and a test here holds
 # the two together. Resolution is that same ladder: defaults, then the user config, then
 # `HARNESS_STANCE_<NAME>` (upper-cased, hyphens as underscores), which hooks inherit.
-DEFAULT_STANCES = {
-    "licensing": "permissive-commercial",
-    "build-vs-buy": "capability-ceiling",
-    "commits": "conventional-attributed",
-    "plan-ceremony": "review-card",
-    "delegation": "tiered",
-    "testing": "required",
-    "autonomy": "execute",
-    "cost": "balanced", "voice": "scannable",
-}
+DEFAULT_STANCES = preferences.read(preferences.ROOT / "config.example.json")["stances"]
+
 # A tool result worth keeping the text of: the two the detectors read. 64 KB is far past any
 # brief or fenced block and far short of a transcript's largest result.
 TEXT_KEPT_FOR = ("Bash", "Agent")
@@ -55,25 +51,7 @@ def detectors():
 
 
 def stances(env=None):
-    """The resolved `{dimension: variant}` map: defaults, then config, then environment.
-
-    Every dimension is present, because every dimension has a default; a missing config file
-    is the default set and never an empty map, which would read as "no stance in force".
-    """
-    env = os.environ if env is None else env
-    try:
-        config = json.loads((Path.home() / ".config" / "agent-harness" / "config.json")
-                            .read_text(encoding="utf-8"))
-        configured = config.get("stances") or {}
-    except Exception:
-        configured = {}
-    out = dict(DEFAULT_STANCES)
-    for name in DEFAULT_STANCES:
-        for value in (configured.get(name) if isinstance(configured, dict) else None,
-                      env.get("HARNESS_STANCE_" + name.upper().replace("-", "_"))):
-            if isinstance(value, str) and value.strip():
-                out[name] = value.strip()
-    return out
+    return preferences.current(env=env)["stances"]
 
 
 def usage_path():
@@ -255,11 +233,13 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False):
         if rescan:
             record["stances_source"] = "rescan"
     try:
+        record["operational_settings"] = (prior or {}).get("operational_settings") or preferences.current()["settings"]
+        record["settings_source"] = (prior or {}).get("settings_source", "rescan" if rescan else "session")
         module = detectors()
         record["counts"] = module.counts(events)
         errors = []
         record["rules"] = dict((did, len(hits))
-                               for did, hits in module.run(events, record["stances"], errors=errors).items())
+                               for did, hits in module.run(events, record["stances"], errors=errors, settings=record["operational_settings"]).items())
         if errors:
             record["rules_errors"] = errors
     except Exception as exc:
@@ -344,9 +324,11 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
                       output=totals.get("output_tokens"), cache_read=cached)
     errors = []
     try:
+        record["operational_settings"] = (prior or {}).get("operational_settings") or preferences.current()["settings"]
+        record["settings_source"] = (prior or {}).get("settings_source", "rescan" if rescan else "session")
         module = detectors()
         record["counts"] = module.counts(events)
-        record["rules"] = {did: len(hits) for did, hits in module.run(events, record["stances"], errors=errors).items()}
+        record["rules"] = {did: len(hits) for did, hits in module.run(events, record["stances"], errors=errors, settings=record["operational_settings"]).items()}
         if errors:
             record["rules_errors"] = errors
     except Exception as exc:
@@ -355,6 +337,14 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
 
 
 def upsert(record, path=None):
+    options = preferences.current()["settings"]["observability"]
+    if not options["enabled"]:
+        return None
+    record = dict(record)
+    for field in ("repo", "branch"):
+        if not options["include_" + field]:
+            record.pop(field, None)
+    first_recorded = record.get("recorded_at")
     path = Path(path) if path else usage_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     lock = path.with_name(path.name + ".lock")
@@ -381,9 +371,23 @@ def upsert(record, path=None):
                 row = json.loads(line)
             except Exception:
                 continue
-            if isinstance(row, dict) and (row.get("session_id"), row.get("runtime", "claude-code")) != (record["session_id"], record.get("runtime", "claude-code")):
-                rows.append(row)
+            if isinstance(row, dict):
+                if (row.get("session_id"), row.get("runtime", "claude-code")) == (record["session_id"], record.get("runtime", "claude-code")):
+                    first_recorded = row.get("recorded_at") or first_recorded
+                else:
+                    rows.append(row)
+        record["recorded_at"] = first_recorded or datetime.now(timezone.utc).isoformat()
         rows.append(record)
+        if options["retention_days"]:
+            cutoff = time.time() - options["retention_days"] * 86400
+            def keep(row):
+                value = row.get("ended") or row.get("recorded_at")
+                try:
+                    stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                    return stamp.tzinfo is None or stamp.timestamp() >= cutoff
+                except (ValueError, TypeError):
+                    return True  # unknown age is not proof that a record expired
+            rows = [row for row in rows if keep(row)]
         tmp = path.with_name("{}.{}.tmp".format(path.name, os.getpid()))
         tmp.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
         os.replace(str(tmp), str(path))
@@ -414,6 +418,8 @@ def recorded(path=None):
 
 
 def rescan(days=30):
+    if not preferences.current()["settings"]["observability"]["enabled"]:
+        return 0
     cutoff = time.time() - max(days, 0) * 86400
     prior = recorded()
     found = 0
@@ -443,6 +449,8 @@ def rescan(days=30):
 
 
 def main(argv):
+    if not preferences.current()["settings"]["observability"]["enabled"]:
+        return 0
     if argv and argv[0] == "--worker":
         transcript, session_id, cwd = (list(argv[1:]) + ["", "", ""])[:3]
         record = scan(transcript, session_id, cwd)

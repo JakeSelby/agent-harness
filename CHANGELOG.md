@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Resolve stance choices and operational settings consistently across native policy, workers and telemetry.
+- Add verification, external-action, decision, documentation/history, context, review, scope and research choices, plus build-versus-buy alternatives.
+- Restore user output styles, honor light planner contracts, and expose bounded gates, telemetry controls and explicit policy inspectors.
+- Preserve isolated-worker confinement, shared custom primitives and native qualification boundaries.
+
+
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).

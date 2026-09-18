@@ -20,6 +20,9 @@ import os
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from harness_core import preferences
+
 HOOK = "harness:brief-guard"
 DETECTORS = Path(__file__).resolve().parent / "rule-detectors.py"
 
@@ -41,16 +44,7 @@ def detectors():
 
 
 def stance():
-    """The selected `delegation` stance: session override, then config, then the default."""
-    override = (os.environ.get("HARNESS_STANCE_DELEGATION") or "").strip()
-    if override:
-        return override
-    path = Path(os.path.expanduser("~")) / ".config" / "agent-harness" / "config.json"
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return (json.load(fh).get("stances") or {}).get("delegation") or "tiered"
-    except (OSError, ValueError):
-        return "tiered"
+    return preferences.choice("delegation", policy=preferences.current())
 
 
 def needs_bound(module, tool_input):
@@ -82,10 +76,10 @@ def main():
     if module is None or not needs_bound(module, tool_input):
         return
     updated = dict(tool_input)
-    updated["prompt"] = tool_input["prompt"].rstrip() + BOUND
+    updated["prompt"] = tool_input["prompt"].rstrip() + BOUND.replace("400", str(preferences.current()["settings"]["budgets"]["gather_words"]))
     print(json.dumps({
         "hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated},
-        "systemMessage": f"{HOOK}: the brief stated no return bound, so a 400-word cap was added",
+        "systemMessage": f"{HOOK}: the brief stated no return bound, so the resolved word cap was added",
     }))
 
 

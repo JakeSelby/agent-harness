@@ -8,6 +8,7 @@ import re
 import shlex
 import sys
 from pathlib import Path
+from . import preferences
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICIES = ROOT / "policy" / "hooks"
@@ -59,19 +60,7 @@ def invoke(name, event):
 
 
 def selected(name, fallback):
-    override = os.environ.get("HARNESS_STANCE_" + name.upper().replace("-", "_"))
-    if override:
-        return override
-    file = Path(os.environ.get("HARNESS_HOME", str(Path.home()))) / ".config" / "agent-harness" / "config.json"
-    cfg = json.loads(file.read_text()) if file.exists() else {}
-    project_file = os.environ.get("HARNESS_PROJECT_CONFIG")
-    if project_file:
-        project = json.loads(Path(project_file).read_text())
-        if set(project) - {"stances"}:
-            raise ValueError("project configuration cannot change runtime authority")
-        if name in project.get("stances", {}):
-            return project["stances"][name]
-    return cfg.get("stances", {}).get(name, fallback)
+    return preferences.choice(name, fallback)
 
 
 def encode_pre(runtime, original, normalized, results):
@@ -125,6 +114,14 @@ def patch_paths(event):
 
 
 def dispatch(runtime, payload):
+    token = preferences.ACTIVE.set(preferences.current())
+    try:
+        return _dispatch(runtime, payload)
+    finally:
+        preferences.ACTIVE.reset(token)
+
+
+def _dispatch(runtime, payload):
     if runtime not in ("claude-code", "codex"):
         raise ValueError("unknown runtime")
     event = normalize(payload)
@@ -197,9 +194,10 @@ def dispatch(runtime, payload):
 
 
 def registration(root, runtime):
+    gate_timeout = preferences.current()["settings"]["gates"]["timeout_seconds"] + 60
     command = "python3 " + shlex.quote(str(root / "adapters" / runtime / "hook.py"))
     return {"hooks": {event: [{"hooks": [{"type": "command", "command": command + " # harness:runtime-" + event.lower(),
-                                         "timeout": 300 if event == "Stop" else 2 if event == "SessionEnd" else 10}]}]
+                                         "timeout": gate_timeout if event == "Stop" else 2 if event == "SessionEnd" else 10}]}]
                       for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd")}}
 
 

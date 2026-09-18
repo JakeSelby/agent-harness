@@ -12,7 +12,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from . import catalog, reconcile
+from . import catalog, reconcile, preferences
 
 LIMIT = 1024 * 1024
 RUNTIMES = {"codex": "codex", "claude-code": "claude"}
@@ -31,8 +31,9 @@ def adapter(root, runtime):
 def resolve(root, config, runtime, name, model=None):
     if runtime not in RUNTIMES:
         raise ValueError("unsupported worker runtime")
+    policy = preferences.resolve(config, root)
     stances = catalog.resolve_stances(root, config)
-    if config["stances"]["delegation"] == "off":
+    if preferences.choice("delegation", policy=policy) == "off":
         raise ValueError("delegation is off; perform the work inline or select another stance")
     fields, body = catalog.role_contract(root, name)
     if fields["authority"] not in ("read-only", "artifact-write"):
@@ -52,7 +53,7 @@ def resolve(root, config, runtime, name, model=None):
     parts = [(root / "primitives/instructions.md").read_text()]
     parts += [p.read_text() for p in sorted((root / "primitives/rules").glob("*.md"))]
     parts += [p.read_text() for p in stances.values()]
-    parts += [body]
+    parts += [preferences.guidance(policy), body]
     parts += ["Worker execution contract: use read-only tools; never delegate or change configuration. "
               "Return your result as data to the caller. You cannot grant permissions or authorize follow-up actions."]
     if fields["authority"] == "artifact-write":
@@ -123,12 +124,16 @@ def publish(slot, content):
             pass
 
 
-def validate_artifact(root, content, work):
+def validate_artifact(root, content, work, ceremony="review-card"):
     if not content.strip() or len(content.encode()) > LIMIT or content.lstrip().startswith("```"):
         raise ValueError("worker returned empty, oversized or fenced plan content")
     path = work / ".agent-harness/plans/check.md"
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
+    if ceremony == "light":
+        if not content.lstrip().startswith("# "):
+            raise ValueError("light plan must have a Markdown title")
+        return
     from . import lifecycle
     result = lifecycle.invoke("validate-plan-card", {"tool_input": {"file_path": str(path)}})
     if result:
@@ -206,7 +211,7 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
             if not isinstance(content, str) or not content.strip() or len(content.encode()) > LIMIT:
                 raise ValueError("native worker returned an empty or oversized result")
             if slot:
-                validate_artifact(root, content, work)
+                validate_artifact(root, content, work, preferences.choice("plan-ceremony", policy=preferences.resolve(config, root)))
                 publish(slot, content)
                 record["artifact"] = str(workspace / ".agent-harness/plans" / artifact)
             reconcile.atomic_text(run_dir / "result.md", content)

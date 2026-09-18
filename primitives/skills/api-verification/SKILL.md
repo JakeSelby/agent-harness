@@ -9,13 +9,15 @@ The operative lines live in the resident rule `primitives/rules/research-and-ver
 skill carries the reasoning, the arithmetic behind the search budget, and what to do after a
 fan-out.
 
+Read the research stance and `harness stances --json` operational budgets before allocating
+searches. Provider limits are separate hard ceilings; budget exhaustion leaves explicit gaps.
+
 ## Search budget
 
-**Web search is capped per session and shared by every subagent in that session.** On Claude
-Code the cap is 200 calls. An 18-agent fan-out briefed for 35 searches each exhausts it within
-minutes; later agents run on fetch alone.
+**Web search is capped per session and shared by every subagent in that session.** Allocate the resolved `search_calls` budget across the whole session before delegating;
+also respect the provider's actual limits.
 
-Budget accordingly: roughly 10 agents at 20 searches, or 6 at 30. For bigger runs, stagger
+Keep the fan-out within `fan_out` and assign each gatherer a share of the search budget. For bigger runs, stagger
 waves across separate sessions, or brief agents to lean on fetching known primary sources.
 
 After a fan-out, check each subagent's search count and re-run starved, discovery-heavy

@@ -541,10 +541,10 @@ class HookTests(unittest.TestCase):
                 self.assertEqual(out.stdout.strip(), "")
                 self.assertEqual(out.returncode, 0)
 
-    def test_an_unknown_stance_falls_back_to_execute(self):
-        self.assertEqual(run("gh pr create --fill", "made-up", "default"), (None, None))
-        self.assertEqual(run("rm -rf /", "made-up", "default")[0], "ask")
-
+    def test_an_unknown_stance_is_denied(self):
+        decision, reason = run("git push --force origin main", "unknown", "default")
+        self.assertEqual(decision, "deny")
+        self.assertIn("unverified", reason)
 
     def test_a_marker_that_is_not_leading_confirms_nothing(self):
         decision, _ = run("ls; HARNESS_CONFIRMED=1 git push --force origin main")
@@ -560,11 +560,11 @@ class HookTests(unittest.TestCase):
         families |= {grader.grade_text(c, CWD)[3] for c in GRADE2}
         self.assertEqual(sorted(f for f in families if f and f not in grader.CLAUSES), [])
 
-    def test_a_malformed_config_still_grades_under_the_default_stance(self):
+    def test_malformed_config_denies_instead_of_silently_falling_back(self):
         for body in ('"str"', '{"stances": "execute"}', '{"stances": {"autonomy": {}}}',
                      '{"stances": {}}', 'not json at all'):
             with self.subTest(config=body):
-                self.assertEqual(self.with_config(body, "git push --force origin main"), "ask")
+                self.assertEqual(self.with_config(body, "git push --force origin main"), "ask" if body == '{"stances": {}}' else "deny")
 
     def test_the_config_file_sets_the_stance_with_no_environment_override(self):
         self.assertEqual(
@@ -601,7 +601,7 @@ class HookTests(unittest.TestCase):
                 input=json.dumps({"tool_name": "Bash", "permission_mode": "default",
                                   "tool_input": {"command": "rm -rf /"}}),
                 capture_output=True, text=True,
-                env=dict(os.environ, HOME=lonely, HARNESS_STANCE_AUTONOMY="execute"),
+                env=dict(os.environ, HOME=lonely, HARNESS_STANCE_AUTONOMY="execute", PYTHONPATH=str(REPO / "lib")),
             )
         self.assertEqual(out.stdout.strip(), "")
         self.assertEqual(out.returncode, 0)

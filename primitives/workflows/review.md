@@ -1,35 +1,26 @@
 ---
-description: Review the branch's diff in two fresh contexts — scope against the spec, then quality — and report findings only.
+description: Review the diff using the selected depth and independence policy; report verified findings only.
 argument-hint: [base ref, default main] [optional spec: issue number, plan path or PR number]
 ---
 
 # Review
 
-Read {{arguments}} as a base ref and a spec source. The base is a ref, `main` when absent. The spec
-is an issue number, a path to a plan file, or a pull request number; when none is given, pass
-`infer` and let the scope pass fall back to the branch name and the last commit message.
+Read {{arguments}} as the base ref and spec source; default the base to `main`.
 
-1. **Establish the diff, before spawning anything.** Run `git diff --stat <base>...HEAD` and
-   `git diff <base>...HEAD`. If the base does not resolve, say so and stop rather than review
-   against the wrong tree. Outside a git repository there is no diff at all: say so, and offer to
-   review named files or a pasted patch instead.
-2. **Spawn `spec-reviewer` first**, in its own fresh context, with the base and the spec source.
-   It reports only what the diff does that nothing asked for, what was asked for and is missing,
-   and which stated acceptance criteria the diff does not prove. Tell it to leave every
-   correctness, style and test-quality question to the second pass.
-3. **Then spawn `reviewer`**, in a second fresh context that has seen neither the work nor the
-   scope pass. Brief it for findings only: no restatement of what it read, no summary of the
-   change, no praise. Each finding carries a severity, a `file:line`, what is wrong and why it
-   matters. Tell it to treat a missing test or an untested error path as a finding.
-4. **Relay nothing verbatim.** Check every finding from either pass against the code yourself
-   before it reaches the user and drop the ones that do not hold. Where you disagree, say so
-   with your reasoning rather than passing the finding through.
-5. **Report two sections** — **Scope** first, then **Quality** — each a list ranked by severity,
-   each item a bold-led bullet carrying its `file:line`. State the verdict first. A section with
-   nothing surviving is a single line saying so.
+1. Establish the diff before spawning anything, with `git diff --stat <base>...HEAD` and `git diff <base>...HEAD`.
+   Stop for an invalid base. Outside a repository, offer to
+   review named files or a pasted patch instead. Capture the diff and spec as files for workers.
+2. Inspect `harness stances --json`, then `harness policy review --risk <presentation|logic|sensitive>`.
+   Use sensitive for authorization, secrets, persistence and migrations. Honor stricter repository review gates.
+   Unresolved delegation or family requirements remain unresolved; never silently downgrade them.
+3. Scope-and-quality runs `spec-reviewer` first, then `reviewer`, in separate fresh contexts.
+   Self-check reviews run inline and are labeled self-review. Independent review runs one quality reviewer.
+   Launch constrained roles with `harness role run`, the active runtime, explicit model and supplied diff/spec files.
+   If different-family is required, pass explicit author/reviewer models to the inspector with user model_families bindings; launch that reviewer model.
+   A successful worker envelope is not evidence that its findings are correct.
+4. Verify each finding against source and evidence. Reject unsupported findings and explain material disagreement.
+   Findings carry severity, file:line, the defect and its consequence; no restatement of the change or praise.
+5. Report **Scope** and **Quality** findings appropriate to the selected depth, plus unperformed checks.
+   Follow the selected voice; do not label a self-check independent or an unavailable check passed.
 
-Two contexts is the point: a reviewer that has just read the code for bugs rationalizes scope
-creep, so the scope pass runs before it and never sees what it found.
-
-Make no edits. This command reads, it does not fix. Hand the findings over and let the user
-decide which ones to act on — `/build` is where changes happen.
+Make no edits. Report findings; implementation requires an authorized build task.

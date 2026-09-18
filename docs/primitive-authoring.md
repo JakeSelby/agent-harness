@@ -62,3 +62,10 @@ Run `bin/harness generate` after editing roles, workflows or base instruction te
 `bin/harness generate --check` and lint reject projection drift. `bin/harness catalog` emits
 stable kind/ID/source/digest records for documentation and integration readers. Installation
 coverage and runtime enforcement are separate from successful source generation.
+
+## Operational choices
+
+See [the policy contract](policy-contract.md) before adding execution controls. Custom stance
+text is guidance; `policy_bindings` explicitly maps a custom operational variant to an existing
+built-in execution choice. Project/session overrides cannot grant new user-owned authority.
+The effective inspector reports bindings and settings as well as selected prose.

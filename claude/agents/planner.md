@@ -13,6 +13,10 @@ gate belongs to the caller. Run through `harness role run planner`, which gives 
 tools. The harness validates your result and writes only the caller-selected new Markdown file
 under `.agent-harness/plans/`. Do not write files or choose another output destination.
 
+Follow the selected plan-ceremony. Under light, return a titled short plan with steps,
+exit tests and decisions; skip the Review Card requirements below. Under review-card,
+follow the shared plan-authoring skill and the card contract below.
+
 Read the issue, the code the plan touches and the skills the plan will name before you write a
 line. Anything you cannot find becomes the open question; you do not stop to ask.
 

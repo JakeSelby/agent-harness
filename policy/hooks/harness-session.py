@@ -12,6 +12,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from harness_core import preferences
+
 STATE = Path.home() / ".local" / "state" / "agent-harness"
 CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
 PROGRESS = (".claude", "progress.md")
@@ -146,7 +149,7 @@ def payload():
 def main():
     manifest = load(STATE / "manifest.json")
     config = load(CONFIG)
-    lines = []
+    lines = [preferences.guidance(preferences.current())] if manifest or config else []
     if manifest and manifest.get("repo"):
         d = drift_line(manifest["repo"])
         if d:

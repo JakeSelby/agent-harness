@@ -32,15 +32,26 @@ one-line file so `/context` shows the choice explicitly.
 
 | Stance | Variants | Default |
 | --- | --- | --- |
-| `licensing` | `permissive-commercial`, `open-source`, `off` | `permissive-commercial` |
-| `build-vs-buy` | `capability-ceiling`, `off` | `capability-ceiling` |
-| `commits` | `conventional-attributed`, `conventional`, `as-you-go`, `off` | `conventional-attributed` |
-| `plan-ceremony` | `review-card`, `light` | `review-card` |
-| `delegation` | `tiered`, `session-model`, `off` | `tiered` |
-| `testing` | `required`, `pragmatic`, `off` | `required` |
-| `autonomy` | `execute`, `confirm-writes`, `ask` | `execute` |
-| `cost` | `frugal`, `balanced`, `max` | `balanced` |
-| `voice` | `scannable`, `answer-card`, `off` | `scannable` |
+| `licensing` | `off`, `open-source`, `permissive-commercial` | `permissive-commercial` |
+| `build-vs-buy` | `balanced`, `capability-ceiling`, `delivery-speed`, `off`, `operational-maturity` | `capability-ceiling` |
+| `commits` | `as-you-go`, `conventional`, `conventional-attributed`, `off` | `conventional-attributed` |
+| `plan-ceremony` | `light`, `review-card` | `review-card` |
+| `delegation` | `off`, `session-model`, `tiered` | `tiered` |
+| `testing` | `off`, `pragmatic`, `required` | `required` |
+| `autonomy` | `ask`, `confirm-writes`, `execute` | `execute` |
+| `cost` | `balanced`, `frugal`, `max` | `balanced` |
+| `voice` | `answer-card`, `off`, `scannable` | `scannable` |
+| `verification` | `ci-authoritative`, `hybrid`, `local-first` | `local-first` |
+| `integration-tests` | `explicit-live`, `fixtures-only`, `repo-native` | `fixtures-only` |
+| `external-actions` | `draft-first`, `explicit-request`, `scoped-standing-authority` | `draft-first` |
+| `decision-interface` | `adaptive`, `prose`, `structured` | `prose` |
+| `documentation` | `concise-reference`, `explanatory`, `repo-native` | `concise-reference` |
+| `document-history` | `append-only`, `living` | `append-only` |
+| `context` | `adaptive`, `cost-default`, `handoff`, `preserve-cache` | `cost-default` |
+| `review` | `independent`, `risk-adaptive`, `scope-and-quality`, `self-check` | `scope-and-quality` |
+| `review-independence` | `different-family`, `fresh-context` | `fresh-context` |
+| `change-scope` | `local-cleanup`, `minimal-diff`, `systemic-fix` | `minimal-diff` |
+| `research` | `exhaustive`, `quick-check`, `source-led` | `source-led` |
 
 `harness config set stances.testing off` checks the variant exists before writing, and names
 the options when it does not.
@@ -49,7 +60,7 @@ the options when it does not.
 
 The defaults above are a professional software workflow, and escaping it meant finding five
 separate opt-outs. `harness init` asks what the work is and uses a preset as the defaults for the
-questions that follow; every stance is still asked, so a preset is a starting point, not a lock.
+questions that follow; the original core questions are still asked. Advanced choices use `config set`; a preset is a starting point, not a lock.
 
 | Preset | Changes from the defaults |
 | --- | --- |
@@ -134,8 +145,8 @@ speed, not for "simple" changes, not for "I'll add them later", because later ne
 behaviour is untested and why.
 
 **Commits.** `type(scope): summary`, with `feat`, `fix`, `docs`, `chore`, `refactor`, `test` and
-`ci` as the usual types. The quality gate runs on `HEAD` in the exact checkout you are about to push, because a
-gate run somewhere else proves nothing about what lands. Attribution trailers are how a reader
+`ci` as the usual types. The selected verification stance determines where gates run; evidence identifies the exact
+revision being published. Repository-required gates still apply. Attribution trailers are how a reader
 knows an agent wrote the change, which is why `conventional-attributed` keeps them and
 `conventional` drops them. `as-you-go` exists for repos where stale local-only state is pure cost —
 planning repos, knowledge bases, dotfiles — and explicitly does not apply to application repos with
@@ -161,12 +172,9 @@ the explicit go-ahead.
 code is cheap now, and an agent-assisted person can maintain custom code fine in three years.
 Capability ceilings are the argument class that decides.
 
-**Cost.** `cost` governs how much you spend, never which model: agent definitions carry model ids.
-`frugal` runs the session at low effort outside design and adversarial review, keeps subagents to
-gatherers with a fan-out of three, never turns on fast mode, and ends a task with `/clear`.
-`balanced` is the shipped default — medium effort, fan-out of six, fast mode off unless asked.
-`max` spends the model's default effort, fans out as widely as the task needs, and allows fast mode
-and compaction. How it meets the tier decision is in the `delegation-tiering` skill.
+**Cost.** Cost supplies default effort guidance and fan-out budgets; explicit operational settings
+win. Context lifecycle is selected separately, with `cost-default` preserving max compaction.
+See [the policy contract](policy-contract.md) for settings, precedence and runtime limitations.
 
 **Voice.** `voice` governs how a reply is laid out, and nothing about what the work is. `scannable`
 defers to the Scannable output style: verdict first, registers separated, at most one table.
@@ -184,23 +192,14 @@ one tier down under `tiered` (the session model inside a framework repo), untouc
 
 ## Proposing a new stance or variant
 
-A stance is right when a competent engineer could reasonably want the opposite. Add the
-variants under `claude/stances/<name>/`, add the name to `STANCE_NAMES` in `bin/harness`, add
-the default to `config.example.json`, add a row here, and add a line to the CHANGELOG.
+A stance is right when a reasonable user could prefer the opposite. Author once under
+`primitives/stances/`; user variants can live in custom roots. Follow the
+[custom primitive contract](primitive-authoring.md). Operational variants need explicit
+bindings to known behavior; prose alone does not create runtime enforcement.
 
-## What is deliberately not a stance
+## Fixed boundaries and operational settings
 
-The always-loaded rules in `claude/rules/` do not switch. A rule has to hold whichever way every
-stance is thrown, which is what lets the harness install for someone whose preferences nobody
-knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
-want the opposite, it belongs in `claude/stances/`, not `claude/rules/`.
-
-Two rules do not pass that test yet, tracked rather than hidden. `voice-and-format.md` hard-wires
-the Scannable output style (#68), and `conciseness.md` is comment and doc style. `cache-hygiene.md`
-is cost-dimension content the `cost` stance already points at.
-
-## Extend your choices
-
-Stances are custom harness primitives, not native provider features. Add dimensions, variants and
-constraints through [the authoring contract](primitive-authoring.md). Inspect effective selections
-and adapter coverage with `harness stances --json`; native restrictions remain authoritative.
+The [policy contract](policy-contract.md) defines invariants, settings, defaults, migration,
+review routing and six-surface acceptance. The original nine core choices remain in init;
+advanced choices use `harness config set`. `harness stances --json` exposes resolved settings.
+Never treat a preference as authorization or claim unverified native support.

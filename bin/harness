@@ -40,11 +40,13 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
-from harness_core import reconcile, lifecycle, tasks, compatibility, workers
+from harness_core import reconcile, lifecycle, tasks, compatibility, workers, preferences
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
                 "autonomy", "cost", "voice"]
+BASIC_STANCE_NAMES = tuple(STANCE_NAMES)
+STANCE_NAMES = list(json.loads((REPO / "config.example.json").read_text())["stances"])
 POSTURES = {
     "bypass": {"claude": "bypassPermissions", "vscode": "bypassPermissions", "codex": ("never", "danger-full-access")},
     "auto": {"claude": "auto", "vscode": None, "codex": ("on-request", "workspace-write")},
@@ -263,37 +265,10 @@ def say(msg: str) -> None:
 
 
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    env = os.environ if env is None else env
-    base = read_json(REPO / "config.example.json") or {}
-    user = read_json(config_path()) or {}
-    cfg = deepcopy(base)
-    for key, value in user.items():
-        if isinstance(value, dict) and isinstance(cfg.get(key), dict):
-            cfg[key].update(value)
-        else:
-            cfg[key] = value
-    cfg.setdefault("stances", {})
-    cfg.setdefault("identity", {})
-    project_file = env.get("HARNESS_PROJECT_CONFIG")
-    if project_file:
-        project = read_json(Path(project_file).expanduser()) or {}
-        if set(project) - {"stances"}:
-            raise SystemExit("project config may select stances only; user config owns identity, targets and permissions")
-        if not isinstance(project.get("stances", {}), dict):
-            raise SystemExit("project stances must be an object")
-        cfg["stances"].update(project.get("stances", {}))
-    for key, value in env.items():
-        if key.startswith("HARNESS_STANCE_"):
-            cfg["stances"][key[len("HARNESS_STANCE_"):].lower().replace("_", "-")] = value
-        elif key.startswith("HARNESS_IDENTITY_"):
-            cfg["identity"][key[len("HARNESS_IDENTITY_"):].lower()] = value
-        elif key == "HARNESS_PERMISSIONS":
-            cfg["permissions"] = value
-        elif key == "HARNESS_MANAGE_VSCODE":
-            cfg.setdefault("vscode", {})["manage"] = value not in ("0", "false", "no")
-        elif key == "HARNESS_MANAGE_CODEX":
-            cfg.setdefault("codex", {})["manage"] = value not in ("0", "false", "no")
-    return cfg
+    try:
+        return preferences.load(REPO, env, config_path())
+    except (ValueError, OSError) as exc:
+        raise SystemExit(str(exc))
 
 
 def example_config() -> Dict[str, Any]:
@@ -368,7 +343,7 @@ def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: D
     ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
     owned = ownership.get("claude", {}).get("owned_keys", [])
     for key in owned:
-        if key in template:
+        if key in template and (key != "outputStyle" or cfg["stances"].get("voice") == "scannable"):
             out[key] = template[key]
     perms = out.setdefault("permissions", {})
     p = posture(cfg)
@@ -696,6 +671,8 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
     if session_keys:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
     stances = resolve_stances(cfg)
+    effective_policy = preferences.resolve(cfg, REPO)
+    preferences.external_scope(cfg, "", "")
     p = posture(cfg)
     if cfg.get("codex", {}).get("manage", True):
         ctoml = codex_dir() / "config.toml"
@@ -795,6 +772,15 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])]
         owned_paths += [["permissions", "allow"], ["permissions", "defaultMode"]]
         owned_paths += [["hooks", event] for event in template.get("hooks", {})]
+        if cfg["stances"].get("voice") != "scannable":
+            store.release_json(settings_file, ["outputStyle"])
+            owned_paths = [keys for keys in owned_paths if keys != ["outputStyle"]]
+            # release_json restores the previous style; do not reapply stale merged state.
+            restored = read_json(settings_file) or {}
+            if "outputStyle" in restored:
+                merged["outputStyle"] = restored["outputStyle"]
+            else:
+                merged.pop("outputStyle", None)
         store.json(settings_file, merged, owned_paths)
         applied["claude"] = claude_projection(merged, template)
         applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template)
@@ -822,7 +808,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         personal_codex = codex_dir() / "AGENTS.personal.md"
         ptext = personal_codex.read_text() if personal_codex.exists() else None
         identity = render_personal(cfg, None)
-        text = render_codex_agents(stances, identity + ("\n" + ptext if ptext else ""))
+        text = render_codex_agents(stances, identity + ("\n" + ptext if ptext else "")) + "\n" + preferences.guidance(effective_policy) + "\n"
         agents = codex_dir() / "AGENTS.md"
         legacy = agents.is_file() and agents.read_text().startswith(CODEX_BANNER)
         previous = store.data["files"].get(str(agents), {}).get("prior")
@@ -908,6 +894,8 @@ def _diff_lines() -> List[str]:
     template_p = claude_projection(merge_claude_settings({}, template, cfg), template)
     if applied_p:
         for k, v in live_p["keys"].items():
+            if k == "outputStyle" and cfg["stances"].get("voice") != "scannable":
+                continue
             if applied_p.get("keys", {}).get(k) != v:
                 lines.append(f"live-only change: settings.{k} = {v!r} (upstream it or re-sync)")
         for rule in live_p["allow"]:
@@ -1280,6 +1268,25 @@ def cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_policy(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    try:
+        policy = preferences.resolve(cfg, REPO)
+        if args.policy_command == "review":
+            result = preferences.review_plan(policy, args.risk, args.author_model, args.reviewer_model)
+        elif args.policy_command == "external":
+            variant = preferences.choice("external-actions", policy=policy)
+            result = {"policy": variant,
+                      "standing_scope_matches": variant == "scoped-standing-authority" and preferences.external_scope(cfg, args.action, args.destination),
+                      "coverage": "authorization guidance only; no action executed or native permission granted"}
+        else:
+            result = preferences.delegation_check(policy, args.workspace, args.active_workspace, args.depth)
+        print(json.dumps(result, indent=2))
+        return 1 if result.get("unresolved") else 0
+    except (ValueError, OSError) as exc:
+        raise SystemExit(str(exc))
+
+
 def cmd_stances(args: argparse.Namespace) -> int:
     cfg = load_config()
     choices = resolve_stances(cfg)
@@ -1288,6 +1295,18 @@ def cmd_stances(args: argparse.Namespace) -> int:
                                 "behavior": path.read_text(encoding="utf-8").strip()}
                         for name, path in choices.items()}}
     data["adapter_coverage"] = compatibility.coverage(REPO, choices)
+    policy = preferences.resolve(cfg, REPO)
+    data["operational_settings"] = policy["settings"]
+    data["execution_bindings"] = policy["execution"]
+    for runtime, coverage in data["adapter_coverage"].items():
+        for name in choices:
+            if policy["execution"].get(name) is None:
+                coverage[name] = {"mode": "instruction", "qualification": "unqualified", "operational_binding": None}
+    try:
+        data["review_plan"] = preferences.review_plan(policy)
+    except ValueError as exc:
+        data["review_plan"] = {"unresolved": [str(exc)]}
+    data["coverage_note"] = "Custom text is guidance. Operational custom variants need explicit policy_bindings; native qualification is separate."
     if args.json:
         print(json.dumps(data, indent=2))
     else:
@@ -1441,6 +1460,22 @@ def coerce_config_value(key: str, value: str) -> Any:
     A config that only fails at the next sync is worse than one that fails at the keystroke
     that broke it, because the sync is where the message is least expected.
     """
+    if key in preferences.SCHEMA:
+        try:
+            parsed = json.loads(value) if preferences.SCHEMA[key][0] in (int, bool) else value
+            return preferences.validate_setting(key, parsed)
+        except (ValueError, TypeError) as exc:
+            raise SystemExit(str(exc))
+    if key in ("policy_bindings", "external_scopes", "model_families"):
+        try:
+            parsed = json.loads(value)
+            cfg = load_config(env={})
+            cfg[key] = parsed
+            preferences.resolve(cfg, REPO)
+            preferences.external_scope(cfg, "", "")
+            return parsed
+        except (ValueError, TypeError) as exc:
+            raise SystemExit(str(exc))
     if key in BOOL_KEYS:
         if value.lower() not in ("true", "false"):
             raise SystemExit(f"{key} is true or false; got '{value}'")
@@ -1563,9 +1598,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("\nPreferences. Every one has a default; Enter takes it.")
     print("They are described in docs/preferences.md and can be changed later.\n")
     stances = cfg.setdefault("stances", {})
-    for name in STANCE_NAMES:
+    for name in BASIC_STANCE_NAMES:
         variants = stance_variants(name)
         stances[name] = _ask(name, defaults.get(name, variants[0]), variants)
+    print("Advanced choices: harness stances --json; harness config set stances.NAME VARIANT")
     write_json_atomic(path, cfg)
     print(f"\nwrote {path}")
     print("next: bin/harness sync")
@@ -1981,6 +2017,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--check", action="store_true")
     p.set_defaults(func=cmd_generate)
 
+    p = sub.add_parser("policy", help="inspect review, external authority or declared writer scheduling")
+    actions = p.add_subparsers(dest="policy_command", required=True)
+    review = actions.add_parser("review")
+    review.add_argument("--risk", choices=("presentation", "logic", "sensitive"), default="logic")
+    review.add_argument("--author-model")
+    review.add_argument("--reviewer-model")
+    review.set_defaults(func=cmd_policy)
+    external = actions.add_parser("external")
+    external.add_argument("--action", required=True)
+    external.add_argument("--destination", required=True)
+    external.set_defaults(func=cmd_policy)
+    delegation = actions.add_parser("delegation")
+    delegation.add_argument("--workspace", required=True)
+    delegation.add_argument("--active-workspace", action="append", default=[])
+    delegation.add_argument("--depth", type=int, default=1)
+    delegation.set_defaults(func=cmd_policy)
     p = sub.add_parser("stances", help="show resolved personal stance switches and their behavior")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_stances)

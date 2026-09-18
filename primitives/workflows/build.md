@@ -1,5 +1,5 @@
 ---
-description: Implement an approved plan or issue in its own worktree, run the gate, open the pull request.
+description: Implement authorized work within the selected scope, verify it, and prepare the pull request.
 argument-hint: <plan path or issue number>
 ---
 
@@ -7,26 +7,21 @@ argument-hint: <plan path or issue number>
 
 What to build: {{arguments}}
 
-**Check first, before spawning anything.** This command needs a git repository, a remote you can
-push to, and `gh` logged in. No repository: say so and offer to make the change in place, with
-tests, and no worktree or pull request. A repository but no remote or no `gh`: run steps 1 to 3,
-stop at the local commit, and report the branch as ready to push.
+**Check first, before spawning anything.** Read repository instructions, the approved base and `harness stances --json` before work.
+No repository: say so and offer to make the change in place, with suitable checks. No remote or authenticated GitHub client:
+stop at the local commit and report the remaining publication step.
 
-1. **Spawn the `builder` agent** with the plan or issue text, the repository path, the base
-   branch, and the attribution trailer your tool supplies. Its definition already carries the
-   standing brief — a worktree off the base branch per `worktree-per-agent`, the repository's own
-   instructions read first, tests with every change, the repository's gate, one local Conventional
-   Commit — so retype none of it. Give it the scope instead: the files it may touch and the ones
-   it must leave alone.
-2. **Run the gate yourself** in the worktree it names, with the repository's own commands. Never
-   take an agent's word for a verifier; you read the exit status, not its account of the run. Red
-   means you fix it or hand the finding back, never that you push anyway.
-3. **Check the commit** before it leaves the machine: a Conventional Commit title, a body ending
-   in `Closes #N` and the attribution trailer, and nothing in the diff that fails to trace to the
-   issue.
-4. **Push the branch and open the pull request** with `gh pr create`, based on the default
-   branch, never pushing to that branch directly. Body: a few bullets on what and why, `Closes
-   #N`, and the generated-with line your tool supplies.
+1. Follow change-scope and testing. With delegation off, work inline. Otherwise use a bounded `builder`
+   brief and an isolated implementation worktree per `worktree-per-agent`; constrained reviewers never receive write authority.
+   Follow delegation_controls; check declared concurrent writers with `harness policy delegation`.
+2. Run the required gate yourself according to verification policy; read command results rather than a worker's account.
+   Local-first requires local gates before a PR. CI-authoritative/hybrid may open a draft for remote checks;
+   pending, failed and unavailable checks remain unverified. Repository merge gates always apply.
+3. Inspect the diff, tests, intended scope, commit convention and applicable attribution before committing.
+   Respect repository templates and documentation style. Never bypass pre-commit hooks.
+4. Publish only within external-actions authority. Push to the approved branch, not directly to the default
+   branch. Link the issue and report tests plus missing evidence. Do not merge without required green checks
+   on the exact head and user authorization for that merge.
 
-Report the pull request URL, the tail of your own gate run, and anything still open: a decision
-taken on the user's behalf, a step left unfinished, a test that had to be skipped.
+Report concrete results and the PR or branch, plus unresolved decisions or checks. Do not claim native
+qualification from unit tests, generated instructions or a successful worker process.

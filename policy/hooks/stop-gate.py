@@ -20,6 +20,9 @@ import tempfile
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from harness_core import preferences
+
 MAX_BLOCKS = 8
 BUDGET_SECONDS = 240
 TAIL_LINES = 30
@@ -147,7 +150,7 @@ def tree_hash(root):
                 for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                     digest.update(chunk)
     digest.update("\n".join(gate_commands(root)).encode())
-    digest.update(str(BUDGET_SECONDS).encode())
+    digest.update(json.dumps(preferences.current()["settings"]["gates"], sort_keys=True).encode())
     return digest.hexdigest()
 
 
@@ -182,7 +185,7 @@ def run_gate(root, commands):
     """The first red command as (command, exit code, output), or None when every one passes."""
     cmd = "\n".join(commands)
     out = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", cmd], cwd=root,
-                         capture_output=True, text=True, timeout=BUDGET_SECONDS)
+                         capture_output=True, text=True, timeout=preferences.current()["settings"]["gates"]["timeout_seconds"])
     if out.returncode != 0:
         return cmd, out.returncode, (out.stdout or "") + (out.stderr or "")
     return None
@@ -198,13 +201,14 @@ def reason(path, cmd, code, output):
     )
 
 
-def release(path, state, session, note):
+def release(path, state, session, note, outcome="released"):
     write_state(path, {"green_hash": None, "status": "unverified", "reason": note,
-                       "blocks": 0, "session_id": session})
+                       "blocks": 0, "session_id": session, "outcome": outcome})
     sys.stderr.write("stop-gate: " + note + "\n")
 
 
 def main():
+    gates = preferences.current()["settings"]["gates"]
     try:
         payload = json.load(sys.stdin)
     except Exception:
@@ -234,7 +238,12 @@ def main():
     try:
         failure = run_gate(root, commands)
     except subprocess.TimeoutExpired:
-        release(path, state, session, f"gate ran past {BUDGET_SECONDS}s; letting the turn end")
+        release(path, state, session, f"gate ran past {gates['timeout_seconds']}s; letting the turn end", "timed-out")
+        return
+    except (OSError, ValueError) as exc:
+        release(path, state, session, "gate error: " + str(exc), "errored")
+        if gates["mode"] == "blocking":
+            print(json.dumps({"decision": "block", "reason": "Gate is unverified: " + str(exc)}))
         return
     if failure is None:
         if tree_hash(root) != current:
@@ -248,8 +257,12 @@ def main():
     except (TypeError, ValueError):
         blocks = 0
     blocks += 1
-    if blocks >= MAX_BLOCKS:
-        release(path, state, session, f"released after {MAX_BLOCKS} blocks; gate still red")
+    if gates["mode"] == "advisory":
+        write_state(path, {"green_hash": None, "status": "failed", "released": True, "blocks": blocks, "session_id": session})
+        sys.stderr.write("stop-gate: advisory gate failed; result is not verified\n")
+        return
+    if blocks >= gates["max_blocks"]:
+        release(path, state, session, f"released after {gates['max_blocks']} blocks; gate still red")
         return
     write_state(path, {"green_hash": None, "status": "failed", "blocks": blocks, "session_id": session})
     cmd, code, output = failure
