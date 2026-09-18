@@ -59,7 +59,7 @@ the run. These boundaries do not promise confidentiality against the native mode
 See the [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 and [Claude CLI reference](https://code.claude.com/docs/en/cli-reference) for the native controls.
 
-Planner workers return Markdown only. The harness runs the shared Review Card validator and
+Planner workers return Markdown only. The harness validates content according to plan-ceremony (Review Card or a titled light plan) and
 publishes only a caller-selected **new filename** under `.agent-harness/plans/`. Directory
 descriptors reject symlinked storage; traversal and existing destinations are refused. Atomic
 publication also refuses a file created while the worker was running. Failed, interrupted,

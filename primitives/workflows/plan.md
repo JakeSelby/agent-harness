@@ -7,10 +7,14 @@ argument-hint: <topic or issue number>
 
 What to plan: {{arguments}}
 
+Honor the selected `plan-ceremony` and `decision-interface` throughout. Under `light`, write a
+short plan with decisions and exit criteria; the Review Card layout below applies only to
+`review-card`. Existing explicit approval remains valid; do not ask again for approved work.
+
 1. **Invoke the `plan-authoring` skill and read it in full.** Never write the card from memory
    of its contract; a hook validates the file you write.
 2. **Gather what the plan needs before you write it.** Read the issue if you were given a
-   number, read the code the plan will touch, and delegate the wide reads. Ask the user only
+   number, read the code the plan will touch, and delegate wide reads only when the selected delegation stance permits it. Ask the user only
    for what you cannot find yourself, and batch every question into one message.
 3. **Write the plan under `.agent-harness/plans/`** — at the repository root, or in the current
    directory when there is no repository — named for the topic. The Review Card is the

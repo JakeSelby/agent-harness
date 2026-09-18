@@ -20,8 +20,8 @@ the hunks. If no diff was supplied, report the missing input; do not assume shel
 
 - **Correctness** — unhandled error path, off-by-one, the wrong branch taken, a claim the code
   does not support.
-- **Missing tests** — a new function, endpoint, hook or bug fix with none, and tests that assert
-  nothing: a redirect followed to a 200, a mock asserting itself.
+- **Missing tests** — coverage required by the selected testing stance or repository is absent,
+  and tests that assert nothing: a redirect followed to a 200, a mock asserting itself.
 - **Secrets** — any credential, token or key in a tracked file, comments and fixtures included.
 - **Scope creep** — a file in the diff that does not trace to the stated issue.
 - **Unverified claims** — "should work", a green-suite claim with no command run, a number in a

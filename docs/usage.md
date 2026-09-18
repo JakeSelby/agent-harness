@@ -115,3 +115,11 @@ the agent read it and walked past it anyway, so it wants to be a hook, where the
 made for it rather than asked of it. A rule unobserved for a month is either kept honestly by
 the model or unobservable from here, and either way it can leave the 200 always-loaded lines
 and live in the skill that explains it.
+
+## Collection preferences
+
+`observability.enabled`, `retention_days`, `include_repo` and `include_branch` are user-owned
+controls; see [the policy contract](policy-contract.md). Disabled collection also disables rescans.
+New records include the effective operational settings and their session/rescan provenance.
+No command or message content is added to the ledger. Historical records require an explicit
+purge when changing metadata preferences; retention runs on subsequent successful writes.

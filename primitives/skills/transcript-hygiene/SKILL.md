@@ -26,7 +26,7 @@ did not ask for, and the worst offenders are tool output and relayed subagent re
 
 `delegation.md` says to cap the return. These are the numbers.
 
-- **Gathering agent: 400 words.** Research digest: **600**. Adversarial review: findings only,
+- **Gathering agent: the resolved `gather_words` budget.** Research digest: **the resolved `digest_words` budget**. Adversarial review: findings only,
   no restatement of what it read.
 - **Detail goes to a file, not into the return.** Brief it to write the long version into the
   scratchpad and return the verdict, the findings that change a decision, and the path.

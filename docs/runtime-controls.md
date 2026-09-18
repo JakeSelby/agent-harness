@@ -33,3 +33,10 @@ that a stance caused a behavior.
 Session start checks BMad configuration without installing it. Installation remains explicit.
 See [task continuation and BMad](bmad.md), [installation ownership](runtime-installation.md),
 and the compatibility catalog for qualification evidence.
+
+## Preference resolution
+
+The coordinator and legacy helpers share the validated resolver in `harness_core.preferences`.
+Each lifecycle event retains one effective snapshot. Project/session overrides reach spawn,
+command and telemetry consumers consistently. See [the policy contract](policy-contract.md)
+for operational controls, guidance-only choices and migration boundaries.

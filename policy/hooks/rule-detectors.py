@@ -696,13 +696,13 @@ def counts(events):
     return out
 
 
-def search_over_cap(events, ctx):
+def search_over_cap(events, ctx, limit=SEARCH_CAP):
     """One hit on the search that takes the session past the per-session cap."""
     seen = 0
     for event in events:
         if event.get("kind") == "tool_use" and event.get("name") == "WebSearch":
             seen += 1
-            if seen == SEARCH_CAP + 1:
+            if seen == limit + 1:
                 return [_hit(event)]
     return []
 
@@ -894,7 +894,7 @@ def _enabled(detector, stances):
     return allowed is None or variant in allowed
 
 
-def run(events, stances=None, strict=False, errors=None):
+def run(events, stances=None, strict=False, errors=None, settings=None):
     """Every detector over one session's events; detectors with no hits are omitted."""
     try:
         ctx = analyse(events)
@@ -906,10 +906,17 @@ def run(events, stances=None, strict=False, errors=None):
         return {}  # a session keeps its usage record even when its transcript is odd
     out = {}
     for detector in _REGISTRY:
+        if detector.id in ("cache-hygiene/compact", "cache-hygiene/model-switch"):
+            context = (stances or {}).get("context", "cost-default")
+            if context == "adaptive" or (context == "cost-default" and (stances or {}).get("cost") == "max"):
+                continue
         if not _enabled(detector, stances):
             continue
         try:
-            raw = detector.fn(ctx.events, ctx)
+            if detector.id == "research/search-over-cap":
+                raw = search_over_cap(ctx.events, ctx, (settings or {}).get("budgets", {}).get("search_calls", SEARCH_CAP))
+            else:
+                raw = detector.fn(ctx.events, ctx)
         except Exception as exc:
             if strict:
                 raise
