@@ -63,7 +63,7 @@ whether the work is software or everything else, and one preference at a time, w
 file for you, and tells you to sync. (`bin/harness config set
 stances.testing off` changes one value later, without an editor.) Run `bin/harness sync` again
 and start a session. `/context` lists the harness rules; `/hooks` lists its eleven hooks.
-An agent can do all of this from this README; the CLI is Python 3.9 standard library and
+An agent can do all of this from this README; the CLI is Python 3.9+ with a bundled MIT-licensed TOML parser and
 every step is idempotent.
 
 `bin/harness doctor` reports versions, logins, links, drift, whether your identity is still the example file's, and whether each registered hook can actually start. `bin/harness usage` summarizes

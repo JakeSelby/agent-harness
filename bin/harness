@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: MIT
 """agent-harness command line.
 
-Installs the harness into ~/.claude (symlinks), merges the settings keys it owns, renders the
-personal file from config, keeps VS Code and Codex in step, and reports drift. Standard library
-only, Python 3.9+.
+Projects shared primitives into selected runtimes, merges owned settings, renders personal
+guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML parser.
 
     harness init    [--force]
     harness install [--dry-run] [--no-brew] [--no-apps] [--no-vscode] [--no-codex] [--with-optional]
@@ -22,6 +21,7 @@ only, Python 3.9+.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -38,14 +38,15 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
+from harness_core import reconcile
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
                 "autonomy", "cost", "voice"]
 POSTURES = {
     "bypass": {"claude": "bypassPermissions", "vscode": "bypassPermissions", "codex": ("never", "danger-full-access")},
-    "auto": {"claude": "auto", "vscode": None, "codex": ("on-failure", "workspace-write")},
-    "manual": {"claude": "default", "vscode": "default", "codex": ("untrusted", "read-only")},
+    "auto": {"claude": "auto", "vscode": None, "codex": ("on-request", "workspace-write")},
+    "manual": {"claude": "default", "vscode": "default", "codex": ("on-request", "read-only")},
 }
 HARNESS_HOOK_BASENAMES = [
     "validate-plan-card.py", "allow-readonly-bash.py", "harness-session.py",
@@ -180,11 +181,11 @@ def maintainer_terms(root: Path) -> List[str]:
 
 
 def home() -> Path:
-    return Path(os.environ.get("HOME") or Path.home())
+    return Path(os.environ.get("HARNESS_HOME") or os.environ.get("HOME") or Path.home())
 
 
 def claude_dir() -> Path:
-    return home() / ".claude"
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR", str(home() / ".claude")))
 
 
 def config_path() -> Path:
@@ -217,7 +218,7 @@ def vscode_settings_path() -> Path:
 
 
 def codex_dir() -> Path:
-    return home() / ".codex"
+    return Path(os.environ.get("CODEX_HOME", str(home() / ".codex")))
 
 
 def global_gitignore_path() -> Path:
@@ -467,7 +468,10 @@ def _record(manifest: Dict[str, Any], kind: str, item: Dict[str, Any]) -> None:
 def _adopt(path: Path, manifest: Dict[str, Any], dry: bool) -> Optional[Path]:
     """Move a pre-existing unmanaged path aside so the harness can link there."""
     dest_dir = state_dir() / "pre-harness"
-    rel = path.relative_to(home())
+    try:
+        rel = path.relative_to(home())
+    except ValueError:
+        rel = Path("external") / hashlib.sha256(str(path).encode()).hexdigest() / path.name
     dest = dest_dir / rel
     say(f"  adopt   {path}  ->  {dest}")
     if not dry:
@@ -485,6 +489,10 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
         current = Path(os.readlink(path))
         if current == target or path.resolve() == target.resolve():
             _record(manifest, "links", {"path": str(path), "target": str(target)})
+            return
+        previous = next((entry for entry in manifest.get("links", []) if entry["path"] == str(path)), None)
+        if previous and current != Path(previous["target"]):
+            report.append(f"{path} was redirected after sync; preserving the user's link")
             return
         if managed or adopt:
             say(f"  relink  {path}")
@@ -520,7 +528,7 @@ def link_dir_files(source: Path, dest: Path, manifest: Dict[str, Any], dry: bool
     for old in list(manifest.get("links", [])):
         if Path(old["path"]).parent == dest and old["path"] not in wanted:
             say(f"  unlink  {old['path']} (no longer in the harness)")
-            if not dry and Path(old["path"]).is_symlink():
+            if not dry and Path(old["path"]).is_symlink() and os.readlink(old["path"]) == old["target"]:
                 Path(old["path"]).unlink()
             manifest["links"].remove(old)
 
@@ -564,28 +572,14 @@ def render_codex_agents(stances: Dict[str, Path], personal: Optional[str]) -> st
 
 
 def update_codex_config(text: str, cfg: Dict[str, Any]) -> str:
-    lines = text.splitlines()
-    wanted = {"project_doc_fallback_filenames": 'project_doc_fallback_filenames = ["CLAUDE.md"]'}
+    wanted = {"project_doc_fallback_filenames": ["CLAUDE.md"]}
     p = posture(cfg)
     if p != "inherit":
         approval, sandbox = POSTURES[p]["codex"]
-        wanted["approval_policy"] = f'approval_policy = "{approval}"'
-        wanted["sandbox_mode"] = f'sandbox_mode = "{sandbox}"'
-    seen = set()
-    out = []
-    for line in lines:
-        key = line.split("=", 1)[0].strip()
-        if key in wanted and not line.lstrip().startswith("#") and not line.lstrip().startswith("["):
-            out.append(wanted[key])
-            seen.add(key)
-        else:
-            out.append(line)
-    missing = [wanted[k] for k in wanted if k not in seen]
-    if missing:
-        # Top-level keys must precede any [table]; insert before the first table header.
-        idx = next((i for i, l in enumerate(out) if l.lstrip().startswith("[")), len(out))
-        out[idx:idx] = ["# agent-harness owned keys"] + missing + [""]
-    return "\n".join(out) + ("\n" if out and out[-1] != "" else "")
+        wanted.update(approval_policy=approval, sandbox_mode=sandbox)
+        if p != "bypass":
+            wanted["approval_reviewer"] = "auto_review" if p == "auto" else "user"
+    return reconcile.update_toml(text, wanted)
 
 
 def ensure_gitignore_entries(dry: bool) -> None:
@@ -666,10 +660,29 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if platform.system() == "Windows":
         say(UNSUPPORTED)
         return 1
+    if args.dry_run:
+        return _cmd_sync_unlocked(args)
+    try:
+        with reconcile.lock(state_dir()):
+            return _cmd_sync_unlocked(args)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+
+
+def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
+    if platform.system() == "Windows":
+        say(UNSUPPORTED)
+        return 1
     dry = args.dry_run
     cfg = load_config()
     stances = resolve_stances(cfg)
     p = posture(cfg)
+    if cfg.get("codex", {}).get("manage", True):
+        ctoml = codex_dir() / "config.toml"
+        update_codex_config(ctoml.read_text() if ctoml.is_file() else "", cfg)
+        for role in (REPO / "primitives" / "roles").glob("*.md"):
+            primitive_catalog.role_projection(REPO, "codex", role,
+                cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {}))
     say(f"agent-harness {VERSION} · repo {REPO} · home {home()}{' · DRY RUN' if dry else ''}")
     say("stances: " + ", ".join(f"{k}={v.stem}" for k, v in stances.items()) + f" · permissions={p}")
     stale = placeholder_identity(cfg)
@@ -683,10 +696,13 @@ def cmd_sync(args: argparse.Namespace) -> int:
     manifest["repo"] = str(REPO)
     report: List[str] = []
     cd = claude_dir()
+    applied = read_json(applied_path()) or {}
+    store = reconcile.Store(state_dir(), dry)
     if not dry:
-        for sub in ("rules", "skills", "agents", "hooks", "output-styles", "plans"):
-            (cd / sub).mkdir(parents=True, exist_ok=True)
-        (cd / "rules" / "harness-stances").mkdir(exist_ok=True)
+        if cfg.get("claude", {}).get("manage", True):
+            for sub in ("rules", "skills", "agents", "hooks", "output-styles", "plans"):
+                (cd / sub).mkdir(parents=True, exist_ok=True)
+            (cd / "rules" / "harness-stances").mkdir(exist_ok=True)
         state_dir().mkdir(parents=True, exist_ok=True)
         if not config_path().exists():
             config_path().parent.mkdir(parents=True, exist_ok=True)
@@ -694,110 +710,113 @@ def cmd_sync(args: argparse.Namespace) -> int:
             say(f"  config  created {config_path()} from config.example.json")
             say("          run `harness init` to fill it in by answering questions")
 
-    # Legacy plain files that the harness now provides.
-    for name in LEGACY_RULES:
-        adopt_legacy(cd / "rules" / name, manifest, dry, args.adopt, report)
-    for name in HARNESS_HOOK_BASENAMES:
-        adopt_legacy(cd / "hooks" / name, manifest, dry, args.adopt, report)
+    if cfg.get("claude", {}).get("manage", True):
+        # Legacy plain files that the harness now provides.
+        for name in LEGACY_RULES:
+            adopt_legacy(cd / "rules" / name, manifest, dry, args.adopt, report)
+        for name in HARNESS_HOOK_BASENAMES:
+            adopt_legacy(cd / "hooks" / name, manifest, dry, args.adopt, report)
 
-    # Links.
-    ensure_link(cd / "rules" / "harness", REPO / "claude" / "rules", manifest, dry, args.adopt, report)
-    wanted_stance_links = set()
-    for name, target in stances.items():
-        link = cd / "rules" / "harness-stances" / f"{name}.md"
-        wanted_stance_links.add(str(link))
-        ensure_link(link, target, manifest, dry, args.adopt, report)
-    for old in list(manifest.get("links", [])):
-        if "/rules/harness-stances/" in old["path"] and old["path"] not in wanted_stance_links:
-            say(f"  unlink  {old['path']} (stance no longer selected)")
-            if not dry and Path(old["path"]).is_symlink():
-                Path(old["path"]).unlink()
-            manifest["links"].remove(old)
-    for skill in sorted(p_ for p_ in (REPO / "claude" / "skills").iterdir() if p_.is_dir()):
-        ensure_link(cd / "skills" / skill.name, skill, manifest, dry, args.adopt, report)
-    for agent in sorted((REPO / "claude" / "agents").glob("*.md")):
-        ensure_link(cd / "agents" / agent.name, agent, manifest, dry, args.adopt, report)
-    ensure_link(cd / "hooks" / "harness", REPO / "claude" / "hooks", manifest, dry, args.adopt, report)
-    for style in sorted((REPO / "claude" / "output-styles").glob("*.md")):
-        ensure_link(cd / "output-styles" / style.name, style, manifest, dry, args.adopt, report)
-    link_dir_files(REPO / "claude" / "commands", cd / "commands", manifest, dry, args.adopt, report)
-    ensure_link(cd / "CLAUDE.md", REPO / "claude" / "CLAUDE.md", manifest, dry, args.adopt, report)
+        # Links.
+        ensure_link(cd / "rules" / "harness", REPO / "claude" / "rules", manifest, dry, args.adopt, report)
+        wanted_stance_links = set()
+        for name, target in stances.items():
+            link = cd / "rules" / "harness-stances" / f"{name}.md"
+            wanted_stance_links.add(str(link))
+            ensure_link(link, target, manifest, dry, args.adopt, report)
+        for old in list(manifest.get("links", [])):
+            if "/rules/harness-stances/" in old["path"] and old["path"] not in wanted_stance_links:
+                say(f"  unlink  {old['path']} (stance no longer selected)")
+                if not dry and Path(old["path"]).is_symlink():
+                    Path(old["path"]).unlink()
+                manifest["links"].remove(old)
+        for skill in sorted(p_ for p_ in (REPO / "claude" / "skills").iterdir() if p_.is_dir()):
+            ensure_link(cd / "skills" / skill.name, skill, manifest, dry, args.adopt, report)
+        for agent in sorted((REPO / "claude" / "agents").glob("*.md")):
+            ensure_link(cd / "agents" / agent.name, agent, manifest, dry, args.adopt, report)
+        ensure_link(cd / "hooks" / "harness", REPO / "claude" / "hooks", manifest, dry, args.adopt, report)
+        for style in sorted((REPO / "claude" / "output-styles").glob("*.md")):
+            ensure_link(cd / "output-styles" / style.name, style, manifest, dry, args.adopt, report)
+        link_dir_files(REPO / "claude" / "commands", cd / "commands", manifest, dry, args.adopt, report)
+        ensure_link(cd / "CLAUDE.md", REPO / "claude" / "CLAUDE.md", manifest, dry, args.adopt, report)
 
-    # Personal file.
-    personal = cd / "CLAUDE.personal.md"
-    existing = personal.read_text(encoding="utf-8") if personal.exists() else None
-    rendered = render_personal(cfg, existing)
-    if rendered != existing:
-        say(f"  render  {personal}")
-        if not dry:
-            personal.write_text(rendered, encoding="utf-8")
-
-    # Claude settings.
-    template = read_json(REPO / "claude" / "settings.template.json") or {}
-    settings_file = cd / "settings.json"
-    live = read_json(settings_file) or {}
-    mtime = settings_file.stat().st_mtime if settings_file.exists() else None
-    applied = read_json(applied_path()) or {}
-    merged = merge_claude_settings(live, template, cfg, retired=retired_allow_rules(applied, template))
-    if merged != live:
-        say(f"  merge   {settings_file}")
-        if not dry:
-            write_json_atomic(settings_file, merged, expect_mtime=mtime, backup=True)
-    applied["claude"] = claude_projection(merged, template)
-    applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template)
-
-    # VS Code.
-    if cfg.get("vscode", {}).get("manage", True):
-        vs = vscode_settings_path()
-        if vs.exists():
-            try:
-                vlive = read_json(vs) or {}
-            except SystemExit:
-                vlive = None
-                report.append(f"{vs} is not plain JSON (comments?); VS Code settings left alone")
-            if vlive is not None:
-                owned = read_json(REPO / "vscode" / "settings.owned.json") or {}
-                vmerged = merge_vscode_settings(vlive, owned, cfg)
-                if vmerged != vlive:
-                    say(f"  merge   {vs}")
-                    if not dry:
-                        write_json_atomic(vs, vmerged, expect_mtime=vs.stat().st_mtime, backup=True)
-                applied["vscode"] = {k: vmerged.get(k) for k in list(owned) + ["claudeCode.initialPermissionMode", "claudeCode.allowDangerouslySkipPermissions"]}
-        else:
-            say("  vscode  no user settings file found; skipping (install VS Code, then re-run sync)")
-
-    # Codex.
-    if cfg.get("codex", {}).get("manage", True) and codex_dir().exists():
-        agents = codex_dir() / "AGENTS.md"
-        personal_codex = codex_dir() / "AGENTS.personal.md"
-        if agents.exists() and not agents.read_text(encoding="utf-8").startswith(CODEX_BANNER):
-            if args.adopt_codex:
-                say(f"  adopt   {agents} -> {personal_codex}")
-                if not dry:
-                    if personal_codex.exists():
-                        personal_codex = personal_codex.with_name(f"AGENTS.personal.{int(time.time())}.md")
-                    shutil.move(str(agents), str(personal_codex))
-            else:
-                report.append(f"{agents} is not harness-generated; pass --adopt-codex to move it to AGENTS.personal.md and regenerate")
-        if not agents.exists() or agents.read_text(encoding="utf-8").startswith(CODEX_BANNER):
-            ptext = personal_codex.read_text(encoding="utf-8") if personal_codex.exists() else None
-            text = render_codex_agents(stances, ptext)
-            if not agents.exists() or agents.read_text(encoding="utf-8") != text:
-                say(f"  render  {agents}")
-                if not dry:
-                    agents.write_text(text, encoding="utf-8")
-        ctoml = codex_dir() / "config.toml"
-        if ctoml.exists():
-            new = update_codex_config(ctoml.read_text(encoding="utf-8"), cfg)
-            if new != ctoml.read_text(encoding="utf-8"):
-                say(f"  update  {ctoml} (owned keys)")
-                if not dry:
-                    shutil.copy2(ctoml, ctoml.with_suffix(".toml.bak"))
-                    ctoml.write_text(new, encoding="utf-8")
-        else:
-            say(f"  create  {ctoml} from codex/config.toml.example")
+        # Personal file.
+        personal = cd / "CLAUDE.personal.md"
+        existing = personal.read_text(encoding="utf-8") if personal.exists() else None
+        rendered = render_personal(cfg, existing)
+        if rendered != existing:
+            say(f"  render  {personal}")
             if not dry:
-                ctoml.write_text(update_codex_config((REPO / "codex" / "config.toml.example").read_text(encoding="utf-8"), cfg), encoding="utf-8")
+                personal.write_text(rendered, encoding="utf-8")
+
+        # Claude settings.
+        template = read_json(REPO / "claude" / "settings.template.json") or {}
+        for entries in template.get("hooks", {}).values():
+            for entry in entries:
+                for hook in entry.get("hooks", []):
+                    hook["command"] = hook["command"].replace("~/.claude/hooks/harness",
+                        shlex.quote(str(cd / "hooks" / "harness")))
+        settings_file = cd / "settings.json"
+        live = read_json(settings_file) or {}
+        mtime = settings_file.stat().st_mtime if settings_file.exists() else None
+        applied = read_json(applied_path()) or {}
+        merged = merge_claude_settings(live, template, cfg, retired=retired_allow_rules(applied, template))
+        ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
+        owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])]
+        owned_paths += [["permissions", "allow"], ["permissions", "defaultMode"]]
+        owned_paths += [["hooks", event] for event in template.get("hooks", {})]
+        store.json(settings_file, merged, owned_paths)
+        applied["claude"] = claude_projection(merged, template)
+        applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template)
+
+        # VS Code.
+        if cfg.get("vscode", {}).get("manage", True):
+            vs = vscode_settings_path()
+            if vs.exists():
+                try:
+                    vlive = read_json(vs) or {}
+                except SystemExit:
+                    vlive = None
+                    report.append(f"{vs} is not plain JSON (comments?); VS Code settings left alone")
+                if vlive is not None:
+                    owned = read_json(REPO / "vscode" / "settings.owned.json") or {}
+                    vmerged = merge_vscode_settings(vlive, owned, cfg)
+                    store.json(vs, vmerged, [[key] for key in list(owned) +
+                               ["claudeCode.initialPermissionMode", "claudeCode.allowDangerouslySkipPermissions"]])
+                    applied["vscode"] = {k: vmerged.get(k) for k in list(owned) + ["claudeCode.initialPermissionMode", "claudeCode.allowDangerouslySkipPermissions"]}
+            else:
+                say("  vscode  no user settings file found; skipping (install VS Code, then re-run sync)")
+
+    # Codex consumes the same policy text, skills and role contracts.
+    if cfg.get("codex", {}).get("manage", True):
+        personal_codex = codex_dir() / "AGENTS.personal.md"
+        ptext = personal_codex.read_text() if personal_codex.exists() else None
+        identity = render_personal(cfg, None)
+        text = render_codex_agents(stances, identity + ("\n" + ptext if ptext else ""))
+        agents = codex_dir() / "AGENTS.md"
+        legacy = agents.is_file() and agents.read_text().startswith(CODEX_BANNER)
+        previous = store.data["files"].get(str(agents), {}).get("prior")
+        if previous and not previous.startswith(CODEX_BANNER):
+            text += "\n---\n<!-- Adopted personal guidance -->\n" + previous
+        elif agents.is_file() and not legacy and args.adopt_codex and str(agents) not in store.data["files"]:
+            text += "\n---\n<!-- Adopted personal guidance -->\n" + agents.read_text()
+        store.generated(agents, text, adopt=args.adopt_codex or legacy)
+        wanted = reconcile.tomlkit.parse(update_codex_config("", cfg)).unwrap()
+        store.toml(codex_dir() / "config.toml", wanted)
+        skills_home = home() / ".agents" / "skills"
+        for skill in sorted((REPO / "primitives" / "skills").iterdir()):
+            if skill.is_dir():
+                ensure_link(skills_home / skill.name, skill, manifest, dry, args.adopt, report)
+        for role in sorted((REPO / "primitives" / "roles").glob("*.md")):
+            binding = cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {})
+            store.generated(codex_dir() / "agents" / (role.stem + ".toml"),
+                            primitive_catalog.role_projection(REPO, "codex", role, binding), adopt=args.adopt)
+        for workflow in sorted((REPO / "primitives" / "workflows").glob("*.md")):
+            fields, body = primitive_catalog.frontmatter(workflow)
+            content = "---\nname: harness-" + workflow.stem + "\ndescription: " + fields["description"] + "\n---\n\n"
+            content += body.replace("{{arguments}}", "the arguments supplied with this invocation")
+            store.generated(skills_home / ("harness-" + workflow.stem) / "SKILL.md", content, adopt=args.adopt)
+    report.extend(store.conflicts)
 
     ensure_gitignore_entries(dry)
     ensure_local_bin_on_path(dry)
@@ -857,6 +876,7 @@ def _diff_lines() -> List[str]:
     stances_now = dict(cfg["stances"])
     if manifest.get("config", {}).get("stances") and manifest["config"]["stances"] != stances_now:
         lines.append("pending sync: stance selection changed since last sync")
+    lines.extend(reconcile.Store(state_dir(), dry=True).drift())
     return lines
 
 
@@ -951,8 +971,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     for name, cmd in (("claude", ["claude", "--version"]), ("code", ["code", "--version"]), ("codex", ["codex", "--version"]), ("gh", ["gh", "--version"]), ("python3", [sys.executable, "--version"])):
         say(f"  {name}: {_version_of(cmd)}")
     say(f"  gh login: {_version_of(['gh', 'auth', 'status'])}")
-    say(f"  claude credentials present: {(claude_dir() / '.credentials.json').exists() or (home() / '.claude.json').exists()}")
-    say(f"  codex credentials present: {(codex_dir() / 'auth.json').exists()}")
+    say(f"  claude credentials present (not proof of login): {(claude_dir() / '.credentials.json').exists() or (home() / '.claude.json').exists()}")
+    say(f"  codex credentials present (not proof of login): {(codex_dir() / 'auth.json').exists()}")
     count, problems = hook_health(read_json(claude_dir() / "settings.json") or {})
     if not count:
         say("  hooks: none registered in settings.json; run `harness sync`")
@@ -963,7 +983,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         say("    A hook that cannot start is treated as non-blocking, so these fail silently.")
         say("    The command grader and the stop gate are hooks: those guards are off until fixed.")
     else:
-        say(f"  hooks: {count} registered, all runnable")
+        say(f"  hooks: {count} registered, script paths exist; native trust and activation unverified")
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))
@@ -981,13 +1001,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
+    try:
+        with reconcile.lock(state_dir()):
+            return _cmd_uninstall_unlocked(args)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+
+
+def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
     manifest = read_json(manifest_path())
     if not manifest:
         say("nothing to uninstall (no manifest)")
         return 0
     for link in manifest.get("links", []):
         p = Path(link["path"])
-        if p.is_symlink():
+        if p.is_symlink() and Path(os.readlink(p)) == Path(link["target"]):
             p.unlink()
             say(f"  unlink  {p}")
     for item in manifest.get("adopted", []):
@@ -999,25 +1027,23 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     template = read_json(REPO / "claude" / "settings.template.json") or {}
     sf = claude_dir() / "settings.json"
     live = read_json(sf)
-    if live is not None:
+    if live is not None and str(sf) not in reconcile.Store(state_dir()).data["files"]:
         write_json_atomic(sf, strip_claude_settings(live, template), backup=True)
         say(f"  strip   {sf}")
-    agents = codex_dir() / "AGENTS.md"
-    if agents.exists() and agents.read_text(encoding="utf-8").startswith(CODEX_BANNER):
-        agents.unlink()
-        pc = codex_dir() / "AGENTS.personal.md"
-        if pc.exists():
-            shutil.move(str(pc), str(agents))
-        say(f"  restore {agents}")
+    store = reconcile.Store(state_dir())
+    store.uninstall()
+    for conflict in store.conflicts:
+        say("  conflict " + conflict)
     if remove_gitignore_entries():
         say(f"  restore {global_gitignore_path()}")
     if remove_local_bin_from_path():
         say(f"  restore {home() / '.zprofile'}")
-    for f in (manifest_path(), applied_path()):
-        if f.exists():
-            f.unlink()
+    if not store.conflicts:
+        for f in (manifest_path(), applied_path()):
+            if f.exists():
+                f.unlink()
     say("uninstalled; personal files, config and the checkout are untouched")
-    return 0
+    return 2 if store.conflicts else 0
 
 
 def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], List[str]]] = None) -> List[str]:
@@ -1286,8 +1312,8 @@ def _gh_login_line() -> str:
     return "logged in"
 
 
-UNSUPPORTED = ("Windows is not supported: the harness links into ~/.claude with symlinks and "
-               "every hook is a POSIX command.\nUse WSL2 and run this inside it.")
+UNSUPPORTED = ("Native Windows is not supported: runtime projections use symlinks and POSIX hooks.\n"
+               "WSL2 is a separate, currently unqualified target; see the compatibility catalog.")
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -1295,6 +1321,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         say(UNSUPPORTED)
         return 1
     dry = args.dry_run
+    cfg = load_config()
     mac = platform.system() == "Darwin"
     say(f"agent-harness install{' (dry run)' if dry else ''}")
     if mac and not args.no_brew:
@@ -1311,15 +1338,17 @@ def cmd_install(args: argparse.Namespace) -> int:
             for ext in (REPO / "vscode" / f).read_text().split():
                 _run(["code", "--install-extension", ext, "--force"], dry)
     if not args.no_apps:
-        if not shutil.which("claude"):
+        if cfg.get("claude", {}).get("manage", True) and not shutil.which("claude"):
             _run(["/bin/bash", "-c", "curl -fsSL https://claude.ai/install.sh | bash"], dry)
-        if not args.no_codex and not shutil.which("codex"):
+        if cfg.get("codex", {}).get("manage", True) and not args.no_codex and not shutil.which("codex"):
             _run(["npm", "install", "-g", "@openai/codex"], dry)
     sync_args = argparse.Namespace(dry_run=dry, adopt=args.adopt, adopt_codex=args.adopt_codex, print_only=False)
     rc = cmd_sync(sync_args)
     say("\nLogins (interactive, cannot be automated):")
-    say("  claude   — run `claude` and complete the browser login" if not (claude_dir() / ".credentials.json").exists() else "  claude   — credentials present")
-    say("  codex    — run `codex login`" if not (codex_dir() / "auth.json").exists() else "  codex    — credentials present")
+    if cfg.get("claude", {}).get("manage", True):
+        say("  claude   — run `claude` and complete the browser login")
+    if cfg.get("codex", {}).get("manage", True):
+        say("  codex    — run `codex login`")
     say("  gh       — " + _gh_login_line())
     return rc
 
@@ -1337,7 +1366,7 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
-BOOL_KEYS = ["vscode.manage", "codex.manage", "permissions_bypass_acknowledged"]
+BOOL_KEYS = ["vscode.manage", "claude.manage", "codex.manage", "permissions_bypass_acknowledged"]
 
 
 def coerce_config_value(key: str, value: str) -> Any:
@@ -1358,12 +1387,18 @@ def coerce_config_value(key: str, value: str) -> Any:
             raise SystemExit(f"identity.expertise is {' or '.join(sorted(GUIDANCE))}; got '{value}'")
         return value
     if head == "stances":
-        if tail not in STANCE_NAMES:
-            raise SystemExit(f"no stance '{tail}'; stances: {', '.join(STANCE_NAMES)}")
-        if value not in stance_variants(tail):
-            raise SystemExit(f"stance '{tail}' has no variant '{value}'; "
-                             f"options: {', '.join(stance_variants(tail))}")
+        cfg = load_config(env={})
+        cfg["stances"][tail] = value
+        resolve_stances(cfg)
         return value
+    if key == "primitive_roots":
+        roots = json.loads(value)
+        if not isinstance(roots, list) or not all(isinstance(item, str) and Path(item).expanduser().is_absolute() for item in roots):
+            raise SystemExit("primitive_roots must be a JSON array of absolute directory paths")
+        cfg = load_config(env={})
+        cfg["primitive_roots"] = roots
+        resolve_stances(cfg)
+        return roots
     if key == "permissions":
         if value != "inherit" and value not in POSTURES:
             raise SystemExit(f"permissions must be inherit, bypass, auto or manual; got '{value}'")
