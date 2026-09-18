@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "harness_version": "0.8.0",
+  "harness_version": "0.9.0",
   "release_state": "candidate",
   "required_cases": [
     "installation",

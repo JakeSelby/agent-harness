@@ -1,6 +1,8 @@
 """Compatibility claims must carry versioned native evidence."""
 import hashlib
 import json
+import re
+import subprocess
 from pathlib import Path
 
 STATES = {"qualified", "unqualified", "planned", "unsupported"}
@@ -43,6 +45,16 @@ def evidence_errors(root, data, client):
             continue
         if record.get("kind") != "native" or not record.get("observations") or not record.get("source_commit"):
             errors.append("native observations and source commit are required")
+            continue
+        commit = record["source_commit"]
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
+            errors.append("native evidence requires a full source commit identity")
+            continue
+        ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "HEAD"], capture_output=True)
+        unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, "HEAD", "--",
+                                    "VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates", "config.example.json"], capture_output=True)
+        if ancestry.returncode or unchanged.returncode:
+            errors.append("runtime source changed or evidence commit is unavailable")
             continue
         passed.update(case for case, result in record.get("cases", {}).items() if result == "passed")
     missing = set(data["required_cases"]) - passed
