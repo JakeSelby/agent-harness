@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "harness_version": "0.8.0",
+  "release_state": "candidate",
+  "required_cases": [
+    "installation",
+    "stance-switch",
+    "custom-stance",
+    "permission-controls",
+    "hook-composition",
+    "role-confinement",
+    "gate-invalidation",
+    "bmad-workflow",
+    "bidirectional-handoff",
+    "migration-uninstall"
+  ],
+  "clients": [
+    {
+      "id": "claude-code-cli-macos",
+      "runtime": "claude-code",
+      "provider": "anthropic",
+      "client": "cli",
+      "platform": "macos",
+      "status": "unqualified",
+      "required_for_release": true,
+      "runtime_version": null,
+      "client_version": null,
+      "evidence": []
+    },
+    {
+      "id": "claude-code-vscode-macos",
+      "runtime": "claude-code",
+      "provider": "anthropic",
+      "client": "vscode",
+      "platform": "macos",
+      "status": "unqualified",
+      "required_for_release": true,
+      "runtime_version": null,
+      "client_version": null,
+      "evidence": []
+    },
+    {
+      "id": "claude-code-cli-linux",
+      "runtime": "claude-code",
+      "provider": "anthropic",
+      "client": "cli",
+      "platform": "linux",
+      "status": "unqualified",
+      "required_for_release": true,
+      "runtime_version": null,
+      "client_version": null,
+      "evidence": []
+    },
+    {
+      "id": "codex-cli-macos",
+      "runtime": "codex",
+      "provider": "openai",
+      "client": "cli",
+      "platform": "macos",
+      "status": "unqualified",
+      "required_for_release": true,
+      "runtime_version": null,
+      "client_version": null,
+      "evidence": []
+    },
+    {
+      "id": "codex-vscode-macos",
+      "runtime": "codex",
+      "provider": "openai",
+      "client": "vscode",
+      "platform": "macos",
+      "status": "unqualified",
+      "required_for_release": true,
+      "runtime_version": null,
+      "client_version": null,
+      "evidence": []
+    },
+    {
+      "id": "codex-desktop-macos",
+      "runtime": "codex",
+      "provider": "openai",
+      "client": "desktop",
+      "platform": "macos",
+      "status": "unqualified",
+      "required_for_release": true,
+      "runtime_version": null,
+      "client_version": null,
+      "evidence": []
+    },
+    {
+      "id": "codex-cli-linux",
+      "runtime": "codex",
+      "provider": "openai",
+      "client": "cli",
+      "platform": "linux",
+      "status": "unqualified",
+      "required_for_release": true,
+      "runtime_version": null,
+      "client_version": null,
+      "evidence": []
+    },
+    {
+      "id": "cursor",
+      "runtime": "cursor",
+      "provider": "multiple",
+      "client": "editor",
+      "platform": "unspecified",
+      "status": "planned",
+      "required_for_release": false,
+      "evidence": []
+    },
+    {
+      "id": "grok",
+      "runtime": "undecided",
+      "provider": "xai",
+      "client": "undecided",
+      "platform": "unspecified",
+      "status": "planned",
+      "required_for_release": false,
+      "evidence": []
+    }
+  ],
+  "limitations": [
+    "Native client qualification is pending; unit tests and generated files do not establish native support.",
+    "Codex custom-role sandbox defaults can be superseded by parent permissions; read-only confinement is unqualified.",
+    "Planner artifact-only writes are advisory until a native filesystem boundary is qualified.",
+    "Cursor and Grok integration, hosted agents, native memory merging and UML integration are deferred."
+  ]
+}
