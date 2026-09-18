@@ -42,8 +42,10 @@ its extensions; on Linux it adds only Claude Code and Codex before syncing, so i
 your editor yourself. Both platforms run the vendors' own `curl | bash` installers for Homebrew
 and Claude Code; read `bin/harness` first if that matters to you.
 
-Then edit `~/.config/agent-harness/config.json` (your name, your stances), run `bin/harness sync`
-again, and start a session. `/context` lists the harness rules; `/hooks` lists its eleven hooks.
+Then run `bin/harness init`, which asks for your name, what you do, and one preference at a
+time, writes the config file for you, and tells you to sync. (`bin/harness config set
+stances.testing off` changes one value later, without an editor.) Run `bin/harness sync` again
+and start a session. `/context` lists the harness rules; `/hooks` lists its eleven hooks.
 An agent can do all of this from this README; the CLI is Python 3.9 standard library and
 every step is idempotent.
 
@@ -52,7 +54,9 @@ per-session tokens and cache hit rate from a local file ([docs/usage.md](docs/us
 `bin/harness trust <repo>` lets the stop gate run that repository's own `## Gate` block.
 `bin/harness uninstall` puts everything back, leaving only your config, your personal file and
 the checkout. `bin/harness --help` lists every command and `bin/harness <command> --help` its
-flags; `bin/harness config get <key>` prints a value the way sync resolved it.
+flags; `bin/harness config get <key>` prints a value the way sync resolved it and
+`bin/harness config set <key> <value>` writes one, refusing a stance variant or a posture that
+does not exist rather than leaving the next sync to fail.
 
 ## What you get
 

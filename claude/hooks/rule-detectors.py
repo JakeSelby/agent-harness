@@ -71,6 +71,21 @@ SECRET_PATTERNS = [
 BANNED_OPENERS = ("I started by", "After investigating", "Great question")
 BANNED_CLOSER = "Let me know if"
 
+# The two shapes `decisions-and-plans` prescribes — a batched "Decisions" block, or a
+# recommendation line — and the markers that show another course was named beside them.
+# The trigger is a line that *opens* with the word; an inline "I recommend" in running
+# prose is not a decision block and does not fire.
+DECISION_RE = re.compile(
+    r"^[\s*_>#|-]*recommend(?:ation|ed|ing|s)?\b"
+    r"|\brecommendation:"
+    r"|^[\s*_>#|-]*decisions?\b[\s*_:-]*$",
+    re.I | re.M,
+)
+ALTERNATIVE_RE = re.compile(
+    r"\balternativ|^[\s*_>#|-]*alt\b|\bagainst:|\bhonest case\b|^[\s*_>#|-]*option\s",
+    re.I | re.M,
+)
+
 # `WebSearch` is capped per session by claude/rules/research-and-verification.md.
 SEARCH_CAP = 200
 
@@ -749,6 +764,20 @@ def second_table(events, ctx):
     return hits
 
 
+def recommendation_without_alternative(events, ctx):
+    """A final message that decides between courses and names only one. The rule asks for
+    "the alternatives with their honest case", so a batched `Decisions` block or a
+    recommendation line standing alone is the shape it forbids. Markers are read out of
+    the raw text rather than the unmarked text, so an alternative named inside a quote
+    still counts as named."""
+    hits = []
+    for event in ctx.finals:
+        text = _text(event.get("text"))
+        if DECISION_RE.search(_unmarked(text)) and not ALTERNATIVE_RE.search(text):
+            hits.append(_hit(event, tool_use_id=False))
+    return hits
+
+
 def _commit_messages(parsed):
     """The `-m` values of every `git commit` in one parsed command, commit by commit."""
     return [_messages_of(parsed, args) for _, sub, args in _git_calls(parsed, ("commit",))]
@@ -838,6 +867,8 @@ _REGISTRY = [
     Detector("cache-hygiene/compact", "cache-hygiene", "session", compaction),
     Detector("voice/banned-opener", "voice-and-format", "assistant-final", banned_opener, _VOICE_ON),
     Detector("voice/second-table", "voice-and-format", "assistant-final", second_table, _VOICE_ON),
+    Detector("decisions/no-alternatives", "decisions-and-plans", "assistant-final",
+             recommendation_without_alternative),
     Detector("autonomy/confirmed-irreversible", "autonomy", "bash", confirmed_irreversible),
     Detector("autonomy/denied-by-grade", "autonomy", "bash", denied_by_grade),
     Detector("commits/non-conventional", "commits", "bash", non_conventional, _COMMITS_ON),
@@ -849,7 +880,6 @@ DETECTORS = dict((d.id, d) for d in _REGISTRY)
 # Rules with nothing a transcript can decide. The reason is what the lint prints.
 OPT_OUT = {
     "conciseness": "a comment's redundancy is a judgment over the codebase, not a transcript pattern",
-    "decisions-and-plans": "the Review Card is enforced by validate-plan-card.py; chooser use is a count, not a violation",
     "working-style": "\"verify before you claim\" needs a semantic link between a claim and a command",
 }
 

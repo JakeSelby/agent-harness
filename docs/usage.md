@@ -79,6 +79,7 @@ still drive the detectors, so hit counts do backfill.
 | `cache-hygiene/compact` | cache-hygiene | each compaction boundary in the transcript |
 | `voice/banned-opener` | voice-and-format | a final message opening with a phrase the output style bans, or closing with one |
 | `voice/second-table` | voice-and-format | two or more table blocks in one final message |
+| `decisions/no-alternatives` | decisions-and-plans | a final message whose recommendation line names no other course |
 | `autonomy/confirmed-irreversible` | autonomy | a command re-run behind the `HARNESS_CONFIRMED=1` marker |
 | `autonomy/denied-by-grade` | autonomy | a Bash result carrying the grade hook's deny signature |
 | `commits/non-conventional` | commits | a commit subject that is not a Conventional Commit line |
