@@ -5,6 +5,10 @@ description: Show progress of background Workflow runs — which agents have ret
 
 # Workflow status
 
+For harness-owned isolated role workers, run `harness role status` or
+`harness role status <worker-id>`. Report status, runtime, role and result path from those records.
+They are separate CLI processes and do not appear as native subagent threads.
+
 This reader inspects local Claude workflow journals from any client with filesystem access.
 It does not inspect Codex native agent threads or hosted runs. For those, use the client's native
 agent view; an empty local journal search does not mean no agents are running.

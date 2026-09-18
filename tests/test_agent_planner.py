@@ -17,7 +17,7 @@ AGENT = REPO / "claude" / "agents" / "planner.md"
 COMMAND = REPO / "claude" / "commands" / "plan.md"
 SKILL = REPO / "claude" / "skills" / "plan-authoring" / "SKILL.md"
 REQUIRED_KEYS = {"name", "description", "model", "tools", "effort"}
-BANNED_TOOLS = {"Agent", "Edit", "NotebookEdit"}
+BANNED_TOOLS = {"Agent", "Bash", "Write", "Edit", "NotebookEdit"}
 MODELS = {"opus", "sonnet", "haiku", "fable", "inherit"}
 BODY_CAP = 70
 CARD_SECTIONS = [
@@ -58,10 +58,10 @@ class PlannerFrontmatterTests(unittest.TestCase):
         self.assertEqual(fields["effort"], "high")
         self.assertIn(fields["model"], MODELS)
 
-    def test_it_can_write_the_plan_file_and_nothing_else(self):
+    def test_native_projection_has_no_write_tools(self):
         fields, _ = frontmatter(AGENT)
         tools = {t.strip() for t in fields["tools"].split(",")}
-        self.assertIn("Write", tools)
+        self.assertIn("Read", tools)
         self.assertEqual(tools & BANNED_TOOLS, set())
 
     def test_the_only_writable_path_is_named(self):
@@ -91,18 +91,16 @@ class PlannerBodyTests(unittest.TestCase):
         self.assertIn("no markdown tables", self.text.lower())
         self.assertIn("no `## Context` section", self.text)
 
-    def test_it_carries_the_addendum_anchor_shape_and_the_self_check(self):
+    def test_it_carries_addendum_shape_and_requires_parent_validation(self):
         self.assertIn("# Addendum", self.text)
         self.assertIn("## Step N — <title>", self.text)
-        self.assertIn('awk \'/^---$/{exit} {n++} END{print n" card lines"}\'', self.text)
+        self.assertIn("harness runs the shared Review Card validator", self.text)
 
-    def test_the_return_shape_is_the_reviewer_facing_message(self):
-        shape = self.text.split("## Return the chat message", 1)[1]
-        self.assertIn("## At a glance", shape)
-        self.assertIn("## Decisions", shape)
-        self.assertEqual(shape.count("verbatim"), 2)
-        self.assertIn("workspace-relative", shape)
-        self.assertIn(CLOSING, shape)
+    def test_return_is_plan_content_and_the_caller_keeps_approval_authority(self):
+        shape = self.text.split("## Return the plan content", 1)[1]
+        self.assertIn("complete Markdown plan", shape)
+        self.assertIn("caller", shape)
+        self.assertIn("cannot grant", shape)
 
     def test_it_carries_no_table_line_and_no_deep_heading(self):
         fence = False
@@ -126,7 +124,7 @@ class PlannerCallerTests(unittest.TestCase):
         text = SKILL.read_text(encoding="utf-8")
         self.assertIn("## Delegating", text)
         delegating = text.split("## Delegating", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("`planner`", delegating)
+        self.assertIn("`harness role run planner`", delegating)
         self.assertNotIn("Paste the `TEMPLATE.md`", delegating)
 
 

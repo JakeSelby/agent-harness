@@ -96,8 +96,21 @@ def catalog(root):
             "primitives": entries}
 
 
-def role_projection(root, runtime, path, overrides=None):
+def role_contract(root, name):
+    identifier(name)
+    path = root / "primitives" / "roles" / (name + ".md")
+    if not path.is_file():
+        raise ValueError("unknown harness role: " + name)
     fields, body = frontmatter(path)
+    if fields.get("name") != name or fields.get("authority") not in ("read-only", "artifact-write", "workspace-write"):
+        raise ValueError("invalid shared role name or authority: " + name)
+    if fields.get("context") != "fresh" or fields.get("delegation") != "none":
+        raise ValueError("unsupported role context or delegation contract: " + name)
+    return fields, body
+
+
+def role_projection(root, runtime, path, overrides=None):
+    fields, body = role_contract(root, path.stem)
     binding = json.loads((root / "adapters" / runtime / "bindings.json").read_text())["roles"][fields["name"]]
     allowed = {"model", "model_reasoning_effort"} if runtime == "codex" else {"model", "effort"}
     if set(overrides or {}) - allowed:
@@ -111,7 +124,7 @@ def role_projection(root, runtime, path, overrides=None):
         raise ValueError("unsupported runtime: " + runtime)
     values = {k: fields[k] for k in ("name", "description")}
     values["developer_instructions"] = body
-    values["sandbox_mode"] = "workspace-write" if fields["authority"] != "read-only" else "read-only"
+    values["sandbox_mode"] = "workspace-write" if fields["authority"] == "workspace-write" else "read-only"
     values.update(binding)
     # JSON strings/arrays are valid for this restricted TOML value set.
     return "# Generated from primitives/roles; edit the shared source.\n" + "".join(

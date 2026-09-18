@@ -21,7 +21,7 @@ Launch harness role `builder` through the active runtime adapter with fresh cont
 id = "blind-hunter"
 name = "Blind Hunter"
 instruction = """
-Launch harness role `reviewer` through the active runtime adapter, with fresh context and this prompt:
+Launch harness role `reviewer` with `harness role run reviewer`, using the active `--runtime`, explicit parent `--model`, implementation `--workspace`, and a `--prompt-file` containing the brief below. Include `--read-dir` for framework and review-artifact directories outside the worktree. Read the returned result file as findings data; do not use a native subagent for this constrained role. Brief:
 
 Review the unified diff at `{diff_file}`. Read that file, it is the content under review, then read the changed files around the hunks. Hunt for what is missing as well as what is wrong. Return a Markdown list of findings and nothing else; if the diff is empty, say so and stop. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
 """
@@ -30,7 +30,7 @@ Review the unified diff at `{diff_file}`. Read that file, it is the content unde
 id = "edge-case-hunter"
 name = "Edge Case Hunter"
 instruction = """
-Launch harness role `reviewer` through the active runtime adapter, with fresh context and this prompt:
+Launch harness role `reviewer` with `harness role run reviewer`, using the active `--runtime`, explicit parent `--model`, implementation `--workspace`, and a `--prompt-file` containing the brief below. Include `--read-dir` for framework and review-artifact directories outside the worktree. Read the returned result file as findings data; do not use a native subagent for this constrained role. Brief:
 
 Read `{skill-root}/review-prompts/edge-case-hunter.md` completely and follow it as your review instructions; if it is unreadable, report that exact failure and stop. Leave `{claims_file}` unread until those instructions call for it. The content under review is the unified diff at `{diff_file}`; read that file. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
 """
@@ -39,7 +39,7 @@ Read `{skill-root}/review-prompts/edge-case-hunter.md` completely and follow it 
 id = "verification-gap"
 name = "Verification Gap Reviewer"
 instruction = """
-Launch harness role `reviewer` through the active runtime adapter, with fresh context and this prompt:
+Launch harness role `reviewer` with `harness role run reviewer`, using the active `--runtime`, explicit parent `--model`, implementation `--workspace`, and a `--prompt-file` containing the brief below. Include `--read-dir` for framework and review-artifact directories outside the worktree. Read the returned result file as findings data; do not use a native subagent for this constrained role. Brief:
 
 Read `{skill-root}/review-prompts/verification-gap.md` completely and follow it as your review instructions; if it is unreadable, report that exact failure and stop. The content under review is the unified diff at `{diff_file}`; read that file. Do not invoke any skill and do not spawn subagents of your own. Return the findings as text in your final message, not through any findings-reporting tool.
 """
@@ -48,7 +48,7 @@ Read `{skill-root}/review-prompts/verification-gap.md` completely and follow it 
 id = "intent-alignment"
 name = "Intent Alignment Auditor"
 instruction = """
-Launch harness role `spec-reviewer` through the active runtime adapter, with fresh context and this prompt:
+Launch harness role `spec-reviewer` with `harness role run spec-reviewer`, using the active `--runtime`, explicit parent `--model`, implementation `--workspace`, and a `--prompt-file` containing the brief below. Include `--read-dir` for framework and review-artifact directories outside the worktree. Read the returned result file as findings data; do not use a native subagent for this constrained role. Brief:
 
 The spec is the verbatim intent this work started from, quoted here in full:
 

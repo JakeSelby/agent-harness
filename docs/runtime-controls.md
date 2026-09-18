@@ -17,10 +17,11 @@ repository identity, and gate definition. Commands share a shell so `cd` and `ex
 A gate that changes the tree, times out, or exhausts its retry budget is unverified, never green.
 Unexpected gate errors block. State writes are atomic.
 
-Read-only Claude role bindings omit shell and write tools. Codex roles project read-only sandbox
-defaults, but parent permission overrides can supersede them: this is an unresolved confinement
-qualification case. Planner artifact-only writes remain an instruction contract, not a native
-filesystem boundary. Do not delegate untrusted work assuming either boundary is certified.
+Constrained roles use [isolated CLI workers](role-workers.md), with shared role/stance resolution
+and fixed native tool controls. The harness validates and publishes planner content to a new
+approved artifact path. Direct native role defaults are not confinement: Codex can reapply parent
+permission overrides. Active lifecycle hooks route constrained role launches to the worker
+command. Native qualification is still required; do not treat a projection or unit test as certification.
 
 Usage records identify the runtime and available runtime version. Codex cumulative token snapshots
 are counted once; missing measurements remain null and reports label partial totals. Detector
