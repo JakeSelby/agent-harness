@@ -153,6 +153,28 @@ class CheckTests(Quiet):
         self.assertEqual(drift, [])
         self.assertEqual(sum("skipped" in line for line in lines), 2)
 
+    def test_missing_explicit_review_dependencies_fail_check_on_each_surface(self):
+        install(self.base, SURFACE)
+        review = self.base / ".claude/skills/gds-code-review/steps/review.md"
+        review.parent.mkdir(parents=True)
+        review.write_text("Invoke via the `bmad-review-adversarial-general` skill.")
+        _, drift = harness.bmad_check(self.base)
+        self.assertEqual(len(drift), 1)
+        self.assertIn("invoked skill `bmad-review-adversarial-general` is missing", drift[0])
+        dependency = self.base / ".claude/skills/bmad-review-adversarial-general/SKILL.md"
+        dependency.parent.mkdir(parents=True)
+        dependency.write_text("Review instructions")
+        self.assertEqual(harness.bmad_check(self.base)[1], [])
+
+    def test_matching_customization_does_not_hide_divergent_workflow_mirrors(self):
+        install(self.base, SURFACE)
+        import shutil
+        shutil.copytree(self.base / ".claude", self.base / ".agents")
+        for surface in (".agents", ".claude"):
+            (self.base / surface / "skills/bmad-build/workflow.md").write_text(surface)
+        _, drift = harness.bmad_check(self.base)
+        self.assertEqual(drift, ["bmad-build: mirrored Markdown/TOML sources disagree"])
+
     def test_a_repository_without_bmad_is_an_error(self):
         self.assertEqual(self.bmad("check"), 1)
 

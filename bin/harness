@@ -1802,10 +1802,32 @@ def bmad_drift(template_text: str, base_text: str) -> List[str]:
     return drift
 
 
+def bmad_projection_findings(root: Path) -> List[str]:
+    """Check mirrored source files and literal skill invocations, without executing workflows."""
+    findings: List[str] = []
+    surfaces = [root / folder / "skills" for folder in (".agents", ".claude")]
+    inventories = [{p.name: p for p in surface.iterdir() if p.is_dir()}
+                   if surface.is_dir() else {} for surface in surfaces]
+    for name in sorted(set(inventories[0]) & set(inventories[1])):
+        sources = [{str(p.relative_to(skills[name])): p.read_bytes()
+                    for p in skills[name].rglob("*") if p.is_file() and p.suffix in (".md", ".toml")}
+                   for skills in inventories]
+        if sources[0] != sources[1]:
+            findings.append(f"{name}: mirrored Markdown/TOML sources disagree")
+    pattern = re.compile(r"Invoke via the `([a-z0-9-]+)` skill")
+    for surface, skills in zip(surfaces, inventories):
+        for name, directory in sorted(skills.items()):
+            for source in sorted(directory.rglob("*.md")):
+                for dependency in sorted(set(pattern.findall(source.read_text(encoding="utf-8")))):
+                    if not (surface / dependency / "SKILL.md").is_file():
+                        findings.append(f"{source.relative_to(root)}: invoked skill `{dependency}` is missing")
+    return findings
+
+
 def bmad_check(root: Path) -> Tuple[List[str], List[str]]:
     """Status lines and drift findings, one template at a time, for the skills the repo has."""
     lines: List[str] = []
-    drift: List[str] = []
+    drift: List[str] = bmad_projection_findings(root)
     for template in bmad_templates():
         skill = template.name[: -len(BMAD_SUFFIX)]
         base = bmad_surface(root, skill)
