@@ -196,6 +196,26 @@ CASES = {
         ([say("| a | b |\n| - | - |\n\ntext")], 0),
         ([say("no tables here")], 0),
     ],
+    "decisions/no-alternatives": [
+        ([say("**Recommend narrow.** The substrate is the defensible thing.")], 1),
+        ([say("Recommendation: split the record from the view.")], 1),
+        ([say("## Recommended\n\nLand the detector first.")], 1),
+        ([say("**Decisions**\n\n1. Narrow the service to its core.")], 1),
+        ([say("**Decisions**\n\n1. Narrow it. Against: it reverses the epic order.")], 0),
+        # A decision heading mid-sentence is prose, not a block.
+        ([say("Fixed. The decisions you asked about are in the doc.")], 0),
+        # The alternative is named, however it is spelled.
+        ([say("**Recommend narrow.**\n\n**Alt — wait:** keep it manual for now.")], 0),
+        ([say("Recommend narrow. The alternative is to keep the current frame.")], 0),
+        ([say("**Recommend narrow.**\n\nAgainst: it inverts the epic order.")], 0),
+        ([say("Recommendation: split it.\n\nOption B keeps one inbox.")], 0),
+        # A recommendation in prose is not a decision block.
+        ([say("Fixed. I recommend running the suite before you push.")], 0),
+        # The word under discussion, not the word in use.
+        ([say("Fixed: dropped the word `recommend` from the draft.")], 0),
+        ([say("Fixed the crash. Nothing else changed.")], 0),
+        ([say("**Recommend narrow.**", final=False)], 0),
+    ],
     "autonomy/confirmed-irreversible": [
         ([bash("HARNESS_CONFIRMED=1 git push --force origin main")], 1),
         ([bash("env HARNESS_CONFIRMED=1 terraform apply")], 1),

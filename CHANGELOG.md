@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `decisions/no-alternatives` detector, and `decisions-and-plans` leaves `OPT_OUT`. The rule
+  asks for "the alternatives with their honest case", and nothing measured whether a decision
+  block carried one: the opt-out reasoned from the Review Card and the chooser, and left the
+  clause that does the work unobserved. The detector fires on a final message whose
+  recommendation line names no other course, reading the markers out of the raw text so an
+  alternative named inside a quote still counts. A recommendation in running prose is not a
+  decision block and does not fire.
+
 ## [0.7.0] — 2026-09-17
 
 ### Added
