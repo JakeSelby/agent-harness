@@ -135,6 +135,30 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("stop gate", text)
 
 
+    def test_doctor_checks_codex_hooks(self):
+        path = Path(self.tmp.name) / ".codex" / "hooks.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(settings("python3 /nowhere/codex-hook.py")))
+        text = self._doctor()
+        self.assertIn("codex hooks: 1 registered", text)
+        self.assertIn("script not found: /nowhere/codex-hook.py", text)
+
+    def test_doctor_does_not_request_installation_for_unmanaged_runtime(self):
+        with unittest.mock.patch.object(harness, "load_config", return_value={"claude": {"manage": False}}):
+            text = self._doctor()
+        self.assertIn("claude hooks: unmanaged", text)
+        self.assertNotIn("claude hooks: none registered", text)
+        self.assertIn("codex hooks: none registered", text)
+
+    def test_doctor_reports_malformed_hook_json_and_checks_next_runtime(self):
+        path = Path(self.tmp.name) / ".claude" / "settings.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("{broken")
+        text = self._doctor()
+        self.assertIn("claude hooks: unreadable configuration", text)
+        self.assertIn("codex hooks: none registered", text)
+
+
 class MessageTests(unittest.TestCase):
     def test_the_deny_tail_keeps_the_marker_and_drops_the_mode_jargon(self):
         text = (REPO / "claude" / "hooks" / "grade-bash.py").read_text()

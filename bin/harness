@@ -1021,17 +1021,26 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"  gh login: {_version_of(['gh', 'auth', 'status'])}")
     say(f"  claude credentials present (not proof of login): {(claude_dir() / '.credentials.json').exists() or (home() / '.claude.json').exists()}")
     say(f"  codex credentials present (not proof of login): {(codex_dir() / 'auth.json').exists()}")
-    count, problems = hook_health(read_json(claude_dir() / "settings.json") or {})
-    if not count:
-        say("  hooks: none registered in settings.json; run `harness sync`")
-    elif problems:
-        say(f"  hooks: {count} registered, {len(problems)} of them cannot run:")
-        for problem in problems:
-            say(f"    {problem}")
-        say("    A hook that cannot start is treated as non-blocking, so these fail silently.")
-        say("    The command grader and the stop gate are hooks: those guards are off until fixed.")
-    else:
-        say(f"  hooks: {count} registered, script paths exist; native trust and activation unverified")
+    cfg = load_config()
+    for runtime, path in (("claude", claude_dir() / "settings.json"),
+                          ("codex", codex_dir() / "hooks.json")):
+        if not cfg.get(runtime, {}).get("manage", True):
+            say(f"  {runtime} hooks: unmanaged")
+            continue
+        try:
+            count, problems = hook_health(read_json(path) or {})
+        except (SystemExit, OSError) as exc:
+            say(f"  {runtime} hooks: unreadable configuration: {exc}")
+            continue
+        if not count:
+            say(f"  {runtime} hooks: none registered in {path.name}; run `harness sync`")
+        elif problems:
+            say(f"  {runtime} hooks: {count} registered, {len(problems)} problem(s); affected hooks cannot run:")
+            for problem in problems:
+                say(f"    {problem}")
+            say("    Hook startup failures can fail silently; command grading and the stop gate may be unavailable.")
+        else:
+            say(f"  {runtime} hooks: {count} registered, script paths exist; native trust and activation unverified")
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))
