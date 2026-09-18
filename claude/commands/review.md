@@ -9,8 +9,10 @@ Read $ARGUMENTS as a base ref and a spec source. The base is a ref, `main` when 
 is an issue number, a path to a plan file, or a pull request number; when none is given, pass
 `infer` and let the scope pass fall back to the branch name and the last commit message.
 
-1. **Establish the diff.** Run `git diff --stat <base>...HEAD` and `git diff <base>...HEAD`. If
-   the base does not resolve, say so and stop rather than review against the wrong tree.
+1. **Establish the diff, before spawning anything.** Run `git diff --stat <base>...HEAD` and
+   `git diff <base>...HEAD`. If the base does not resolve, say so and stop rather than review
+   against the wrong tree. Outside a git repository there is no diff at all: say so, and offer to
+   review named files or a pasted patch instead.
 2. **Spawn `spec-reviewer` first**, in its own fresh context, with the base and the spec source.
    It reports only what the diff does that nothing asked for, what was asked for and is missing,
    and which stated acceptance criteria the diff does not prove. Tell it to leave every
