@@ -11,10 +11,37 @@ All notable changes to this project are documented here. The format follows
 - A `decisions/no-alternatives` detector, and `decisions-and-plans` leaves `OPT_OUT`. The rule
   asks for "the alternatives with their honest case", and nothing measured whether a decision
   block carried one: the opt-out reasoned from the Review Card and the chooser, and left the
-  clause that does the work unobserved. The detector fires on a final message whose
-  recommendation line names no other course, reading the markers out of the raw text so an
-  alternative named inside a quote still counts. A recommendation in running prose is not a
+  clause that does the work unobserved. The detector fires on a final message whose batched
+  `Decisions` block or recommendation line names no other course, reading the markers out of the
+  raw text so an alternative named inside a quote still counts. A recommendation in running prose is not a
   decision block and does not fire. (#78)
+
+- `harness init`: a first-run wizard that writes `config.json` by asking for identity one field
+  at a time and offering each stance's variants with the default in brackets, so configuring the
+  harness no longer means hand-editing JSON. It detects the timezone from `/etc/localtime` and the
+  GitHub handle from `gh` when it is logged in, refuses to clobber an existing config without
+  `--force`, and names `config set` when there is no terminal to ask in. (#81)
+
+- `harness config set KEY VALUE`, which validates before it writes: an unknown stance variant,
+  stance, identity field, permission posture or top-level key is refused with the options named,
+  rather than being written and failing at the next sync. (#81)
+
+- `sync` and `doctor` report identity fields still carrying the example file's value. `load_config`
+  backfills from `config.example.json` and `render_personal` writes the result into always-loaded
+  context, so an unedited config had the agent address you as the placeholder name with nothing on
+  screen to say so. Reported, never fatal: a dry-run sync against the example config still
+  succeeds. (#81)
+
+### Fixed
+
+- `bin/harness install` no longer ends in a traceback on a machine that lacks `gh` or `npm`.
+  `subprocess.run` raises `FileNotFoundError` when argv[0] does not exist and `check=False`
+  suppresses only a non-zero exit, so the unguarded `gh auth status` at the end of every install
+  and the `npm install -g @openai/codex` step both crashed rather than reported — reachable with
+  `--no-brew` on macOS and on every Linux run. Every external call now goes through one helper
+  that resolves the executable first, names it when it is missing, and carries on. The lookup also
+  searches the keg-only `node@22` bin directory, which Homebrew does not link into its prefix, so
+  `npm` is found after a plain `brew install` on a machine with no other node. (#80)
 
 ## [0.7.0] — 2026-09-17
 
