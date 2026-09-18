@@ -49,7 +49,7 @@ and start a session. `/context` lists the harness rules; `/hooks` lists its elev
 An agent can do all of this from this README; the CLI is Python 3.9 standard library and
 every step is idempotent.
 
-`bin/harness doctor` reports versions, logins, links and drift. `bin/harness usage` summarizes
+`bin/harness doctor` reports versions, logins, links, drift, whether your identity is still the example file's, and whether each registered hook can actually start. `bin/harness usage` summarizes
 per-session tokens and cache hit rate from a local file ([docs/usage.md](docs/usage.md)).
 `bin/harness trust <repo>` lets the stop gate run that repository's own `## Gate` block.
 `bin/harness uninstall` puts everything back, leaving only your config, your personal file and

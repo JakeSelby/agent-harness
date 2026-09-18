@@ -482,14 +482,25 @@ class HookTests(unittest.TestCase):
         self.assertEqual(
             why,
             "grade 3, irreversible: git push --force origin main rewrites remote history "
-            "(grade-bash hook, autonomy=execute)")
+            "— this cannot be undone (grade-bash hook, autonomy=execute)")
+
+    def test_every_grade_says_in_plain_words_what_it_is(self):
+        """The label is for a log; whoever reads the prompt gets the same fact in words."""
+        for command, variant, plain in (
+                ("git push --force origin main", "execute", "this cannot be undone"),
+                ("gh pr create --fill", "confirm-writes", "this changes something other people can see"),
+                ("cargo build", "ask", "this changes files on this machine")):
+            with self.subTest(command=command):
+                _, why = run(command, variant, "default")
+                self.assertIn("— " + plain + " (", why)
 
     def test_a_deny_mode_reason_names_the_confirm_marker(self):
         decision, why = run("git push --force origin main", "execute", "bypassPermissions")
         self.assertEqual(decision, "deny")
         self.assertTrue(why.endswith(
-            " No prompt exists in this mode: ask the user in chat, and on a yes re-run the same "
-            "command prefixed with HARNESS_CONFIRMED=1."))
+            " Nothing can prompt in this permission mode, so the command was refused rather than"
+            " asked about. Say in chat what it would change and why that is hard to undo; if the"
+            " user says yes, run the same command again with HARNESS_CONFIRMED=1 in front of it."), why)
 
     def test_grade_two_and_one_reasons_carry_their_labels(self):
         _, two = run("gh pr create --fill", "confirm-writes", "default")
