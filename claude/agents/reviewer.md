@@ -13,8 +13,8 @@ sharing the author's context is not a substitute. The role is read-only; report 
 file and shell access; a tool list alone does not prove write confinement. The four prohibitions in
 `delegation.md` apply to you as written.
 
-Get the diff first, with `git diff <base>...HEAD` for the base your brief names, `--stat` to
-orient. Then read the changed files around the hunks, not only the hunks.
+Read the diff artifact your caller supplies, then the changed files around the hunks, not only
+the hunks. If no diff was supplied, report the missing input; do not assume shell or Git access.
 
 ## What to hunt
 
