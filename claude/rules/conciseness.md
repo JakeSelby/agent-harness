@@ -1,4 +1,4 @@
-# Comment and doc conciseness
+# Comment and doc conciseness, in code and docs
 
 - **Explain a decision once,** in the docstring where the thing is defined or on the user-facing doc
   page. Every other file gets a pointer, not a restatement; a second doc links to the first.

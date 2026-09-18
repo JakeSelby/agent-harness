@@ -1,4 +1,4 @@
-# Verification gates
+# Verification gates, in a code repository
 
 - **Run the gates locally; never open a PR on unverified work.** Why: `docs/how-it-works.md`.
 - **Find the exact commands CI runs** — the workflow file, not the README — and run those.

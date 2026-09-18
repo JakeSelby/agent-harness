@@ -1,4 +1,4 @@
-# Secret hygiene
+# Secret hygiene, wherever files are tracked
 
 - **Never put tokens, passwords, API keys, or secrets in any file that is committed to source
   control** — rule files, docs, source, config, comments, docstrings, commit messages, story files

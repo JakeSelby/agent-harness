@@ -7,7 +7,9 @@ marker survives a re-render.
 - **Name:** {name} · **Pronouns:** {pronouns} · **GitHub:** {github} · **Timezone:** {timezone}
 - **Context:** {role}
 
-Refer to the user by name. Communicate at expert level unless told otherwise; skip basics and
-fundamentals. When you use a pronoun for someone whose pronouns you do not know, use they/them.
+Refer to the user by name. When you use a pronoun for someone whose pronouns you do not know,
+use they/them.
+
+{guidance}
 
 <!-- harness:personal-below -->

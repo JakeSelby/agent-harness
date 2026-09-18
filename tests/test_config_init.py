@@ -146,7 +146,8 @@ class InitTests(TempHome):
         return lambda _prompt: next(it)
 
     def test_init_writes_a_config_that_resolves(self):
-        answers = ["A Name", "", "Does a thing", "a-handle", "Europe/Lisbon"] + [""] * len(harness.STANCE_NAMES)
+        answers = (["A Name", "", "Does a thing", "a-handle", "Europe/Lisbon", "", ""]
+                   + [""] * len(harness.STANCE_NAMES))
         with unittest.mock.patch("builtins.input", self._answers(*answers)), \
              unittest.mock.patch.object(harness.sys.stdin, "isatty", return_value=True), \
              unittest.mock.patch.object(harness, "_detect_github", return_value=""):
@@ -162,7 +163,8 @@ class InitTests(TempHome):
         harness.resolve_stances(harness.load_config(env={}))
 
     def test_a_blank_required_answer_is_asked_again(self):
-        answers = ["", "A Name", "", "Does a thing", "", "UTC"] + [""] * len(harness.STANCE_NAMES)
+        answers = (["", "A Name", "", "Does a thing", "", "UTC", "", ""]
+                   + [""] * len(harness.STANCE_NAMES))
         with unittest.mock.patch("builtins.input", self._answers(*answers)), \
              unittest.mock.patch.object(harness.sys.stdin, "isatty", return_value=True), \
              unittest.mock.patch.object(harness, "_detect_github", return_value=""):
@@ -171,7 +173,8 @@ class InitTests(TempHome):
         self.assertEqual(json.loads(harness.config_path().read_text())["identity"]["name"], "A Name")
 
     def test_an_unknown_stance_answer_is_asked_again(self):
-        answers = ["A Name", "", "Does a thing", "", "UTC", "nonsense", "off"] + [""] * (len(harness.STANCE_NAMES) - 1)
+        answers = (["A Name", "", "Does a thing", "", "UTC", "", "", "nonsense", "off"]
+                   + [""] * (len(harness.STANCE_NAMES) - 1))
         with unittest.mock.patch("builtins.input", self._answers(*answers)), \
              unittest.mock.patch.object(harness.sys.stdin, "isatty", return_value=True), \
              unittest.mock.patch.object(harness, "_detect_github", return_value=""):

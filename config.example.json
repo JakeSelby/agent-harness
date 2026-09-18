@@ -4,7 +4,8 @@
     "pronouns": "they/them",
     "role": "One line about what you do, so the agent pitches its answers right.",
     "github": "your-github-handle",
-    "timezone": "UTC"
+    "timezone": "UTC",
+    "expertise": "expert"
   },
   "stances": {
     "licensing": "permissive-commercial",

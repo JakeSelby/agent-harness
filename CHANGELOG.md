@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `identity.expertise`, `expert` or `beginner`, selecting one paragraph of the personal file. The
+  line telling the agent to communicate at expert level and skip fundamentals was hardcoded in
+  `CLAUDE.personal.template.md` and reached every user, including one who had never written code —
+  instructing the agent to withhold exactly the explanation they needed. `expert` is the default,
+  so a config predating the field resolves to the behaviour it had. (#83)
+
+- Stance presets, asked by `init`: `software` is the shipped defaults, `general` turns off the
+  commit, test, licensing and build-vs-buy ceremony and lightens plans, for work that is not
+  shipping software. Escaping the professional-SDLC defaults previously meant discovering five
+  separate opt-outs. A preset only supplies the defaults for the questions that follow, so every
+  stance is still asked. `delegation`, `autonomy` and `cost` are untouched by either: how work is
+  spread, how far it runs unattended and what it costs are the same questions whatever the work
+  is. (#83)
+
+### Changed
+
+- The three rules written entirely about code work say so in their headings — `verification`,
+  `secrets` and `conciseness` — and one line of the always-loaded preamble states that a rule
+  about repositories, tests or pull requests does not apply elsewhere. Rules link as a directory
+  rather than per file, so they cannot be deselected; the fix is for them to read as inapplicable
+  instead of as instructions about work the reader is not doing. Length-neutral apart from that
+  one line. (#83)
+
 ### Fixed
 
 - `doctor` now reports whether each registered hook can actually run, instead of printing an

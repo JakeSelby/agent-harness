@@ -12,6 +12,12 @@ Tracked rules never carry a name; they are written in second person.
 
 Env overrides: `HARNESS_IDENTITY_NAME`, `HARNESS_IDENTITY_PRONOUNS`, and so on.
 
+`expertise` is `expert` (the default, and what every config that predates the field resolves to)
+or `beginner`. It selects one paragraph of the personal file: `expert` skips fundamentals,
+`beginner` says what each step and command does, defines terms on first use, and assumes no prior
+knowledge of programming, version control or the command line. It is the only identity field that
+changes behaviour rather than describing you.
+
 `harness init` writes the whole file by asking, and `harness config set identity.name "…"`
 changes one field. Neither needs an editor. Until `name`, `role` and `github` differ from the
 example file, `sync` and `doctor` both say so: what they hold is what the agent believes about
@@ -38,6 +44,25 @@ one-line file so `/context` shows the choice explicitly.
 
 `harness config set stances.testing off` checks the variant exists before writing, and names
 the options when it does not.
+
+### Presets
+
+The defaults above are a professional software workflow, and escaping it meant finding five
+separate opt-outs. `harness init` asks what the work is and uses a preset as the defaults for the
+questions that follow; every stance is still asked, so a preset is a starting point, not a lock.
+
+| Preset | Changes from the defaults |
+| --- | --- |
+| `software` | nothing; the table above |
+| `general` | `licensing: off`, `build-vs-buy: off`, `commits: off`, `testing: off`, `plan-ceremony: light` |
+
+`general` is for work that is not shipping software — writing, research, organising files, a
+personal script. It leaves `delegation`, `autonomy` and `cost` alone, because how work is spread,
+how far it runs unattended and what it costs are the same questions whatever the work is.
+
+The topic rules are not switchable and do not have presets; a rule about repositories, tests or
+pull requests simply does not apply when the task is not code work, and the always-loaded preamble
+says so.
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
 `HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start
