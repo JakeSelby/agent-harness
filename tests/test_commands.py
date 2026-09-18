@@ -131,6 +131,27 @@ class CommandContentTests(unittest.TestCase):
             _, body = split(COMMANDS / name)
             self.assertLessEqual(len(body.strip().splitlines()), MAX_BODY_LINES, msg=name)
 
+    def test_every_command_that_needs_a_repository_says_so_before_it_starts(self):
+        """A command that discovers its precondition halfway through has already done work."""
+        for name, needle in (("build.md", "Check first, before spawning anything"),
+                             ("review.md", "before spawning anything")):
+            self.assertIn(needle, split(COMMANDS / name)[1], msg=name)
+
+    def test_the_repository_bound_commands_name_a_fallback_rather_than_only_stopping(self):
+        build = split(COMMANDS / "build.md")[1]
+        self.assertIn("No repository: say so and offer to make the change in place", build)
+        self.assertIn("stop at the local commit", build)
+        review = split(COMMANDS / "review.md")[1]
+        self.assertIn("offer to\n   review named files or a pasted patch instead", review)
+
+    def test_the_writing_commands_have_a_path_outside_a_repository(self):
+        for name in ("plan.md", "handoff.md"):
+            body = split(COMMANDS / name)[1]
+            self.assertIn("no repository", body, msg=name)
+
+    def test_plan_states_that_it_needs_no_repository(self):
+        self.assertIn("needs no repository", split(COMMANDS / "plan.md")[1])
+
     def test_the_fan_out_commands_name_the_agent_they_spawn(self):
         self.assertIn("`gatherer`", split(COMMANDS / "research.md")[1])
         self.assertIn("`reviewer`", split(COMMANDS / "review.md")[1])
