@@ -661,6 +661,9 @@ def ensure_local_bin_on_path(dry: bool) -> None:
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
+    if platform.system() == "Windows":
+        say(UNSUPPORTED)
+        return 1
     dry = args.dry_run
     cfg = load_config()
     stances = resolve_stances(cfg)
@@ -1223,7 +1226,10 @@ def _run(cmd: List[str], dry: bool) -> bool:
     suppresses a non-zero exit, not a missing binary. An installer that ends in a traceback
     tells the person running it nothing, so every external call goes through here.
     """
-    exe = cmd[0] if cmd[0].startswith("/") else _tool(cmd[0])
+    if cmd[0].startswith("/"):
+        exe = cmd[0] if Path(cmd[0]).exists() else None  # /bin/bash is absent on some platforms
+    else:
+        exe = _tool(cmd[0])
     if exe is None:
         say(f"  skip    {cmd[0]} is not installed; skipped `{' '.join(cmd)}`")
         return False
@@ -1241,7 +1247,14 @@ def _gh_login_line() -> str:
     return "logged in"
 
 
+UNSUPPORTED = ("Windows is not supported: the harness links into ~/.claude with symlinks and "
+               "every hook is a POSIX command.\nUse WSL2 and run this inside it.")
+
+
 def cmd_install(args: argparse.Namespace) -> int:
+    if platform.system() == "Windows":
+        say(UNSUPPORTED)
+        return 1
     dry = args.dry_run
     mac = platform.system() == "Darwin"
     say(f"agent-harness install{' (dry run)' if dry else ''}")

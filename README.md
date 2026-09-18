@@ -23,6 +23,22 @@ about.
 Browse every rule, stance, skill, agent, command and hook, with a link from each page to its
 source at the tagged release, at [agent-harness.jakeselby.com](https://agent-harness.jakeselby.com).
 
+## Before you start
+
+- **A Claude account on a plan that includes Claude Code**, or API billing set up. This repository
+  configures the tool; it does not provide or pay for access to it.
+- **macOS or Linux.** Windows is not supported: `install` and `sync` refuse to run there rather
+  than half-working, because the harness links into `~/.claude` with symlinks and every hook is a
+  POSIX command. Use WSL2 and follow the Linux path inside it.
+- **`git`** (the harness is a checkout, and updating it means pulling) and **Python 3.9 or newer**
+  (`bin/harness` and all eleven hooks are Python). On macOS `install` checks for the Xcode command
+  line tools, which supply both.
+- Optional, and installed for you on macOS: `gh` (only needed to open pull requests), VS Code, and
+  Codex. Nothing breaks without them.
+
+New to this, or to coding agents generally? [docs/getting-started.md](docs/getting-started.md) goes
+from nothing installed to a first useful session, and says what it costs.
+
 ## Install in sixty seconds
 
 ```sh
@@ -90,6 +106,7 @@ an untracked personal file, preferences are variants chosen at sync, and per-ses
 `HARNESS_*` environment overrides are injected by a SessionStart hook. The layer diagram, the
 sync model and the ownership contract are in [docs/](docs/):
 
+- [getting-started.md](docs/getting-started.md) — zero to a first session, for a first-time user
 - [how-it-works.md](docs/how-it-works.md) — the layers and why each exists
 - [sync-model.md](docs/sync-model.md) — links, adoption, the settings merge, other surfaces
 - [settings-ownership.md](docs/settings-ownership.md) — exactly which keys the harness may write

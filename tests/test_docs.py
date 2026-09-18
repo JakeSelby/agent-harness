@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: MIT
+"""Unit tests for the onboarding surface: prerequisites, platform, first session, cost, support."""
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+README = (REPO / "README.md").read_text()
+GUIDE = (REPO / "docs" / "getting-started.md").read_text()
+SUPPORT = (REPO / "SUPPORT.md").read_text()
+PREFERENCES = (REPO / "docs" / "preferences.md").read_text()
+
+
+class ReadmeTests(unittest.TestCase):
+    def test_the_prerequisites_come_before_the_install_block(self):
+        self.assertIn("## Before you start", README)
+        self.assertLess(README.index("## Before you start"),
+                        README.index("## Install in sixty seconds"))
+
+    def test_the_account_is_stated_rather_than_assumed(self):
+        self.assertIn("Claude account", README)
+        self.assertIn("does not provide or pay for access", README)
+
+    def test_the_supported_platforms_are_named(self):
+        self.assertIn("macOS or Linux", README)
+        self.assertIn("Windows is not supported", README)
+
+    def test_the_tools_the_harness_itself_needs_are_named(self):
+        for needle in ("`git`", "Python 3.9"):
+            self.assertIn(needle, README, msg=needle)
+
+    def test_the_guide_is_linked_before_the_install_block_and_in_the_docs_list(self):
+        pointer = "[docs/getting-started.md](docs/getting-started.md)"
+        listed = "- [getting-started.md](docs/getting-started.md)"
+        self.assertIn(pointer, README)
+        self.assertIn(listed, README)
+        self.assertLess(README.index(pointer), README.index("## Install in sixty seconds"))
+
+
+class GuideTests(unittest.TestCase):
+    def test_it_says_what_the_harness_is_not(self):
+        self.assertIn("It is not an AI", GUIDE)
+
+    def test_it_carries_a_first_session_with_something_to_type(self):
+        self.assertIn("## Your first session", GUIDE)
+        self.assertIn("```sh\ncd ~/some-folder\nclaude\n```", GUIDE)
+
+    def test_it_is_honest_about_which_commands_need_a_code_project(self):
+        self.assertIn("## The five commands", GUIDE)
+        self.assertIn("| `/research` |", GUIDE)
+        self.assertIn("| `/build` | Implements an approved plan and opens a pull request | Yes, "
+                      "and a GitHub account |", GUIDE)
+
+    def test_it_says_what_a_session_costs(self):
+        self.assertIn("## What it costs", GUIDE)
+        self.assertIn("rate-limit", GUIDE)
+
+    def test_it_names_the_three_commands_that_diagnose_a_broken_install(self):
+        for command in ("harness doctor", "harness diff", "harness uninstall"):
+            self.assertIn(command, GUIDE, msg=command)
+
+    def test_the_links_it_offers_resolve(self):
+        for name in ("usage.md", "preferences.md", "how-it-works.md", "sandboxing.md"):
+            self.assertIn(f"]({name})", GUIDE, msg=name)
+            self.assertTrue((REPO / "docs" / name).exists(), msg=name)
+
+
+class SupportTests(unittest.TestCase):
+    def test_support_sends_a_first_time_reader_to_the_guide_first(self):
+        self.assertIn("docs/getting-started.md", SUPPORT)
+        self.assertLess(SUPPORT.index("getting-started"), SUPPORT.index("Discussions"))
+
+    def test_support_says_a_github_account_is_needed_for_the_rest(self):
+        self.assertIn("needs a GitHub account and is public", SUPPORT)
+
+
+class CostDocTests(unittest.TestCase):
+    def test_preferences_explains_what_a_session_costs_and_names_the_dial(self):
+        self.assertIn("## What a session costs", PREFERENCES)
+        self.assertIn("`cost` stance is the dial", PREFERENCES)
+        self.assertIn("harness usage", PREFERENCES)
+
+
+if __name__ == "__main__":
+    unittest.main()
