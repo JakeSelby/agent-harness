@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-17
+
 ### Added
 
 - `docs/getting-started.md`: zero to a first useful session for someone who has not used a coding
@@ -24,16 +26,6 @@ All notable changes to this project are documented here. The format follows
   commands that fan out, and the `cost` stance as the dial. Nothing previously said that a
   `/research` run costs several times a plain turn. (#82)
 
-### Fixed
-
-- `install` and `sync` refuse to run on Windows and name WSL2, rather than half-working: the
-  harness links into `~/.claude` with symlinks and every hook is a POSIX command. Nothing in the
-  README or the docs had ever said which platforms are supported. `_run` also treats an absolute
-  path that does not exist as a missing tool, so `/bin/bash` being absent reports rather than
-  raises. (#82)
-
-### Added
-
 - `identity.expertise`, `expert` or `beginner`, selecting one paragraph of the personal file. The
   line telling the agent to communicate at expert level and skip fundamentals was hardcoded in
   `CLAUDE.personal.template.md` and reached every user, including one who had never written code —
@@ -48,45 +40,6 @@ All notable changes to this project are documented here. The format follows
   spread, how far it runs unattended and what it costs are the same questions whatever the work
   is. (#83)
 
-### Changed
-
-- The three rules written entirely about code work say so in their headings — `verification`,
-  `secrets` and `conciseness` — and one line of the always-loaded preamble states that a rule
-  about repositories, tests or pull requests does not apply elsewhere. Rules link as a directory
-  rather than per file, so they cannot be deselected; the fix is for them to read as inapplicable
-  instead of as instructions about work the reader is not doing. Length-neutral apart from that
-  one line. (#83)
-
-### Fixed
-
-- `doctor` now reports whether each registered hook can actually run, instead of printing an
-  executable bit that never mattered. It resolves the interpreter and the script path of every
-  hook command in the live settings and names what is missing. Claude Code treats a hook that
-  fails to start as non-blocking, so a machine without `python3` on PATH, or an install that was
-  never synced, turned all eleven hooks into silent no-ops — the command grader that asks before
-  something irreversible and the stop gate that runs the repository's checks among them. Both
-  guards disappeared with nothing on screen to say so. (#85)
-
-- The two hook messages a user actually sees are written for a reader now. The grade-bash denial
-  said "No prompt exists in this mode" and told them to re-run with a marker; it now says the
-  command was refused because nothing can prompt, and what to say before running it again. Every
-  grade carries its meaning in words — "this cannot be undone" — alongside the label. The stop
-  gate says where the failing command came from, and the untrusted-folder notice names the command
-  that fixes it. (#85)
-
-### Fixed
-
-- The four commands that assume a git repository now check for one before they start, and name a
-  fallback instead of stopping dead. `/build` says up front that it needs a repository, a remote
-  and `gh`, offers to make the change in place when there is no repository, and stops at the local
-  commit when there is no remote — rather than failing at `gh pr create` with the work already
-  done. `/review` says there is no diff to review outside a repository, before it spawns either
-  pass, and offers named files or a pasted patch. `/plan` and `/handoff` write beside the work in
-  the current directory when there is no repository root, and `/plan` now says outright that it
-  needs neither a repository nor code. (#84)
-
-### Added
-
 - A `voice` stance dimension, closing the last always-loaded rule that was a pure preference (#68).
   `scannable` defers to the output style as before and is the default, so nothing changes for an
   existing install. `answer-card` is for reading on a phone: the answer in the first line, then why,
@@ -95,6 +48,13 @@ All notable changes to this project are documented here. The format follows
   detectors are gated on the dimension, so a voice nobody selected is not measured as a violation.
 
 ### Changed
+
+- The three rules written entirely about code work say so in their headings — `verification`,
+  `secrets` and `conciseness` — and one line of the always-loaded preamble states that a rule
+  about repositories, tests or pull requests does not apply elsewhere. Rules link as a directory
+  rather than per file, so they cannot be deselected; the fix is for them to read as inapplicable
+  instead of as instructions about work the reader is not doing. Length-neutral apart from that
+  one line. (#83)
 
 - `voice-and-format.md` drops from thirteen lines to six, keeping only what no variant changes:
   a subagent inherits no voice, so its brief has to carry the output shape itself. Always-loaded
@@ -125,6 +85,36 @@ All notable changes to this project are documented here. The format follows
   succeeds. (#81)
 
 ### Fixed
+
+- `install` and `sync` refuse to run on Windows and name WSL2, rather than half-working: the
+  harness links into `~/.claude` with symlinks and every hook is a POSIX command. Nothing in the
+  README or the docs had ever said which platforms are supported. `_run` also treats an absolute
+  path that does not exist as a missing tool, so `/bin/bash` being absent reports rather than
+  raises. (#82)
+
+- `doctor` now reports whether each registered hook can actually run, instead of printing an
+  executable bit that never mattered. It resolves the interpreter and the script path of every
+  hook command in the live settings and names what is missing. Claude Code treats a hook that
+  fails to start as non-blocking, so a machine without `python3` on PATH, or an install that was
+  never synced, turned all eleven hooks into silent no-ops — the command grader that asks before
+  something irreversible and the stop gate that runs the repository's checks among them. Both
+  guards disappeared with nothing on screen to say so. (#85)
+
+- The two hook messages a user actually sees are written for a reader now. The grade-bash denial
+  said "No prompt exists in this mode" and told them to re-run with a marker; it now says the
+  command was refused because nothing can prompt, and what to say before running it again. Every
+  grade carries its meaning in words — "this cannot be undone" — alongside the label. The stop
+  gate says where the failing command came from, and the untrusted-folder notice names the command
+  that fixes it. (#85)
+
+- The four commands that assume a git repository now check for one before they start, and name a
+  fallback instead of stopping dead. `/build` says up front that it needs a repository, a remote
+  and `gh`, offers to make the change in place when there is no repository, and stops at the local
+  commit when there is no remote — rather than failing at `gh pr create` with the work already
+  done. `/review` says there is no diff to review outside a repository, before it spawns either
+  pass, and offers named files or a pasted patch. `/plan` and `/handoff` write beside the work in
+  the current directory when there is no repository root, and `/plan` now says outright that it
+  needs neither a repository nor code. (#84)
 
 - `bin/harness install` no longer ends in a traceback on a machine that lacks `gh` or `npm`.
   `subprocess.run` raises `FileNotFoundError` when argv[0] does not exist and `check=False`
@@ -394,7 +384,8 @@ identifiers, which is a disclosure of the very values it existed to catch.
   templates.
 - Community files, issue and PR templates, CI with lint and tests, Dependabot for actions.
 
-[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/JakeSelby/agent-harness/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.8.0
 [0.7.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.7.0
 [0.6.1]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.6.1
 [0.6.0]: https://github.com/JakeSelby/agent-harness/releases/tag/v0.6.0
