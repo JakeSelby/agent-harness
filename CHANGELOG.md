@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The four commands that assume a git repository now check for one before they start, and name a
+  fallback instead of stopping dead. `/build` says up front that it needs a repository, a remote
+  and `gh`, offers to make the change in place when there is no repository, and stops at the local
+  commit when there is no remote — rather than failing at `gh pr create` with the work already
+  done. `/review` says there is no diff to review outside a repository, before it spawns either
+  pass, and offers named files or a pasted patch. `/plan` and `/handoff` write beside the work in
+  the current directory when there is no repository root, and `/plan` now says outright that it
+  needs neither a repository nor code. (#84)
+
 ### Added
 
 - A `voice` stance dimension, closing the last always-loaded rule that was a pure preference (#68).

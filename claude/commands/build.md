@@ -7,6 +7,11 @@ argument-hint: <plan path or issue number>
 
 What to build: $ARGUMENTS
 
+**Check first, before spawning anything.** This command needs a git repository, a remote you can
+push to, and `gh` logged in. No repository: say so and offer to make the change in place, with
+tests, and no worktree or pull request. A repository but no remote or no `gh`: run steps 1 to 3,
+stop at the local commit, and report the branch as ready to push.
+
 1. **Spawn the `builder` agent** with the plan or issue text, the repository path, the base
    branch, and the attribution trailer your tool supplies. Its definition already carries the
    standing brief — a worktree off the base branch per `worktree-per-agent`, the repository's own
