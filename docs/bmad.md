@@ -32,53 +32,55 @@ the framework's files.
 - **Nothing framework-shaped in team-facing output.** No attribution footers, no `_bmad/`
   paths, no story references in anything shipped to a shared repo.
 
-## Keeping the delegation stance in charge
+## Shared roles and explicit installation
 
-A framework's skills spawn subagents by saying so in prose: "launch a context-free subagent
-with this prompt". In Claude Code that is an `Agent` call with no `subagent_type` and no
-`model`, so it runs as `general-purpose`, on the session model, with every tool, and the
-frontmatter that carries the harness's tiers never applies. Two pieces close that, and neither
-copies a framework file.
+`templates/bmad/custom/` names harness roles: `builder`, `reviewer`, and `spec-reviewer`.
+The active runtime adapter supplies their native registration, model and effort. Recipes retain
+complete keyed review-layer records so BMad's replacement merge does not discard required fields.
+The assigned implementation worktree, framework checkout, artifact root, baseline commit and
+review diff must be separate explicit inputs; run framework scripts from the framework checkout.
 
-- **The `tier-agent-spawns` hook** runs on every `Agent` call. A call that names an agent
-  definition or passes a model is left alone; a bare one gets the `delegation` stance: one tier
-  below the session under `tiered`, untouched under `session-model`, a prompt under `off`. The
-  session model is read from the transcript's newest assistant record, so a spawn in the very
-  first assistant turn of a session is left alone. Inside a repository that carries the
-  framework's runtime (`_bmad/scripts/`), a bare spawn keeps the session model instead: the
-  framework's finalize reviewers, validators and lenses launch from step logic or prompt-only
-  lists that no override can rename, and its own rule is same capability. The second piece
-  names the harness's agents where the recipe allows, which is what carries tools and effort.
-- **Override templates** under `templates/bmad/custom/` use the framework's own customization
-  contract to name the harness's agents where the framework's spawns are judgment work: the
-  review layers of `bmad-build`, `bmad-build-auto` and `bmad-code-review` run as `reviewer`, the
-  acceptance and intent layers as `spec-reviewer`, and the implementation handoff on the
-  builder's tier. `harness bmad apply <repo>` installs them into `_bmad/custom/` as user
-  overrides, and the `harness-session` hook runs it for the repository each session starts
-  in, so a fresh clone has them from its first session and says so once. The framework keeps
-  them across reinstalls and its own `.gitignore` keeps them out of the repo; rename a file to
-  `<skill>.toml` to commit it for a team whose members all run the harness. An existing
-  override is never replaced without `--force`, and a template whose keys or layer ids the
-  installed skill no longer declares is skipped rather than written.
-- **`harness bmad check <repo>`** compares every key and layer id the templates rely on with the
-  installed skill's `customize.toml`. The framework's renderer drops a key it does not declare
-  and appends an unknown layer id beside the renamed original, so after an upgrade this is the
-  command that says whether the routing still holds.
+Run `harness bmad check <framework-root>` before `harness bmad apply <framework-root>`.
+Check resolves either `.agents/skills` or `.claude/skills`, refuses conflicting mirrors, and
+parses customization TOML structurally. Apply writes only declared keys and existing layer ids;
+it preserves differing user overrides unless you explicitly pass `--force`. Session start only
+checks. It never silently installs configuration.
 
-Research fan-outs (`bmad-deep-recon`) have no template: their researchers are bare spawns and
-keep the session model like every other bare spawn in a framework repo; the skill's own
-`subagent_models` knob is the place to make them cheaper. Routing the implementation handoff
-to the `builder` agent was considered and rejected: the framework's review step diffs the tree
-it ran in against `baseline_commit`, so the implementer has to work in place, the pinned
-handoff already carries the builder's tier, and what `builder` adds (isolation, one commit,
-the repo gate) the framework does itself later in the run.
+The inspected BMad 6.12.0 renderer supports `--project-root` and `--skill`. Do not invent an
+`--overrides` or `--set` flag from newer documentation. Use its `_bmad/custom/` seam. Renderer
+patches and absent GDS review shims are integration findings, not reasons to reinstall a framework
+inside an implementation worktree. Missing review skills must be restored through the framework's
+supported shim installation or an upstream fix before that workflow is qualified.
 
-## What the harness ships for a framework, and what it does not
+## Continue a task in either runtime
 
-Almost every customisation in practice is a path redirect, a project persona, or a spawn
-routing. The portable part is the pattern above and the override templates, which are files of
-your own in the framework's override format, not modified copies of its files. Redistributing a
-framework that ships new versions weekly would turn every upstream release into harness
-maintenance, and it would make the harness harder to compare with others on the things that
-matter: legibility, delegation, the plan gate, permission posture. The templates carry a check
-instead of a copy: when a release renames a key, `harness bmad check` says so.
+The shared human-readable snapshot is `.agent-harness/progress.md`; session start reads the old
+`.claude/progress.md` only when the shared file is absent. Plans live in `.agent-harness/plans/`.
+Native transcripts and memory stay in their own runtime stores.
+
+For a structured handoff, prepare a JSON file:
+
+```json
+{
+  "objective": "Complete the selected change",
+  "next_steps": ["Inspect the current diff", "Run the repository gate"],
+  "decisions": ["Keep the public API stable"],
+  "artifacts": ["docs/design.md"],
+  "framework_root": "/path/to/shared-checkout",
+  "baseline": "the-reviewed-base-commit"
+}
+```
+
+```sh
+harness task show
+harness task save --input task-input.json --runtime claude-code --revision 0
+# In Codex, from the same worktree:
+harness task show
+harness task save --input task-input.json --runtime codex --revision 1
+```
+
+The revision rejects concurrent stale writers. Repository identity and a content fingerprint
+prevent a changed tree from inheriting a verification claim. Reported verification is retained
+as unverified evidence; the receiving session runs the gate itself. Next steps are data, never
+executed by the loader, and approvals never transfer. Storage rejects symlinks. Keep personal
+handoff data out of commits with a project ignore entry when needed.

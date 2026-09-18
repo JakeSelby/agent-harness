@@ -21,7 +21,7 @@ loader.exec_module(harness)
 
 TEMPLATES = {p.name[: -len(".user.toml")]: p for p in (REPO / "templates" / "bmad" / "custom").glob("*.user.toml")}
 AGENTS = {p.stem for p in (REPO / "claude" / "agents").glob("*.md")}
-SPAWN = re.compile(r"subagent_type: ([\w-]+)")
+SPAWN = re.compile(r"Launch harness role `([\w-]+)`")
 LAYERS = ("blind-hunter", "edge-case-hunter", "verification-gap")
 SURFACE = {
     "bmad-build": (
@@ -98,12 +98,11 @@ class TemplateTests(unittest.TestCase):
                 self.assertEqual(text.count("[[workflow.") - text.count("[[workflow.oneshot"), text.count("{diff_file}"))
                 self.assertIn("{claims_file}", text)
 
-    def test_the_handoff_runs_on_the_builder_tier(self):
-        builder = (REPO / "claude" / "agents" / "builder.md").read_text(encoding="utf-8")
-        tier = re.search(r"^model: (\w+)$", builder, re.M).group(1)
+    def test_the_handoff_names_the_shared_builder_role(self):
         for skill in ("bmad-build", "bmad-build-auto"):
-            with self.subTest(skill=skill):
-                self.assertIn(f"`model` set to `{tier}`", TEMPLATES[skill].read_text(encoding="utf-8"))
+            text = TEMPLATES[skill].read_text()
+            self.assertIn("Launch harness role `builder`", text)
+            self.assertNotIn("`model` set to", text)
 
     def test_surface_reader_handles_every_fence_and_a_commented_header(self):
         text = ("[workflow] # team\n"
@@ -126,6 +125,16 @@ class CheckTests(Quiet):
         self.assertEqual(drift, [])
         self.assertTrue(all("template not installed" in line for line in lines))
         self.assertEqual(self.bmad("check"), 0)
+
+    def test_codex_only_projection_is_supported_and_conflicting_mirrors_rejected(self):
+        install(self.base, SURFACE)
+        (self.base / ".claude").rename(self.base / ".agents")
+        self.assertEqual(harness.bmad_check(self.base)[1], [])
+        install(self.base, SURFACE)
+        path = self.base / ".claude" / "skills" / "bmad-build" / "customize.toml"
+        path.write_text(path.read_text() + "\n# divergent mirror\n")
+        with self.assertRaisesRegex(ValueError, "projections disagree"):
+            harness.bmad_check(self.base)
 
     def test_renamed_id_and_removed_key_are_reported(self):
         keys, entries = SURFACE["bmad-build"]

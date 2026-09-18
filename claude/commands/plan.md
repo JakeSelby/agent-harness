@@ -12,7 +12,7 @@ What to plan: $ARGUMENTS
 2. **Gather what the plan needs before you write it.** Read the issue if you were given a
    number, read the code the plan will touch, and delegate the wide reads. Ask the user only
    for what you cannot find yourself, and batch every question into one message.
-3. **Write the plan under `.claude/plans/`** — at the repository root, or in the current
+3. **Write the plan under `.agent-harness/plans/`** — at the repository root, or in the current
    directory when there is no repository — named for the topic. The Review Card is the
    file's first screen and everything else lives below it, under `# Addendum`. Spawn the
    `planner` agent with the topic and the plan path when writing the file would need reading
