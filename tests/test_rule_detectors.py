@@ -20,7 +20,7 @@ spec = importlib.util.spec_from_file_location("rule_detectors", MODULE)
 rd = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rd)
 
-STANCES = {"commits": "conventional-attributed"}
+STANCES = {"commits": "conventional-attributed", "voice": "scannable"}
 FAKE_KEY = "AKIA" + "Q" * 16
 
 
@@ -385,6 +385,12 @@ class StanceTests(unittest.TestCase):
     def test_commit_detectors_are_skipped_without_the_stance(self):
         self.assertEqual(rd.run(self.COMMIT), {})
         self.assertEqual(rd.run(self.COMMIT, {"commits": "off"}), {})
+
+    def test_voice_detectors_are_skipped_when_the_dimension_is_off(self):
+        banned = [say("I started by reading the hook.")]
+        self.assertIn("voice/banned-opener", rd.run(banned, STANCES))
+        self.assertEqual(rd.run(banned, {"voice": "off"}), {})
+        self.assertIn("voice/banned-opener", rd.run(banned, {"voice": "answer-card"}))
 
     def test_the_trailer_detector_needs_the_attributed_variant(self):
         plain = rd.run(self.COMMIT, {"commits": "conventional"})

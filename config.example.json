@@ -14,7 +14,8 @@
     "delegation": "tiered",
     "testing": "required",
     "autonomy": "execute",
-    "cost": "balanced"
+    "cost": "balanced",
+    "voice": "scannable"
   },
   "permissions": "inherit",
   "permissions_bypass_acknowledged": false,
