@@ -14,7 +14,7 @@ All notable changes to this project are documented here. The format follows
   clause that does the work unobserved. The detector fires on a final message whose
   recommendation line names no other course, reading the markers out of the raw text so an
   alternative named inside a quote still counts. A recommendation in running prose is not a
-  decision block and does not fire.
+  decision block and does not fire. (#78)
 
 ## [0.7.0] — 2026-09-17
 
