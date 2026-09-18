@@ -43,3 +43,8 @@ lifecycle adapter in that invocation; they never repoint global links used by an
 `HARNESS_PERMISSIONS` is not a way to grant native permissions to a running client. Set a durable
 posture through user configuration and sync, or use that client's own permission controls.
 Custom Claude configuration homes receive an instruction file importing their own personal file.
+
+Link and adoption intent is journaled before filesystem changes, so an interrupted sync retains
+its recovery path. Malformed native JSON/TOML is rejected during preflight. Uninstall preserves
+redirected links and occupied restoration destinations, returning a conflict status and retaining
+the recovery manifest. It does not overwrite even a dangling user symlink to restore a backup.

@@ -461,10 +461,18 @@ def merge_vscode_settings(live: Dict[str, Any], owned: Dict[str, Any], cfg: Dict
 # --------------------------------------------------------------------------- links
 
 
+class InstallManifest(dict):
+    """Persist link/adoption intent before each filesystem mutation."""
+    def persist(self):
+        write_json_atomic(manifest_path(), self)
+
+
 def _record(manifest: Dict[str, Any], kind: str, item: Dict[str, Any]) -> None:
     manifest.setdefault(kind, [])
     manifest[kind] = [i for i in manifest[kind] if i.get("path") != item.get("path")]
     manifest[kind].append(item)
+    if isinstance(manifest, InstallManifest):
+        manifest.persist()
 
 
 def _adopt(path: Path, manifest: Dict[str, Any], dry: bool) -> Optional[Path]:
@@ -480,8 +488,8 @@ def _adopt(path: Path, manifest: Dict[str, Any], dry: bool) -> Optional[Path]:
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists() or dest.is_symlink():
             dest = dest.with_name(dest.name + f".{int(time.time())}")
-        shutil.move(str(path), str(dest))
         _record(manifest, "adopted", {"path": str(path), "moved_to": str(dest)})
+        shutil.move(str(path), str(dest))
     return dest
 
 
@@ -493,12 +501,13 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
             _record(manifest, "links", {"path": str(path), "target": str(target)})
             return
         previous = next((entry for entry in manifest.get("links", []) if entry["path"] == str(path)), None)
-        if previous and current != Path(previous["target"]):
+        if previous and str(current) not in (previous["target"], previous.get("pending_from")):
             report.append(f"{path} was redirected after sync; preserving the user's link")
             return
         if managed or adopt:
             say(f"  relink  {path}")
             if not dry:
+                _record(manifest, "links", {"path": str(path), "target": str(target), "pending_from": str(current)})
                 path.unlink()
                 path.symlink_to(target)
             _record(manifest, "links", {"path": str(path), "target": str(target)})
@@ -512,10 +521,10 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
             report.append(f"{path} exists and is not a harness link; pass --adopt to move it aside")
             return
     say(f"  link    {path}  ->  {target}")
+    _record(manifest, "links", {"path": str(path), "target": str(target)})
     if not dry:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.symlink_to(target)
-    _record(manifest, "links", {"path": str(path), "target": str(target)})
 
 
 def link_dir_files(source: Path, dest: Path, manifest: Dict[str, Any], dry: bool, adopt: bool,
@@ -530,8 +539,12 @@ def link_dir_files(source: Path, dest: Path, manifest: Dict[str, Any], dry: bool
     for old in list(manifest.get("links", [])):
         if Path(old["path"]).parent == dest and old["path"] not in wanted:
             say(f"  unlink  {old['path']} (no longer in the harness)")
-            if not dry and Path(old["path"]).is_symlink() and os.readlink(old["path"]) == old["target"]:
-                Path(old["path"]).unlink()
+            path = Path(old["path"])
+            if path.is_symlink() and os.readlink(path) != old["target"]:
+                report.append(str(path) + ": retired link was redirected; preserved")
+                continue
+            if not dry and path.is_symlink():
+                path.unlink()
             manifest["links"].remove(old)
 
 
@@ -690,6 +703,10 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         for role in (REPO / "primitives" / "roles").glob("*.md"):
             primitive_catalog.role_projection(REPO, "codex", role,
                 cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {}))
+    if cfg.get("claude", {}).get("manage", True):
+        read_json(claude_dir() / "settings.json")
+    if cfg.get("codex", {}).get("manage", True):
+        read_json(codex_dir() / "hooks.json")
     say(f"agent-harness {VERSION} · repo {REPO} · home {home()}{' · DRY RUN' if dry else ''}")
     say("stances: " + ", ".join(f"{k}={v.stem}" for k, v in stances.items()) + f" · permissions={p}")
     stale = placeholder_identity(cfg)
@@ -701,6 +718,9 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
 
     manifest = read_json(manifest_path()) or {"version": 1}
     manifest["repo"] = str(REPO)
+    if not dry:
+        manifest = InstallManifest(manifest)
+        manifest.persist()
     report: List[str] = []
     cd = claude_dir()
     applied = read_json(applied_path()) or {}
@@ -734,13 +754,16 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         for old in list(manifest.get("links", [])):
             if "/rules/harness-stances/" in old["path"] and old["path"] not in wanted_stance_links:
                 say(f"  unlink  {old['path']} (stance no longer selected)")
-                if not dry and Path(old["path"]).is_symlink():
-                    Path(old["path"]).unlink()
+                path = Path(old["path"])
+                if path.is_symlink() and os.readlink(path) != old["target"]:
+                    report.append(str(path) + ": retired stance link was redirected; preserved")
+                    continue
+                if not dry and path.is_symlink():
+                    path.unlink()
                 manifest["links"].remove(old)
         for skill in sorted(p_ for p_ in (REPO / "claude" / "skills").iterdir() if p_.is_dir()):
             ensure_link(cd / "skills" / skill.name, skill, manifest, dry, args.adopt, report)
-        for agent in sorted((REPO / "claude" / "agents").glob("*.md")):
-            ensure_link(cd / "agents" / agent.name, agent, manifest, dry, args.adopt, report)
+        link_dir_files(REPO / "claude" / "agents", cd / "agents", manifest, dry, args.adopt, report)
         ensure_link(cd / "hooks" / "harness", REPO / "claude" / "hooks", manifest, dry, args.adopt, report)
         for style in sorted((REPO / "claude" / "output-styles").glob("*.md")):
             ensure_link(cd / "output-styles" / style.name, style, manifest, dry, args.adopt, report)
@@ -1034,21 +1057,27 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
 
 def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
-    manifest = read_json(manifest_path())
-    if not manifest:
+    manifest = read_json(manifest_path()) or {}
+    if not manifest and not (state_dir() / "ownership.json").exists():
         say("nothing to uninstall (no manifest)")
         return 0
+    conflicts = []
     for link in manifest.get("links", []):
         p = Path(link["path"])
-        if p.is_symlink() and Path(os.readlink(p)) == Path(link["target"]):
+        if p.is_symlink() and os.readlink(p) in (link["target"], link.get("pending_from")):
             p.unlink()
             say(f"  unlink  {p}")
+        elif p.exists() or p.is_symlink():
+            conflicts.append(str(p) + ": changed link or replacement preserved")
     for item in manifest.get("adopted", []):
         src, dst = Path(item["moved_to"]), Path(item["path"])
-        if src.exists() and not dst.exists():
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(src), str(dst))
-            say(f"  restore {dst}")
+        if src.exists() or src.is_symlink():
+            if dst.exists() or dst.is_symlink():
+                conflicts.append(str(dst) + ": adopted backup retained; destination is occupied")
+            else:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(dst))
+                say(f"  restore {dst}")
     template = read_json(REPO / "claude" / "settings.template.json") or {}
     sf = claude_dir() / "settings.json"
     live = read_json(sf)
@@ -1057,6 +1086,7 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
         say(f"  strip   {sf}")
     store = reconcile.Store(state_dir())
     store.uninstall()
+    store.conflicts.extend(conflicts)
     for conflict in store.conflicts:
         say("  conflict " + conflict)
     if remove_gitignore_entries():
