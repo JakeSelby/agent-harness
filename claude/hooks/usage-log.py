@@ -37,7 +37,7 @@ DEFAULT_STANCES = {
     "delegation": "tiered",
     "testing": "required",
     "autonomy": "execute",
-    "cost": "balanced",
+    "cost": "balanced", "voice": "scannable",
 }
 # A tool result worth keeping the text of: the two the detectors read. 64 KB is far past any
 # brief or fenced block and far short of a transcript's largest result.
