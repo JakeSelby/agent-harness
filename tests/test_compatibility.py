@@ -1,9 +1,12 @@
 """Published support cannot be inferred from generated files or empty evidence."""
 import json
+import hashlib
+import subprocess
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from test_harness import REPO
 from harness_core import compatibility
 
@@ -29,3 +32,67 @@ class CompatibilityTests(unittest.TestCase):
         result = compatibility.coverage(REPO, {"feedback": "direct"})
         for runtime in ("codex", "claude-code"):
             self.assertEqual(result[runtime]["feedback"]["mode"], "instruction")
+
+
+class QualificationEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.data = {"harness_version": "0.9.0", "required_cases": ["read", "write-denial"]}
+        self.client = {"id": "fixture-cli", "runtime_version": "1.2", "client_version": "3.4",
+                       "platform": "fixture-os", "evidence": []}
+        self.record = {"kind": "native", "client": self.client["id"], "harness_version": "0.9.0",
+                       "runtime_version": "1.2", "client_version": "3.4", "platform": "fixture-os",
+                       "source_commit": "a" * 40, "observations": ["Synthetic validation fixture"],
+                       "cases": {"read": "passed", "write-denial": "passed"}}
+        self.git = patch.object(compatibility.subprocess, "run", return_value=subprocess.CompletedProcess([], 0))
+        self.git.start()
+        self.addCleanup(self.git.stop)
+
+    def add_record(self, record):
+        path = self.root / ("evidence-" + str(len(self.client["evidence"])) + ".json")
+        path.write_text(json.dumps(record))
+        self.client["evidence"].append({"path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+
+    def errors(self):
+        return compatibility.evidence_errors(self.root, self.data, self.client)
+
+    def test_matching_complete_records_can_qualify(self):
+        self.add_record(self.record)
+        self.assertEqual(self.errors(), [])
+
+    def test_partial_passing_records_can_cover_distinct_cases(self):
+        for case in self.data["required_cases"]:
+            self.add_record(dict(self.record, cases={case: "passed"}))
+        self.assertEqual(self.errors(), [])
+
+    def test_failed_and_unverified_records_cannot_be_hidden_by_a_pass(self):
+        self.add_record(self.record)
+        for result in ("failed", "unverified"):
+            with self.subTest(result=result):
+                self.client["evidence"] = self.client["evidence"][:1]
+                self.add_record(dict(self.record, cases={"read": result}))
+                self.assertIn("read is " + result + " in linked evidence", self.errors())
+
+    def test_native_versions_and_platform_must_match(self):
+        for key in ("runtime_version", "client_version", "platform"):
+            for value in (None, "different"):
+                with self.subTest(key=key, value=value):
+                    self.client["evidence"] = []
+                    self.add_record(dict(self.record, **{key: value}))
+                    self.assertTrue(any("mismatch" in error for error in self.errors()))
+
+    def test_unknown_cases_results_and_invalid_records_fail_closed(self):
+        for record in ([], dict(self.record, cases=[]), dict(self.record, cases={}),
+                       dict(self.record, cases={"unknown": "passed"}),
+                       dict(self.record, cases={"read": "skip"})):
+            with self.subTest(record=record):
+                self.client["evidence"] = []
+                self.add_record(record)
+                self.assertTrue(self.errors())
+
+    def test_changed_evidence_cannot_reuse_a_digest(self):
+        self.add_record(self.record)
+        (self.root / self.client["evidence"][0]["path"]).write_text("{}")
+        self.assertIn("evidence digest mismatch", self.errors())
