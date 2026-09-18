@@ -72,6 +72,20 @@ session without a re-sync.
 
 The `plan-ceremony` stance also decides whether the plan-card validator hook is registered.
 
+## What a session costs
+
+Every turn spends tokens against your plan's limit, and the ones that fan work out to several
+subagents spend several times as much: `/research` and `/build` are the expensive commands, and a
+wide review is the expensive habit.
+
+The `cost` stance is the dial. `frugal` keeps fan-out narrow and effort low, `balanced` is the
+default, `max` spends freely on hard problems. It sets how much; the `delegation` stance sets what
+gets delegated and to which model tier. `HARNESS_STANCE_COST=frugal claude` applies it to one
+session.
+
+`harness usage` summarises what sessions have actually spent, from a local file with no network
+call — see [usage.md](usage.md).
+
 ## Other surfaces
 
 `"vscode": { "manage": true }` and `"codex": { "manage": true }` in the config file let sync

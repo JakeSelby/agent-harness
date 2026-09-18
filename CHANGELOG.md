@@ -8,6 +8,32 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `docs/getting-started.md`: zero to a first useful session for someone who has not used a coding
+  agent before. What the harness is and is not, the prerequisites as a table with a way to check
+  each, install, `init`, a first session with three things to actually type, what changed about the
+  answers, the five commands with which of them need a code project, what a session costs, and the
+  three commands that diagnose a broken install. The README links it above the install block and
+  from the docs list; `SUPPORT.md` now opens with it and says plainly that everything else there
+  needs a GitHub account and is public. (#82)
+
+- A **Before you start** block on the README's first screen: a Claude account on a plan that
+  includes Claude Code — stated, rather than discovered after `install` has already run — the
+  supported platforms, `git` and Python 3.9, and which of the rest are optional. (#82)
+
+- A **What a session costs** section in `docs/preferences.md`, naming the rate-limit window, the
+  commands that fan out, and the `cost` stance as the dial. Nothing previously said that a
+  `/research` run costs several times a plain turn. (#82)
+
+### Fixed
+
+- `install` and `sync` refuse to run on Windows and name WSL2, rather than half-working: the
+  harness links into `~/.claude` with symlinks and every hook is a POSIX command. Nothing in the
+  README or the docs had ever said which platforms are supported. `_run` also treats an absolute
+  path that does not exist as a missing tool, so `/bin/bash` being absent reports rather than
+  raises. (#82)
+
+### Added
+
 - `identity.expertise`, `expert` or `beginner`, selecting one paragraph of the personal file. The
   line telling the agent to communicate at expert level and skip fundamentals was hardcoded in
   `CLAUDE.personal.template.md` and reached every user, including one who had never written code —

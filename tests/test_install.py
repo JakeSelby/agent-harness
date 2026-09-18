@@ -79,6 +79,14 @@ class RunTests(unittest.TestCase):
             self.assertTrue(harness._run(["/bin/bash", "-c", "true"], dry=False))
         run.assert_called_once()
 
+    def test_an_absolute_path_that_does_not_exist_is_reported_not_raised(self):
+        with unittest.mock.patch.object(harness.subprocess, "run") as run:
+            with loud() as out:
+                ok = harness._run(["/nowhere/bin/bash", "-c", "true"], dry=False)
+        run.assert_not_called()
+        self.assertFalse(ok)
+        self.assertIn("/nowhere/bin/bash is not installed", out.getvalue())
+
     def test_dry_run_resolves_but_does_not_execute(self):
         with unittest.mock.patch.object(harness, "_tool", return_value="/usr/bin/gh"), \
              unittest.mock.patch.object(harness.subprocess, "run") as run:
@@ -111,6 +119,27 @@ class GhLoginLineTests(unittest.TestCase):
              unittest.mock.patch.object(harness.subprocess, "run",
                                         return_value=unittest.mock.Mock(returncode=0)):
             self.assertEqual(harness._gh_login_line(), "logged in")
+
+
+class UnsupportedPlatformTests(unittest.TestCase):
+    """Symlinks into ~/.claude and POSIX hook commands: refuse, rather than half-work."""
+
+    def test_install_refuses_on_windows_and_names_wsl(self):
+        with unittest.mock.patch.object(harness.platform, "system", return_value="Windows"):
+            with loud() as out:
+                rc = harness.cmd_install(argparse.Namespace(dry_run=True))
+        self.assertEqual(rc, 1)
+        self.assertIn("WSL2", out.getvalue())
+
+    def test_sync_refuses_on_windows_before_touching_anything(self):
+        with unittest.mock.patch.object(harness.platform, "system", return_value="Windows"), \
+             unittest.mock.patch.object(harness, "read_json") as read:
+            with loud() as out:
+                rc = harness.cmd_sync(argparse.Namespace(dry_run=False, adopt=False,
+                                                         adopt_codex=False, print_only=False))
+        read.assert_not_called()
+        self.assertEqual(rc, 1)
+        self.assertIn("not supported", out.getvalue())
 
 
 class InstallOnABareMachineTests(unittest.TestCase):
