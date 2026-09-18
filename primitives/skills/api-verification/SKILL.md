@@ -5,7 +5,7 @@ description: Prove a search, filter or API answer is real before you rely on it,
 
 # Research and API verification
 
-The operative lines live in the resident rule `claude/rules/research-and-verification.md`. This
+The operative lines live in the resident rule `primitives/rules/research-and-verification.md`. This
 skill carries the reasoning, the arithmetic behind the search budget, and what to do after a
 fan-out.
 

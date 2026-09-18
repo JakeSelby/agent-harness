@@ -1,20 +1,21 @@
 ---
 name: workflow-status
-description: Show progress of background Workflow runs — which agents have returned, which are still working, and how much output has accumulated. Use when the user asks about workflow progress, says "/workflows doesn't work", asks "is the workflow done", "how's the workflow going", "check the workflow", or wants to inspect a multi-agent orchestration run. Works anywhere, including VS Code and the web app, where the built-in /workflows view is unavailable.
+description: Show progress of background Workflow runs — which agents have returned, which are still working, and how much output has accumulated. Use when the user asks about workflow progress, says "/workflows doesn't work", asks "is the workflow done", "how's the workflow going", "check the workflow", or wants to inspect a multi-agent orchestration run. Reads local Claude workflow journals; Codex background-agent status is not implemented by this reader.
 ---
 
 # Workflow status
 
-`/workflows` is a terminal-only view. This skill reads the same underlying run data, so it
-works in VS Code, the web app, or any other surface.
+This reader inspects local Claude workflow journals from any client with filesystem access.
+It does not inspect Codex native agent threads or hosted runs. For those, use the client's native
+agent view; an empty local journal search does not mean no agents are running.
 
 ## Run it
 
 ```bash
-python3 ~/.claude/skills/workflow-status/scripts/status.py            # most recent run
-python3 ~/.claude/skills/workflow-status/scripts/status.py --all      # every run, newest first
-python3 ~/.claude/skills/workflow-status/scripts/status.py --limit 3  # the last three
-python3 ~/.claude/skills/workflow-status/scripts/status.py --run wf_eed4141a   # one specific run
+python3 "{skill-root}/scripts/status.py"            # most recent run
+python3 "{skill-root}/scripts/status.py" --all      # every run, newest first
+python3 "{skill-root}/scripts/status.py" --limit 3  # the last three
+python3 "{skill-root}/scripts/status.py" --run wf_eed4141a   # one specific run
 ```
 
 Report the output to the user in prose — the counts, what is still in flight, and roughly how

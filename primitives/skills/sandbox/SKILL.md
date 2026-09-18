@@ -9,7 +9,17 @@ A permission mode decides whether a call runs. A sandbox decides what a command 
 is running, and the OS enforces that on every child process. An unattended loop needs the second
 kind: nobody is at the prompt to answer for the first.
 
-## The built-in sandbox
+## Runtime scope
+
+The configuration and container example below are Claude Code-specific. Do not copy those
+settings into Codex. For Codex, use its native sandbox and approval controls as documented in
+[the configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+A read-only sandbox constrains filesystem writes; approval policy is a separate control.
+Native hooks are not a replacement for OS confinement. Custom Codex role defaults can be
+superseded by the parent turn's permissions; see `docs/runtime-controls.md` before delegating
+work that requires a hard boundary. Client qualification remains in the compatibility catalog.
+
+## The Claude Code sandbox
 
 It "runs on macOS, Linux, and WSL2. Native Windows is not supported"; Linux and WSL2 need
 `bubblewrap` and `socat` installed first. Put this in `~/.claude/settings.json` to cover every
