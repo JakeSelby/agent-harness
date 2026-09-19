@@ -43,10 +43,15 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    cases; establish permissions anew. Verify migration, drift and uninstall preserve user data.
 
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
-`source_commit`, `observations`, and a `cases` object whose values are `passed`, `failed`, or
+`source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, and a `cases`
+object whose values are `passed`, `failed`, or
 `unverified`. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
 client or harness version. Its full source commit must be an ancestor of the release with no
 subsequent runtime-source changes; changed adapters or primitives invalidate the evidence. Set exact runtime/client versions before changing status to qualified.
+Each linked record must match the catalog's exact runtime version, client version and platform.
+Linked failed or unverified results block qualification even if another record passes the same
+case. When a rerun supersedes a record, remove the old reference from the active claim while
+preserving the historical evidence file. Unknown cases and result values are rejected.
 The CLI verifies these records and `harness compatibility --release-check` fails until all
 required clients are qualified. A reviewer must assess the observations; a JSON label alone is
 not empirical evidence.

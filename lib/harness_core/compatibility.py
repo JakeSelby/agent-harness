@@ -36,12 +36,24 @@ def evidence_errors(root, data, client):
         if not path.is_relative_to(root.resolve()) or not path.is_file():
             errors.append("missing or external evidence artifact")
             continue
-        if hashlib.sha256(path.read_bytes()).hexdigest() != item.get("sha256"):
-            errors.append("evidence digest mismatch")
+        try:
+            content = path.read_bytes()
+            if hashlib.sha256(content).hexdigest() != item.get("sha256"):
+                errors.append("evidence digest mismatch")
+                continue
+            record = json.loads(content)
+        except (ValueError, OSError):
+            errors.append("unreadable evidence record")
             continue
-        record = json.loads(path.read_text())
+        if not isinstance(record, dict):
+            errors.append("evidence record must be an object")
+            continue
         if record.get("client") != client["id"] or record.get("harness_version") != data["harness_version"]:
             errors.append("evidence version or client mismatch")
+            continue
+        if any(not client.get(key) or record.get(key) != client[key]
+               for key in ("runtime_version", "client_version", "platform")):
+            errors.append("evidence runtime, client version or platform mismatch")
             continue
         if record.get("kind") != "native" or not record.get("observations") or not record.get("source_commit"):
             errors.append("native observations and source commit are required")
@@ -56,7 +68,18 @@ def evidence_errors(root, data, client):
         if ancestry.returncode or unchanged.returncode:
             errors.append("runtime source changed or evidence commit is unavailable")
             continue
-        passed.update(case for case, result in record.get("cases", {}).items() if result == "passed")
+        cases = record.get("cases")
+        if not isinstance(cases, dict) or not cases:
+            errors.append("native evidence requires acceptance cases")
+            continue
+        for case, result in cases.items():
+            if case not in data["required_cases"] or result not in ("passed", "failed", "unverified"):
+                errors.append("unknown acceptance case or result")
+            elif result != "passed":
+                # Every linked record is part of the claim; another pass cannot hide a failure.
+                errors.append(case + " is " + result + " in linked evidence")
+            else:
+                passed.add(case)
     missing = set(data["required_cases"]) - passed
     if missing:
         errors.append("missing acceptance cases: " + ", ".join(sorted(missing)))
