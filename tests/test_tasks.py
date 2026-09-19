@@ -33,3 +33,40 @@ class TaskTests(unittest.TestCase):
         (self.repo / ".agent-harness").symlink_to(self.home, target_is_directory=True)
         with self.assertRaisesRegex(ValueError, "symlink"):
             tasks.save(self.repo, {"objective": "work"}, "codex")
+
+    def test_ignored_shared_plan_and_progress_changes_invalidate_handoff(self):
+        self.repo = self.repo.resolve()
+        (self.repo / ".gitignore").write_text(".agent-harness/\n")
+        directory = self.repo / ".agent-harness"
+        plans = directory / "plans"
+        plans.mkdir(parents=True)
+        plan = plans / "work.md"
+        plan.write_text("original")
+        tasks.save(self.repo, {"objective": "Plan the work"}, "codex")
+        self.assertEqual(tasks.read(self.repo)["status"], "current")
+        plan.write_text("revised scope")
+        self.assertEqual(tasks.read(self.repo)["status"], "stale")
+        tasks.save(self.repo, {"objective": "Continue"}, "claude-code", 1)
+        (directory / "progress.md").write_text("New findings")
+        self.assertEqual(tasks.read(self.repo)["status"], "stale")
+
+    def test_tracked_task_bookkeeping_does_not_invalidate_its_own_save(self):
+        self.repo = self.repo.resolve()
+        tasks.save(self.repo, {"objective": "First"}, "codex")
+        self.git("add", ".agent-harness/task.json")
+        self.git("commit", "-qm", "Record task fixture")
+        updated = tasks.save(self.repo, {"objective": "Second"}, "claude-code", 1)
+        self.assertEqual(updated["status"], "current")
+
+    def test_read_rejects_symlink_storage(self):
+        (self.repo / ".agent-harness").symlink_to(self.home, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            tasks.read(self.repo)
+
+    def test_untracked_filename_whitespace_is_preserved(self):
+        self.repo = self.repo.resolve()
+        file = self.repo / " leading and trailing "
+        file.write_text("old")
+        tasks.save(self.repo, {"objective": "Inspect input"}, "codex")
+        file.write_text("new")
+        self.assertEqual(tasks.read(self.repo)["status"], "stale")

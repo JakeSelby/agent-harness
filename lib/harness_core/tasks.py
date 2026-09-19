@@ -16,20 +16,27 @@ def repository(path):
 
 
 def fingerprint(root):
-    # The task itself is untracked data, so exclude it from the tree fingerprint by hashing
-    # tracked changes and every other untracked path independently.
+    # Exclude only bookkeeping; plans and progress remain task inputs even when gitignored.
     import hashlib
+    import os
+    bookkeeping = {".agent-harness/task.json", ".agent-harness/sync.lock"}
+    paths = ["."] + [":(exclude)" + name for name in sorted(bookkeeping)]
     digest = hashlib.sha256()
-    for args in (("rev-parse", "HEAD"), ("diff", "--binary", "HEAD"), ("diff", "--cached", "--binary")):
+    for args in (("rev-parse", "HEAD"), ("diff", "--binary", "HEAD", "--", *paths),
+                 ("diff", "--cached", "--binary", "--", *paths)):
         digest.update(git(root, *args).encode())
-    names = git(root, "ls-files", "--others", "--exclude-standard", "-z").split("\0")
-    for name in sorted(names):
-        if not name or name.startswith(".agent-harness/"):
-            continue
+    raw = subprocess.run(["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z"],
+                         capture_output=True, text=True, check=True).stdout
+    names = set(raw.split("\0"))
+    directory = root / ".agent-harness"
+    if directory.is_symlink():
+        raise ValueError("task storage cannot be a symlink")
+    if directory.is_dir():
+        names.update(str(p.relative_to(root)) for p in directory.rglob("*") if p.is_file() or p.is_symlink())
+    for name in sorted(names - bookkeeping - {""}):
         path = root / name
         digest.update(name.encode())
         if path.is_symlink():
-            import os
             digest.update(os.fsencode(os.readlink(path)))
         elif path.is_file():
             with path.open("rb") as stream:
@@ -40,6 +47,8 @@ def fingerprint(root):
 
 def read(root):
     path = root / ".agent-harness" / "task.json"
+    if path.parent.is_symlink() or path.is_symlink():
+        raise ValueError("task storage cannot be a symlink")
     if not path.exists():
         return {"schema_version": 1, "revision": 0, "status": "absent"}
     record = json.loads(path.read_text())

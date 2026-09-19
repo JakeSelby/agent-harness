@@ -86,7 +86,8 @@ harness task save --input task-input.json --runtime codex --revision 1
 ```
 
 The revision rejects concurrent stale writers. Repository identity and a content fingerprint
-prevent a changed tree from inheriting a verification claim. Reported verification is retained
+prevent a changed tree from inheriting a verification claim. Shared plans and progress count as
+inputs even when ignored by Git; only task bookkeeping is excluded. Reported verification is retained
 as unverified evidence; the receiving session runs the gate itself. Next steps are data, never
 executed by the loader, and approvals never transfer. Storage rejects symlinks. Keep personal
 handoff data out of commits with a project ignore entry when needed.
