@@ -173,7 +173,8 @@ def dispatch(runtime, payload):
         contexts = []
         if selected("plan-ceremony", "review-card") == "review-card":
             for path in patch_paths(event):
-                result = invoke("validate-plan-card", dict(event, tool_input={"file_path": path}))
+                result = invoke("validate-plan-card", dict(event, tool_input={"file_path": path},
+                                                          tool_response={"filePath": path}))
                 context = result.get("hookSpecificOutput", {}).get("additionalContext")
                 if context:
                     contexts.append(context)
