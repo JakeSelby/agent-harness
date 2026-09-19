@@ -1,0 +1,31 @@
+{
+  "kind": "native",
+  "client": "codex-cli-macos",
+  "harness_version": "0.10.0",
+  "runtime_version": "0.155.0-alpha.9",
+  "client_version": "0.155.0-alpha.9",
+  "platform": "macos",
+  "source_commit": "ba9802858d79e90092fc88cd0c2f9162d09bc8de",
+  "observations": [
+    "The v0.10 lifecycle suite passed clean installation, repeat sync, v0.9 upgrade and rollback, conflict preservation, and uninstall restoration in isolated macOS homes under Python 3.9.6 and 3.14.5.",
+    "Native responses changed from PLAIN to TAGGED after one shared custom proof-label stance changed. Session and project overrides resolved through the same primitive authority after native hook trust was reviewed.",
+    "Manual mode and an autonomy denial prevented disposable writes. Auto and explicitly acknowledged bypass created their sentinels.",
+    "Native PostToolUse execution delivered independent Review Card feedback for both files in one multi-file apply_patch while retaining a separate user hook.",
+    "Isolated gatherer and planner workers completed under native read restrictions, and planner publication remained parent-mediated.",
+    "The stop gate reused an unchanged green result, reran for staged, untracked, and edited-untracked changes, and blocked a failing gate through its retry budget without recording a green hash.",
+    "The full four-layer BMad review completed under GPT-5.6 Luna, found both seeded defects, ran activation and completion resolvers, and preserved implementation and specification bytes.",
+    "A Claude to Codex to Claude handoff advanced revisions 1, 2, and 3, rejected stale state, demoted inherited verification, and transferred no approval."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}
