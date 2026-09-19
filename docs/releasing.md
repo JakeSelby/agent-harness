@@ -23,6 +23,12 @@ and state the migration review or exact versioned migration action.
    python3 scripts/release_notes.py
    ```
 
+   Before freezing the candidate, run `python3 scripts/lifecycle_acceptance.py` under every Python
+   and reference operating system named by the candidate record. The runner uses disposable homes,
+   verifies the immutable v0.9.0 archive pin, and covers clean install, repeated sync, upgrade,
+   rollback, conflicts and uninstall. Store its JSON output with the candidate evidence. This is a
+   filesystem/configuration lifecycle check; it does not qualify a native client.
+
 4. Tag the verified commit with the matching immutable `v<version>` tag and push that tag.
    The release workflow repeats qualification and source gates before publishing. Never move an
    existing tag to repair a failed release; fix the source and use a new version.
