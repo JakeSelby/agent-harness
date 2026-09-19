@@ -19,7 +19,7 @@ spec = importlib.util.spec_from_loader("harness", loader)
 harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
-COST = REPO / "claude" / "stances" / "cost"
+COST = REPO / "primitives" / "stances" / "cost"
 # One line under the cap is reserved for the next rule change; the lint cap itself is 200.
 BUDGET = 196
 

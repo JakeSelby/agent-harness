@@ -19,8 +19,8 @@ EOF
 git -C "$(…)" remote -v
 ```
 
-If the manifest is missing, the harness is not installed; say so and write to `~/.claude/`
-directly instead. If `origin` is `<owner>/agent-harness` and you are that owner, you are the
+If the manifest is missing, locate or install the harness before editing managed content.
+Do not create a second authority in a runtime configuration directory. If `origin` is `<owner>/agent-harness` and you are that owner, you are the
 **maintainer**. If `origin` is a fork and `upstream` is the harness, you are a **fork user**.
 
 ## The ladder — first match wins
@@ -33,15 +33,15 @@ directly instead. If `origin` is `<owner>/agent-harness` and you are that owner,
    `claude/OWNERSHIP.json`.
 3. **True of this user only, a secret, or about one project** → never the harness repo. A
    fact about the user goes in `~/.claude/CLAUDE.personal.md` below the marker, or a plain
-   file in `~/.claude/rules/`. A fact about one repo goes in that repo's `AGENTS.md`.
+   file in `~/.primitives/rules/`. A fact about one repo goes in that repo's `AGENTS.md`.
 4. **A reasonable user would hold the opposite preference** → a stance variant under
-   `claude/stances/<pref>/<variant>.md`, and a line in `config.example.json` and
+   `primitives/stances/<pref>/<variant>.md`, and a line in `config.example.json` and
    `docs/preferences.md`. Never a core rule.
 5. **A procedure with steps, longer than 40 lines, or only needed on a trigger** → a skill
-   under `claude/skills/<name>/SKILL.md`, with a description that says when to use it.
+   under `primitives/skills/<name>/SKILL.md`, with a description that says when to use it.
 6. **Applies only to some kinds of file** → a rule with `paths:` frontmatter, in the repo it
    applies to.
-7. **Short, global, wanted on every turn** → `claude/rules/<topic>.md`. Check every existing
+7. **Short, global, wanted on every turn** → `primitives/rules/<topic>.md`. Check every existing
    rule first; the usual outcome is one sentence folded into an existing file, not a new one.
 8. **Otherwise it is a memory, not an instruction** → auto memory for the current project.
 
@@ -57,7 +57,7 @@ the user is a personal file, outside the repo.
 - **Core or stance?** If you can imagine a competent engineer choosing the opposite, it is a
   stance. Licensing, commit style, testing philosophy and autonomy level are stances; "verify
   before you claim it works" is not.
-- **Does it duplicate a global rule?** Grep `claude/rules/` and `claude/stances/` for the
+- **Does it duplicate a global rule?** Grep `primitives/rules/` and `primitives/stances/` for the
   topic. Do not restate a policy that lives in a global rule inside a project rule; link it.
 - **Is it generic?** No names, no paths under a home directory, no employer, no project. The
   lint will reject it anyway; write it in second person from the start.
@@ -67,7 +67,9 @@ the user is a personal file, outside the repo.
 1. Edit under the checkout. Nothing harness-owned is edited under `~/.claude/` directly: those
    paths are symlinks, so the edit would land in the checkout anyway, but going through the
    repo keeps the commit and the lint in the loop.
-2. `bin/harness sync` — a new rule file is already live; a new skill, stance or hook needs the
+2. Run `bin/harness generate` for native views and `bin/harness generate --check` to verify them.
+   See `docs/primitive-authoring.md` for custom dimensions and native bindings.
+   `bin/harness sync` — a new rule file is already live; a new skill, stance or hook needs the
    link or the settings entry.
 3. `bin/harness lint` — fails on personal strings and secret patterns.
 4. Commit with a Conventional Commit. Then, by who you are:
@@ -119,7 +121,7 @@ belongs in the issue or in `docs/`, referenced from the PR body.
 
 ## The always-loaded cap
 
-`claude/CLAUDE.md`, every file in `claude/rules/`, and the longest variant of every stance
+`claude/CLAUDE.md`, every file in `primitives/rules/`, and the longest variant of every stance
 dimension are loaded on every turn of every session. `harness lint` fails when their combined
 line count exceeds `ALWAYS_LOADED_CAP` in `bin/harness`. A rule that needs more room than the
 cap allows is telling you it wanted to be a skill: keep the operative line resident, move the

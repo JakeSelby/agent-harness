@@ -21,7 +21,7 @@ loader.exec_module(harness)
 
 CLAUDE_MD = REPO / "claude" / "CLAUDE.md"
 RULES = REPO / "claude" / "rules"
-DELEGATION = REPO / "claude" / "stances" / "delegation"
+DELEGATION = REPO / "primitives" / "stances" / "delegation"
 
 # The shapes an unconditional "go ahead and spawn" instruction takes. A variant may say these;
 # a file that loads under every variant may not.

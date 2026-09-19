@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "roles": {
+    "builder": {
+      "model": "opus",
+      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "effort": "medium"
+    },
+    "design-judge": {
+      "model": "inherit",
+      "tools": "Read, Grep, Glob",
+      "effort": "high"
+    },
+    "gatherer": {
+      "model": "opus",
+      "tools": "Read, Grep, Glob, WebFetch, WebSearch, Bash",
+      "effort": "low"
+    },
+    "log-compressor": {
+      "model": "sonnet",
+      "tools": "Read, Grep",
+      "effort": "low"
+    },
+    "planner": {
+      "model": "inherit",
+      "tools": "Read, Grep, Glob, Bash, WebFetch, Write",
+      "effort": "high"
+    },
+    "reviewer": {
+      "model": "inherit",
+      "tools": "Read, Grep, Glob, Bash",
+      "effort": "high"
+    },
+    "spec-reviewer": {
+      "model": "inherit",
+      "tools": "Read, Grep, Glob, Bash",
+      "effort": "high"
+    }
+  }
+}
