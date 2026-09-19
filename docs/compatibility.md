@@ -11,9 +11,7 @@ Claude Code and Codex are this release's integration targets. Do not read succes
 generation or deterministic tests as native client qualification.
 
 <!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
-
-**Unqualified:** `codex-vscode-macos`, `codex-desktop-macos`.
+**Qualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->

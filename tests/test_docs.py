@@ -41,8 +41,8 @@ class ReadmeTests(unittest.TestCase):
     def test_status_and_native_evidence_limits_are_visible(self):
         prose = " ".join(README.split())
         self.assertIn("**Experimental status:**", prose)
-        self.assertIn("Codex CLI is qualified on macOS and Linux", prose)
-        self.assertIn("five required native client surfaces remain unqualified", prose)
+        self.assertIn("Every required Claude Code and Codex client surface is qualified", prose)
+        self.assertIn("release remains a candidate until the catalog is pinned and tagged", prose)
         self.assertIn("Projection generation and unit tests are not proof", prose)
 
 

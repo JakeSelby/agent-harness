@@ -1,0 +1,30 @@
+{
+  "kind": "native",
+  "client": "codex-vscode-macos",
+  "harness_version": "0.9.0",
+  "runtime_version": "0.154.0-alpha.6.2",
+  "client_version": "26.908.40401",
+  "platform": "macos",
+  "source_commit": "8ef755698367b446bc4d1cce5b0f4ecdefc565dd",
+  "observations": [
+    "The real Codex VS Code extension loaded the disposable workspace and harness projections, read the fixture marker with its native tools, and preserved the user's normal application home and unrelated configuration.",
+    "A custom proof-label stance changed a fresh native editor response from PLAIN to TAGGED after one shared selection and sync; no separately authored Codex stance catalog was involved.",
+    "Manual posture denied its disposable native write. Auto created its workspace sentinel, and explicitly acknowledged bypass created an outside-workspace sentinel. Each posture was selected through the shared harness authority and remained subject to the editor's native controls.",
+    "Native hook trust was accepted through the bundled runtime and extension reload. A subsequent editor shell operation was evaluated by the harness hook rather than bypassing it. Editor stop-gate runs covered staged, untracked, edited-untracked, and failing states and ended unverified after the retry budget when the gate stayed red.",
+    "The editor-launched BMad review used all four saved constrained worker results, completed triage and presentation under GPT-5.6 Sol, reached the Done checkpoint, ran workflow.on_complete, found both seeded defects, and preserved the implementation and specification bytes. Read-only worker denials were retained as confinement evidence.",
+    "Editor-mediated role and handoff probes read the scoped marker, kept write authority confined, advanced and rejected revisions correctly, demoted inherited verification, and transferred no approvals.",
+    "Installation, migration, drift and uninstall behavior is supplied by the same Codex macOS projection and was independently exercised in the qualified macOS CLI fixture; this editor-specific record verifies client discovery and execution rather than claiming a second installer."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}
