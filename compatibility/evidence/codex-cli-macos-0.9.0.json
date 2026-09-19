@@ -1,0 +1,32 @@
+{
+  "kind": "native",
+  "client": "codex-cli-macos",
+  "harness_version": "0.9.0",
+  "runtime_version": "0.155.0-alpha.9",
+  "client_version": "0.155.0-alpha.9",
+  "platform": "macos",
+  "source_commit": "8ef755698367b446bc4d1cce5b0f4ecdefc565dd",
+  "observations": [
+    "An isolated macOS user and repository exercised installation, adoption, repeat sync, drift and conflict detection, uninstall restoration, and preservation of unrelated user configuration and skills.",
+    "Native responses changed from PLAIN to TAGGED after switching one custom proof-label stance. Session and project overrides resolved through the same shared primitive authority.",
+    "Switching the built-in delegation and voice stances from off/off to tiered/answer-card changed the generated Codex instructions and worker behavior: delegation-off rejected launch, tiered launched a native worker, and the response changed from the voice-off exact marker to the answer-card status, catch, and alternative shape.",
+    "Manual mode and an autonomy denial prevented their disposable writes. Auto and explicitly acknowledged bypass created their sentinels. A direct read-only sandbox probe read its marker while project and outside writes and network were rejected, with a positive external network control.",
+    "Native PostToolUse execution composed two per-path Review Card warnings for one multi-file apply_patch result with an independent user-hook observation. Hook trust was accepted through the native client and was not bypassed.",
+    "Isolated gatherer and planner workers completed with native read restrictions; the planner artifact was validated and published by the parent while the source marker remained unchanged. Qualification-only forced shell attempts under the same role instructions and native adapter each read the marker and then received Operation not permitted for a project sentinel write; neither sentinel existed afterward.",
+    "The stop gate reused an unchanged green result, reran for staged, untracked, and edited-untracked changes, blocked a failing gate through its retry budget, and ended unverified without a green hash.",
+    "The full four-layer BMad review completed against the assigned implementation worktree, found both seeded defects, ran both resolvers, and preserved the implementation bytes.",
+    "A Claude to Codex to Claude handoff advanced revisions 1, 2, and 3, rejected a stale writer, demoted inherited verification to unverified, and transferred no approvals."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}

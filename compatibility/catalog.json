@@ -57,11 +57,16 @@
       "provider": "openai",
       "client": "cli",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "runtime_version": null,
-      "client_version": null,
-      "evidence": []
+      "runtime_version": "0.155.0-alpha.9",
+      "client_version": "0.155.0-alpha.9",
+      "evidence": [
+        {
+          "path": "compatibility/evidence/codex-cli-macos-0.9.0.json",
+          "sha256": "ae395eaef338c4d1e47fb2f2e72767fcb3e4f38d6db2b27806cbcdce0880b1b2"
+        }
+      ]
     },
     {
       "id": "codex-vscode-macos",
@@ -93,11 +98,16 @@
       "provider": "openai",
       "client": "cli",
       "platform": "linux",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "runtime_version": null,
-      "client_version": null,
-      "evidence": []
+      "runtime_version": "0.155.1",
+      "client_version": "0.155.1",
+      "evidence": [
+        {
+          "path": "compatibility/evidence/codex-cli-linux-0.9.0.json",
+          "sha256": "4a24718e4c5422d5607c1234d605bec12f924915fd20e7e90e2ead2a7eb7b18f"
+        }
+      ]
     },
     {
       "id": "cursor",

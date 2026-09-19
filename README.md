@@ -31,7 +31,9 @@ responsibilities. A stance cannot override a client's native restrictions.
 targets. Supported clients and capabilities are listed explicitly after validation in the
 [compatibility catalog](docs/compatibility.md), available as `harness compatibility --json`.
 <!-- harness:compatibility:start -->
-**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+**Qualified:** `codex-cli-macos`, `codex-cli-linux`.
+
+**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-vscode-macos`, `codex-desktop-macos`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->

@@ -1,0 +1,32 @@
+{
+  "kind": "native",
+  "client": "codex-cli-linux",
+  "harness_version": "0.9.0",
+  "runtime_version": "0.155.1",
+  "client_version": "0.155.1",
+  "platform": "linux",
+  "source_commit": "8ef755698367b446bc4d1cce5b0f4ecdefc565dd",
+  "observations": [
+    "A disposable non-root Linux container inside Docker Desktop exercised the frozen source with Codex 0.155.1 and Python 3.14.4; no SYS_ADMIN capability was granted and Codex's native sandbox remained active.",
+    "Installation, adoption, repeat sync, drift and conflict detection, uninstall restoration, and preservation of unrelated user configuration and skills all completed in the isolated home.",
+    "Native responses changed from PLAIN to TAGGED after switching one custom proof-label stance. Session and project overrides resolved through the same shared primitive authority.",
+    "Switching the built-in delegation and voice stances from off/off to tiered/answer-card changed the generated Codex instructions and worker behavior: delegation-off rejected launch, tiered launched a native worker, and the response changed from the voice-off exact marker to a status with its catch and alternative under answer-card.",
+    "Manual mode and an autonomy denial prevented their disposable writes. Auto and explicitly acknowledged bypass created their sentinels. A direct read-only sandbox probe read its marker while project and outside writes and network were rejected, with a positive external network control.",
+    "Native PostToolUse execution delivered both per-path Review Card warnings for a single multi-file apply_patch operation and retained an independent user-hook marker. Hook trust was accepted through the native client and was not bypassed.",
+    "Isolated gatherer and planner workers completed under native restrictions. Qualification-only forced shell attempts under the same role instructions and native adapter each read the marker and then received Read-only file system for a project sentinel write; neither sentinel existed afterward. Stop-gate runs covered unchanged, staged, untracked, edited-untracked, failure, and retry-budget states.",
+    "The full four-layer BMad review completed, found both seeded defects, ran the workflow resolvers, and preserved the implementation bytes.",
+    "A Claude to Codex to Claude handoff advanced revisions 1, 2, and 3, rejected stale state, demoted inherited verification, and transferred no approvals."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}
