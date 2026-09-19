@@ -60,6 +60,15 @@ patches and absent GDS review shims are integration findings, not reasons to rei
 inside an implementation worktree. Missing review skills must be restored through the framework's
 supported shim installation or an upstream fix before that workflow is qualified.
 
+BMad 6.12.0 provides `--shims` on its installer. GDS v0.7.2 still invokes the legacy
+`bmad-review-adversarial-general` and `bmad-review-edge-case-hunter` names; installations
+without their compatibility shims fail `harness bmad check`. Re-run your recorded, version-pinned
+installation command with `--shims`, retaining the same modules, tools and module pins. Back up
+the installation first, restore any documented runtime patches and artifact-routing YAMLs,
+then check both skill projections and verify that existing customizations are unchanged.
+Keep `--shims` in the recorded reinstall command while these workflows require the legacy names.
+This repairs dependency discovery; a passing check still does not qualify workflow execution.
+
 ## Continue a task in either runtime
 
 The shared human-readable snapshot is `.agent-harness/progress.md`; session start reads the old
