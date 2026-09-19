@@ -183,7 +183,7 @@ class HandoffCommandTests(unittest.TestCase):
         self.assertIn("$ARGUMENTS", self.body)
 
     def test_the_body_names_the_progress_file_and_every_required_section(self):
-        self.assertIn(".claude/progress.md", self.body)
+        self.assertIn(".agent-harness/progress.md", self.body)
         self.assertIn("# Handoff <ISO date>", self.body)
         for section in SECTIONS:
             self.assertIn(section, self.body, msg=section)

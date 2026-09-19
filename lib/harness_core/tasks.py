@@ -1,0 +1,77 @@
+"""Versioned task continuation data; never imports native permissions or memory."""
+import json
+import subprocess
+from pathlib import Path
+from . import reconcile
+
+FIELDS = {"objective", "next_steps", "decisions", "artifacts", "framework_root", "baseline", "verification"}
+
+
+def git(root, *args):
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def repository(path):
+    return Path(git(path, "rev-parse", "--show-toplevel")).resolve()
+
+
+def fingerprint(root):
+    # The task itself is untracked data, so exclude it from the tree fingerprint by hashing
+    # tracked changes and every other untracked path independently.
+    import hashlib
+    digest = hashlib.sha256()
+    for args in (("rev-parse", "HEAD"), ("diff", "--binary", "HEAD"), ("diff", "--cached", "--binary")):
+        digest.update(git(root, *args).encode())
+    names = git(root, "ls-files", "--others", "--exclude-standard", "-z").split("\0")
+    for name in sorted(names):
+        if not name or name.startswith(".agent-harness/"):
+            continue
+        path = root / name
+        digest.update(name.encode())
+        if path.is_symlink():
+            import os
+            digest.update(os.fsencode(os.readlink(path)))
+        elif path.is_file():
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read(root):
+    path = root / ".agent-harness" / "task.json"
+    if not path.exists():
+        return {"schema_version": 1, "revision": 0, "status": "absent"}
+    record = json.loads(path.read_text())
+    if record.get("schema_version") != 1 or record.get("repository") != str(root):
+        raise ValueError("task schema or repository identity mismatch")
+    stale = record.get("fingerprint") != fingerprint(root)
+    record["status"] = "stale" if stale else "current"
+    if stale:
+        record["verification"] = {"status": "unverified", "reason": "working tree changed after handoff"}
+    record["authority"] = "data only; approvals and native permissions must be established in this session"
+    return record
+
+
+def save(root, payload, runtime, revision=0):
+    if runtime not in ("claude-code", "codex") or not isinstance(payload, dict) or set(payload) - FIELDS:
+        raise ValueError("invalid task contract fields or runtime")
+    if not isinstance(payload.get("objective"), str) or not payload["objective"].strip():
+        raise ValueError("task objective is required")
+    for name in ("next_steps", "decisions", "artifacts"):
+        if not isinstance(payload.get(name, []), list) or any(not isinstance(x, str) for x in payload.get(name, [])):
+            raise ValueError(name + " must be a list of strings")
+    directory = root / ".agent-harness"
+    if directory.is_symlink() or (directory / "task.json").is_symlink():
+        raise ValueError("task storage cannot be a symlink")
+    with reconcile.lock(directory):
+        current = read(root)
+        if current["revision"] != revision:
+            raise ValueError("task revision changed; read current task before updating")
+        record = dict(payload, schema_version=1, revision=revision + 1, runtime=runtime,
+                      repository=str(root), branch=git(root, "branch", "--show-current"),
+                      head=git(root, "rev-parse", "HEAD"), fingerprint=fingerprint(root))
+        # A caller's claim is not a gate result. Retain it as evidence, never certification.
+        record["verification"] = {"status": "unverified", "reported": payload.get("verification")}
+        reconcile.atomic_text(directory / "task.json", json.dumps(record, indent=2) + "\n")
+    return read(root)

@@ -41,7 +41,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
-from harness_core import reconcile, lifecycle
+from harness_core import reconcile, lifecycle, tasks
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1830,46 +1830,22 @@ BMAD_SUFFIX = ".user.toml"
 
 
 def toml_surface(text: str) -> Tuple[set, set]:
-    """The keys and the (array, id) entries an override TOML declares, read by shape alone.
-
-    Enough to compare a sparse override with the base `customize.toml` a skill ships, which is
-    the whole contract: the framework's renderer drops a key the base lacks and appends an id
-    the base lacks beside the renamed original, so after an upstream rename the routing quietly
-    stops applying. Python 3.9 has no TOML parser."""
-    keys: set = set()
-    entries: set = set()
-    table = None
-    array = None
-    fence = None
-    for raw in text.splitlines():
-        line = raw.strip()
-        if fence:
-            if fence in line:
-                fence = None
-            continue
-        if not line or line.startswith("#"):
-            continue
-        header = re.sub(r"\s+#.*$", "", line)
-        m = re.match(r"^\[\[([\w.-]+)\]\]$", header)
-        if m:
-            array, table = m.group(1), None
-            continue
-        m = re.match(r"^\[([\w.-]+)\]$", header)
-        if m:
-            table, array = m.group(1), None
-            continue
-        m = re.match(r"^([\w-]+)\s*=\s*(.*)$", line)
-        if not m:
-            continue
-        key, value = m.group(1), m.group(2)
-        for quote in ('"""', "'''"):
-            if value.startswith(quote) and value.count(quote) == 1:
-                fence = quote
-        if array:
-            if key in ("id", "code"):
-                entries.add((array, value.strip().strip("\"'")))
-        else:
-            keys.add(f"{table}.{key}" if table else key)
+    """Read declared customization keys and keyed layer ids structurally."""
+    doc = reconcile.tomlkit.parse(text).unwrap()
+    keys, entries = set(), set()
+    def visit(value, prefix=""):
+        for key, child in value.items():
+            name = prefix + key
+            if isinstance(child, dict):
+                visit(child, name + ".")
+            elif isinstance(child, list) and child and isinstance(child[0], dict):
+                for item in child:
+                    ident = item.get("id", item.get("code"))
+                    if ident:
+                        entries.add((name, ident))
+            else:
+                keys.add(name)
+    visit(doc)
     return keys, entries
 
 
@@ -1878,6 +1854,14 @@ def _bmad_root(path: Optional[str]) -> Path:
     probe = subprocess.run(["git", "-C", str(start), "rev-parse", "--show-toplevel"],
                            capture_output=True, text=True)
     return Path(probe.stdout.strip()) if probe.returncode == 0 and probe.stdout.strip() else start.resolve()
+
+
+def bmad_surface(root, skill):
+    candidates = [root / folder / "skills" / skill / "customize.toml" for folder in (".agents", ".claude")]
+    present = [path for path in candidates if path.is_file()]
+    if len(present) == 2 and present[0].read_bytes() != present[1].read_bytes():
+        raise ValueError("BMad skill projections disagree: " + skill)
+    return present[0] if present else candidates[0]
 
 
 def bmad_templates() -> List[Path]:
@@ -1900,7 +1884,7 @@ def bmad_check(root: Path) -> Tuple[List[str], List[str]]:
     drift: List[str] = []
     for template in bmad_templates():
         skill = template.name[: -len(BMAD_SUFFIX)]
-        base = root / ".claude" / "skills" / skill / "customize.toml"
+        base = bmad_surface(root, skill)
         if not base.exists():
             lines.append(f"  {skill}: not installed here, skipped")
             continue
@@ -1926,7 +1910,7 @@ def bmad_apply(root: Path, force: bool) -> List[str]:
     dest_dir = root / "_bmad" / "custom"
     for template in bmad_templates():
         skill = template.name[: -len(BMAD_SUFFIX)]
-        base = root / ".claude" / "skills" / skill / "customize.toml"
+        base = bmad_surface(root, skill)
         if not base.exists():
             continue
         text = template.read_text(encoding="utf-8")
@@ -1965,6 +1949,18 @@ def cmd_bmad(args: argparse.Namespace) -> int:
         say("  drift: " + finding)
     say(f"bmad: {len(drift)} drift finding(s) in {root}")
     return 1 if drift else 0
+
+
+def cmd_task(args):
+    root = tasks.repository(Path(args.path or Path.cwd()))
+    if args.action == "save":
+        if not args.input:
+            raise SystemExit("task save requires --input with a task contract JSON file")
+        result = tasks.save(root, json.loads(Path(args.input).read_text()), args.runtime, args.revision)
+    else:
+        result = tasks.read(root)
+    print(json.dumps(result, indent=2))
+    return 0
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -2068,6 +2064,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("path", nargs="?")
     p.add_argument("--force", action="store_true", help="apply: replace an override that differs from the template")
     p.set_defaults(func=cmd_bmad)
+
+    p = sub.add_parser("task", help="save or inspect a shared task continuation contract")
+    p.add_argument("action", choices=["save", "show"])
+    p.add_argument("path", nargs="?")
+    p.add_argument("--input", help="JSON task contract; never executed")
+    p.add_argument("--runtime", choices=["claude-code", "codex"], default=os.environ.get("HARNESS_RUNTIME", "codex"))
+    p.add_argument("--revision", type=int, default=0, help="expected current revision; rejects stale writers")
+    p.set_defaults(func=cmd_task)
 
     args = parser.parse_args(argv)
     return args.func(args)
