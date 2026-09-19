@@ -16,6 +16,8 @@ the source ledger. Architecture decisions retain their detailed rules in the arc
   generated runtime and skill projections remain ignored and reproducible.
 - GitHub is authoritative for delivery state. Beads-compatible types are represented with labels and
   stable BMad IDs; Beads is not installed.
+- Native GitHub issue types are organization-managed and unavailable in this personal-account
+  repository. Exact `type::*` labels are authoritative for type; native sub-issues represent hierarchy.
 - BMad IDs are global typed sequences and do not encode hierarchy. Reparenting never changes an ID.
 - Existing open and closed issues are migrated in place. Historical artifacts are explicitly marked
   reconstructed, and original issue prose, state and comments are preserved.
