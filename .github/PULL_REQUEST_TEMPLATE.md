@@ -1,6 +1,8 @@
 ## What and why
 
-<!-- Two sentences. Link the issue or Discussion if there is one. -->
+<!-- Two sentences. Exactly one dedicated delivery issue is required. -->
+
+Closes #N
 
 ## Where it lands
 

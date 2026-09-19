@@ -177,7 +177,8 @@ appender fills the folder with restatements of the obvious.
 ## What the harness deliberately does not contain
 
 - Anything about one person. Identity is rendered into `~/.claude/CLAUDE.personal.md` from
-  config; personal rules sit beside the harness links as plain files.
+  config; a personal writing-voice profile belongs below its preserved marker, and other personal
+  rules sit beside the harness links as plain files.
 - Anything about one project. That belongs in the project's `AGENTS.md`; `templates/repo/`
   shows the shape. Its `settings.json` keeps the files an agent must never read out of reach with
   `Read` deny rules, because Claude Code has no ignore file and a deny rule is the mechanism.

@@ -37,6 +37,11 @@ once this checkout is trusted: accept Claude Code's folder dialog or run `bin/ha
   off `main`, so the live checkout only ever carries merged content.
 - **Every change lands through a pull request.** The `main` ruleset requires green `lint` and
   `test` checks on an up-to-date branch and a squash merge; there is no direct push.
+- **One delivery issue per PR, one PR per delivery issue.** Create or select a dedicated issue
+  before changing files, including docs. Add `Closes #N` to the PR. Split separately delivered
+  work into child issues; contextual references do not establish ownership. Reuse is allowed
+  only when a previous PR was closed without merging. The `issue-ownership` check enforces
+  current GitHub closing links; verify ownership again immediately before merging.
 - **Code changes** (`bin/harness`, `claude/hooks/*.py`, `tests/`) carry a test with every
   change. Content changes (rules, stances, skill text, docs) are gated by the lint and review.
 - Nothing personal, nothing project-specific, nothing copyleft. The lint enforces the first;
