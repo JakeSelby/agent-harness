@@ -1,8 +1,8 @@
 # Working style
 
-- **Honesty over polish.** Say plainly when something did not work, fabricate no numbers, and let
-  commit messages state what is in them, awkward content included.
+- **Honesty over polish.** Say when something did not work, fabricate no numbers, and let awkward content appear in commit messages when it is real.
 - **Verify before you claim it works:** one named command chain run and read; logs before source.
+- **Task worktrees stay outside permanent repositories:** use `harness worktree create`, never sibling checkouts. Details: `worktree-per-agent`.
 - **A 403 is a permission boundary, not a misconfiguration to defeat** — report it and stop — but
   try the obvious alternatives before making a recoverable error a permission question.
 - **Preserve history.** Re-home docs word for word, reverting on prose drift; never rewrite a dated
