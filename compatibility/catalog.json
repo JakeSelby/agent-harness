@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "harness_version": "0.10.0",
-  "release_state": "candidate",
+  "release_state": "released",
+  "qualification_source_commit": "8b776064db3d662c17c197b9bca0968225beea27",
   "required_cases": [
     "installation",
     "stance-switch",
