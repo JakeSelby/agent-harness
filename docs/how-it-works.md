@@ -39,7 +39,8 @@ and activation. Enforcement gaps belong in [runtime controls](runtime-controls.m
 [Sync and ownership](sync-model.md) explains links, generated files, structural merges,
 configuration homes and rollback. Keep the shared checkout stable and change it through worktrees.
 `harness generate --check` detects stale source projections, and `harness diff` compares installed
-artifacts against their recorded state. Personal data stays outside the repository.
+artifacts against their recorded state. Personal data stays outside the repository. Keep a personal
+writing-voice profile in your preserved personal instructions; see [identity](preferences.md#identity).
 
 [BMad integration and handoffs](bmad.md) keep framework state and task continuation independent of
 runtime transcripts. [Usage](usage.md) records measurements with explicit gaps. [Preferences](preferences.md)
