@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-09-19
+
+### Added
+
+- Add the shared architecture-viewer profile, lifecycle and external process adapter. The preview
+  works with a separately installed protocol 1 viewer and does not bundle or publish that viewer.
+- Add bidirectional BMad-to-GitHub issue traceability, deterministic mapping audits and safe
+  fallbacks for repositories that cannot project every native issue type or hierarchy.
+- Add a versioned compatibility and migration contract, lifecycle acceptance runner and immutable
+  release-source pinning.
+
+### Changed
+
+- Qualify the Claude Code and Codex CLIs on macOS and Linux with version-pinned native evidence.
+  Keep the VS Code surfaces and Codex Desktop as unqualified previews; keep Cursor and Grok planned.
+- Preserve released qualification evidence until runtime source changes, then fail the release
+  check rather than silently changing a published support claim.
+
 ## [0.9.0] — 2026-09-19
 
 ### Provider-agnostic harness
