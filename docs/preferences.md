@@ -7,7 +7,8 @@ rule text literally: there is no variable substitution inside a rule or CLAUDE.m
 
 The `identity` block of `~/.config/agent-harness/config.json` (`name`, `pronouns`, `role`,
 `github`, `timezone`) is rendered into `~/.claude/CLAUDE.personal.md` on every sync. Anything
-you write below the `<!-- harness:personal-below -->` marker in that file survives a re-render.
+you write below the `<!-- harness:personal-below -->` marker in that file survives a re-render;
+that is also where a personal writing-voice profile belongs.
 Tracked rules never carry a name; they are written in second person.
 
 Env overrides: `HARNESS_IDENTITY_NAME`, `HARNESS_IDENTITY_PRONOUNS`, and so on.
@@ -173,8 +174,9 @@ defers to the Scannable output style: verdict first, registers separated, at mos
 `answer-card` is for reading on a phone — the answer in the first line, then why, the catch, and the
 alternatives, about 150 words, no tables, with the reasoning left in the file it links rather than
 re-argued in the message. It wins over the output style where the two differ. `off` imposes no shape
-at all. The rule keeps only what no variant changes: a subagent inherits no voice, so its brief has
-to carry the output shape itself.
+at all. A personal voice profile is different: it tells the agent how to draft in the user's name
+and stays in the untracked personal file. The rule keeps only what no variant changes: a subagent
+inherits no voice, so its brief has to carry the output shape itself.
 
 **Delegation.** The evidence for the tier bands, the cost-per-solved-task numbers and the
 boundaries where they stop holding are in the `delegation-tiering` skill, not here. The
