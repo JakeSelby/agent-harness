@@ -46,6 +46,32 @@ Every published artifact must be authored or intentionally reconstructed, saniti
 to a public contributor. `_bmad/custom/config.user.toml` and every `*.user.toml` remain local.
 A clean reinstall and customization resolution must leave tracked files unchanged.
 
+## GitHub traceability
+
+GitHub owns scope, discussion, delivery state and acceptance evidence. BMad supplies immutable typed
+IDs and public artifacts. `_bmad-output/issue-map.json` records each mapping, primary parent and next
+ID; `_bmad-output/implementation-artifacts/AH-*.md` links back to the issue. A generated Planning
+block in the issue links to the artifact on `main`.
+
+```sh
+python3 scripts/bmad_issue_sync.py audit
+python3 scripts/bmad_issue_sync.py plan
+python3 scripts/bmad_issue_sync.py apply
+```
+
+`audit` is local and non-mutating. `plan` compares the manifest with live GitHub state. `apply`
+refuses to run until every artifact exists on `main`, then idempotently maintains the Planning block,
+native issue type, `type::*` label and primary parent. It never changes a title, state or comment.
+For new community issues, reserve an ID during maintainer triage before implementation ownership:
+
+```sh
+python3 scripts/bmad_issue_sync.py reserve --issue N --kind story --parent PARENT_NUMBER
+```
+
+IDs are never reused and never encode hierarchy. Reparent the metadata rather than renaming the ID.
+Completed historical issues are marked `reconstructed`; the record never claims those artifacts
+existed during the original delivery.
+
 ## The pattern
 
 - **Install into the repo, commit only your overrides.** `.gitignore` carries

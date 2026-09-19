@@ -28,6 +28,8 @@ jobs:
           fetch-depth: 0
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: Audit BMad issue mapping
+        run: python3 scripts/bmad_issue_sync.py audit
       - name: Sync dry run against the example config
         run: |
           mkdir -p ~/.config/agent-harness
