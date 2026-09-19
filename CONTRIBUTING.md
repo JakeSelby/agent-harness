@@ -23,6 +23,17 @@ thread almost always merges faster than one that arrives cold.
 
 ## The fork → branch → pull request flow
 
+Every change, including documentation, needs a dedicated delivery issue before implementation.
+Each PR closes exactly one issue in this repository with `Closes #N`; each delivery issue belongs
+to one PR. Split work requiring multiple PRs into child issues. Contextual issue references are
+welcome, but do not use closing keywords for them. A replacement PR may reuse the issue only
+after the previous PR closes without merging.
+
+The required `issue-ownership` check validates GitHub's closing links and rejects issues already
+claimed by an open or merged PR. It runs on PR creation, body edits, reopening and new commits.
+Re-run it immediately before merging if another PR's links have changed: GitHub does not provide
+an atomic uniqueness constraint across PRs, and another PR changing cannot invalidate an old check.
+
 1. Fork and clone:
    ```sh
    gh repo fork JakeSelby/agent-harness --clone --remote
