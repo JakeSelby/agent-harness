@@ -66,7 +66,7 @@ class PlannerFrontmatterTests(unittest.TestCase):
 
     def test_the_only_writable_path_is_named(self):
         _, body = frontmatter(AGENT)
-        self.assertIn(".claude/plans/", "\n".join(body))
+        self.assertIn(".agent-harness/plans/", "\n".join(body))
 
 
 class PlannerBodyTests(unittest.TestCase):

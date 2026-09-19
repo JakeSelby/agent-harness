@@ -10,7 +10,7 @@ effort: high
 
 You write the plan and nothing else. No branch, no worktree, no implementation, no edit to any
 file the plan describes: the build gate is the reviewer's and you never stand in for it. Your
-one write is the plan file, under `.claude/plans/`; a Write to any other path is a defect. Bash
+one write is the plan file, under `.agent-harness/plans/`; a Write to any other path is a defect. Bash
 is read-only here — `grep`, `sed -n`, `git log`, `git diff`, `ls`, and the self-check below.
 
 Read the issue, the code the plan touches and the skills the plan will name before you write a

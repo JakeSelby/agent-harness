@@ -1,5 +1,9 @@
 # Sandboxing
 
+Native sandbox settings are runtime-specific. The Claude configuration examples below do not
+configure Codex. Consult [runtime controls](runtime-controls.md) and [compatibility](compatibility.md)
+for enforcement gaps before relying on a role or permission boundary.
+
 Permission modes answer "may this run?". They are the wrong question for an agent left alone: by
 the time a loop is unattended, nobody is there to answer. Isolation answers a different question —
 "what can this reach once it is already running?" — and the operating system enforces the
