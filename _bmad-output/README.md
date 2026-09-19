@@ -12,6 +12,8 @@ The [epic map](planning-artifacts/epics.md) owns program coverage, the
 Hidden `.memlog.md` files are BMad's append-only decision history for safely updating their sibling
 artifacts; the rendered documents remain the human-facing authorities. The
 [source ledger](planning-artifacts/source-ledger.md) explains provenance and publication exclusions.
+The machine-readable [`issue-map.json`](issue-map.json) links every GitHub issue to its immutable-ID
+artifact under [`implementation-artifacts/`](implementation-artifacts/).
 
 Repository-owned customizations and deliberately published artifacts are committed. Installed BMad
 runtime files, generated agent skills, caches, raw conversations, private paths and machine-local

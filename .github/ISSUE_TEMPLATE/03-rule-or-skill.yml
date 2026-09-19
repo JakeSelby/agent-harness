@@ -1,6 +1,7 @@
 name: Custom primitive proposal
 description: Propose a shared rule, stance dimension or variant, skill, role or workflow.
-labels: ["rule"]
+labels: ["rule", "type::story"]
+type: Feature
 body:
   - type: dropdown
     id: rung
