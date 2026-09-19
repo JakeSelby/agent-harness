@@ -115,6 +115,34 @@ class NativeInstallTests(TempHome):
             self.assertIn("stance delegation: " + CFG["stances"]["delegation"],
                           (self.home / ".codex" / "AGENTS.md").read_text())
 
+    def test_malformed_claude_json_is_rejected_before_links(self):
+        folder = self.home / ".claude"
+        folder.mkdir()
+        (folder / "settings.json").write_text("{broken")
+        with self.assertRaises(SystemExit):
+            self.sync()
+        self.assertFalse((folder / "CLAUDE.md").exists())
+
+    def test_interrupted_adoption_keeps_recoverable_intent(self):
+        source = self.home / "existing.md"
+        source.write_text("personal")
+        manifest = harness.InstallManifest({"version": 1})
+        with patch.object(harness.shutil, "move", side_effect=OSError("interrupted")):
+            with self.assertRaises(OSError):
+                harness._adopt(source, manifest, False)
+        persisted = json.loads(harness.manifest_path().read_text())
+        self.assertEqual(persisted["adopted"][0]["path"], str(source))
+        self.assertEqual(source.read_text(), "personal")
+
+    def test_uninstall_preserves_redirected_link_and_its_recovery_record(self):
+        self.assertEqual(self.sync(), 0)
+        link = self.home / ".claude" / "rules" / "harness"
+        link.unlink()
+        link.symlink_to(self.home / "user-target")
+        self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 2)
+        self.assertTrue(link.is_symlink())
+        self.assertTrue(harness.manifest_path().exists())
+
     def test_codex_only_bootstraps_all_shared_artifacts_and_identity(self):
         harness.config_path().parent.mkdir(parents=True)
         harness.config_path().write_text(json.dumps({"claude": {"manage": False}, "identity": {"name": "Ada"}}))
