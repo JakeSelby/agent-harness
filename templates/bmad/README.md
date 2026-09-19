@@ -8,6 +8,7 @@ is a copy of a framework file.
     bin/harness bmad check <repo>   # every key and layer id against the installed skills
     bin/harness bmad apply <repo>   # install what is missing; --force replaces a differing one
 
-The `harness-session` hook runs `apply` for the repository each session starts in, so a fresh
-clone gets these on its first session; a template the installed skill no longer declares is
-skipped, never written. Why, and what each file changes: `docs/bmad.md`.
+The `harness-session` hook runs `check` when a session starts. Installation is explicit:
+run `harness bmad apply` to add compatible templates while preserving differing overrides.
+A template the installed skill no longer declares is skipped, never written. See
+[BMad integration](../../docs/bmad.md) for the installation and compatibility procedures.
