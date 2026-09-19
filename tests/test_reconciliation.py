@@ -115,6 +115,27 @@ class NativeInstallTests(TempHome):
             self.assertIn("stance delegation: " + CFG["stances"]["delegation"],
                           (self.home / ".codex" / "AGENTS.md").read_text())
 
+    def test_sync_and_uninstall_preserve_viewer_selection_sessions_and_executable(self):
+        from harness_core import integrations
+        executable = self.home / "external-viewer"
+        executable.write_text("external viewer installation")
+        cfg = {"integrations": {"architecture-viewer": {"implementation": "custom", "adapter": "external"}},
+               "integration_adapters": {"external": {"capability": "architecture-viewer", "contract_version": 1,
+                                                       "argv": [str(executable)]}}}
+        harness.config_path().parent.mkdir(parents=True)
+        harness.config_path().write_text(json.dumps(cfg))
+        sessions = harness.state_dir() / "viewer-sessions"
+        sessions.mkdir(parents=True)
+        reference = sessions / "preserved.json"
+        reference.write_text('{"opaque": "session reference"}')
+        with patch.object(integrations, "invoke", side_effect=AssertionError("must not start viewer")):
+            self.assertEqual(self.sync(), 0)
+            self.assertEqual(self.sync(), 0)
+            self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 0)
+        self.assertEqual(json.loads(harness.config_path().read_text()), cfg)
+        self.assertEqual(reference.read_text(), '{"opaque": "session reference"}')
+        self.assertEqual(executable.read_text(), "external viewer installation")
+
     def test_malformed_claude_json_is_rejected_before_links(self):
         folder = self.home / ".claude"
         folder.mkdir()
@@ -150,7 +171,9 @@ class NativeInstallTests(TempHome):
         self.assertFalse((self.home / ".claude").exists())
         self.assertIn("Ada", (self.home / ".codex/AGENTS.md").read_text())
         self.assertEqual(len(list((self.home / ".codex/agents").glob("*.toml"))), 7)
-        self.assertEqual(len(list((self.home / ".agents/skills").glob("*/SKILL.md"))), 19)
+        self.assertEqual(len(list((self.home / ".agents/skills").glob("*/SKILL.md"))), 20)
+        self.assertEqual((self.home / ".agents/skills/architecture-viewer").resolve(),
+                         (harness.REPO / "primitives/skills/architecture-viewer").resolve())
         self.assertEqual(self.sync(), 0)
         self.assertEqual(harness._diff_lines(), [])
         (self.home / ".codex/AGENTS.md").write_text("user change")

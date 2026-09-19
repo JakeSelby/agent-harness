@@ -16,7 +16,7 @@ generation or deterministic tests as native client qualification.
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->
 
-Hosted agents, native memory merging and the UML viewer are deferred. Native Windows is
+Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md) supports custom adapters; the builtin viewer and native viewer qualification remain unavailable. Native Windows is
 unsupported; WSL2 has not been qualified.
 
 A model provider supplies the model. An agent runtime orchestrates its tools and context.

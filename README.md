@@ -143,8 +143,9 @@ second catalog. Run `bin/harness catalog` for source digests and `bin/harness ge
 projection drift.
 
 Custom prose stances are advisory unless you also implement and register corresponding policy.
-The UML-style change interrogation viewer being explored separately is not part of the current
-installation; hosted agents and native memory merging are also deferred.
+The shared [architecture-viewer capability](docs/viewer-integrations.md) can invoke a registered
+standalone implementation from either runtime and keep one pinned session across them. No builtin
+viewer is installed or qualified yet; hosted agents and native memory merging are also deferred.
 
 ## Cost and measurement
 

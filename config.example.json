@@ -29,5 +29,11 @@
   "claude": {
     "manage": true
   },
-  "primitive_roots": []
+  "primitive_roots": [],
+  "integrations": {
+    "architecture-viewer": {
+      "implementation": "builtin"
+    }
+  },
+  "integration_adapters": {}
 }
