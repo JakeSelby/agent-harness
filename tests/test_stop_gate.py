@@ -140,6 +140,30 @@ class StopGateTests(unittest.TestCase):
         self.run_hook()
         self.assertEqual(self.counter.read_text().count("\n"), 2)
 
+    def test_staged_and_untracked_contents_invalidate_green(self):
+        self.write_gate('echo run >> "%s"' % self.counter)
+        self.run_hook()
+        (self.repo / "file.txt").write_text("staged\n")
+        self.git("add", "file.txt")
+        self.run_hook()
+        new = self.repo / "new.txt"
+        new.write_text("first")
+        self.run_hook()
+        new.write_text("second")
+        self.run_hook()
+        self.assertEqual(self.counter.read_text().count("\n"), 4)
+
+    def test_gate_uses_one_shell_and_never_certifies_its_own_mutation(self):
+        self.write_gate("export HARNESS_FIXTURE=ok", 'test "$HARNESS_FIXTURE" = ok', "echo changed >> file.txt")
+        self.assertEqual(self.run_hook().returncode, 0)
+        self.assertIsNone(self.state()["green_hash"])
+        self.assertEqual(self.state()["status"], "unverified")
+
+    def test_codex_does_not_inherit_claude_folder_trust(self):
+        self.write_gate('echo run >> "%s"' % self.counter)
+        self.run_hook(extra_env={"HARNESS_RUNTIME": "codex"})
+        self.assertFalse(self.counter.exists())
+
     def test_the_eighth_consecutive_block_releases_the_turn(self):
         self.write_gate("exit 1")
         for expected in range(1, 8):

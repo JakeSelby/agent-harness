@@ -52,7 +52,7 @@ class SpecReviewerFileTests(unittest.TestCase):
         tools = {t.strip() for t in fields["tools"].split(",")}
         self.assertTrue(tools)
         self.assertEqual(tools & WRITE_TOOLS, set())
-        self.assertIn("Bash", tools)
+        self.assertNotIn("Bash", tools)
 
     def test_the_body_stays_short_enough_to_read(self):
         _, body = frontmatter(AGENT)

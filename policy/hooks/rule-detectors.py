@@ -894,13 +894,15 @@ def _enabled(detector, stances):
     return allowed is None or variant in allowed
 
 
-def run(events, stances=None, strict=False):
+def run(events, stances=None, strict=False, errors=None):
     """Every detector over one session's events; detectors with no hits are omitted."""
     try:
         ctx = analyse(events)
-    except Exception:
+    except Exception as exc:
         if strict:
             raise
+        if errors is not None:
+            errors.append({"detector": "analysis", "error": type(exc).__name__})
         return {}  # a session keeps its usage record even when its transcript is odd
     out = {}
     for detector in _REGISTRY:
@@ -908,9 +910,11 @@ def run(events, stances=None, strict=False):
             continue
         try:
             raw = detector.fn(ctx.events, ctx)
-        except Exception:
+        except Exception as exc:
             if strict:
                 raise
+            if errors is not None:
+                errors.append({"detector": detector.id, "error": type(exc).__name__})
             continue
         if raw:
             out[detector.id] = [(detector.id, turn, tool_use_id) for turn, tool_use_id in raw]

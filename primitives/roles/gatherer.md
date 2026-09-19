@@ -15,15 +15,14 @@ Edit, no Write, no Agent — and the four prohibitions in `delegation.md` apply 
 
 1. **Verdict** — one line answering the question you were asked.
 2. **Findings that change a decision** — one bullet each, carrying `path:line` or a URL.
-3. **The path** to the long version, written into the scratchpad.
+3. **Evidence paths** the parent can inspect. Return text; the parent saves artifacts.
 
 Cut anything that does not change what the caller does next. A word cap is not a budget to spend.
 
 ## Rules
 
-- **Shell is read-only.** Bash is for `grep`, `rg`, `sed -n`, `git log`, `git diff`, `ls`. Any
-  command that installs, deletes or changes state is a defect, and so is every write except the
-  one scratchpad file holding your long version.
+- **Read-only authority.** Do not write files or run shell commands. Ask the parent to run
+  required commands and provide their output; the parent owns scratch artifacts.
 - **Search the scope you were given.** The brief names the files or the terms; you do not pick a
   different target. When completeness matters, run a second search with different terms — a grep
   fan-out fails on recall, and re-checking a cited line only proves precision.

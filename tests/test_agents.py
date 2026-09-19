@@ -16,7 +16,7 @@ loader.exec_module(harness)
 AGENTS = REPO / "claude" / "agents"
 SHIPPED = ["gatherer", "log-compressor", "reviewer"]
 REQUIRED_KEYS = {"name", "description", "model", "tools", "effort"}
-WRITE_TOOLS = {"Edit", "Write", "NotebookEdit", "Agent"}
+WRITE_TOOLS = {"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
 MODELS = {"opus", "sonnet", "haiku", "fable", "inherit"}
 BODY_CAP = 30
 

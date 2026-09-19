@@ -41,7 +41,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
-from harness_core import reconcile
+from harness_core import reconcile, lifecycle
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -753,12 +753,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
                 personal.write_text(rendered, encoding="utf-8")
 
         # Claude settings.
-        template = read_json(REPO / "claude" / "settings.template.json") or {}
-        for entries in template.get("hooks", {}).values():
-            for entry in entries:
-                for hook in entry.get("hooks", []):
-                    hook["command"] = hook["command"].replace("~/.claude/hooks/harness",
-                        shlex.quote(str(cd / "hooks" / "harness")))
+        template = runtime_template()
         settings_file = cd / "settings.json"
         live = read_json(settings_file) or {}
         mtime = settings_file.stat().st_mtime if settings_file.exists() else None
@@ -806,6 +801,16 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         store.generated(agents, text, adopt=args.adopt_codex or legacy)
         wanted = reconcile.tomlkit.parse(update_codex_config("", cfg)).unwrap()
         store.toml(codex_dir() / "config.toml", wanted)
+        hook_file = codex_dir() / "hooks.json"
+        hook_live = read_json(hook_file) or {}
+        hook_template = lifecycle.registration(REPO, "codex")
+        hook_merged = deepcopy(hook_live)
+        hook_merged.setdefault("hooks", {})
+        for event, entries in hook_template["hooks"].items():
+            hook_merged["hooks"][event] = [e for e in hook_live.get("hooks", {}).get(event, [])
+                                          if not _is_harness_entry(e)] + entries
+        store.json(hook_file, hook_merged, [["hooks", event] for event in hook_template["hooks"]])
+        say("  codex   hooks registered; native hook trust must be accepted in the client")
         skills_home = home() / ".agents" / "skills"
         for skill in sorted((REPO / "primitives" / "skills").iterdir()):
             if skill.is_dir():
@@ -841,6 +846,12 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
     return 0
 
 
+def runtime_template():
+    template = read_json(REPO / "claude" / "settings.template.json") or {}
+    template["hooks"] = lifecycle.registration(REPO, "claude-code")["hooks"]
+    return template
+
+
 def _diff_lines() -> List[str]:
     lines: List[str] = []
     manifest = read_json(manifest_path())
@@ -855,7 +866,7 @@ def _diff_lines() -> List[str]:
         elif not p.exists():
             lines.append(f"broken link {p}")
     cfg = load_config()
-    template = read_json(REPO / "claude" / "settings.template.json") or {}
+    template = runtime_template()
     applied = read_json(applied_path()) or {}
     live = read_json(claude_dir() / "settings.json") or {}
     live_p = claude_projection(live, template)
@@ -1680,9 +1691,9 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     existed, or one whose registry would not import, is absent from every count and from the
     denominator: counting it as a session with no hit would turn a gap into a clean bill.
     """
-    measured = [r for r in rows if isinstance(r.get("rules"), dict)]
+    measured = [r for r in rows if isinstance(r.get("rules"), dict) and not r.get("rules_errors")]
     legacy = sum(1 for r in rows if not isinstance(r.get("rules"), dict) and not r.get("rules_error"))
-    errored = sum(1 for r in rows if r.get("rules_error"))
+    errored = sum(1 for r in rows if r.get("rules_error") or r.get("rules_errors"))
     if legacy or errored:
         say(f"{legacy + errored} session(s) in the window carry no rule data "
             f"({legacy} recorded before detectors, {errored} rules_error); run --rescan to backfill")
@@ -1759,6 +1770,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - max(args.days, 0) * 86400))
     groups: Dict[str, List[int]] = {}
     kept: List[Dict[str, Any]] = []
+    unknown_metrics = set()
     for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
         try:
             row = json.loads(line)
@@ -1778,6 +1790,8 @@ def cmd_usage(args: argparse.Namespace) -> int:
         acc = groups.setdefault(key, [0, 0, 0, 0, 0])
         acc[0] += 1
         for i, name in enumerate(("input", "output", "cache_read", "cache_write")):
+            if row.get(name) is None:
+                unknown_metrics.add(name)
             try:
                 acc[i + 1] += int(row.get(name) or 0)
             except (TypeError, ValueError):
@@ -1794,6 +1808,8 @@ def cmd_usage(args: argparse.Namespace) -> int:
         return (f"{label[:34]:<34}{acc[0]:>9}{acc[1]:>12,}{acc[2]:>12,}"
                 f"{acc[3]:>14,}{acc[4]:>14,}{hit:>7.0%}")
 
+    if unknown_metrics:
+        say("Partial totals: unavailable metrics are excluded: " + ", ".join(sorted(unknown_metrics)))
     head = (f"{by:<34}{'sessions':>9}{'input':>12}{'output':>12}"
             f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}")
     say(head)

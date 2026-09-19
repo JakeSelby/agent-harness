@@ -129,6 +129,10 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False):
     except OSError:
         return None
     with handle:
+        first = handle.readline()
+        handle.seek(0)
+        if '"session_meta"' in first:
+            return scan_codex(transcript, session_id, cwd, prior, rescan)
         for line in handle:
             try:
                 entry = json.loads(line)
@@ -225,6 +229,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False):
         return None
     top = git(cwd, "rev-parse", "--show-toplevel") if cwd and os.path.isdir(cwd) else ""
     record = {
+        "runtime": "claude-code",
+        "runtime_version": None,
         "session_id": session_id,
         "repo": os.path.basename(top or str(cwd).rstrip("/")),
         "branch": (git(cwd, "rev-parse", "--abbrev-ref", "HEAD") if top else "") or branch,
@@ -251,14 +257,100 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False):
     try:
         module = detectors()
         record["counts"] = module.counts(events)
+        errors = []
         record["rules"] = dict((did, len(hits))
-                               for did, hits in module.run(events, record["stances"]).items())
+                               for did, hits in module.run(events, record["stances"], errors=errors).items())
+        if errors:
+            record["rules_errors"] = errors
     except Exception as exc:
         # A registry that is missing, broken or a version apart costs the record its rule
         # fields and nothing else; the gap is named so a report never reads it as a quiet zero.
         record.pop("counts", None)
         record.pop("rules", None)
         record["rules_error"] = "{}: {}".format(type(exc).__name__, exc).split("\n")[0][:200]
+    return record
+
+
+def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
+    events, models, totals, meta = [], [], None, {}
+    started = ended = ""
+    turn = 0
+    tool_names = {}
+    malformed = 0
+    with open(transcript, encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            try:
+                item = json.loads(line)
+                payload = item.get("payload") or {}
+                if not isinstance(payload, dict):
+                    raise ValueError("invalid payload")
+            except (ValueError, AttributeError):
+                malformed += 1
+                continue
+            timestamp = item.get("timestamp") or ""
+            started = started or timestamp
+            ended = timestamp or ended
+            if item.get("type") == "session_meta":
+                meta = payload
+                session_id = session_id or meta.get("id", "")
+                cwd = cwd or meta.get("cwd", "")
+            elif item.get("type") == "turn_context":
+                turn += 1
+                if payload.get("model") and payload["model"] not in models:
+                    models.append(payload["model"])
+            elif item.get("type") == "event_msg" and payload.get("type") == "token_count":
+                value = (payload.get("info") or {}).get("total_token_usage")
+                if isinstance(value, dict):
+                    totals = value  # Cumulative snapshot; summing snapshots double counts usage.
+            elif item.get("type") == "response_item":
+                kind = payload.get("type")
+                call_id = payload.get("call_id", "")
+                if kind in ("function_call", "custom_tool_call"):
+                    name = payload.get("name", "")
+                    name = {"exec_command": "Bash", "spawn_agent": "Agent"}.get(name, name)
+                    arguments = payload.get("arguments", payload.get("input", {}))
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except ValueError:
+                            arguments = {"command": arguments}
+                    if isinstance(arguments, dict) and "cmd" in arguments:
+                        arguments = dict(arguments, command=arguments["cmd"])
+                    tool_names[call_id] = name
+                    events.append({"kind": "tool_use", "turn": turn, "id": call_id,
+                                   "name": name, "input": arguments})
+                elif kind in ("function_call_output", "custom_tool_call_output"):
+                    name = tool_names.get(call_id, "")
+                    events.append({"kind": "tool_result", "turn": turn, "tool_use_id": call_id,
+                                   "tool_name": name, "text": _result_text(payload.get("output"), name)})
+                elif kind == "message" and payload.get("role") == "assistant":
+                    text = "\n".join(x.get("text", "") for x in payload.get("content", []) if isinstance(x, dict))
+                    events.append({"kind": "assistant_text", "turn": turn, "text": text,
+                                   "final": payload.get("phase") == "final_answer"})
+    if not session_id:
+        return None
+    record = {"runtime": "codex", "runtime_version": meta.get("cli_version"), "session_id": session_id,
+              "repo": Path(cwd).name, "branch": git(cwd, "rev-parse", "--abbrev-ref", "HEAD") if cwd else "",
+              "models": models, "started": started, "ended": ended, "turns": turn,
+              "subagents": sum(e.get("name") == "Agent" and e["kind"] == "tool_use" for e in events),
+              "stances": (prior or {}).get("stances") or stances(), "input": None, "output": None,
+              "cache_read": None, "cache_write": None, "parse_failures": malformed}
+    if rescan and not (prior or {}).get("stances"):
+        record["stances_source"] = "rescan"
+    if totals:
+        cached = totals.get("cached_input_tokens")
+        total_input = totals.get("input_tokens")
+        record.update(input=max(0, total_input - cached) if isinstance(total_input, int) and isinstance(cached, int) else None,
+                      output=totals.get("output_tokens"), cache_read=cached)
+    errors = []
+    try:
+        module = detectors()
+        record["counts"] = module.counts(events)
+        record["rules"] = {did: len(hits) for did, hits in module.run(events, record["stances"], errors=errors).items()}
+        if errors:
+            record["rules_errors"] = errors
+    except Exception as exc:
+        record["rules_error"] = type(exc).__name__
     return record
 
 
@@ -276,6 +368,8 @@ def upsert(record, path=None):
             time.sleep(0.05)
         except OSError:
             break
+    if not held:
+        raise RuntimeError("usage lock unavailable; no record was overwritten")
     try:
         rows = []
         try:
@@ -287,7 +381,7 @@ def upsert(record, path=None):
                 row = json.loads(line)
             except Exception:
                 continue
-            if isinstance(row, dict) and row.get("session_id") != record["session_id"]:
+            if isinstance(row, dict) and (row.get("session_id"), row.get("runtime", "claude-code")) != (record["session_id"], record.get("runtime", "claude-code")):
                 rows.append(row)
         rows.append(record)
         tmp = path.with_name("{}.{}.tmp".format(path.name, os.getpid()))
@@ -323,7 +417,9 @@ def rescan(days=30):
     cutoff = time.time() - max(days, 0) * 86400
     prior = recorded()
     found = 0
-    for path in sorted(projects_dir().glob("*/*.jsonl")):
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    paths = list(projects_dir().glob("*/*.jsonl")) + list((codex_home / "sessions").rglob("*.jsonl"))
+    for path in sorted(paths):
         try:
             if path.stat().st_mtime < cutoff:
                 continue
@@ -331,7 +427,15 @@ def rescan(days=30):
             continue
         # A transcript is named for its session, which is how a backfill finds the record it
         # is refreshing before it has read a line of the file.
-        record = scan(path, prior=prior.get(path.stem), rescan=True)
+        ident = path.stem
+        try:
+            with path.open() as stream:
+                first = json.loads(stream.readline())
+            if first.get("type") == "session_meta":
+                ident = first.get("payload", {}).get("id", ident)
+        except (OSError, ValueError):
+            pass
+        record = scan(path, prior=prior.get(ident), rescan=True)
         if record:
             upsert(record)
             found += 1
@@ -373,5 +477,9 @@ def main(argv):
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
-    except Exception:
-        sys.exit(0)
+    except Exception as exc:
+        failure = usage_path().with_suffix(".errors.jsonl")
+        failure.parent.mkdir(parents=True, exist_ok=True)
+        with failure.open("a") as stream:
+            stream.write(json.dumps({"time": time.time(), "error": type(exc).__name__}) + "\n")
+        sys.exit(1)
