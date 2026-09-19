@@ -6,7 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Provider-agnostic harness candidate (0.9.0)
+## [0.9.0] — 2026-09-19
+
+### Provider-agnostic harness
 
 - Lead with your working style, extensible custom primitives and switchable personal stances.
 - Keep one shared authority for rules, stances, skills, roles, workflows and presentation;
@@ -16,10 +18,11 @@ All notable changes to this project are documented here. The format follows
 - Compose lifecycle policies, strengthen gate invalidation, and normalize usage observations
   while preserving unknown metrics and detector failures.
 - Add custom stance authoring, semantic BMad roles and versioned bidirectional task handoffs.
-- Add a native compatibility catalog and a release gate. CLI/editor/desktop qualification is
-  pending; Cursor and Grok, hosted agents, native memory merging and the UML viewer are deferred.
-- Stage reference-site and personal-site positioning for coordinated publication after native
-  qualification. No new support claim or production deployment is implied by this candidate.
+- Add a native compatibility catalog and release gate. Claude Code and Codex are qualified on the
+  required CLI, VS Code and desktop surfaces; Cursor and Grok, hosted agents, native memory merging
+  and the UML viewer are deferred.
+- Coordinate reference-site and personal-site positioning around the same user-aligned primitive
+  model and immutable release identity.
 
 ### Changed
 
