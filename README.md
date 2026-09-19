@@ -188,6 +188,10 @@ and the [sync model](docs/sync-model.md).
 - [BMad integration and bidirectional task continuation](docs/bmad.md)
 - [Contributing](CONTRIBUTING.md) and the [public reference](https://agent-harness.jakeselby.com)
 
+Agent Harness uses the open-source [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD)
+to structure public product planning, architecture, delivery and release readiness. BMad is a
+trademark of BMad Code, LLC; this project is independent and is not endorsed by BMad Code.
+
 ## Verify changes
 
 Installed links may point at the checkout, so contribute from a managed worktree. The repository

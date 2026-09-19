@@ -1,19 +1,61 @@
-# Using a planning framework alongside the harness
+# BMad in agent-harness and downstream repositories
 
 The harness is framework-agnostic. This page records a pattern that keeps a self-hosted
 planning framework (the [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD), MIT)
 installed in a code repo without polluting it, and without the harness redistributing any of
-the framework's files.
+the framework's files. Agent Harness itself follows the same runtime boundary but deliberately
+publishes its authored BMad corpus in this repository.
+
+## This repository's public planning system
+
+Agent Harness pins BMad Method 6.12.0 with the `bmm` module, Claude Code and Codex projections,
+and compatibility shims. Reproduce the local apparatus from the shared checkout:
+
+```sh
+BMAD_VERSION=6.12.0
+npx --yes bmad-method@"$BMAD_VERSION" install --directory . --modules bmm \
+  --tools claude-code,codex --user-name Jake --communication-language English \
+  --document-output-language English --output-folder _bmad-output --shims --yes
+```
+
+Then run `python3 bin/harness bmad check .`. Planning workflows run from the shared checkout;
+implementation still happens in managed worktrees.
+
+The version-control boundary is intentional:
+
+### Commit
+
+- `_bmad/custom/**`: repository configuration, workflow customizations, templates and policy
+  extensions.
+- `_bmad-output/planning-artifacts/**`: product brief, PRD, developer journey, architecture,
+  epics, decisions, source ledger and readiness reports.
+- `_bmad-output/implementation-artifacts/**`: stories, public sprint state, retrospectives and
+  clearly marked historical reconstructions.
+- The pinned install instructions, repository-owned validation/synchronization code and deliberate
+  test fixtures.
+
+### Do not commit
+
+- The installed `_bmad` runtime outside `_bmad/custom`.
+- Generated `.agents/skills`, `.claude/skills` or `.github/agents` projections.
+- Installer caches, temporary renderings, local backups, logs or session state.
+- Raw conversations, memory exports or source-ingestion dumps.
+- Secrets, private absolute paths, machine-specific configuration or unsanitized personal data.
+
+Every published artifact must be authored or intentionally reconstructed, sanitized, and useful
+to a public contributor. `_bmad/custom/config.user.toml` and every `*.user.toml` remain local.
+A clean reinstall and customization resolution must leave tracked files unchanged.
 
 ## The pattern
 
 - **Install into the repo, commit only your overrides.** `.gitignore` carries
   `/_bmad/*`, `!/_bmad/custom/`, `/.claude/skills/`, `/.agents/skills/`. The runtime and the
   skill projections are installer-regenerable; only `_bmad/custom/` is yours.
-- **Redirect artifacts to a planning repo.** In `_bmad/custom/config.toml`, point
+- **Choose the artifact authority explicitly.** In `_bmad/custom/config.toml`, point
   `planning_artifacts`, `implementation_artifacts`, `project_knowledge` and `output_folder` at
-  a separate repository using `{project-root}`-relative or absolute paths, so a design corpus
-  of hundreds of files never lands in the code repo (or in every worktree of it).
+  the intended repository using `{project-root}`-relative paths. A separate planning repository
+  can keep a very large private corpus out of every worktree; public projects such as agent-harness
+  can instead commit a sanitized local corpus.
 - **Pin the install.** One command, with versions, in the repo's `AGENTS.md`, for example
   `npx bmad-method@<version> install --directory <repo> --modules <list> --tools claude-code,codex --yes`.
 - **Record post-install repairs in one place.** Anything you patch in the installed runtime
@@ -29,8 +71,9 @@ the framework's files.
   other's scripts.
 - **Post-sprint hygiene.** Update the architecture document's status, the decisions ledger and
   the changelog before moving on; the framework will not do it for you.
-- **Nothing framework-shaped in team-facing output.** No attribution footers, no `_bmad/`
-  paths, no story references in anything shipped to a shared repo.
+- **Keep delivery output native.** Do not add generated attribution footers or internal runtime
+  paths to ordinary issues and PRs. Public documentation and planning artifacts may identify BMad
+  deliberately, and issues may link to their public story artifacts.
 
 ## Shared roles and explicit installation
 

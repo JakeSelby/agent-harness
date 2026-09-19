@@ -1,0 +1,11 @@
+# Durable team configuration. The installer-owned base stays untracked.
+
+[core]
+project_name = "agent-harness"
+document_output_language = "English"
+output_folder = "_bmad-output"
+
+[modules.bmm]
+planning_artifacts = "{project-root}/_bmad-output/planning-artifacts"
+implementation_artifacts = "{project-root}/_bmad-output/implementation-artifacts"
+project_knowledge = "{project-root}/docs"
