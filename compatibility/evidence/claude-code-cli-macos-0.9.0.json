@@ -1,0 +1,31 @@
+{
+  "kind": "native",
+  "client": "claude-code-cli-macos",
+  "harness_version": "0.9.0",
+  "runtime_version": "2.1.273",
+  "client_version": "2.1.273",
+  "platform": "macos",
+  "source_commit": "8ef755698367b446bc4d1cce5b0f4ecdefc565dd",
+  "observations": [
+    "An isolated macOS home and disposable repository exercised installation, adoption, repeat sync, drift and conflict detection, uninstall restoration, and preservation of unrelated user configuration and skills.",
+    "Native responses changed from PLAIN to TAGGED after switching one custom proof-label stance. Session and project overrides resolved through the shared primitive authority, and built-in delegation and voice selections changed generated instructions and worker behavior without a separate Claude catalog.",
+    "Manual mode and an autonomy denial prevented disposable writes, while an explicitly acknowledged bypass created its sentinel. Claude Code 2.1.273 accepted the Auto selection but requires Sonnet 5 to retain native Auto Mode; the tested Bedrock account has zero Sonnet 5 runtime quota, so native Auto execution reported unavailable and created no write rather than silently widening permissions.",
+    "Native PostToolUse execution composed both per-path Review Card warnings for one multi-file change while retaining an independent user hook; hook trust was reviewed through the native client.",
+    "Isolated gatherer and planner workers completed under native read restrictions, and forced write attempts were denied while permitted reads succeeded. Planner publication remained parent-mediated.",
+    "The stop gate reused an unchanged green result, reran for staged, untracked, and edited-untracked changes, blocked a failing gate through its retry budget, and ended unverified without a green hash.",
+    "The full four-layer BMad review completed against the assigned implementation worktree, found both seeded defects, ran both resolvers, and preserved the implementation bytes.",
+    "A Claude to Codex to Claude handoff advanced revisions 1, 2, and 3, rejected stale state, demoted inherited verification to unverified, and transferred no approvals."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}
