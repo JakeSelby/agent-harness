@@ -34,6 +34,38 @@ class LifecycleTests(unittest.TestCase):
             "command": "*** Update File: a.md\n*** Move to: b.md\n*** Add File: c.md\n"}})
         self.assertEqual(lifecycle.patch_paths(event), ["/repo/a.md", "/repo/b.md", "/repo/c.md"])
 
+    def test_native_patch_text_result_validates_each_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plans = root / ".agent-harness/plans"
+            plans.mkdir(parents=True)
+            for name in ("first.md", "second.md"):
+                (plans / name).write_text("Invalid plan fixture")
+            event = {"hook_event_name": "PostToolUse", "cwd": directory,
+                     "tool_name": "apply_patch", "tool_input": {"command":
+                         "*** Begin Patch\n*** Add File: .agent-harness/plans/first.md\n"
+                         "+Invalid plan fixture\n*** Add File: .agent-harness/plans/second.md\n"
+                         "+Invalid plan fixture\n*** End Patch"},
+                     "tool_response": "Exit code: 0\nSuccess. Updated the following files."}
+            with patch.object(lifecycle, "selected", return_value="review-card"):
+                result = lifecycle.dispatch("codex", event)
+            context = result["hookSpecificOutput"]["additionalContext"]
+            for name in ("first.md", "second.md"):
+                self.assertIn("The plan file " + name + " does not meet", context)
+
+    def test_native_write_object_result_still_validates_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".agent-harness/plans/claude.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("Invalid plan fixture")
+            event = {"hook_event_name": "PostToolUse", "tool_name": "Write",
+                     "tool_input": {"file_path": str(path)},
+                     "tool_response": {"filePath": str(path), "type": "create"}}
+            with patch.object(lifecycle, "selected", return_value="review-card"):
+                result = lifecycle.dispatch("claude-code", event)
+            self.assertIn("The plan file claude.md does not meet",
+                          result["hookSpecificOutput"]["additionalContext"])
+
     def test_delegation_off_denies_both_native_envelopes(self):
         with patch.object(lifecycle, "selected", return_value="off"):
             for runtime, name, inputs in (("codex", "spawn_agent", {"message": "work"}),
