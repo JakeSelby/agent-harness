@@ -62,7 +62,11 @@ from a static-content rollback.
 
 ## Release status
 
-The 0.9.0 catalog records every required Claude Code and Codex client as qualified. The release is
-complete only when the exact merged commit carries the immutable `v0.9.0` tag and the release
-workflow publishes it. Reference and personal-site deployment status remains independently
-verifiable; never infer a deployment from a source merge or bypass the release preflight.
+The 0.10.0 candidate requires fresh native qualification for Claude Code CLI and Codex CLI on
+macOS and Linux. Issue #225 owns that qualification and blocks publication; the VS Code surfaces
+and Codex Desktop are unqualified previews in this release. The architecture-viewer integration
+is also a preview for a separately installed implementation, with no bundled viewer or
+distribution-clearance claim. The release is complete only when the exact merged commit carries
+the immutable `v0.10.0` tag and the release workflow publishes it. Reference and personal-site
+deployment status remains independently verifiable; never infer a deployment from a source merge
+or bypass the release preflight.

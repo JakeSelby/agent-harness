@@ -11,12 +11,12 @@ Agent Harness keeps shared instructions, skills, roles, workflows and personal p
 place, then projects them into the native formats each runtime understands. You do not have to
 maintain one working agreement for Claude Code and another for Codex.
 
-**Release status:** `0.9.0` is the first provider-agnostic release. The shared engine, adapters,
-generated configuration and hook decisions are implemented and tested. Every required Claude Code
-and Codex client surface is qualified for the exact versions listed below.
+**Release status:** `0.10.0` is a release candidate. The shared engine, adapters, generated
+configuration and hook decisions are implemented and tested. Native qualification is being
+refreshed for the four required Claude Code and Codex CLI targets listed below.
 
 <!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->
@@ -143,9 +143,11 @@ second catalog. Run `bin/harness catalog` for source digests and `bin/harness ge
 projection drift.
 
 Custom prose stances are advisory unless you also implement and register corresponding policy.
-The shared [architecture-viewer capability](docs/viewer-integrations.md) can invoke a registered
-standalone implementation from either runtime and keep one pinned session across them. No builtin
-viewer is installed or qualified yet; hosted agents and native memory merging are also deferred.
+The shared [architecture-viewer capability](docs/viewer-integrations.md) is a preview that can
+invoke a separately installed implementation from either runtime and keep one pinned session
+across them. A local protocol 1 candidate passed process-level harness acceptance. The harness
+does not bundle a viewer, and native viewer interaction and distribution/license clearance remain
+unverified. Hosted agents and native memory merging are also deferred.
 
 ## Cost and measurement
 

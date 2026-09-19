@@ -9,17 +9,22 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 **Unqualified** means no complete passing evidence, **planned** means no current integration,
 and **unsupported** means a combination explicitly outside the integration contract.
 
-Claude Code and Codex are this release's integration targets. Do not read successful source
-generation or deterministic tests as native client qualification.
+Claude Code and Codex are this release's integration targets. The v0.10.0 stable candidate floor
+requires their CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces and Codex
+Desktop on macOS remain unqualified previews. Do not read successful source generation or
+deterministic tests as native client qualification.
 
 <!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->
 
-Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md) supports custom adapters; the builtin viewer and native viewer qualification remain unavailable. Native Windows is
-unsupported; WSL2 has not been qualified.
+Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md)
+is a preview for separately installed custom adapters. A local protocol 1 candidate passed
+process-level harness acceptance; no viewer is bundled, and native viewer interaction and
+distribution/license clearance remain unverified. Native Windows is unsupported; WSL2 has not
+been qualified.
 
 A model provider supplies the model. An agent runtime orchestrates its tools and context.
 A client surface is the CLI, editor integration or desktop app exposing that runtime.

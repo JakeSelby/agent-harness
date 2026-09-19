@@ -1,8 +1,7 @@
 {
   "schema_version": 1,
-  "harness_version": "0.9.0",
-  "release_state": "released",
-  "qualification_source_commit": "8ce2a65d444051c0244b86ab36ea31df98094531",
+  "harness_version": "0.10.0",
+  "release_state": "candidate",
   "required_cases": [
     "installation",
     "stance-switch",
@@ -22,16 +21,9 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "macos",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "runtime_version": "2.1.273",
-      "client_version": "2.1.273",
-      "evidence": [
-        {
-          "path": "compatibility/evidence/claude-code-cli-macos-0.9.0.json",
-          "sha256": "ec20a2edb494bbcbb0386eff9dda470427cd2f5266a849e1e862caf796bbe879"
-        }
-      ]
+      "evidence": []
     },
     {
       "id": "claude-code-vscode-macos",
@@ -39,16 +31,9 @@
       "provider": "anthropic",
       "client": "vscode",
       "platform": "macos",
-      "status": "qualified",
-      "required_for_release": true,
-      "runtime_version": "2.1.273",
-      "client_version": "2.1.273",
-      "evidence": [
-        {
-          "path": "compatibility/evidence/claude-code-vscode-macos-0.9.0.json",
-          "sha256": "79b6860a3607b559a54bcd711a1bf6325a8cacccb1a84f259ea27778db9cdfd6"
-        }
-      ]
+      "status": "unqualified",
+      "required_for_release": false,
+      "evidence": []
     },
     {
       "id": "claude-code-cli-linux",
@@ -56,16 +41,9 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "linux",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "runtime_version": "2.1.273",
-      "client_version": "2.1.273",
-      "evidence": [
-        {
-          "path": "compatibility/evidence/claude-code-cli-linux-0.9.0.json",
-          "sha256": "4b703bb9948f6be452ef10496f29283714fcc6171ddf176c7862e2fe42eff5d2"
-        }
-      ]
+      "evidence": []
     },
     {
       "id": "codex-cli-macos",
@@ -73,16 +51,9 @@
       "provider": "openai",
       "client": "cli",
       "platform": "macos",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "runtime_version": "0.155.0-alpha.9",
-      "client_version": "0.155.0-alpha.9",
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-cli-macos-0.9.0.json",
-          "sha256": "ae395eaef338c4d1e47fb2f2e72767fcb3e4f38d6db2b27806cbcdce0880b1b2"
-        }
-      ]
+      "evidence": []
     },
     {
       "id": "codex-vscode-macos",
@@ -90,16 +61,9 @@
       "provider": "openai",
       "client": "vscode",
       "platform": "macos",
-      "status": "qualified",
-      "required_for_release": true,
-      "runtime_version": "0.154.0-alpha.6.2",
-      "client_version": "26.908.40401",
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-vscode-macos-0.9.0.json",
-          "sha256": "ec7d5d064003b1789e8b765821bca16d24a63c06fd92a04f96c423b2251c25fa"
-        }
-      ]
+      "status": "unqualified",
+      "required_for_release": false,
+      "evidence": []
     },
     {
       "id": "codex-desktop-macos",
@@ -107,16 +71,9 @@
       "provider": "openai",
       "client": "desktop",
       "platform": "macos",
-      "status": "qualified",
-      "required_for_release": true,
-      "runtime_version": "0.155.0-alpha.9",
-      "client_version": "26.915.31029",
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-desktop-macos-0.9.0.json",
-          "sha256": "4aa460c7d110a690c6539e0fa352a4017bbeda3114caa82261b63b07a289fcca"
-        }
-      ]
+      "status": "unqualified",
+      "required_for_release": false,
+      "evidence": []
     },
     {
       "id": "codex-cli-linux",
@@ -124,16 +81,9 @@
       "provider": "openai",
       "client": "cli",
       "platform": "linux",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "runtime_version": "0.155.1",
-      "client_version": "0.155.1",
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-cli-linux-0.9.0.json",
-          "sha256": "4a24718e4c5422d5607c1234d605bec12f924915fd20e7e90e2ead2a7eb7b18f"
-        }
-      ]
+      "evidence": []
     },
     {
       "id": "cursor",
@@ -157,9 +107,10 @@
     }
   ],
   "limitations": [
-    "Claude Code 2.1.273 native Auto Mode requires Sonnet 5; the tested Bedrock account has zero Sonnet 5 runtime quota, so qualified Claude support covers manual and deny controls plus acknowledged bypass while Auto selection reports native unavailability.",
+    "Claude Code Auto Mode depends on native runtime and provider access; model unavailability is a visible limitation, not a passing qualification result.",
     "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
     "Planner publication is mediated by the harness after constrained workers return result data.",
-    "Cursor and Grok integration, hosted agents, native memory merging and UML integration are deferred."
+    "The architecture-viewer integration is a preview for a separately installed implementation. A local protocol 1 candidate passed process-level harness acceptance; no viewer is bundled, and native viewer interaction and distribution/license clearance remain unverified.",
+    "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred."
   ]
 }
