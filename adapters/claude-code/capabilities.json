@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "runtime": "claude-code",
+  "stances": {
+    "licensing": {
+      "mode": "instruction",
+      "qualification": "unqualified"
+    },
+    "build-vs-buy": {
+      "mode": "instruction",
+      "qualification": "unqualified"
+    },
+    "commits": {
+      "mode": "instruction",
+      "qualification": "unqualified"
+    },
+    "plan-ceremony": {
+      "mode": "instruction-and-hook",
+      "qualification": "unqualified"
+    },
+    "delegation": {
+      "mode": "instruction-and-hook",
+      "qualification": "unqualified"
+    },
+    "testing": {
+      "mode": "instruction",
+      "qualification": "unqualified"
+    },
+    "autonomy": {
+      "mode": "instruction-and-hook",
+      "qualification": "unqualified"
+    },
+    "cost": {
+      "mode": "instruction-and-setting",
+      "qualification": "unqualified"
+    },
+    "voice": {
+      "mode": "instruction",
+      "qualification": "unqualified"
+    }
+  },
+  "custom_stance_default": {
+    "mode": "instruction",
+    "qualification": "unqualified"
+  },
+  "limitations": [
+    "Native restrictions take precedence. Hook activation requires runtime trust.",
+    "Unsupported controls remain visible; custom stance prose does not add enforcement."
+  ]
+}

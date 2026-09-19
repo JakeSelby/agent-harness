@@ -41,7 +41,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
-from harness_core import reconcile, lifecycle, tasks
+from harness_core import reconcile, lifecycle, tasks, compatibility
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1236,6 +1236,7 @@ def cmd_stances(args: argparse.Namespace) -> int:
             "stances": {name: {"variant": path.stem, "source": str(path),
                                 "behavior": path.read_text(encoding="utf-8").strip()}
                         for name, path in choices.items()}}
+    data["adapter_coverage"] = compatibility.coverage(REPO, choices)
     if args.json:
         print(json.dumps(data, indent=2))
     else:
@@ -1951,6 +1952,24 @@ def cmd_bmad(args: argparse.Namespace) -> int:
     return 1 if drift else 0
 
 
+def cmd_compatibility(args):
+    data = compatibility.catalog(REPO)
+    if args.json:
+        print(json.dumps(data, indent=2))
+    else:
+        say("Model provider and agent runtime are separate from the client you run.")
+        for client in data["clients"]:
+            say(client["id"] + ": " + client["status"])
+        for limitation in data["limitations"]:
+            say(limitation)
+    if args.release_check:
+        errors = compatibility.release_errors(REPO)
+        for error in errors:
+            print("release blocked: " + error, file=sys.stderr)
+        return 1 if errors else 0
+    return 0
+
+
 def cmd_task(args):
     root = tasks.repository(Path(args.path or Path.cwd()))
     if args.action == "save":
@@ -2064,6 +2083,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("path", nargs="?")
     p.add_argument("--force", action="store_true", help="apply: replace an override that differs from the template")
     p.set_defaults(func=cmd_bmad)
+
+    p = sub.add_parser("compatibility", help="show versioned native qualification and adapter gaps")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--release-check", action="store_true", help="fail unless every release target has native evidence")
+    p.set_defaults(func=cmd_compatibility)
 
     p = sub.add_parser("task", help="save or inspect a shared task continuation contract")
     p.add_argument("action", choices=["save", "show"])
