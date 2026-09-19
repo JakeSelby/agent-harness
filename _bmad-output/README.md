@@ -8,6 +8,8 @@ and [architecture spine](planning-artifacts/architecture-spines/architecture-age
 The [epic map](planning-artifacts/epics.md) owns program coverage, the
 [decision ledger](planning-artifacts/decisions.md) preserves product calls, and the
 [readiness report](planning-artifacts/implementation-readiness.md) states what remains before v1.
+The [v1 release plan](planning-artifacts/v1-release-plan.md) is the approved gate sequence and ends
+with the authoritative story-to-requirement mapping.
 
 Hidden `.memlog.md` files are BMad's append-only decision history for safely updating their sibling
 artifacts; the rendered documents remain the human-facing authorities. The

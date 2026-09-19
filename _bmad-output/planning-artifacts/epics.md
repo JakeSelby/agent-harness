@@ -25,17 +25,18 @@ inputDocuments:
 
 ## Release program
 
-- **Defensible v1.0.0:** stable CLI support on macOS and Linux, lifecycle proof, public SemVer and
-  deprecation policy, immutable release surfaces and independent audit. Detailed story mapping is
-  maintained with issue #193 after the GitHub traceability migration.
+- **Defensible v1.0.0 ([#206](https://github.com/JakeSelby/agent-harness/issues/206), AH-E005):**
+  stable CLI support on macOS and Linux, lifecycle proof, public SemVer and deprecation policy,
+  immutable release surfaces and independent audit. The five release stories and their requirement
+  coverage are defined in `v1-release-plan.md` and tracked by the v1.0.0 milestone.
 
 ## Post-v1 programs
 
-- **Client graduation:** Claude Code VS Code, Codex VS Code and Codex desktop earn stable status only
-  through their own complete native evidence.
-- **Adoption and feedback:** publish one real preference-to-two-runtimes demo and release note;
-  recruit a small direct tester cohort; fix observed onboarding friction; then stage community and
-  broader launch posts. Measure usable attempts, repeat use and actionable feedback.
+- **Client graduation ([#216](https://github.com/JakeSelby/agent-harness/issues/216), AH-E007):**
+  editor and desktop clients earn stable status only through independent evidence and support gates.
+- **Adoption and feedback ([#212](https://github.com/JakeSelby/agent-harness/issues/212), AH-E006):**
+  publish a two-runtime proof, run a direct tester cohort, fix onboarding friction, then stage broader
+  launch channels and measure usable attempts, repeat use and actionable feedback.
 
 ## Coverage rule
 

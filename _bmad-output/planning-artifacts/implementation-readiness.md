@@ -3,17 +3,17 @@ title: Agent Harness implementation readiness
 status: final
 created: 2026-09-19
 updated: 2026-09-19
-verdict: partially-ready
+verdict: ready-for-execution
 ---
 
 # Implementation readiness
 
 ## Verdict
 
-**Partially ready.** The product boundary, shared architecture, developer experience and major
-programs are coherent and grounded in implemented repository behavior. v1 execution is not yet
-decision-complete because lifecycle proof, the frozen support matrix, compatibility policy and final
-independent audit still need explicit stories and acceptance evidence.
+**Ready for gate execution, not ready for release.** The product boundary, stable support floor,
+shared architecture and release gates are decided and grounded in implemented repository behavior.
+#207 must still record the exact candidate digest and versioned reference matrix before qualification
+or lifecycle evidence can count; release remains blocked until all five stories under #206 close.
 
 ## Ready
 
@@ -25,13 +25,11 @@ independent audit still need explicit stories and acceptance evidence.
 
 ## Must close before v1
 
-- Reconcile #94–#100 against their original acceptance criteria and current merged behavior.
-- Qualify Claude Code CLI and refresh Codex CLI evidence against one frozen v1 candidate on macOS and
-  Linux.
-- Publish SemVer, compatibility, deprecation and migration promises.
-- Demonstrate clean install, upgrade, repeat sync, rollback and uninstall from the latest pre-v1
-  release to the v1 candidate without losing unrelated configuration.
-- Run an independent audit of packaging, licenses, documentation, support evidence and recovery.
+- #207 freezes the stable support matrix and qualifies both CLIs on macOS and Linux.
+- #208 publishes SemVer, compatibility, deprecation and migration promises.
+- #209 proves clean install, upgrade, repeat sync, rollback and uninstall without unrelated loss.
+- #210 independently reconciles #94–#100 and audits packaging, licensing, docs, evidence and recovery.
+- #211 publishes the unchanged audited candidate as v1.0.0.
 
 ## Not a v1 blocker
 
