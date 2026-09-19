@@ -1,6 +1,7 @@
 """Release publication depends on qualification and immutable source identity."""
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -26,3 +27,24 @@ class ReleaseTests(unittest.TestCase):
         data = json.loads((REPO / "compatibility" / "catalog.json").read_text())
         for client in data["clients"]:
             self.assertIn(client["id"] + ": " + client["status"], text)
+        version = (REPO / "VERSION").read_text().strip()
+        self.assertIn("blob/v" + version + "/docs/compatibility-policy.md", text)
+        self.assertIn("## Migration", text)
+        self.assertIn("harness sync --dry-run", text)
+        self.assertIn("### Recovery", text)
+
+    def test_release_notes_reject_stale_or_incomplete_migration_metadata(self):
+        module = load("release_notes")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in ("VERSION", "product.json"):
+                (root / name).write_bytes((REPO / name).read_bytes())
+            (root / "compatibility").mkdir()
+            path = root / "compatibility/migration.json"
+            for value in ({"schema_version": 1, "harness_version": "different", "summary": "x",
+                           "actions": ["x"], "recovery": ["x"]},
+                          {"schema_version": 1, "harness_version": (REPO / "VERSION").read_text().strip(),
+                           "summary": "x", "actions": [], "recovery": ["x"]}):
+                path.write_text(json.dumps(value))
+                with self.subTest(value=value), patch.object(module.compatibility, "catalog", return_value={"clients": []}), self.assertRaises(ValueError):
+                    module.notes(root)

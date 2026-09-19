@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "harness_version": "0.9.0",
+  "summary": "Review generated drift and ownership conflicts before applying this release.",
+  "actions": [
+    "Run `harness sync --dry-run` from the release checkout and inspect every proposed write and conflict.",
+    "Run `harness sync` only after resolving unmanaged-file and adoption conflicts."
+  ],
+  "recovery": [
+    "Preserve reported conflicts and adopted backups.",
+    "Use docs/runtime-installation.md for recovery and docs/bmad.md for task continuation."
+  ]
+}

@@ -3,6 +3,8 @@
 The architecture is model-provider agnostic: your rules, skills, roles, workflows and personal
 stances have one source. That does not mean every runtime implements every capability.
 `compatibility/catalog.json` is the versioned authority; `harness compatibility --json` emits it.
+A separate [compatibility and release policy](compatibility-policy.md) defines the stable v1
+interfaces, preview boundary, versioning, deprecation and migration rules.
 A **qualified** entry requires native evidence for its exact runtime, client and platform.
 **Unqualified** means no complete passing evidence, **planned** means no current integration,
 and **unsupported** means a combination explicitly outside the integration contract.
