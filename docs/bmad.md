@@ -61,7 +61,10 @@ python3 scripts/bmad_issue_sync.py apply
 
 `audit` is local and non-mutating. `plan` compares the manifest with live GitHub state. `apply`
 refuses to run until every artifact exists on `main`, then idempotently maintains the Planning block,
-native issue type, `type::*` label and primary parent. It never changes a title, state or comment.
+exact `type::*` label and primary parent. It never changes a title, state or comment. GitHub native
+issue types are [organization-managed](https://docs.github.com/issues/tracking-your-work-with-issues/using-issues/managing-issue-types-in-an-organization)
+and cannot be assigned in this personal-account repository, so the manifest records `labels-only`
+projection explicitly rather than reporting permanent false drift.
 For new community issues, reserve an ID during maintainer triage before implementation ownership:
 
 ```sh

@@ -2,7 +2,8 @@
 """Maintain the public BMad-to-GitHub issue mapping.
 
 GitHub owns delivery state. This tool owns only the idempotent planning block,
-native issue type, exact BMad type label, and primary parent relationship.
+exact BMad type label, primary parent relationship, and native issue type when
+the repository supports that organization-managed field.
 """
 
 import argparse
@@ -44,8 +45,8 @@ NATIVE_TYPE = {
 EPICS = {93, 116, 135, 189}
 DECISIONS = {52}
 SPIKES = {141, 146, 159}
-BUGS = {37, 67, 80, 84, 85, 181}
-AUTHORED = {189, 190, 191, 192, 193}
+BUGS = {37, 67, 80, 84, 85, 181, 200, 203}
+AUTHORED = {189, 190, 191, 192, 193, 199, 200, 203}
 PARENTS = {
     **{number: 93 for number in range(94, 101)},
     **{number: 116 for number in range(117, 131)},
@@ -75,6 +76,9 @@ PARENTS = {
     187: 98,
     188: 98,
     **{number: 189 for number in range(190, 194)},
+    199: 116,
+    200: 98,
+    203: 189,
 }
 
 
@@ -141,7 +145,7 @@ def infer_kind(issue):
     return "story"
 
 
-def build_manifest(issues, repo):
+def build_manifest(issues, repo, native_type_projection="labels-only"):
     counters = defaultdict(int)
     items = []
     by_number = {}
@@ -169,8 +173,9 @@ def build_manifest(issues, repo):
         if parent:
             item["parent_bmad_id"] = parent["bmad_id"]
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "repository": repo,
+        "native_type_projection": native_type_projection,
         "generated_at": dt.date.today().isoformat(),
         "next_ids": {kind: counters[kind] + 1 for kind in KINDS},
         "items": items,
@@ -283,6 +288,13 @@ def frontmatter_value(text, key):
 def audit_manifest(manifest=None):
     manifest = manifest or load_manifest()
     errors = []
+    if manifest.get("schema_version") not in {1, 2}:
+        errors.append("unsupported manifest schema_version")
+    if (
+        not (manifest.get("schema_version") == 1 and "native_type_projection" not in manifest)
+        and manifest.get("native_type_projection") not in {"labels-only", "native-and-labels"}
+    ):
+        errors.append("native_type_projection must be labels-only or native-and-labels")
     seen_ids = set()
     seen_issues = set()
     seen_artifacts = set()
@@ -402,7 +414,17 @@ def desired_labels(issue, kind):
     return unrelated | {"type::{}".format(kind)}
 
 
+def projection_mode(manifest):
+    if manifest.get("schema_version") == 1 and "native_type_projection" not in manifest:
+        return "native-and-labels"
+    mode = manifest.get("native_type_projection")
+    if mode not in {"labels-only", "native-and-labels"}:
+        raise RuntimeError("native_type_projection must be labels-only or native-and-labels")
+    return mode
+
+
 def planned_actions(manifest, live_issues):
+    project_native_types = projection_mode(manifest) == "native-and-labels"
     live = {issue["number"]: issue for issue in live_issues}
     actions = []
     for item in manifest["items"]:
@@ -415,7 +437,9 @@ def planned_actions(manifest, live_issues):
         changes = []
         if desired_body != (issue.get("body") or ""):
             changes.append("planning-block")
-        if type_name(issue.get("type")) != item["native_type"]:
+        if (
+            project_native_types and type_name(issue.get("type")) != item["native_type"]
+        ):
             changes.append("native-type")
         if labels != desired_labels(issue, item["type"]):
             changes.append("type-label")
@@ -445,6 +469,7 @@ def apply_manifest(manifest):
     if missing:
         raise RuntimeError("artifacts are not on main: {}".format(", ".join(missing[:5])))
     repo = manifest["repository"]
+    project_native_types = projection_mode(manifest) == "native-and-labels"
     live_issues = fetch_issues(repo)
     live = {issue["number"]: issue for issue in live_issues}
     missing_issues = [item["github_number"] for item in manifest["items"] if item["github_number"] not in live]
@@ -471,7 +496,9 @@ def apply_manifest(manifest):
         payload = {}
         if desired_body != (issue.get("body") or ""):
             payload["body"] = desired_body
-        if type_name(issue.get("type")) != item["native_type"]:
+        if (
+            project_native_types and type_name(issue.get("type")) != item["native_type"]
+        ):
             payload["type"] = item["native_type"]
         if projected_labels != current_labels:
             payload["labels"] = sorted(projected_labels)
@@ -564,6 +591,11 @@ def main(argv=None):
     subparsers = parser.add_subparsers(dest="command", required=True)
     bootstrap_parser = subparsers.add_parser("bootstrap")
     bootstrap_parser.add_argument("--repo", default="JakeSelby/agent-harness")
+    bootstrap_parser.add_argument(
+        "--native-type-projection",
+        choices=("labels-only", "native-and-labels"),
+        required=True,
+    )
     subparsers.add_parser("audit")
     subparsers.add_parser("plan")
     subparsers.add_parser("apply")
@@ -575,7 +607,9 @@ def main(argv=None):
     if args.command == "bootstrap":
         if MAP_PATH.exists():
             raise RuntimeError("issue map already exists")
-        manifest = build_manifest(fetch_issues(args.repo), args.repo)
+        manifest = build_manifest(
+            fetch_issues(args.repo), args.repo, args.native_type_projection
+        )
         write_manifest(manifest)
         print("bootstrapped {} issues".format(len(manifest["items"])))
         return 0
@@ -587,6 +621,9 @@ def main(argv=None):
         print("audit: {} issue(s), {} finding(s)".format(len(manifest["items"]), len(errors)))
         return 1 if errors else 0
     if args.command == "plan":
+        errors = audit_manifest(manifest)
+        if errors:
+            raise RuntimeError("\n".join(errors))
         print(json.dumps(planned_actions(manifest, fetch_issues(manifest["repository"])), indent=2))
         return 0
     if args.command == "apply":

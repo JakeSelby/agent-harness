@@ -100,6 +100,15 @@ class PlanningBlockTests(unittest.TestCase):
 
 
 class AuditTests(unittest.TestCase):
+    def test_audit_requires_an_explicit_native_type_projection_mode(self):
+        manifest = sync.build_manifest([issue(1, "feat: first")], "owner/repo")
+        manifest["native_type_projection"] = "unknown"
+        findings = sync.audit_manifest(manifest)
+        self.assertIn(
+            "native_type_projection must be labels-only or native-and-labels",
+            findings,
+        )
+
     def test_audit_accepts_bidirectional_mapping_and_rejects_duplicate_id(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -180,6 +189,13 @@ class AuditTests(unittest.TestCase):
     def test_plan_reports_each_missing_remote_projection(self):
         manifest = sync.build_manifest([issue(1, "feat: first")], "owner/repo")
         actions = sync.planned_actions(manifest, [issue(1, "feat: first")])
+        self.assertEqual(actions[0]["changes"], ["planning-block", "type-label"])
+
+    def test_plan_includes_native_type_only_when_the_repository_supports_it(self):
+        manifest = sync.build_manifest(
+            [issue(1, "feat: first")], "org/repo", native_type_projection="native-and-labels"
+        )
+        actions = sync.planned_actions(manifest, [issue(1, "feat: first")])
         self.assertEqual(actions[0]["changes"], ["planning-block", "native-type", "type-label"])
 
     def test_plan_replaces_stale_owned_type_labels(self):
@@ -205,7 +221,7 @@ class ApplyTests(unittest.TestCase):
         projected["body"] = sync.upsert_planning_block(
             original["body"], sync.planning_block(manifest["items"][0], "owner/repo")
         )
-        projected["type"] = {"name": "Feature"}
+        projected["type"] = None
         with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
             sync, "verify_remote_artifacts", return_value=[]
         ), mock.patch.object(sync, "fetch_issues", side_effect=[[original], [projected]]), mock.patch.object(
@@ -215,7 +231,7 @@ class ApplyTests(unittest.TestCase):
         payload = gh.call_args.args[1]
         self.assertTrue(payload["body"].startswith("Original body"))
         self.assertEqual(payload["labels"], ["keep-me", "type::story"])
-        self.assertEqual(payload["type"], "Feature")
+        self.assertNotIn("type", payload)
 
         with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
             sync, "verify_remote_artifacts", return_value=[]
@@ -224,6 +240,24 @@ class ApplyTests(unittest.TestCase):
         ), mock.patch.object(sync, "gh_json") as gh:
             sync.apply_manifest(manifest)
         gh.assert_not_called()
+
+    def test_apply_sets_native_type_when_the_manifest_enables_projection(self):
+        manifest = sync.build_manifest(
+            [issue(1, "feat: first")], "org/repo", native_type_projection="native-and-labels"
+        )
+        original = issue(1, "feat: first")
+        projected = issue(1, "feat: first", labels=["type::story"])
+        projected["body"] = sync.upsert_planning_block(
+            original["body"], sync.planning_block(manifest["items"][0], "org/repo")
+        )
+        projected["type"] = {"name": "Feature"}
+        with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
+            sync, "verify_remote_artifacts", return_value=[]
+        ), mock.patch.object(sync, "fetch_issues", side_effect=[[original], [projected]]), mock.patch.object(
+            sync, "gh_command"
+        ), mock.patch.object(sync, "gh_json") as gh:
+            sync.apply_manifest(manifest)
+        self.assertEqual(gh.call_args.args[1]["type"], "Feature")
 
     def test_apply_refuses_missing_remote_artifact_before_mutation(self):
         manifest = sync.build_manifest([issue(1, "feat: first")], "owner/repo")
@@ -332,13 +366,33 @@ class CliTests(unittest.TestCase):
         map_path.exists.return_value = False
         with mock.patch.object(sync, "MAP_PATH", map_path), mock.patch.object(
             sync, "fetch_issues", return_value=[]
-        ) as fetch, mock.patch.object(sync, "write_manifest"):
+        ) as fetch, mock.patch.object(sync, "write_manifest") as write:
             with redirect_stdout(io.StringIO()):
-                self.assertEqual(sync.main(["bootstrap", "--repo", "owner/repo"]), 0)
+                self.assertEqual(sync.main([
+                    "bootstrap", "--repo", "owner/repo",
+                    "--native-type-projection", "native-and-labels",
+                ]), 0)
         fetch.assert_called_once_with("owner/repo")
+        self.assertEqual(write.call_args.args[0]["native_type_projection"], "native-and-labels")
         with redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
                 sync.main(["plan", "--repo", "owner/repo"])
+
+    def test_plan_rejects_a_malformed_projection_before_fetching(self):
+        manifest = sync.build_manifest([], "owner/repo")
+        manifest["native_type_projection"] = "unknown"
+        with mock.patch.object(sync, "load_manifest", return_value=manifest), mock.patch.object(
+            sync, "audit_manifest", return_value=["invalid projection"]
+        ), mock.patch.object(sync, "fetch_issues") as fetch, redirect_stderr(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "invalid projection"):
+                sync.main(["plan"])
+        fetch.assert_not_called()
+
+    def test_schema_one_manifest_defaults_to_the_original_native_projection(self):
+        manifest = sync.build_manifest([], "owner/repo")
+        manifest["schema_version"] = 1
+        manifest.pop("native_type_projection")
+        self.assertEqual(sync.projection_mode(manifest), "native-and-labels")
 
 
 class ReserveTests(unittest.TestCase):

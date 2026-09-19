@@ -1,12 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "JakeSelby/agent-harness",
+  "native_type_projection": "labels-only",
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 5,
-    "story": 89,
+    "story": 90,
     "task": 1,
-    "bug": 7,
+    "bug": 9,
     "chore": 8,
     "spike": 4,
     "decision": 2
@@ -1427,6 +1428,45 @@
       "parent_bmad_id": "AH-E004",
       "parent_github_number": 189,
       "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S089",
+      "github_number": 199,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/199",
+      "title": "Add a shared architecture-viewer capability and adapter contract",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S089.md",
+      "parent_bmad_id": "AH-E002",
+      "parent_github_number": 116,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B007",
+      "github_number": 200,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/200",
+      "title": "Preserve released qualification while blocking changed source",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B007.md",
+      "parent_bmad_id": "AH-S031",
+      "parent_github_number": 98,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B008",
+      "github_number": 203,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/203",
+      "title": "Correct traceability for personal-repository issue type limits",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B008.md",
+      "parent_bmad_id": "AH-E004",
+      "parent_github_number": 189,
+      "lifecycle": "completed",
       "provenance": "authored"
     }
   ]
