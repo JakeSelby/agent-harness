@@ -1,0 +1,31 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  qualified-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Verify release identity and native qualification
+        run: |
+          test "$GITHUB_REF_NAME" = "v$(tr -d '\n' < VERSION)"
+          python3 scripts/release_preflight.py
+      - name: Verify source gates
+        run: |
+          python3 bin/harness lint
+          python3 -m unittest discover -s tests
+          python3 bin/harness generate --check
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release_notes.py > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "agent-harness $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"

@@ -126,6 +126,19 @@ def projections(root):
         files["claude/commands/" + workflow.name] = workflow.read_text().replace("{{arguments}}", "$ARGUMENTS")
     files["claude/CLAUDE.md"] = (root / "primitives" / "instructions.md").read_text() + "\n@~/.claude/CLAUDE.personal.md\n"
     files["claude/CLAUDE.personal.template.md"] = (root / "primitives" / "personal.template.md").read_text()
+    from . import compatibility
+    for name in ("README.md", "docs/compatibility.md"):
+        path = root / name
+        if not path.exists() or "<!-- harness:compatibility:start -->" not in path.read_text():
+            continue
+        data = compatibility.catalog(root)
+        lines = []
+        for status in ("qualified", "unqualified", "planned", "unsupported"):
+            clients = [row["id"] for row in data["clients"] if row["status"] == status]
+            if clients:
+                lines.append("**" + status.capitalize() + ":** " + ", ".join("`" + name + "`" for name in clients) + ".")
+        block = "<!-- harness:compatibility:start -->\n" + "\n\n".join(lines) + "\n<!-- harness:compatibility:end -->"
+        files[name] = re.sub(r"<!-- harness:compatibility:start -->.*?<!-- harness:compatibility:end -->", block, path.read_text(), flags=re.S)
     return files
 
 

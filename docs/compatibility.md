@@ -7,11 +7,17 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 **Unqualified** means no complete passing evidence, **planned** means no current integration,
 and **unsupported** means a combination explicitly outside the integration contract.
 
-Claude Code and Codex are this release's integration targets. Qualification is pending for
-both macOS CLIs and VS Code integrations, Codex desktop on macOS, and both Linux CLIs. Do not
-read successful source generation or deterministic tests as native client qualification.
-Cursor and Grok integrations are planned. Hosted agents, native memory merging and the UML
-viewer are deferred. Native Windows is unsupported; WSL2 has not been qualified.
+Claude Code and Codex are this release's integration targets. Do not read successful source
+generation or deterministic tests as native client qualification.
+
+<!-- harness:compatibility:start -->
+**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+
+**Planned:** `cursor`, `grok`.
+<!-- harness:compatibility:end -->
+
+Hosted agents, native memory merging and the UML viewer are deferred. Native Windows is
+unsupported; WSL2 has not been qualified.
 
 A model provider supplies the model. An agent runtime orchestrates its tools and context.
 A client surface is the CLI, editor integration or desktop app exposing that runtime.
@@ -39,7 +45,8 @@ For every target listed in the catalog, verify every `required_cases` entry nati
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
 `source_commit`, `observations`, and a `cases` object whose values are `passed`, `failed`, or
 `unverified`. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
-client or harness version. Set exact runtime/client versions before changing status to qualified.
+client or harness version. Its full source commit must be an ancestor of the release with no
+subsequent runtime-source changes; changed adapters or primitives invalidate the evidence. Set exact runtime/client versions before changing status to qualified.
 The CLI verifies these records and `harness compatibility --release-check` fails until all
 required clients are qualified. A reviewer must assess the observations; a JSON label alone is
 not empirical evidence.

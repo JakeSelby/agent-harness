@@ -30,8 +30,13 @@ responsibilities. A stance cannot override a client's native restrictions.
 **Compatibility means verified behavior.** Claude Code and Codex are this release's integration
 targets. Supported clients and capabilities are listed explicitly after validation in the
 [compatibility catalog](docs/compatibility.md), available as `harness compatibility --json`.
-Current candidate targets are unqualified; Cursor and Grok integrations are planned. Provider
-independence does not promise universal compatibility or identical model behavior.
+<!-- harness:compatibility:start -->
+**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+
+**Planned:** `cursor`, `grok`.
+<!-- harness:compatibility:end -->
+
+Provider independence does not promise universal compatibility or identical model behavior.
 
 ## See a stance switch
 
