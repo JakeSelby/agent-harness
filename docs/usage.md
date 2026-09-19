@@ -1,5 +1,11 @@
 # Usage telemetry
 
+Measurements identify their runtime. Claude and Codex transcript adapters share detectors;
+Codex cumulative token snapshots are counted once, unavailable metrics remain unknown, and
+reports label partial totals. Detector failures are excluded from clean-session denominators.
+See [runtime controls](runtime-controls.md) for limits. The Claude transcript details below
+remain specific to that adapter.
+
 The `usage-log` hook runs on `SessionEnd` and keeps one record per session in
 `~/.local/state/agent-harness/usage.jsonl`. It is a local file and nothing else: no network
 call, no service, no account, and nothing beyond the session id, the repository directory name,

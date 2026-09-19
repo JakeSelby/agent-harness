@@ -1,5 +1,5 @@
-name: Rule or skill proposal
-description: Propose the text of a new rule, stance variant or skill.
+name: Custom primitive proposal
+description: Propose a shared rule, stance dimension or variant, skill, role or workflow.
 labels: ["rule"]
 body:
   - type: dropdown
@@ -8,7 +8,8 @@ body:
       label: Where it lands
       options:
         - Core rule (loads every turn for everyone)
-        - Stance variant (a preference, opt-in)
+        - Stance dimension or variant (a personal policy switch)
+        - Role or workflow (shared contract, native adapter bindings)
         - Skill (a procedure, loads on invocation)
         - Hook (must run regardless of judgment)
     validations:

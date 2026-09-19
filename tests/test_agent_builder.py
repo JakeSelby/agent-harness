@@ -90,18 +90,10 @@ class BuildCommandTests(unittest.TestCase):
 
 
 class AgentDocTests(unittest.TestCase):
-    def test_the_how_it_works_bullet_names_every_shipped_agent(self):
-        bullet = agents_bullet()
-        for name in agent_names():
-            self.assertIn(f"`{name}`", bullet, msg=name)
+    def test_readme_points_to_authoritative_catalog_instead_of_duplicating_inventory(self):
+        self.assertIn("harness catalog", README.read_text())
+        self.assertIn("primitives/", README.read_text())
 
-    def test_the_readme_row_names_every_shipped_agent_and_counts_them(self):
-        names = agent_names()
-        rows = [l for l in README.read_text(encoding="utf-8").splitlines() if l.startswith("| **Agents**")]
-        self.assertEqual(len(rows), 1)
-        self.assertIn(f"({len(names)})", rows[0])
-        for name in names:
-            self.assertIn(f"`{name}`", rows[0], msg=name)
 
 
 class BuilderSyncTests(unittest.TestCase):

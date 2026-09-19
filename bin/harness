@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""agent-harness command line.
+"""Your way of working, across AI agents.
+
+A user-aligned, model-provider-agnostic harness built on shared custom primitives.
 
 Projects shared primitives into selected runtimes, merges owned settings, renders personal
 guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML parser.

@@ -1,0 +1,14 @@
+{
+  "headline": "Your way of working, across AI agents.",
+  "description": "A general-purpose, model-provider-agnostic harness built around you. Define how your agents work through shared rules, skills, roles, workflows, and custom primitives—including personal stances you can switch without rewriting your instructions.",
+  "stances": "Personal stances turn your working preferences into explicit switches. Choose how agents delegate, test, communicate, exercise autonomy, and approach decisions. Select a different stance when the situation changes, or define your own. The harness applies those choices through supported agent runtimes.",
+  "github_description": "Your way of working, across AI agents. A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable personal stances.",
+  "topics": [
+    "ai-agents",
+    "agent-harness",
+    "codex",
+    "claude-code",
+    "developer-tools",
+    "personal-stances"
+  ]
+}

@@ -1,5 +1,10 @@
 # Contributing
 
+Contribute to one shared primitive authority under `primitives/`. Personal stances are extensible
+policy switches; runtime differences belong in adapters, never duplicate stance or skill catalogs.
+[The authoring contract](docs/primitive-authoring.md) and [compatibility catalog](docs/compatibility.md)
+define extension and qualification. Regenerate projections after changing shared roles or workflows.
+
 Ideas are as welcome as patches. If a rule, stance or skill here made your agent better or
 worse, say so. If you have a fix, send it. This page tells you where things go and how the
 review works.
@@ -54,7 +59,7 @@ an atomic uniqueness constraint across PRs, and another PR changing cannot inval
    message, so make the title a good Conventional Commit line.
 
 If you use the harness yourself, the `harness-authoring` skill runs steps 2 to 5 for you from
-inside a Claude Code session.
+inside your selected agent runtime.
 
 ## Checks to run before opening a PR
 
@@ -80,12 +85,12 @@ in the first release, and why the design is this way.
 Every instruction has one right home. First match wins:
 
 1. **Must run at a lifecycle point regardless of the model's judgment** → a hook under
-   `claude/hooks/` plus its entry in `claude/settings.template.json`.
+   `policy/hooks/` plus its lifecycle-adapter mapping and tests.
 2. **Tool or editor configuration, not behaviour** → an owned key in
    `claude/settings.template.json` or `vscode/settings.owned.json`, listed in
    `claude/OWNERSHIP.json`.
 3. **True of one person, one machine, or one project** → not this repository. It belongs in
-   that person's `~/.claude/` or that repo's `AGENTS.md`.
+   that person's harness configuration or that repo's `AGENTS.md`.
 4. **A preference a reasonable engineer might hold the other way** → a variant under
    `primitives/stances/<pref>/`, plus a line in `docs/preferences.md`. Licensing, commit style,
    testing philosophy and autonomy level are stances.
@@ -99,7 +104,7 @@ Every instruction has one right home. First match wins:
 
 ## What will not be merged
 
-- Anything personal or project-specific, however good. Put it in your own `~/.claude/`.
+- Anything personal or project-specific, however good. Put it in your own harness configuration or custom primitive root.
 - Copyleft, share-alike or unlicensed material, including vendored text and code snippets whose
   origin you cannot name. See `THIRD_PARTY_NOTICES.md` for how the one derived item is recorded.
 - Credentials of any kind. The lint and GitHub push protection both block them, and a PR that

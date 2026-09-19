@@ -1,7 +1,7 @@
 # agent-harness
 
-An installable Claude Code harness: rules, stances, skills, hooks, an output style, and the
-`bin/harness` CLI that links them into `~/.claude` and keeps settings in step. The global
+A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable
+personal stances. `bin/harness` projects one policy authority into Claude Code and Codex. The global
 rules an agent runs under in this repo come from the harness itself, so this file carries only
 what is true of this repository.
 
@@ -49,7 +49,9 @@ once this checkout is trusted: accept Claude Code's folder dialog or run `bin/ha
 
 ## Layout
 
-- `claude/` — what gets linked into `~/.claude`: `CLAUDE.md`, `rules/`, `stances/`, `skills/`,
+- `primitives/` — the shared authoring authority. `policy/` — shared lifecycle policy.
+- `adapters/` — runtime bindings; `compatibility/` — native qualification evidence and status.
+- `claude/` — compatibility projections and native settings; what gets linked into `~/.claude`: `CLAUDE.md`, `rules/`, `stances/`, `skills/`,
   `hooks/`, `output-styles/`, plus `settings.template.json` and `OWNERSHIP.json`.
 - `bin/harness` — the CLI. `tests/` — its unit tests.
 - `vscode/`, `codex/`, `templates/repo/` — the other surfaces the harness manages.

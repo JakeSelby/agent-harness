@@ -14,41 +14,37 @@ class ReadmeTests(unittest.TestCase):
     def test_the_prerequisites_come_before_the_install_block(self):
         self.assertIn("## Before you start", README)
         self.assertLess(README.index("## Before you start"),
-                        README.index("## Install in sixty seconds"))
+                        README.index("## Install and inspect"))
 
     def test_the_account_is_stated_rather_than_assumed(self):
-        self.assertIn("Claude account", README)
-        self.assertIn("does not provide or pay for access", README)
+        self.assertIn("an account for each runtime", README)
+        self.assertIn("does not provide model access", README)
 
     def test_the_supported_platforms_are_named(self):
-        self.assertIn("macOS or Linux", README)
-        self.assertIn("Windows is not supported", README)
+        self.assertIn("macOS and Linux", README)
+        self.assertIn("Windows is unsupported", README)
 
     def test_the_tools_the_harness_itself_needs_are_named(self):
         for needle in ("`git`", "Python 3.9"):
             self.assertIn(needle, README, msg=needle)
 
     def test_the_guide_is_linked_before_the_install_block_and_in_the_docs_list(self):
-        pointer = "[docs/getting-started.md](docs/getting-started.md)"
-        listed = "- [getting-started.md](docs/getting-started.md)"
-        self.assertIn(pointer, README)
-        self.assertIn(listed, README)
-        self.assertLess(README.index(pointer), README.index("## Install in sixty seconds"))
+        self.assertIn("](docs/getting-started.md)", README)
+        self.assertLess(README.index("](docs/getting-started.md)"), README.index("## Install and inspect"))
 
 
 class GuideTests(unittest.TestCase):
     def test_it_says_what_the_harness_is_not(self):
-        self.assertIn("It is not an AI", GUIDE)
+        self.assertIn("not an AI model", GUIDE)
 
     def test_it_carries_a_first_session_with_something_to_type(self):
         self.assertIn("## Your first session", GUIDE)
-        self.assertIn("```sh\ncd ~/some-folder\nclaude\n```", GUIDE)
+        self.assertIn("cd ~/some-folder\nclaude", GUIDE)
+        self.assertIn("\ncodex\n", GUIDE)
 
     def test_it_is_honest_about_which_commands_need_a_code_project(self):
-        self.assertIn("## The five commands", GUIDE)
-        self.assertIn("| `/research` |", GUIDE)
-        self.assertIn("| `/build` | Implements an approved plan and opens a pull request | Yes, "
-                      "and a GitHub account |", GUIDE)
+        self.assertIn("Build and review workflows need repository context", GUIDE)
+        self.assertIn("signed-in GitHub account", GUIDE)
 
     def test_it_says_what_a_session_costs(self):
         self.assertIn("## What it costs", GUIDE)

@@ -23,5 +23,5 @@ body:
   - type: input
     id: env
     attributes:
-      label: OS and Claude Code version
-      placeholder: macOS 15.5, Claude Code 2.1.218
+      label: OS, runtime, client surface and versions
+      placeholder: macOS or Linux; Claude Code or Codex; CLI, VS Code or desktop; exact versions

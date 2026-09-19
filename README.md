@@ -5,164 +5,116 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
 
-An installable harness for Claude Code: the rules, preference stances, skills, hooks, output
-style and settings that make a coding agent **legible** (you can read what it did without
-scrolling), **predictable** (it delegates, verifies and asks the same way every time), and
-**reviewable** (a plan fits on one screen and ends with numbered decisions). It also sets up
-VS Code and Codex to match, and it keeps itself honest: the git checkout *is* the live
-configuration, so every change is a commit.
+## Your way of working, across AI agents.
 
-The Claude Code config with a test suite: provably read-only shell approval, graded prompts
-before irreversible commands, a CI-enforced 200-line context budget, every rule measured by a
-detector, one-screen plans, symlinked in, uninstalled clean.
+A general-purpose, model-provider-agnostic harness built around you. Define how your agents work
+through shared rules, skills, roles, workflows, and custom primitives—including personal stances
+you can switch without rewriting your instructions.
 
-It grew out of one person's daily setup. Everything personal was stripped, everything
-opinionated became a switch, and the result is meant to be forked, compared with, and argued
-about.
+**You own the working style.** Your preferences live outside the checkout. Choose how your agents
+communicate, test, delegate, exercise autonomy, and approach decisions; keep those choices when
+you change runtimes.
 
-Browse every rule, stance, skill, agent, command and hook, with a link from each page to its
-source at the tagged release, at [agent-harness.jakeselby.com](https://agent-harness.jakeselby.com).
+**Personal stances make preferences explicit and switchable.** A stance is a harness-defined
+primitive: a named policy choice that can affect instructions, delegation, execution controls and
+workflow behavior. It is not a Claude feature or a bundle of provider configuration presets.
+
+**Custom primitives let you extend the harness.** Add a stance dimension or variant, author a
+skill, define a role, or compose a workflow. Keep one source under `primitives/` or your configured
+custom stance root. [Author a custom stance](docs/primitive-authoring.md).
+
+**Runtime adapters carry those choices across agents.** Claude Code and Codex projections share
+the same policy authority. Native settings, tool events and permission controls remain adapter
+responsibilities. A stance cannot override a client's native restrictions.
+
+**Compatibility means verified behavior.** Claude Code and Codex are this release's integration
+targets. Supported clients and capabilities are listed explicitly after validation in the
+[compatibility catalog](docs/compatibility.md), available as `harness compatibility --json`.
+Current candidate targets are unqualified; Cursor and Grok integrations are planned. Provider
+independence does not promise universal compatibility or identical model behavior.
+
+## See a stance switch
+
+```sh
+bin/harness config set stances.delegation off
+bin/harness stances --json
+bin/harness sync
+# Both projections now say to work inline; the shared spawn policy denies delegation.
+
+bin/harness config set stances.delegation tiered
+bin/harness stances --json
+bin/harness sync
+# Both projections now permit bounded gathering; native role bindings determine model and tools.
+```
+
+Claude Code reads the selected policy through its linked rule; Codex reads the same policy in
+its generated instructions. The shared hook engine resolves the same choice in each runtime.
+Native activation requires client trust, and tier mapping is capability-dependent. Inspect the
+[demonstration](docs/stance-demo.md) and [runtime controls](docs/runtime-controls.md) for what is
+advisory, implemented, or still unqualified.
+
+Presets are only a starting point. A custom `feedback/direct.md` stance might say “Lead with the
+conclusion; name the evidence and the next useful action.” Add its root to `primitive_roots`,
+select `stances.feedback=direct`, and the same policy reaches both projections. The
+[authoring contract](docs/primitive-authoring.md) covers alternatives, overrides and conflicts.
 
 ## Before you start
 
-- **A Claude account on a plan that includes Claude Code**, or API billing set up. This repository
-  configures the tool; it does not provide or pay for access to it.
-- **macOS or Linux.** Windows is not supported: `install` and `sync` refuse to run there rather
-  than half-working, because the harness links into `~/.claude` with symlinks and every hook is a
-  POSIX command. Use WSL2 and follow the Linux path inside it.
-- **`git`** (the harness is a checkout, and updating it means pulling) and **Python 3.9 or newer**
-  (`bin/harness` and all eleven hooks are Python). On macOS `install` checks for the Xcode command
-  line tools, which supply both.
-- Optional, and installed for you on macOS: `gh` (only needed to open pull requests), VS Code, and
-  Codex. Nothing breaks without them.
+You need `git`, Python 3.9+, and an account for each runtime you use. The CLI bundles an MIT-licensed
+TOML parser; it does not provide model access. macOS and Linux are integration targets; native
+Windows is unsupported and WSL2 is unqualified.
 
-New to this, or to coding agents generally? [docs/getting-started.md](docs/getting-started.md) goes
-from nothing installed to a first useful session, and says what it costs.
+[Read the getting-started guide](docs/getting-started.md).
 
-## Install in sixty seconds
+## Install and inspect
 
 ```sh
 git clone https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
 cd ~/repos/agent-harness
-bin/harness install          # Homebrew packages, VS Code + extensions, Claude Code, Codex, gh, then sync
+bin/harness init
+bin/harness install --dry-run
+bin/harness install
+bin/harness doctor
+bin/harness compatibility
 ```
 
-Or, if the tools are already installed, just link the harness in:
+Already have the tools? Use `bin/harness sync --dry-run`, then `bin/harness sync`. Select runtimes
+with `claude.manage` and `codex.manage`; neither requires the other. Existing user files are
+preserved; adopt them explicitly only after reviewing the reported conflicts. Read
+[getting started](docs/getting-started.md) and [installation ownership](docs/runtime-installation.md).
+
+## One source, native projections
+
+```mermaid
+flowchart LR
+  U[Your preferences and custom primitives] --> S[Shared primitive catalog]
+  S --> C[Claude Code adapter]
+  S --> X[Codex adapter]
+  C --> CC[Qualified client capabilities]
+  X --> XC[Qualified client capabilities]
+```
+
+`primitives/` holds rules, stances, skills, roles, workflows and presentation. `policy/` implements
+shared lifecycle policy; `adapters/` binds it to runtimes. Compatibility paths under `claude/`
+are generated views or links, not a second authoring catalog. Run `harness catalog` for current
+inventory and source digests, and `harness stances --json` for your effective selections and
+adapter coverage. Counts come from those sources rather than this README.
+
+- [How it works](docs/how-it-works.md) and [preferences](docs/preferences.md)
+- [BMad and bidirectional task continuation](docs/bmad.md)
+- [Sandboxing](docs/sandboxing.md) and [workspaces](docs/workspaces.md)
+- [Diagnostics and telemetry](docs/usage.md)
+- [Contributing](CONTRIBUTING.md) and [the public reference](https://agent-harness.jakeselby.com)
+
+## Verify and update
 
 ```sh
-bin/harness sync --adopt     # --adopt moves any pre-existing ~/.claude files aside (recorded, reversible)
+python3 bin/harness lint
+python3 -m unittest discover -s tests
+bin/harness generate --check
 ```
 
-`install` is macOS-first: there it adds the Homebrew packages (`gh` among them) and VS Code with
-its extensions; on Linux it adds only Claude Code and Codex before syncing, so install `gh` and
-your editor yourself. Both platforms run the vendors' own `curl | bash` installers for Homebrew
-and Claude Code; read `bin/harness` first if that matters to you.
-
-Then run `bin/harness init`, which asks for your name, what you do, how much you want explained,
-whether the work is software or everything else, and one preference at a time, writes the config
-file for you, and tells you to sync. (`bin/harness config set
-stances.testing off` changes one value later, without an editor.) Run `bin/harness sync` again
-and start a session. `/context` lists the harness rules; `/hooks` lists its eleven hooks.
-An agent can do all of this from this README; the CLI is Python 3.9+ with a bundled MIT-licensed TOML parser and
-every step is idempotent.
-
-`bin/harness doctor` reports versions, logins, links, drift, whether your identity is still the example file's, and whether each registered hook can actually start. `bin/harness usage` summarizes
-per-session tokens and cache hit rate from a local file ([docs/usage.md](docs/usage.md)).
-`bin/harness trust <repo>` lets the stop gate run that repository's own `## Gate` block.
-`bin/harness uninstall` puts everything back, leaving only your config, your personal file and
-the checkout. `bin/harness --help` lists every command and `bin/harness <command> --help` its
-flags; `bin/harness config get <key>` prints a value the way sync resolved it and
-`bin/harness config set <key> <value>` writes one, refusing a stance variant or a posture that
-does not exist rather than leaving the next sync to fail.
-
-## What you get
-
-| Layer | What it does | Where |
-| --- | --- | --- |
-| **Rules** (10) | Behaviour on every turn: read narrowly, never reprint subagent output, verdict first, verify before claiming, no secrets in tracked files. Operative lines only — with `CLAUDE.md` and the selected stances they are capped at 200 lines, enforced by the lint, and every rule names a detector the session-end worker runs, so `harness usage --rules` shows which rules bite. Not switchable by design: a rule is what stays true whichever way every stance is thrown | `claude/rules/` |
-| **Stances** (9, 26 variants) | Preferences a reasonable engineer might hold the other way: licensing, commit style, plan ceremony, delegation tiers, testing, autonomy, build-vs-buy, cost, output voice | `claude/stances/` |
-| **Skills** (14) | Procedures loaded on demand, carrying the reasoning the rules point at: one-screen plan authoring, delegation tiering, transcript hygiene, API verification, design loop with an independent judge, licensing review, migration safety, sandboxing an unattended loop, upstream contribution, worktree per agent, spike contract, harness authoring, workflow status, code-quality instruments | `claude/skills/` |
-| **Agents** (7) | Subagent definitions carrying their model, effort level and tool list, so the delegation tiers hold without a retyped brief: `builder` implements one issue in a worktree and commits without pushing, `design-judge` scores a render against the rubric, `gatherer` gathers read-only, `log-compressor` reduces a run to its failures, `planner` writes the plan file, `reviewer` reviews a diff in a fresh context, `spec-reviewer` checks that diff against what was asked for | `claude/agents/` |
-| **Commands** (5) | The ritual in five keystrokes: `/research` fans out read-only gatherers for one digest, `/plan` writes the Review Card and stops at the build gate, `/build` implements in a worktree and opens the PR, `/review` makes two fresh-context passes over the diff, scope then quality, `/handoff` writes the progress file the next session reads | `claude/commands/` |
-| **Hooks** (11) | Enforced, not advised: a plan-card validator, a deterministic read-only command classifier, no model round trip, so read-only shell commands never prompt, a command grader that asks before an irreversible command runs, a plan-mode web-research approver, a spawn tierer that applies the delegation stance to subagents any skill launches, a brief guard that writes the return bound the orchestrator forgot, an output filter, a tool-output scanner, a session-start drift, override, handoff and framework-override check, a stop gate that runs the repo's own gate, a usage logger | `claude/hooks/` |
-| **Output style** | Scannable: verdict first, registers separated, action items in one place | `claude/output-styles/` |
-| **Settings** | Only the keys the harness owns, merged into yours: hooks, a read-only allowlist, the output style | `claude/settings.template.json` |
-| **VS Code, Codex** | Owned editor keys and the extension list; a generated `AGENTS.md` and owned config keys for Codex | `vscode/`, `codex/` |
-| **Repo starter** | What a repository needs so agents work well in it, given the global rules already load, and the override set that puts a BMad install's subagents under the same tiers | `templates/repo/`, `templates/bmad/` |
-
-## How it works
-
-```
-your checkout ──symlinks──▶ ~/.claude/{CLAUDE.md, rules/harness, rules/harness-stances, skills/*, hooks/harness, output-styles}
-             ──merge─────▶ ~/.claude/settings.json          (owned keys only)
-             ──render────▶ ~/.claude/CLAUDE.personal.md      (from config.json; yours, untracked)
-             ──merge─────▶ VS Code user settings             (owned keys only)
-             ──generate──▶ ~/.codex/AGENTS.md               (rules + chosen stances + your personal file)
-```
-
-Claude Code reads rule and CLAUDE.md text literally, with no variable substitution, so the
-harness personalises three ways and never by editing tracked files: identity is rendered into
-an untracked personal file, preferences are variants chosen at sync, and per-session
-`HARNESS_*` environment overrides are injected by a SessionStart hook. The layer diagram, the
-sync model and the ownership contract are in [docs/](docs/):
-
-- [getting-started.md](docs/getting-started.md) — zero to a first session, for a first-time user
-- [how-it-works.md](docs/how-it-works.md) — the layers and why each exists
-- [sync-model.md](docs/sync-model.md) — links, adoption, the settings merge, other surfaces
-- [settings-ownership.md](docs/settings-ownership.md) — exactly which keys the harness may write
-- [preferences.md](docs/preferences.md) — identity, stances, posture, env overrides
-- [sandboxing.md](docs/sandboxing.md) — fencing an unattended loop, and why sync writes no key
-- [workspaces.md](docs/workspaces.md) — multi-root workspaces and session stores
-- [bmad.md](docs/bmad.md) — keeping a planning framework out of the way
-- [comparison.md](docs/comparison.md) — what to compare against other harnesses
-- [provenance.md](docs/provenance.md) — where the ideas came from
-
-## The dogfood loop
-
-Because the live paths are symlinks, an edit in the checkout is in effect in the next session
-with no further step. `bin/harness diff` reports the other direction: a setting changed through
-the tool's own UI shows as *live-only* so it can be brought back into the repo, and a template
-change not yet applied shows as *pending sync*. The `harness-authoring` skill takes any "add a
-rule that…" or "remember this" request, decides which layer it belongs to, writes it under the
-checkout, runs the lint and the sync, and commits. Nothing harness-owned is ever edited under
-`~/.claude/` by hand.
-
-## Preferences and overrides
-
-```json
-{
-  "identity": { "name": "…", "pronouns": "…", "role": "…", "github": "…", "timezone": "…" },
-  "stances": { "licensing": "permissive-commercial", "commits": "conventional-attributed",
-               "plan-ceremony": "review-card", "delegation": "tiered", "testing": "required",
-               "autonomy": "execute", "build-vs-buy": "capability-ceiling", "cost": "balanced" },
-  "permissions": "inherit"
-}
-```
-
-`HARNESS_STANCE_TESTING=off claude` flips one stance for one session. `permissions` is the one
-setting-level knob: `inherit`, `bypass`, `auto` or `manual`, applied to Claude Code, VS Code and
-Codex together. Full list in [docs/preferences.md](docs/preferences.md).
-
-## What is deliberately not here
-
-Anything about one person (rendered from config instead), anything about one project (that is
-the project's `AGENTS.md`), credentials or MCP server configurations, and any planning
-framework's files. The lint refuses personal-data shapes, home-directory paths and secret
-patterns in every file with none exempt, reads your own terms from an untracked file, and runs
-in CI and in a pre-commit hook. It deliberately contains no list of real values.
-
-## Contributing
-
-Ideas are as welcome as patches. If a rule, stance or skill here made your agent better or
-worse, open an [Idea issue](../../issues/new?template=02-idea.yml) or start a
-[Discussion](../../discussions) and say what happened. If you have a fix, fork the repo, branch
-on your fork, and open a pull request against `main`; CI runs the lint and the tests, and every
-PR gets a review. Anything bigger than a typo is faster after a short thread first.
-[CONTRIBUTING.md](CONTRIBUTING.md) has the flow, the checks, and the ladder that decides where a
-change lands.
-
-## License
-
-MIT, see [LICENSE](LICENSE). Third-party notices are in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). If this harness shapes yours, a link back is
-appreciated; it is not required.
+Use a worktree for changes: installed links may make the checkout live in the next agent session.
+`harness diff` reports drift; `harness uninstall` restores owned values when they still match
+what the harness last applied and preserves user conflicts. Releases and the reference site are
+versioned together. Hosted agents, native memory merging and the UML viewer are deferred.
