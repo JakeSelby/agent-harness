@@ -23,7 +23,10 @@ class CompatibilityTests(unittest.TestCase):
             shutil.copytree(REPO / "compatibility", root / "compatibility")
             shutil.copy(REPO / "VERSION", root / "VERSION")
             path = root / "compatibility" / "catalog.json"
-            data = json.loads(path.read_text()); data["clients"][0]["status"] = "qualified"
+            data = json.loads(path.read_text())
+            data["release_state"] = "candidate"
+            data.pop("qualification_source_commit", None)
+            data["clients"][0]["status"] = "qualified"
             path.write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError, "missing acceptance"):
                 compatibility.catalog(root)
@@ -32,6 +35,20 @@ class CompatibilityTests(unittest.TestCase):
         result = compatibility.coverage(REPO, {"feedback": "direct"})
         for runtime in ("codex", "claude-code"):
             self.assertEqual(result[runtime]["feedback"]["mode"], "instruction")
+
+    def test_released_catalog_stays_readable_while_changed_source_blocks_release(self):
+        data = compatibility.catalog(REPO)
+        self.assertEqual(data["qualification_source_commit"],
+                         "8ce2a65d444051c0244b86ab36ea31df98094531")
+        with patch.object(compatibility, "catalog", return_value=data), \
+                patch.object(compatibility, "source_drift", return_value=True):
+            self.assertIn("current runtime source differs", compatibility.release_errors(REPO)[-1])
+
+    def test_released_catalog_fails_when_qualification_source_is_unavailable(self):
+        with patch.object(compatibility.subprocess, "run",
+                          return_value=subprocess.CompletedProcess([], 1)):
+            with self.assertRaisesRegex(ValueError, "source commit is unavailable"):
+                compatibility.catalog(REPO)
 
 
 class QualificationEvidenceTests(unittest.TestCase):
@@ -61,6 +78,24 @@ class QualificationEvidenceTests(unittest.TestCase):
     def test_matching_complete_records_can_qualify(self):
         self.add_record(self.record)
         self.assertEqual(self.errors(), [])
+
+    def test_released_evidence_is_checked_against_its_pinned_source(self):
+        target = "b" * 40
+        self.data.update(release_state="released", qualification_source_commit=target)
+        self.add_record(self.record)
+        with patch.object(compatibility.subprocess, "run",
+                          return_value=subprocess.CompletedProcess([], 0)) as run:
+            self.assertEqual(self.errors(), [])
+        calls = [call.args[0] for call in run.mock_calls]
+        self.assertTrue(any(command[:5] == ["git", "-C", str(self.root), "merge-base", "--is-ancestor"]
+                            and command[-1] == target for command in calls))
+
+    def test_released_catalog_requires_a_full_source_commit(self):
+        for value in (None, "short", "z" * 40):
+            with self.subTest(value=value):
+                data = dict(self.data, release_state="released", qualification_source_commit=value)
+                with self.assertRaisesRegex(ValueError, "full qualification source commit"):
+                    compatibility.qualification_source(data)
 
     def test_partial_passing_records_can_cover_distinct_cases(self):
         for case in self.data["required_cases"]:

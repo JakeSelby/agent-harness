@@ -56,6 +56,11 @@ The CLI verifies these records and `harness compatibility --release-check` fails
 required clients are qualified. A reviewer must assess the observations; a JSON label alone is
 not empirical evidence.
 
+A released catalog pins the exact source commit its evidence qualifies. Later development does
+not rewrite or invalidate that historical release record, but any change under the runtime-source
+paths makes `harness compatibility --release-check` fail until the new source has its own candidate
+catalog and native evidence.
+
 [Runtime controls](runtime-controls.md) records current enforcement gaps. Adapter coverage in
 `harness stances --json` distinguishes instruction policy, hooks and settings, including custom
 stances which are advisory by default. No preference overrides a native restriction.
