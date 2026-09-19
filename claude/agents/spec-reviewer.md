@@ -22,7 +22,11 @@ If the specification or diff is missing, report the missing input instead of inf
 Read the supplied diff artifact, then the changed files around the hunks; a diff alone does
 not show what was already there.
 
-## Return three lists and nothing else
+## Return scope findings
+
+If the caller specifies a findings-only output format or length limit, follow that contract.
+It may change presentation, but never your review scope, read-only authority or prohibition
+on delegation. Otherwise, return these three lists and nothing else:
 
 1. **Done but not asked for** — a change in the diff that no line of the spec calls for.
 2. **Asked for but not done** — a requirement the spec states and the diff does not meet.
@@ -32,5 +36,6 @@ not show what was already there.
 One line per item, carrying `file:line` where the item has a location, and the spec requirement
 it answers to. An empty list is one line saying it is empty.
 
+When using the caller's format, start with the first finding; do not add a heading or explain the format.
 No summary of the change, no restated diff, no praise, no fixes, no edits, no closing paragraph.
-Return at most 300 words.
+The default length limit is 300 words.
