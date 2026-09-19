@@ -14,8 +14,12 @@ from harness_core import compatibility
 class CompatibilityTests(unittest.TestCase):
     def test_current_catalog_is_honest_and_blocks_release(self):
         data = compatibility.catalog(REPO)
-        self.assertEqual(len([row for row in data["clients"] if row.get("required_for_release")]), 7)
+        required = [row["id"] for row in data["clients"] if row.get("required_for_release")]
+        self.assertEqual(required, ["claude-code-cli-macos", "claude-code-cli-linux",
+                                    "codex-cli-macos", "codex-cli-linux"])
         self.assertTrue(all(row["status"] in compatibility.STATES for row in data["clients"]))
+        self.assertEqual(compatibility.release_errors(REPO),
+                         [client + " is unqualified" for client in required])
 
     def test_qualified_claim_without_native_evidence_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -38,17 +42,24 @@ class CompatibilityTests(unittest.TestCase):
 
     def test_released_catalog_stays_readable_while_changed_source_blocks_release(self):
         data = compatibility.catalog(REPO)
-        self.assertEqual(data["qualification_source_commit"],
-                         "8ce2a65d444051c0244b86ab36ea31df98094531")
+        data = dict(data, release_state="released", qualification_source_commit="a" * 40)
         with patch.object(compatibility, "catalog", return_value=data), \
                 patch.object(compatibility, "source_drift", return_value=True):
             self.assertIn("current runtime source differs", compatibility.release_errors(REPO)[-1])
 
     def test_released_catalog_fails_when_qualification_source_is_unavailable(self):
-        with patch.object(compatibility.subprocess, "run",
-                          return_value=subprocess.CompletedProcess([], 1)):
-            with self.assertRaisesRegex(ValueError, "source commit is unavailable"):
-                compatibility.catalog(REPO)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(REPO / "compatibility", root / "compatibility")
+            shutil.copy(REPO / "VERSION", root / "VERSION")
+            path = root / "compatibility" / "catalog.json"
+            data = json.loads(path.read_text())
+            data.update(release_state="released", qualification_source_commit="a" * 40)
+            path.write_text(json.dumps(data))
+            with patch.object(compatibility.subprocess, "run",
+                              return_value=subprocess.CompletedProcess([], 1)):
+                with self.assertRaisesRegex(ValueError, "source commit is unavailable"):
+                    compatibility.catalog(root)
 
 
 class QualificationEvidenceTests(unittest.TestCase):

@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "harness_version": "0.9.0",
-  "summary": "Review generated drift and ownership conflicts before applying this release.",
+  "harness_version": "0.10.0",
+  "summary": "Upgrade from v0.9.0 by reviewing the generated v0.10.0 projection before applying it; the architecture-viewer preview is inert until an external adapter is registered and selected.",
   "actions": [
-    "Run `harness sync --dry-run` from the release checkout and inspect every proposed write and conflict.",
-    "Run `harness sync` only after resolving unmanaged-file and adoption conflicts."
+    "Run `harness sync --dry-run` from the v0.10.0 checkout and inspect every proposed write, ownership change and conflict.",
+    "Run `harness sync` only after resolving unmanaged-file and adoption conflicts; the default builtin architecture-viewer selection remains unavailable and sync never launches a viewer."
   ],
   "recovery": [
-    "Preserve reported conflicts and adopted backups.",
-    "Use docs/runtime-installation.md for recovery and docs/bmad.md for task continuation."
+    "Preserve reported conflicts, adopted backups, external viewer adapter descriptors and external viewer installations.",
+    "Use `harness uninstall --dry-run` before uninstalling, and follow docs/runtime-installation.md for rollback and ownership recovery; use docs/bmad.md for task continuation."
   ]
 }

@@ -41,8 +41,9 @@ class ReadmeTests(unittest.TestCase):
     def test_status_and_native_evidence_limits_are_visible(self):
         prose = " ".join(README.split())
         self.assertIn("**Release status:**", prose)
-        self.assertIn("Every required Claude Code and Codex client surface is qualified", prose)
-        self.assertIn("the exact versions listed below", prose)
+        self.assertIn("`0.10.0` is a release candidate", prose)
+        self.assertIn("four required Claude Code and Codex CLI targets", prose)
+        self.assertIn("**Unqualified:**", prose)
         self.assertIn("Projection generation and unit tests are not proof", prose)
 
 

@@ -31,6 +31,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("blob/v" + version + "/docs/compatibility-policy.md", text)
         self.assertIn("## Migration", text)
         self.assertIn("harness sync --dry-run", text)
+        self.assertIn("architecture-viewer preview is inert", text)
         self.assertIn("### Recovery", text)
 
     def test_release_notes_reject_stale_or_incomplete_migration_metadata(self):
