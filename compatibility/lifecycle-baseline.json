@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "version": "0.9.0",
+  "tag": "v0.9.0",
+  "commit": "8ce2a65d444051c0244b86ab36ea31df98094531",
+  "archive": {
+    "format": "git-archive-tar",
+    "prefix": "agent-harness-0.9.0/",
+    "sha256": "329c62c28c915dab217be25606d67462d1af4ed5f2fb88113a87f4ebd76f0ac0"
+  }
+}
