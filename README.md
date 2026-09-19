@@ -11,15 +11,12 @@ Agent Harness keeps shared instructions, skills, roles, workflows and personal p
 place, then projects them into the native formats each runtime understands. You do not have to
 maintain one working agreement for Claude Code and another for Codex.
 
-**Experimental status:** `0.9.0` is a release candidate. The shared engine, adapters, generated
-configuration and hook decisions are implemented and tested. Codex CLI is qualified on macOS and
-Linux; five required native client surfaces remain unqualified. Treat this as something to inspect
-and try deliberately, not a finished compatibility promise.
+**Release status:** `0.9.0` is the first provider-agnostic release. The shared engine, adapters,
+generated configuration and hook decisions are implemented and tested. Every required Claude Code
+and Codex client surface is qualified for the exact versions listed below.
 
 <!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
-
-**Unqualified:** `codex-vscode-macos`, `codex-desktop-macos`.
+**Qualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->

@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "harness_version": "0.9.0",
-  "release_state": "candidate",
+  "release_state": "released",
+  "qualification_source_commit": "8ce2a65d444051c0244b86ab36ea31df98094531",
   "required_cases": [
     "installation",
     "stance-switch",
@@ -89,11 +90,16 @@
       "provider": "openai",
       "client": "vscode",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "runtime_version": null,
-      "client_version": null,
-      "evidence": []
+      "runtime_version": "0.154.0-alpha.6.2",
+      "client_version": "26.908.40401",
+      "evidence": [
+        {
+          "path": "compatibility/evidence/codex-vscode-macos-0.9.0.json",
+          "sha256": "ec7d5d064003b1789e8b765821bca16d24a63c06fd92a04f96c423b2251c25fa"
+        }
+      ]
     },
     {
       "id": "codex-desktop-macos",
@@ -101,11 +107,16 @@
       "provider": "openai",
       "client": "desktop",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "runtime_version": null,
-      "client_version": null,
-      "evidence": []
+      "runtime_version": "0.155.0-alpha.9",
+      "client_version": "26.915.31029",
+      "evidence": [
+        {
+          "path": "compatibility/evidence/codex-desktop-macos-0.9.0.json",
+          "sha256": "4aa460c7d110a690c6539e0fa352a4017bbeda3114caa82261b63b07a289fcca"
+        }
+      ]
     },
     {
       "id": "codex-cli-linux",
@@ -146,10 +157,9 @@
     }
   ],
   "limitations": [
-    "Codex VS Code and Codex desktop native qualification remains pending.",
     "Claude Code 2.1.273 native Auto Mode requires Sonnet 5; the tested Bedrock account has zero Sonnet 5 runtime quota, so qualified Claude support covers manual and deny controls plus acknowledged bypass while Auto selection reports native unavailability.",
     "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
-    "Planner publication is mediated by the harness; complete native worker and client acceptance is still pending for unqualified clients.",
+    "Planner publication is mediated by the harness after constrained workers return result data.",
     "Cursor and Grok integration, hosted agents, native memory merging and UML integration are deferred."
   ]
 }

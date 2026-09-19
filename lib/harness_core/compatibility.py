@@ -6,6 +6,30 @@ import subprocess
 from pathlib import Path
 
 STATES = {"qualified", "unqualified", "planned", "unsupported"}
+SOURCE_PATHS = ("VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates",
+                "config.example.json")
+
+
+def qualification_source(data):
+    """Return the source identity a catalog's evidence qualifies."""
+    if data.get("release_state") != "released":
+        return "HEAD"
+    commit = data.get("qualification_source_commit")
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
+        raise ValueError("released compatibility catalog requires a full qualification source commit")
+    return commit
+
+
+def source_drift(root, data):
+    """A released claim stays readable, but changed source needs new qualification."""
+    target = qualification_source(data)
+    if target == "HEAD":
+        return False
+    ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", target, "HEAD"],
+                              capture_output=True)
+    unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", target, "HEAD", "--",
+                                *SOURCE_PATHS], capture_output=True)
+    return bool(ancestry.returncode or unchanged.returncode)
 
 
 def catalog(root):
@@ -17,6 +41,12 @@ def catalog(root):
     identifiers = [row["id"] for row in data["clients"]]
     if len(identifiers) != len(set(identifiers)):
         raise ValueError("duplicate compatibility client")
+    target = qualification_source(data)
+    if target != "HEAD":
+        available = subprocess.run(["git", "-C", str(root), "cat-file", "-e", target + "^{commit}"],
+                                   capture_output=True)
+        if available.returncode:
+            raise ValueError("released qualification source commit is unavailable")
     for row in data["clients"]:
         if row.get("status") not in STATES:
             raise ValueError("invalid compatibility status")
@@ -29,6 +59,7 @@ def catalog(root):
 
 def evidence_errors(root, data, client):
     errors, passed = [], set()
+    target = qualification_source(data)
     if not client.get("runtime_version") or not client.get("client_version"):
         errors.append("native runtime and client versions are required")
     for item in client.get("evidence", []):
@@ -62,9 +93,9 @@ def evidence_errors(root, data, client):
         if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             errors.append("native evidence requires a full source commit identity")
             continue
-        ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "HEAD"], capture_output=True)
-        unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, "HEAD", "--",
-                                    "VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates", "config.example.json"], capture_output=True)
+        ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, target], capture_output=True)
+        unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target, "--",
+                                    *SOURCE_PATHS], capture_output=True)
         if ancestry.returncode or unchanged.returncode:
             errors.append("runtime source changed or evidence commit is unavailable")
             continue
@@ -88,8 +119,11 @@ def evidence_errors(root, data, client):
 
 def release_errors(root):
     data = catalog(root)
-    return [row["id"] + " is " + row["status"] for row in data["clients"]
-            if row.get("required_for_release") and row["status"] != "qualified"]
+    errors = [row["id"] + " is " + row["status"] for row in data["clients"]
+              if row.get("required_for_release") and row["status"] != "qualified"]
+    if source_drift(root, data):
+        errors.append("current runtime source differs from the released qualification source")
+    return errors
 
 
 def coverage(root, choices):
