@@ -1,0 +1,31 @@
+{
+  "kind": "native",
+  "client": "claude-code-cli-linux",
+  "harness_version": "0.10.0",
+  "runtime_version": "2.1.278",
+  "client_version": "2.1.278",
+  "platform": "linux",
+  "source_commit": "ba9802858d79e90092fc88cd0c2f9162d09bc8de",
+  "observations": [
+    "The v0.10 lifecycle suite passed clean installation, repeat sync, v0.9 upgrade and rollback, conflict preservation, and uninstall restoration on Ubuntu 24.04 x86_64 under Python 3.9.25 and 3.14.7.",
+    "Native acceptance ran as a non-root user on Linux arm64 with Claude Code 2.1.278. Responses changed from PLAIN to TAGGED after one shared custom stance changed, and session and project overrides resolved from the same primitive authority.",
+    "Manual mode and an autonomy denial prevented disposable writes, while an explicitly acknowledged bypass created its sentinel. Auto remained visibly restricted and created no sentinel.",
+    "Native PostToolUse execution delivered independent Review Card feedback for both files in one multi-file change while retaining a separate user hook.",
+    "Isolated gatherer and planner workers completed under native read restrictions. The native tool inventory excluded write, edit, shell, and delegation tools.",
+    "The stop gate reused an unchanged green result, reran for staged, untracked, and edited-untracked changes, and blocked a failing gate through its retry budget.",
+    "The full four-layer BMad review completed under Sonnet 4.6 through Bedrock, found both seeded defects, ran activation and completion resolvers, and preserved implementation and specification bytes.",
+    "A Claude to Codex to Claude handoff advanced revisions 1, 2, and 3, rejected stale state, demoted inherited verification, and transferred no approval."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}
