@@ -3,8 +3,8 @@ name: licensing-review
 description: Verify a third-party library, asset, model, font, dataset or copied snippet is safe to ship under the project's licensing stance, and record it correctly. Use before adding or upgrading any dependency, before downloading any asset, and before a release.
 ---
 
-The always-on prohibitions live in the chosen `licensing` stance under
-`~/.claude/rules/harness-stances/licensing.md`. This is the procedure.
+The always-on prohibitions live in the selected `licensing` stance. Resolve its shared source
+with `harness stances --json`; runtime projections carry the same policy. This is the procedure.
 
 ## Before adopting or upgrading
 

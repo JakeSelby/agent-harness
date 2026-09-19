@@ -5,7 +5,7 @@ description: Bound what subagents return and what tool output enters the transcr
 
 # Transcript hygiene
 
-The operative lines live in the resident rule `claude/rules/transcript-hygiene.md`. This skill
+The operative lines live in the resident rule `primitives/rules/transcript-hygiene.md`. This skill
 carries the reasoning behind them, the numbers in context, and the examples.
 
 The user reads the transcript, not just the final message. **Thinking summaries are wanted and

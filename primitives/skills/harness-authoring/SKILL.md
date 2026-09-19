@@ -26,14 +26,14 @@ Do not create a second authority in a runtime configuration directory. If `origi
 ## The ladder — first match wins
 
 1. **Must run at a lifecycle point regardless of the model's judgment** (a check before every
-   commit, a validator after every write) → a hook under `claude/hooks/` plus its entry in
-   `claude/settings.template.json`, with a `# harness:<id>` marker in the command.
-2. **Changes tool or editor configuration, not behaviour** → an owned key in
-   `claude/settings.template.json` or `vscode/settings.owned.json`, and the matching entry in
-   `claude/OWNERSHIP.json`.
+   commit, a validator after every write) → a shared policy under `policy/hooks/`, dispatched by
+   `lib/harness_core/lifecycle.py`; native registrations belong in runtime adapters.
+2. **Changes tool or editor configuration, not behaviour** → an owned native setting in the relevant
+   adapter or editor projection, reconciled by the installer. Do not add a second primitive to represent a runtime setting.
 3. **True of this user only, a secret, or about one project** → never the harness repo. A
-   fact about the user goes in `~/.claude/CLAUDE.personal.md` below the marker, or a plain
-   file in `~/.primitives/rules/`. A fact about one repo goes in that repo's `AGENTS.md`.
+   personal preference goes in user configuration or a custom stance root documented in
+   `docs/primitive-authoring.md`; other personal guidance stays in the runtime personal file.
+   A fact about one repo goes in that repo's `AGENTS.md`.
 4. **A reasonable user would hold the opposite preference** → a stance variant under
    `primitives/stances/<pref>/<variant>.md`, and a line in `config.example.json` and
    `docs/preferences.md`. Never a core rule.
@@ -64,17 +64,16 @@ the user is a personal file, outside the repo.
 
 ## Write, sync, lint, commit
 
-1. Edit under the checkout. Nothing harness-owned is edited under `~/.claude/` directly: those
-   paths are symlinks, so the edit would land in the checkout anyway, but going through the
-   repo keeps the commit and the lint in the loop.
+1. Edit shared sources in the isolated development checkout. Runtime directories contain
+   managed links and generated views; editing them can change the live checkout or create drift.
 2. Run `bin/harness generate` for native views and `bin/harness generate --check` to verify them.
    See `docs/primitive-authoring.md` for custom dimensions and native bindings.
-   `bin/harness sync` — a new rule file is already live; a new skill, stance or hook needs the
-   link or the settings entry.
+   Verify sync in a disposable home with `HARNESS_HOME`, `CLAUDE_CONFIG_DIR`, and `CODEX_HOME`
+   redirected. Sync normal installations from the reviewed release, not the development worktree.
 3. `bin/harness lint` — fails on personal strings and secret patterns.
 4. Commit with a Conventional Commit. Then, by who you are:
    - **Maintainer:** every change goes on a branch in a worktree and opens a PR; the `main`
-     ruleset requires green checks and a squash merge. Code changes (`bin/harness`, hooks,
+     ruleset requires green checks and a squash merge. Code changes (`bin/harness`, shared policy,
      tests) carry a test; content changes are gated by the lint and review.
    - **Fork user:** commit to your fork's `main`, which is your live harness. If the change is
      worth sharing, `git fetch upstream && git rebase upstream/main`, push a branch to the fork,
@@ -121,8 +120,8 @@ belongs in the issue or in `docs/`, referenced from the PR body.
 
 ## The always-loaded cap
 
-`claude/CLAUDE.md`, every file in `primitives/rules/`, and the longest variant of every stance
-dimension are loaded on every turn of every session. `harness lint` fails when their combined
+`primitives/instructions.md`, every file in `primitives/rules/`, and the longest variant of each
+stance dimension are loaded on every turn of every session. `harness lint` fails when their combined
 line count exceeds `ALWAYS_LOADED_CAP` in `bin/harness`. A rule that needs more room than the
 cap allows is telling you it wanted to be a skill: keep the operative line resident, move the
 rationale, examples and evidence into the skill the rule points at, and leave a one-line pointer
