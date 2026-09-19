@@ -36,11 +36,12 @@ def evidence_errors(root, data, client):
         if not path.is_relative_to(root.resolve()) or not path.is_file():
             errors.append("missing or external evidence artifact")
             continue
-        if hashlib.sha256(path.read_bytes()).hexdigest() != item.get("sha256"):
-            errors.append("evidence digest mismatch")
-            continue
         try:
-            record = json.loads(path.read_text())
+            content = path.read_bytes()
+            if hashlib.sha256(content).hexdigest() != item.get("sha256"):
+                errors.append("evidence digest mismatch")
+                continue
+            record = json.loads(content)
         except (ValueError, OSError):
             errors.append("unreadable evidence record")
             continue

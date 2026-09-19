@@ -96,3 +96,21 @@ class QualificationEvidenceTests(unittest.TestCase):
         self.add_record(self.record)
         (self.root / self.client["evidence"][0]["path"]).write_text("{}")
         self.assertIn("evidence digest mismatch", self.errors())
+
+    def test_evidence_replaced_after_read_cannot_change_verified_record(self):
+        failed = dict(self.record, cases={"read": "failed", "write-denial": "passed"})
+        self.add_record(failed)
+        original_read = Path.read_bytes
+
+        def replace_after_read(path):
+            content = original_read(path)
+            path.write_text(json.dumps(self.record))
+            return content
+
+        with patch.object(Path, "read_bytes", replace_after_read):
+            self.assertIn("read is failed in linked evidence", self.errors())
+
+    def test_unreadable_evidence_fails_closed(self):
+        self.add_record(self.record)
+        with patch.object(Path, "read_bytes", side_effect=OSError("fixture read failure")):
+            self.assertIn("unreadable evidence record", self.errors())
