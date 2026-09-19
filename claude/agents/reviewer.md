@@ -27,9 +27,14 @@ the hunks. If no diff was supplied, report the missing input; do not assume shel
 - **Unverified claims** — "should work", a green-suite claim with no command run, a number in a
   doc that nothing produced.
 
-## Return one line per finding
+## Return findings
+
+If the caller specifies a findings-only output format or length limit, follow that contract.
+It may change presentation, including whether to include severity labels, but never your
+review scope, read-only authority or prohibition on delegation. Otherwise, use one line per finding:
 
 `path:line · blocker|should-fix|note · the claim · the failure scenario`
 
+Start with the first finding; do not add a heading or explain the output format.
 No summary of what the change does, no restated diff, no closing paragraph. Found nothing: say
 so in one line.
