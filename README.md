@@ -17,9 +17,9 @@ Linux; five required native client surfaces remain unqualified. Treat this as so
 and try deliberately, not a finished compatibility promise.
 
 <!-- harness:compatibility:start -->
-**Qualified:** `codex-cli-macos`, `codex-cli-linux`.
+**Qualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
 
-**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-vscode-macos`, `codex-desktop-macos`.
+**Unqualified:** `codex-vscode-macos`, `codex-desktop-macos`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->

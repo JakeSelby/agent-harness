@@ -1,0 +1,30 @@
+{
+  "kind": "native",
+  "client": "claude-code-vscode-macos",
+  "harness_version": "0.9.0",
+  "runtime_version": "2.1.273",
+  "client_version": "2.1.273",
+  "platform": "macos",
+  "source_commit": "8ef755698367b446bc4d1cce5b0f4ecdefc565dd",
+  "observations": [
+    "The real Claude Code VS Code extension loaded the disposable workspace and harness projections, read the fixture marker with its native Read tool, and preserved the user's normal application home and unrelated configuration.",
+    "A custom proof-label stance changed a fresh native editor response from TAGGED to PLAIN after one shared selection and sync; no separately authored Claude stance catalog was involved.",
+    "A native manual-mode Bash write displayed the extension approval prompt and was rejected without creating its sentinel. An acknowledged harness bypass projection remained subordinate to the extension's independent native permission selector: the write still prompted, was rejected, and created no sentinel. Native Auto execution is unavailable on the tested Bedrock account because Claude Code 2.1.273 requires Sonnet 5 and the account's applied Sonnet 5 runtime quota is zero.",
+    "A native editor Write to a disposable invalid plan ran PostToolUse without manual hook invocation and reported each missing Review Card section. The editor stop gate reran for staged, untracked, edited-untracked, and failing states, then removed the green hash and reported unverified after its retry budget.",
+    "The full four-layer BMad review ran from the shared framework checkout through four foreground Claude Code workers with explicit read roots. All workers completed, triage and presentation ran, the Done checkpoint and completion resolver executed, both seeded defects were found, and fixture source bytes were preserved.",
+    "Editor-mediated role and handoff probes read the scoped marker, kept write authority confined, advanced and rejected revisions correctly, demoted inherited verification, and transferred no approvals.",
+    "Installation, migration, drift and uninstall behavior is supplied by the same 2.1.273 macOS runtime projection and was independently exercised in the qualified macOS CLI fixture; the editor-specific record verifies client discovery and execution rather than claiming a second installer."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}
