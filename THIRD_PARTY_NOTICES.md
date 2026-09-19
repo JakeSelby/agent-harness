@@ -15,3 +15,9 @@ Code skills, with rubrics, hard gates, escalation rules and asset-licensing gate
 
 The code of conduct is original text. The Contributor Covenant was not vendored because its
 steward publishes it under CC BY-SA 4.0, a share-alike licence this repository does not carry.
+
+The [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) 6.12.0 is MIT-licensed development
+tooling by BMad Code, LLC. Its runtime and generated skill projections are intentionally not
+redistributed by this repository; only original agent-harness customizations and authored planning
+artifacts are committed. BMad and BMad Method are trademarks of BMad Code, LLC, and no endorsement
+is implied.

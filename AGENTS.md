@@ -29,6 +29,14 @@ The `stop-gate` hook runs this block when the tree has changed since its last gr
 blocks the turn while it is red, and releases after eight consecutive blocks. It runs only
 once this checkout is trusted: accept Claude Code's folder dialog or run `bin/harness trust .`.
 
+## BMad planning
+
+BMad Method 6.12.0 with BMM, Claude Code and Codex projections, and compatibility shims is the
+repository's public planning system. Its authored corpus stays in `_bmad-output`; do not redirect
+it to another repository. The complete pinned install command and version-control boundary are in
+`docs/bmad.md`. Run planning workflows from the shared checkout and implementation from a managed
+worktree.
+
 ## How the checkout is used
 
 - **This checkout is live.** `harness sync` symlinks `claude/rules`, each `claude/skills/*`,
