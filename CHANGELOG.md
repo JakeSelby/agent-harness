@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Require a dedicated delivery issue for every PR, with a CI ownership check rejecting missing,
+  multiple, foreign and reused closing issues. Document replacement PRs and the cross-PR race limit.
+
 - User-authored drafts now defer to an untracked personal voice profile before applying the
   selected reply-layout stance, and the harness documents where that profile belongs. Accidental
   typos are explicitly excluded from imitation.
