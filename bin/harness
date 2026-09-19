@@ -13,6 +13,9 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness uninstall
     harness lint    [PATH]
     harness usage   [--days N] [--by day|repo|model] [--rescan]
+    harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
+    harness worktree audit [REPO]
+    harness worktree remove NAME [REPO]
     harness workspace create NAME FOLDER... [--no-harness] [--force]
     harness config get KEY | set KEY VALUE
     harness bmad    check|apply [REPO] [--force]
@@ -1291,6 +1294,133 @@ def cmd_workspace(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- worktrees
+
+
+WORKTREE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def worktree_root() -> Path:
+    """The dedicated root for disposable task checkouts."""
+    configured = os.environ.get("HARNESS_WORKTREE_ROOT")
+    return Path(configured).expanduser().resolve() if configured else (home() / "worktrees").resolve()
+
+
+def git_root(start: str) -> Path:
+    probe = subprocess.run(
+        ["git", "-C", str(Path(start).expanduser()), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if probe.returncode != 0:
+        raise SystemExit(probe.stderr.strip() or f"{start} is not inside a git repository")
+    common = Path(probe.stdout.strip()).resolve()
+    if common.name != ".git":
+        raise SystemExit(f"unsupported bare repository: {start}")
+    return common.parent
+
+
+def worktree_destination(repo: Path, name: str) -> Path:
+    if not WORKTREE_NAME.fullmatch(name):
+        raise SystemExit("worktree name must use only letters, numbers, dots, underscores, and hyphens")
+    return worktree_root() / repo.name / name
+
+
+def ensure_worktree_bucket(repo: Path) -> Path:
+    bucket = worktree_root() / repo.name
+    marker = bucket / ".harness-repository"
+    identity = str((repo / ".git").resolve())
+    if marker.exists() and marker.read_text(encoding="utf-8").strip() != identity:
+        raise SystemExit(f"{bucket} belongs to a different repository; set HARNESS_WORKTREE_ROOT")
+    if not marker.exists() and bucket.exists() and any(bucket.iterdir()):
+        raise SystemExit(f"refusing to claim non-empty worktree bucket without a repository marker: {bucket}")
+    bucket.mkdir(parents=True, exist_ok=True)
+    if not marker.exists():
+        marker.write_text(identity + "\n", encoding="utf-8")
+    return bucket
+
+
+def _git(repo: Path, *args: str, capture: bool = False) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=False, capture_output=capture,
+        text=True, timeout=120,
+    )
+
+
+def _registered_worktrees(repo: Path) -> List[Dict[str, str]]:
+    out = _git(repo, "worktree", "list", "--porcelain", capture=True)
+    if out.returncode != 0:
+        raise SystemExit(out.stderr.strip() or "git worktree list failed")
+    records: List[Dict[str, str]] = []
+    current: Dict[str, str] = {}
+    for line in out.stdout.splitlines() + [""]:
+        if not line:
+            if current:
+                records.append(current)
+                current = {}
+            continue
+        key, _, value = line.partition(" ")
+        current[key] = value
+    return records
+
+
+def cmd_worktree(args: argparse.Namespace) -> int:
+    repo = git_root(args.repo or ".")
+    if args.action == "create":
+        dest = worktree_destination(repo, args.name)
+        if dest.exists():
+            raise SystemExit(f"{dest} already exists")
+        if not args.no_fetch:
+            fetched = _git(repo, "fetch", "origin")
+            if fetched.returncode != 0:
+                return fetched.returncode
+        ensure_worktree_bucket(repo)
+        branch = args.branch or args.name
+        created = _git(repo, "worktree", "add", "-b", branch, str(dest), args.base, capture=True)
+        if created.returncode == 0:
+            say(str(dest))
+        elif created.stderr:
+            say(created.stderr.strip())
+        return created.returncode
+
+    if args.action == "remove":
+        dest = worktree_destination(repo, args.name)
+        registered = {Path(r["worktree"]).resolve() for r in _registered_worktrees(repo)}
+        if dest not in registered:
+            say(f"not a registered worktree: {dest}")
+            return 1
+        status = _git(dest, "status", "--porcelain", "--ignored", "--untracked-files=all", capture=True)
+        if status.returncode != 0:
+            return status.returncode
+        if status.stdout.strip():
+            say(f"refusing to remove worktree with modified, untracked, or ignored files: {dest}")
+            return 1
+        symbolic = _git(dest, "symbolic-ref", "--quiet", "HEAD", capture=True)
+        if symbolic.returncode != 0:
+            head = _git(dest, "rev-parse", "HEAD", capture=True)
+            refs = _git(repo, "for-each-ref", "--contains", head.stdout.strip(), "--format=%(refname)", capture=True)
+            if head.returncode != 0 or refs.returncode != 0 or not refs.stdout.strip():
+                say(f"refusing to remove detached worktree whose HEAD is not contained by a ref: {dest}")
+                return 1
+        return _git(repo, "worktree", "remove", str(dest)).returncode
+
+    dirty = 0
+    for record in _registered_worktrees(repo):
+        path = Path(record["worktree"])
+        if "prunable" in record:
+            say(f"prunable\t{path}")
+            continue
+        status = _git(path, "status", "--porcelain", "--ignored", "--untracked-files=all", capture=True)
+        if status.returncode != 0:
+            say(f"unknown\t{path}")
+            dirty += 1
+            continue
+        state = "dirty" if status.stdout.strip() else "clean"
+        dirty += state == "dirty"
+        branch = record.get("branch", "detached").removeprefix("refs/heads/")
+        say(f"{state}\t{branch}\t{path}")
+    return 1 if dirty else 0
+
+
 def _tool(name: str) -> Optional[str]:
     """Absolute path to an executable, or None if it cannot be found.
 
@@ -1932,6 +2062,23 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--no-harness", action="store_true")
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_workspace)
+
+    p = sub.add_parser("worktree", help="create and manage task checkouts under a dedicated root")
+    worktree_sub = p.add_subparsers(dest="action", required=True)
+    create = worktree_sub.add_parser("create", help="create ~/worktrees/REPO/NAME")
+    create.add_argument("name")
+    create.add_argument("repo", nargs="?")
+    create.add_argument("--branch")
+    create.add_argument("--base", default="origin/main")
+    create.add_argument("--no-fetch", action="store_true")
+    create.set_defaults(func=cmd_worktree)
+    audit = worktree_sub.add_parser("audit", help="report clean, dirty, detached, and stale worktrees")
+    audit.add_argument("repo", nargs="?")
+    audit.set_defaults(func=cmd_worktree)
+    remove = worktree_sub.add_parser("remove", help="remove a clean managed task checkout")
+    remove.add_argument("name")
+    remove.add_argument("repo", nargs="?")
+    remove.set_defaults(func=cmd_worktree)
 
     p = sub.add_parser("init", help="write the config file by answering questions")
     p.add_argument("--force", action="store_true", help="replace an existing config file")
