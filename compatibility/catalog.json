@@ -21,11 +21,16 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "runtime_version": null,
-      "client_version": null,
-      "evidence": []
+      "runtime_version": "2.1.273",
+      "client_version": "2.1.273",
+      "evidence": [
+        {
+          "path": "compatibility/evidence/claude-code-cli-macos-0.9.0.json",
+          "sha256": "ec20a2edb494bbcbb0386eff9dda470427cd2f5266a849e1e862caf796bbe879"
+        }
+      ]
     },
     {
       "id": "claude-code-vscode-macos",
@@ -33,11 +38,16 @@
       "provider": "anthropic",
       "client": "vscode",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "runtime_version": null,
-      "client_version": null,
-      "evidence": []
+      "runtime_version": "2.1.273",
+      "client_version": "2.1.273",
+      "evidence": [
+        {
+          "path": "compatibility/evidence/claude-code-vscode-macos-0.9.0.json",
+          "sha256": "79b6860a3607b559a54bcd711a1bf6325a8cacccb1a84f259ea27778db9cdfd6"
+        }
+      ]
     },
     {
       "id": "claude-code-cli-linux",
@@ -45,11 +55,16 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "linux",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "runtime_version": null,
-      "client_version": null,
-      "evidence": []
+      "runtime_version": "2.1.273",
+      "client_version": "2.1.273",
+      "evidence": [
+        {
+          "path": "compatibility/evidence/claude-code-cli-linux-0.9.0.json",
+          "sha256": "4b703bb9948f6be452ef10496f29283714fcc6171ddf176c7862e2fe42eff5d2"
+        }
+      ]
     },
     {
       "id": "codex-cli-macos",
@@ -131,9 +146,10 @@
     }
   ],
   "limitations": [
-    "Native client qualification is pending; unit tests and generated files do not establish native support.",
+    "Codex VS Code and Codex desktop native qualification remains pending.",
+    "Claude Code 2.1.273 native Auto Mode requires Sonnet 5; the tested Bedrock account has zero Sonnet 5 runtime quota, so qualified Claude support covers manual and deny controls plus acknowledged bypass while Auto selection reports native unavailability.",
     "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
-    "Planner publication is mediated by the harness; complete native worker and client acceptance is still pending.",
+    "Planner publication is mediated by the harness; complete native worker and client acceptance is still pending for unqualified clients.",
     "Cursor and Grok integration, hosted agents, native memory merging and UML integration are deferred."
   ]
 }

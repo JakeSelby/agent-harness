@@ -1,0 +1,30 @@
+{
+  "kind": "native",
+  "client": "claude-code-cli-linux",
+  "harness_version": "0.9.0",
+  "runtime_version": "2.1.273",
+  "client_version": "2.1.273",
+  "platform": "linux",
+  "source_commit": "8ef755698367b446bc4d1cce5b0f4ecdefc565dd",
+  "observations": [
+    "A disposable non-root Linux environment inside Docker Desktop exercised the frozen source with Claude Code 2.1.273 and Bedrock authentication; credentials remained external to the fixture.",
+    "Installation, adoption, repeat sync, drift and conflict detection, uninstall restoration, and preservation of unrelated user configuration and skills completed in the isolated home.",
+    "Native responses changed from PLAIN to TAGGED after switching one custom proof-label stance. Session and project overrides and the built-in delegation and voice stances resolved through the same shared primitive authority.",
+    "Manual mode and an autonomy denial prevented disposable writes, while an explicitly acknowledged bypass created its sentinel. Claude Code 2.1.273 requires Sonnet 5 for native Auto Mode; the tested Bedrock account has zero Sonnet 5 runtime quota, so the Auto selection remained unavailable and created no write without weakening native restrictions.",
+    "Native lifecycle execution produced both per-path Review Card results for a multi-file operation and retained an independent user hook. Constrained gatherer and planner workers completed, and their forced project writes were denied.",
+    "Stop-gate runs covered unchanged, staged, untracked, edited-untracked, failure, and retry-budget states. The full four-layer BMad review completed and preserved the implementation bytes.",
+    "A Claude to Codex to Claude handoff advanced three revisions, rejected stale state, demoted inherited verification, and transferred no approvals."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}
