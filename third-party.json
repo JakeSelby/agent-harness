@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "name": "tomlkit",
+      "version": "0.15.1",
+      "source": "https://github.com/python-poetry/tomlkit",
+      "artifact_url": "https://files.pythonhosted.org/packages/13/bc/8c13eb66537dce1d2bd3a57132902f38d0e7f5bb46fa9f4daed9fe9d76ee/tomlkit-0.15.1-py3-none-any.whl",
+      "sha256": "177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304",
+      "license": "MIT",
+      "rightsholder": "S\u00e9bastien Eustace",
+      "modifications": "None",
+      "runtime_dependencies": [],
+      "notice": "THIRD_PARTY_NOTICES",
+      "file": "lib/vendor/tomlkit-0.15.1-py3-none-any.whl"
+    }
+  ]
+}

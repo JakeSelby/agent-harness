@@ -20,6 +20,14 @@
   },
   "permissions": "inherit",
   "permissions_bypass_acknowledged": false,
-  "vscode": { "manage": true },
-  "codex": { "manage": true }
+  "vscode": {
+    "manage": true
+  },
+  "codex": {
+    "manage": true
+  },
+  "claude": {
+    "manage": true
+  },
+  "primitive_roots": []
 }

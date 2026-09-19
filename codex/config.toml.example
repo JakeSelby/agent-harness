@@ -7,5 +7,7 @@ project_doc_fallback_filenames = ["CLAUDE.md"]
 
 # Written only when `permissions` in ~/.config/agent-harness/config.json is not "inherit":
 #   bypass -> approval_policy = "never",       sandbox_mode = "danger-full-access"
-#   auto   -> approval_policy = "on-failure",  sandbox_mode = "workspace-write"
-#   manual -> approval_policy = "untrusted",   sandbox_mode = "read-only"
+#   auto   -> approval_policy = "on-request",  sandbox_mode = "workspace-write"
+#   manual -> approval_policy = "on-request",   sandbox_mode = "read-only"
+
+# auto uses approval_reviewer = "auto_review"; manual uses "user".

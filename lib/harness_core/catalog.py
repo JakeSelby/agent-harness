@@ -58,7 +58,8 @@ def resolve_stances(root, config):
         identifier(name)
         identifier(variant)
         if name not in available or variant not in available[name]:
-            raise ValueError("stance '" + name + "' has no variant '" + variant + "'")
+            raise ValueError("stance '" + name + "' has no variant '" + variant +
+                             "'; options: " + ", ".join(sorted(available.get(name, {}))))
         result[name] = available[name][variant]
     # A custom dimension is optional until selected; built-in defaults are not.
     defaults = json.loads((root / "config.example.json").read_text())["stances"]
@@ -98,6 +99,9 @@ def catalog(root):
 def role_projection(root, runtime, path, overrides=None):
     fields, body = frontmatter(path)
     binding = json.loads((root / "adapters" / runtime / "bindings.json").read_text())["roles"][fields["name"]]
+    allowed = {"model", "model_reasoning_effort"} if runtime == "codex" else {"model", "effort"}
+    if set(overrides or {}) - allowed:
+        raise ValueError("role bindings may change model and effort only")
     binding = dict(binding, **(overrides or {}))
     if runtime == "claude-code":
         values = {k: fields[k] for k in ("name", "description")}
