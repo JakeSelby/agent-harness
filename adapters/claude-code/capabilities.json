@@ -46,5 +46,10 @@
   "limitations": [
     "Native restrictions take precedence. Hook activation requires runtime trust.",
     "Unsupported controls remain visible; custom stance prose does not add enforcement."
-  ]
+  ],
+  "role_execution": {
+    "constrained": "isolated-cli",
+    "artifact_publication": "harness",
+    "qualification": "unqualified"
+  }
 }

@@ -14,9 +14,9 @@ What to plan: {{arguments}}
    for what you cannot find yourself, and batch every question into one message.
 3. **Write the plan under `.agent-harness/plans/`** — at the repository root, or in the current
    directory when there is no repository — named for the topic. The Review Card is the
-   file's first screen and everything else lives below it, under `# Addendum`. Spawn the
-   `planner` agent with the topic and the plan path when writing the file would need reading
-   more than about ten files, otherwise write it yourself; you post the message and end at the
+   file's first screen and everything else lives below it, under `# Addendum`. Use `harness role run planner` with the active runtime,
+   explicit session model, brief file and `--artifact <new-plan.md>` when delegation is useful;
+   otherwise write it yourself; you post the message and end at the
    build gate either way.
 4. **Post the chat message in the skill's shape** — the verdict, the at-a-glance bullets, the
    numbered decisions verbatim, a workspace-relative link to the plan file, and nothing else.

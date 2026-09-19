@@ -148,6 +148,17 @@ def dispatch(runtime, payload):
             results.append(invoke("filter-output", event))
         elif tool == "Agent":
             delegation = selected("delegation", "tiered")
+            role_name = event["tool_input"].get("subagent_type")
+            if isinstance(role_name, str) and re.fullmatch(r"[a-z][a-z0-9-]*", role_name):
+                source = ROOT / "primitives/roles" / (role_name + ".md")
+                if source.is_file():
+                    from . import catalog
+                    fields, _ = catalog.role_contract(ROOT, role_name)
+                    if fields["authority"] in ("read-only", "artifact-write"):
+                        results.append({"hookSpecificOutput": {"permissionDecision": "deny",
+                            "permissionDecisionReason": "This constrained harness role requires an isolated worker. Use harness role run "
+                            + role_name + " --runtime " + runtime + " --model <session-model> --workspace <repo> --prompt-file <brief-file>. "
+                            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement."}})
             if delegation == "off":
                 results.append({"hookSpecificOutput": {"permissionDecision": "deny",
                     "permissionDecisionReason": "Delegation is off; perform the work inline or change the selected stance."}})

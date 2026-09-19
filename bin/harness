@@ -43,7 +43,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
-from harness_core import reconcile, lifecycle, tasks, compatibility
+from harness_core import reconcile, lifecycle, tasks, compatibility, workers
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1024,6 +1024,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"  gh login: {_version_of(['gh', 'auth', 'status'])}")
     say(f"  claude credentials present (not proof of login): {(claude_dir() / '.credentials.json').exists() or (home() / '.claude.json').exists()}")
     say(f"  codex credentials present (not proof of login): {(codex_dir() / 'auth.json').exists()}")
+    say("  constrained roles: use `harness role run`; `harness role status` reports workers, not native qualification")
     cfg = load_config()
     for runtime, path in (("claude", claude_dir() / "settings.json"),
                           ("codex", codex_dir() / "hooks.json")):
@@ -2057,6 +2058,30 @@ def cmd_task(args):
     return 0
 
 
+def cmd_role(args):
+    state = home() / ".local/state/agent-harness/workers"
+    try:
+        if args.action == "status":
+            print(json.dumps(workers.status(state, args.name), indent=2))
+            return 0
+        if not args.name or not args.runtime or not args.prompt_file:
+            raise ValueError("role run requires a role, --runtime and --prompt-file (use - for stdin)")
+        if args.prompt_file == "-":
+            prompt = sys.stdin.read(workers.LIMIT + 1)
+        else:
+            if not Path(args.prompt_file).is_file():
+                raise ValueError("--prompt-file must name a regular file")
+            with Path(args.prompt_file).open(encoding="utf-8") as stream:
+                prompt = stream.read(workers.LIMIT + 1)
+        record = workers.run(REPO, load_config(), args.runtime, args.name, args.workspace, prompt, state,
+                             model=args.model, artifact=args.artifact, timeout=args.timeout, read_dirs=args.read_dir)
+        print(json.dumps(record, indent=2))
+        return int(record["status"] != "completed")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        print("role worker: " + str(exc), file=sys.stderr)
+        return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="harness", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=f"agent-harness {VERSION}")
@@ -2171,6 +2196,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--runtime", choices=["claude-code", "codex"], default=os.environ.get("HARNESS_RUNTIME", "codex"))
     p.add_argument("--revision", type=int, default=0, help="expected current revision; rejects stale writers")
     p.set_defaults(func=cmd_task)
+
+    p = sub.add_parser("role", help="run a constrained shared role in an isolated CLI worker, or inspect worker status")
+    p.add_argument("action", choices=["run", "status"])
+    p.add_argument("name", nargs="?", help="run: shared role name; status: optional worker id")
+    p.add_argument("--runtime", choices=["claude-code", "codex"])
+    p.add_argument("--workspace", default=str(Path.cwd()), help="project to inspect read-only")
+    p.add_argument("--read-dir", action="append", default=[], help="additional directory containing input artifacts")
+    p.add_argument("--prompt-file", help="brief file, or - for stdin; its content is never executed")
+    p.add_argument("--model", help="explicit model; required when the shared role inherits the parent model")
+    p.add_argument("--artifact", help="artifact-write roles only: new Markdown filename under .agent-harness/plans/")
+    p.add_argument("--timeout", type=int, default=300, help="worker deadline in seconds (1–3600)")
+    p.set_defaults(func=cmd_role)
 
     args = parser.parse_args(argv)
     return args.func(args)

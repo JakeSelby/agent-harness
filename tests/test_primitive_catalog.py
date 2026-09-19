@@ -21,7 +21,7 @@ class CatalogTests(unittest.TestCase):
             self.assertIn(body, claude)
             instructions = next(line for line in codex.splitlines() if line.startswith("developer_instructions = "))
             self.assertEqual(json.loads(instructions.partition(" = ")[2]), body)
-            self.assertIn('sandbox_mode = "read-only"' if fields["authority"] == "read-only"
+            self.assertIn('sandbox_mode = "read-only"' if fields["authority"] != "workspace-write"
                           else 'sandbox_mode = "workspace-write"', codex)
 
     def test_catalog_uses_neutral_unique_source_ids(self):

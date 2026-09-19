@@ -122,8 +122,8 @@
   ],
   "limitations": [
     "Native client qualification is pending; unit tests and generated files do not establish native support.",
-    "Codex custom-role sandbox defaults can be superseded by parent permissions; read-only confinement is unqualified.",
-    "Planner artifact-only writes are advisory until a native filesystem boundary is qualified.",
+    "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
+    "Planner publication is mediated by the harness; complete native worker and client acceptance is still pending.",
     "Cursor and Grok integration, hosted agents, native memory merging and UML integration are deferred."
   ]
 }

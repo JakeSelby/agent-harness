@@ -178,8 +178,11 @@ shape, so it has to stay small enough to hold in working memory.
 
 ## Delegating
 
-A subagent writing a plan never loads the user's rules. Spawn the `planner` agent, which carries
-this contract in its own body and returns the chat message ready to post.
+Use `harness role run planner` with `--runtime`, the explicit session `--model`, `--workspace`,
+a `--prompt-file` brief and `--artifact <new-plan.md>`. The isolated worker receives the shared
+role and resolved stances, and returns plan content; the harness validates and publishes it.
+Read the artifact and post the review message yourself. Existing plans are not overwritten.
+See `docs/role-workers.md` for input directories, status and native qualification limits.
 
 ## Self-check before handing it over
 

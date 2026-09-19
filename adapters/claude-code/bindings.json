@@ -23,7 +23,7 @@
     },
     "planner": {
       "model": "inherit",
-      "tools": "Read, Grep, Glob, Bash, WebFetch, Write",
+      "tools": "Read, Grep, Glob",
       "effort": "high"
     },
     "reviewer": {
