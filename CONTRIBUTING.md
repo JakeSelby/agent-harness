@@ -2,8 +2,9 @@
 
 Contribute to one shared primitive authority under `primitives/`. Personal stances are extensible
 policy switches; runtime differences belong in adapters, never duplicate stance or skill catalogs.
-[The authoring contract](docs/primitive-authoring.md) and [compatibility catalog](docs/compatibility.md)
-define extension and qualification. Regenerate projections after changing shared roles or workflows.
+[The authoring contract](docs/primitive-authoring.md), [compatibility catalog](docs/compatibility.md)
+and [compatibility policy](docs/compatibility-policy.md) define extension, qualification and the
+stable public contract. Regenerate projections after changing shared roles or workflows.
 
 Ideas are as welcome as patches. If a rule, stance or skill here made your agent better or
 worse, say so. If you have a fix, send it. This page tells you where things go and how the

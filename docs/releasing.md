@@ -3,6 +3,8 @@
 A release is a verified source tag plus reference and personal-site deployments identifying that
 release. A successful build is not native qualification. `scripts/release_preflight.py` refuses
 publication until every required client in the compatibility catalog carries native evidence.
+Every release follows the [compatibility policy](compatibility-policy.md); generated notes link it
+and state the migration review or exact versioned migration action.
 
 ## Source and qualification
 
@@ -11,8 +13,10 @@ publication until every required client in the compatibility catalog carries nat
    controls or record a deliberately narrower support contract before calling a client qualified.
 2. Merge reviewed changes through the repository's PR gate. Keep stacked PR bases current without
    overwriting other contributors' history. Preserve personal configuration and the live checkout.
-3. Set `VERSION` and `compatibility/catalog.json` to the same release. Regenerate projections and
-   release notes. Run the CI commands and the Python floor suite on committed HEAD; then run:
+3. Set `VERSION`, `compatibility/catalog.json` and `compatibility/migration.json` to the same
+   release. Record exact migration actions and recovery even when the only action is reviewing a
+   dry run. Regenerate projections and release notes. Run the CI commands and the Python floor suite
+   on committed HEAD; then run:
 
    ```sh
    python3 scripts/release_preflight.py
