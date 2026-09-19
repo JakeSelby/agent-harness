@@ -562,13 +562,14 @@ def render_personal(cfg: Dict[str, Any], existing: Optional[str]) -> str:
 
 def render_codex_agents(stances: Dict[str, Path], personal: Optional[str]) -> str:
     parts = [CODEX_BANNER, ""]
-    claude_md = (REPO / "claude" / "CLAUDE.md").read_text(encoding="utf-8")
-    claude_md = "\n".join(l for l in claude_md.splitlines() if not l.startswith("@")).rstrip()
-    parts += [claude_md, ""]
-    for rule in sorted((REPO / "claude" / "rules").glob("*.md")):
+    parts += [(REPO / "primitives" / "instructions.md").read_text().rstrip(), ""]
+    for rule in sorted((REPO / "primitives" / "rules").glob("*.md")):
         parts += ["---", f"<!-- {rule.name} -->", rule.read_text(encoding="utf-8").rstrip(), ""]
     for name, path in stances.items():
         parts += ["---", f"<!-- stance {name}: {path.stem} -->", path.read_text(encoding="utf-8").rstrip(), ""]
+    if stances.get("voice") and stances["voice"].stem == "scannable":
+        parts += ["Shared presentation: before composing a final response, read and apply `" +
+                  str(REPO / "primitives" / "presentation" / "scannable.md") + "`.", ""]
     if personal:
         parts += ["---", "<!-- AGENTS.personal.md -->", personal.rstrip(), ""]
     return "\n".join(parts)
@@ -677,7 +678,11 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         say(UNSUPPORTED)
         return 1
     dry = args.dry_run
-    cfg = load_config()
+    session_keys = [key for key in os.environ if key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
+                    or key in ("HARNESS_PROJECT_CONFIG", "HARNESS_PERMISSIONS")]
+    cfg = load_config({key: value for key, value in os.environ.items() if key not in session_keys})
+    if session_keys:
+        say("  scope   sync projects user defaults; project/session overrides stay in the session")
     stances = resolve_stances(cfg)
     p = posture(cfg)
     if cfg.get("codex", {}).get("manage", True):
@@ -741,7 +746,12 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         for style in sorted((REPO / "claude" / "output-styles").glob("*.md")):
             ensure_link(cd / "output-styles" / style.name, style, manifest, dry, args.adopt, report)
         link_dir_files(REPO / "claude" / "commands", cd / "commands", manifest, dry, args.adopt, report)
-        ensure_link(cd / "CLAUDE.md", REPO / "claude" / "CLAUDE.md", manifest, dry, args.adopt, report)
+        if cd == home() / ".claude":
+            ensure_link(cd / "CLAUDE.md", REPO / "claude" / "CLAUDE.md", manifest, dry, args.adopt, report)
+        else:
+            native_instructions = (REPO / "primitives" / "instructions.md").read_text()
+            native_instructions += "\n@" + str(cd / "CLAUDE.personal.md") + "\n"
+            store.generated(cd / "CLAUDE.md", native_instructions, adopt=args.adopt)
 
         # Personal file.
         personal = cd / "CLAUDE.personal.md"
@@ -865,7 +875,9 @@ def _diff_lines() -> List[str]:
             lines.append(f"redirected link {p} -> {os.readlink(p)}")
         elif not p.exists():
             lines.append(f"broken link {p}")
-    cfg = load_config()
+    cfg = load_config({key: value for key, value in os.environ.items()
+                       if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
+                       and key not in ("HARNESS_PROJECT_CONFIG", "HARNESS_PERMISSIONS")})
     template = runtime_template()
     applied = read_json(applied_path()) or {}
     live = read_json(claude_dir() / "settings.json") or {}

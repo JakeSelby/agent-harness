@@ -72,8 +72,20 @@ def override_lines(config):
                              "checkout instead of the linked one.")
         elif key == "HARNESS_PERMISSIONS":
             if (config or {}).get("permissions") != value:
-                lines.append(f"For this session the permission posture is `{value}`.")
+                lines.append(f"For this session the requested permission posture is `{value}`; native controls remain unchanged and authoritative.")
     return lines
+
+
+def resolved_overrides(repo, config):
+    if not any(key.startswith("HARNESS_STANCE_") or key == "HARNESS_PROJECT_CONFIG" for key in os.environ):
+        return []
+    out = subprocess.run([sys.executable, str(Path(repo) / "bin" / "harness"), "stances", "--json"],
+                         capture_output=True, text=True, timeout=remaining(2))
+    if out.returncode:
+        return ["Harness session stance resolution failed; selections are unverified: " + out.stderr[:1000]]
+    choices = json.loads(out.stdout)["stances"]
+    return ["Effective session stance " + name + "=" + value["variant"] + ":\n" + value["behavior"]
+            for name, value in choices.items() if (config or {}).get("stances", {}).get(name) != value["variant"]]
 
 
 def handoff_lines(cwd):
@@ -139,7 +151,10 @@ def main():
         d = drift_line(manifest["repo"])
         if d:
             lines.append("agent-harness drift: " + d)
-    lines.extend(override_lines(config))
+    if manifest and manifest.get("repo"):
+        lines.extend(resolved_overrides(manifest["repo"], config))
+    else:
+        lines.extend(override_lines(config))
     tool = Path(manifest["repo"]) / "bin" / "harness" if manifest and manifest.get("repo") else None
     cwd = payload().get("cwd") or os.getcwd()
     if tool and (Path(cwd) / ".agent-harness" / "task.json").exists():
