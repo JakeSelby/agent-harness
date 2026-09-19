@@ -42,9 +42,15 @@ review diff must be separate explicit inputs; run framework scripts from the fra
 
 Run `harness bmad check <framework-root>` before `harness bmad apply <framework-root>`.
 Check resolves either `.agents/skills` or `.claude/skills`, refuses conflicting mirrors, and
-parses customization TOML structurally. Apply writes only declared keys and existing layer ids;
+parses customization TOML structurally. It also compares mirrored Markdown/TOML sources and
+checks literal `Invoke via the … skill` dependencies in installed workflows; other forms of dynamic
+skill routing still require workflow acceptance. Apply writes only declared keys and existing layer ids;
 it preserves differing user overrides unless you explicitly pass `--force`. Session start only
 checks. It never silently installs configuration.
+
+BMad uses two entry mechanisms: build skills render `workflow.md`, while code review resolves
+the `workflow` customization block with `resolve_customization.py`. A missing `workflow.md` in a
+resolver-based skill is not an installation defect. Test the entry mechanism its `SKILL.md` names.
 
 The inspected BMad 6.12.0 renderer supports `--project-root` and `--skill`. Do not invent an
 `--overrides` or `--set` flag from newer documentation. Use its `_bmad/custom/` seam. Renderer
