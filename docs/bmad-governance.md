@@ -15,6 +15,9 @@ The repository instructions remain authoritative when they are stricter.
   configuration, green unit tests or a prior release as proof of current native-client behavior.
 - Every managed work item has one immutable typed BMad ID and a bidirectional GitHub mapping.
   Reparenting never changes the ID; reconstructed history must say that it is reconstructed.
+- The exact `type::*` label is the repository's authoritative GitHub type projection. Native issue
+  types are organization-managed and unavailable for issues in this personal-account repository;
+  native sub-issue relationships remain the hierarchy projection.
 - Community issues can enter without BMad metadata. During maintainer triage, reserve an ID with
   `python3 scripts/bmad_issue_sync.py reserve --issue N --kind KIND [--parent N]`; merge its artifact,
   then run `plan` and `apply` before implementation ownership begins.

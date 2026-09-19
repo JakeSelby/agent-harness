@@ -1,7 +1,6 @@
 name: Idea
 description: Something the harness should do differently, or a behaviour you want from your agent.
 labels: ["idea", "type::story"]
-type: Feature
 body:
   - type: textarea
     id: want
