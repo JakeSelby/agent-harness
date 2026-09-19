@@ -2038,6 +2038,8 @@ def cmd_compatibility(args):
             say(client["id"] + ": " + client["status"])
         for limitation in data["limitations"]:
             say(limitation)
+        if compatibility.source_drift(REPO, data):
+            say("Current runtime source differs from this released qualification; qualify it before release.")
     if args.release_check:
         errors = compatibility.release_errors(REPO)
         for error in errors:
