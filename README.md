@@ -1,35 +1,21 @@
-# agent-harness
+# Agent Harness
 
 [![CI](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
 
-## Your way of working, across AI agents.
+## Define your working preferences once. Apply them to Claude Code and Codex.
 
-A general-purpose, model-provider-agnostic harness built around you. Define how your agents work
-through shared rules, skills, roles, workflows, and custom primitives—including personal stances
-you can switch without rewriting your instructions.
+Agent Harness keeps shared instructions, skills, roles, workflows and personal preferences in one
+place, then projects them into the native formats each runtime understands. You do not have to
+maintain one working agreement for Claude Code and another for Codex.
 
-**You own the working style.** Your preferences live outside the checkout. Choose how your agents
-communicate, test, delegate, exercise autonomy, and approach decisions; keep those choices when
-you change runtimes.
+**Experimental status:** `0.9.0` is a release candidate. The shared engine, adapters, generated
+configuration and hook decisions are implemented and tested. Codex CLI is qualified on macOS and
+Linux; five required native client surfaces remain unqualified. Treat this as something to inspect
+and try deliberately, not a finished compatibility promise.
 
-**Personal stances make preferences explicit and switchable.** A stance is a harness-defined
-primitive: a named policy choice that can affect instructions, delegation, execution controls and
-workflow behavior. It is not a Claude feature or a bundle of provider configuration presets.
-
-**Custom primitives let you extend the harness.** Add a stance dimension or variant, author a
-skill, define a role, or compose a workflow. Keep one source under `primitives/` or your configured
-custom stance root. [Author a custom stance](docs/primitive-authoring.md).
-
-**Runtime adapters carry those choices across agents.** Claude Code and Codex projections share
-the same policy authority. Native settings, tool events and permission controls remain adapter
-responsibilities. A stance cannot override a client's native restrictions.
-
-**Compatibility means verified behavior.** Claude Code and Codex are this release's integration
-targets. Supported clients and capabilities are listed explicitly after validation in the
-[compatibility catalog](docs/compatibility.md), available as `harness compatibility --json`.
 <!-- harness:compatibility:start -->
 **Qualified:** `codex-cli-macos`, `codex-cli-linux`.
 
@@ -38,82 +24,174 @@ targets. Supported clients and capabilities are listed explicitly after validati
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->
 
-Provider independence does not promise universal compatibility or identical model behavior.
+Agent Harness is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
+Code and Codex remain responsible for model access, native permissions and client behavior.
 
-## See a stance switch
+## Preferences you can switch
 
-```sh
-bin/harness config set stances.delegation off
-bin/harness stances --json
-bin/harness sync
-# Both projections now say to work inline; the shared spawn policy denies delegation.
+A **stance** is a named choice about how you want an agent to work. Useful defaults ship with the
+harness; each choice can be changed independently, and you can add your own dimensions.
 
-bin/harness config set stances.delegation tiered
-bin/harness stances --json
-bin/harness sync
-# Both projections now permit bounded gathering; native role bindings determine model and tools.
-```
+| Preference | Choices included today |
+| --- | --- |
+| Autonomy | `execute`, `confirm-writes`, `ask` |
+| Delegation | `tiered`, `session-model`, `off` |
+| Testing | `required`, `pragmatic`, `off` |
+| Cost posture | `frugal`, `balanced`, `max` |
+| Reply shape | `scannable`, `answer-card`, `off` |
+| Plan ceremony | `review-card`, `light` |
+| Commits | `conventional-attributed`, `conventional`, `as-you-go`, `off` |
+| Licensing | `permissive-commercial`, `open-source`, `off` |
+| Build versus buy | `capability-ceiling`, `off` |
 
-Claude Code reads the selected policy through its linked rule; Codex reads the same policy in
-its generated instructions. The shared hook engine resolves the same choice in each runtime.
-Native activation requires client trust, and tier mapping is capability-dependent. Inspect the
-[demonstration](docs/stance-demo.md) and [runtime controls](docs/runtime-controls.md) for what is
-advisory, implemented, or still unqualified.
+Some stances are advisory instructions. Others also select implemented hooks or native settings.
+`bin/harness stances --json` shows the resolved choice, adapter mode and qualification status for
+each one. A stance never overrides a client's native restriction.
 
-Presets are only a starting point. A custom `feedback/direct.md` stance might say “Lead with the
-conclusion; name the evidence and the next useful action.” Add its root to `primitive_roots`,
-select `stances.feedback=direct`, and the same policy reaches both projections. The
-[authoring contract](docs/primitive-authoring.md) covers alternatives, overrides and conflicts.
+**Useful defaults. Preferences you can change. Primitives you can extend.**
 
-## Before you start
+## Try it with runtimes you already have
 
-You need `git`, Python 3.9+, and an account for each runtime you use. The CLI bundles an MIT-licensed
-TOML parser; it does not provide model access. macOS and Linux are integration targets; native
-Windows is unsupported and WSL2 is unqualified.
+You need `git`, Python 3.9+, and your own account for every runtime you enable. macOS and Linux are
+integration targets. Native Windows is unsupported; WSL2 is unqualified. The harness does not
+provide model access.
 
-[Read the getting-started guide](docs/getting-started.md).
-
-## Install and inspect
+Clone the repository, explicitly select the runtimes and editor surface you want managed, then
+preview every change:
 
 ```sh
 git clone https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
 cd ~/repos/agent-harness
+
+bin/harness config set claude.manage true
+bin/harness config set codex.manage true
+bin/harness config set vscode.manage false
+
+bin/harness sync --dry-run
+# Review every proposed link, rendered file, setting and conflict.
+bin/harness sync
+bin/harness doctor
+```
+
+Set either runtime to `false` if you do not use it; neither runtime requires the other. Set
+`vscode.manage` deliberately too. Configuration is user-level by default—it is not scoped to the
+repository you happen to be in. `sync` installs user defaults; project and session overrides stay
+with that invocation and are not persisted into global projections.
+
+If the preview reports an existing unmanaged file, stop and read the conflict. The harness does
+not recommend `--adopt` by default. After syncing, start a new client session and accept native hook
+trust if prompted. [Start with the full guide](docs/getting-started.md).
+
+## See one switch reach both adapters
+
+This transcript was captured with Claude and Codex enabled in disposable configuration homes.
+Excerpts are shortened; paths and unrelated stances are omitted.
+
+```console
+$ bin/harness config set stances.delegation tiered
+stances.delegation = "tiered"  (.../.config/agent-harness/config.json)
+run `harness sync` to apply it
+
+$ bin/harness stances --json
+"delegation": {
+  "variant": "tiered",
+  "behavior": "# Delegation stance: tiered models\n\n**Gather with subagents ..."
+}
+"claude-code": { "delegation": { "mode": "instruction-and-hook", "qualification": "unqualified" } }
+"codex":       { "delegation": { "mode": "instruction-and-hook", "qualification": "unqualified" } }
+
+$ bin/harness config set stances.delegation off
+stances.delegation = "off"  (.../.config/agent-harness/config.json)
+
+$ bin/harness stances --json
+"delegation": {
+  "variant": "off",
+  "behavior": "# Delegation stance: off\n\nDo not spawn subagents unless the user asks ..."
+}
+
+$ bin/harness sync --dry-run
+stances: ... delegation=off ...
+link  .../claude/rules/harness-stances/delegation.md -> .../primitives/stances/delegation/off.md
+codex hooks registered; native hook trust must be accepted in the client
+```
+
+What changed here:
+
+- **Generated configuration:** both runtime projections receive the resolved `off` policy after
+  `sync`; start a new client session to load changed global instructions.
+- **Implemented hook decision:** the shared spawn policy asks before any delegation under `off`, so
+  only an explicit user request permits the spawn.
+- **Native behavior:** qualification varies by client, as reported above. Projection generation and
+  unit tests are not proof that a particular client version loaded or followed the policy.
+
+The complete reproducible example is in the [stance demonstration](docs/stance-demo.md).
+
+## Shared authority, native adapters
+
+```mermaid
+flowchart LR
+  U[Your config and custom primitives] --> P[Shared primitive catalog]
+  P --> C[Claude Code adapter]
+  P --> X[Codex adapter]
+  C --> CP[Generated instructions, settings and hooks]
+  X --> XP[Generated instructions, settings and hooks]
+  CP -. qualification varies by client .-> CC[Claude Code clients]
+  XP -. qualification varies by client .-> XC[Codex clients]
+```
+
+`primitives/` is the authoring authority for rules, stances, skills, roles, workflows and
+presentation. `policy/` implements shared lifecycle decisions; `adapters/` translates them into
+runtime-specific controls. Paths under `claude/` are generated views or compatibility links, not a
+second catalog. Run `bin/harness catalog` for source digests and `bin/harness generate --check` for
+projection drift.
+
+Custom prose stances are advisory unless you also implement and register corresponding policy.
+The UML-style change interrogation viewer being explored separately is not part of the current
+installation; hosted agents and native memory merging are also deferred.
+
+## Cost and measurement
+
+The `cost` stance sets a working posture—effort, fan-out and cache habits—not a hard dollar cap.
+Model access remains billed by the provider or covered by a subscription, and there is no claimed
+savings benchmark. `bin/harness usage` summarizes available local session measurements, labels
+partial data and leaves unavailable metrics unknown. It does not send telemetry to a service.
+Read [usage and its limits](docs/usage.md).
+
+## Full installation and ownership
+
+If you also want the harness to provision missing tools, use the broader installation path:
+
+```sh
 bin/harness init
 bin/harness install --dry-run
 bin/harness install
 bin/harness doctor
-bin/harness compatibility
 ```
 
-Already have the tools? Use `bin/harness sync --dry-run`, then `bin/harness sync`. Select runtimes
-with `claude.manage` and `codex.manage`; neither requires the other. Existing user files are
-preserved; adopt them explicitly only after reviewing the reported conflicts. Read
-[getting started](docs/getting-started.md) and [installation ownership](docs/runtime-installation.md).
+`install` can install applications and packages as well as synchronize configuration. Review
+`bin/harness install --help` first; flags can skip Homebrew, apps, VS Code or Codex. Existing
+user-owned files, credentials, model choices, MCP servers and plugins are not silently replaced.
 
-## One source, native projections
+The harness tracks fields and files it owns. `uninstall` restores a previous value only when the
+current value still matches what the harness last applied; conflicts and redirected links are
+preserved and reported rather than overwritten. See [installation ownership](docs/runtime-installation.md)
+and the [sync model](docs/sync-model.md).
 
-```mermaid
-flowchart LR
-  U[Your preferences and custom primitives] --> S[Shared primitive catalog]
-  S --> C[Claude Code adapter]
-  S --> X[Codex adapter]
-  C --> CC[Qualified client capabilities]
-  X --> XC[Qualified client capabilities]
-```
+## Go deeper
 
-`primitives/` holds rules, stances, skills, roles, workflows and presentation. `policy/` implements
-shared lifecycle policy; `adapters/` binds it to runtimes. Compatibility paths under `claude/`
-are generated views or links, not a second authoring catalog. Run `harness catalog` for current
-inventory and source digests, and `harness stances --json` for your effective selections and
-adapter coverage. Counts come from those sources rather than this README.
+- [Compatibility catalog and qualification contract](docs/compatibility.md)
+- [How shared primitives and adapters work](docs/how-it-works.md)
+- [All preferences and stance rationale](docs/preferences.md)
+- [Author a custom stance, skill, role or workflow](docs/primitive-authoring.md)
+- [Runtime controls](docs/runtime-controls.md), [sandboxing](docs/sandboxing.md) and
+  [workspaces](docs/workspaces.md)
+- [BMad integration and bidirectional task continuation](docs/bmad.md)
+- [Contributing](CONTRIBUTING.md) and the [public reference](https://agent-harness.jakeselby.com)
 
-- [How it works](docs/how-it-works.md) and [preferences](docs/preferences.md)
-- [BMad and bidirectional task continuation](docs/bmad.md)
-- [Sandboxing](docs/sandboxing.md) and [workspaces](docs/workspaces.md)
-- [Diagnostics and telemetry](docs/usage.md)
-- [Contributing](CONTRIBUTING.md) and [the public reference](https://agent-harness.jakeselby.com)
+## Verify changes
 
-## Verify and update
+Installed links may point at the checkout, so contribute from a managed worktree. The repository
+gate is:
 
 ```sh
 python3 bin/harness lint
@@ -121,7 +199,5 @@ python3 -m unittest discover -s tests
 bin/harness generate --check
 ```
 
-Use a worktree for changes: installed links may make the checkout live in the next agent session.
-`harness diff` reports drift; `harness uninstall` restores owned values when they still match
-what the harness last applied and preserves user conflicts. Releases and the reference site are
-versioned together. Hosted agents, native memory merging and the UML viewer are deferred.
+If the idea of user-owned working preferences across agents is useful, try the dry run, open an
+issue with the conflict or missing primitive you found, and consider starring the project.

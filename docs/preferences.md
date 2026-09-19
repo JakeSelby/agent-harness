@@ -27,9 +27,11 @@ you, so a config left unedited has it addressing you by the placeholder. `pronou
 
 ## Stances
 
-Each stance is a directory of variants under `claude/stances/`; config picks one and `sync`
-links it into `~/.claude/rules/harness-stances/<stance>.md`. An `off` variant still links a
-one-line file so `/context` shows the choice explicitly.
+Each stance is a directory of variants under `primitives/stances/`; config picks one and `sync`
+projects it into the selected runtimes. Claude receives a link under
+`~/.claude/rules/harness-stances/<stance>.md`; Codex receives the same resolved source in its
+generated instructions. An `off` variant remains explicit rather than silently removing the
+dimension.
 
 | Stance | Variants | Default |
 | --- | --- | --- |
@@ -89,9 +91,10 @@ call — see [usage.md](usage.md).
 
 ## Other surfaces
 
-`"vscode": { "manage": true }` and `"codex": { "manage": true }` in the config file let sync
-write the owned VS Code keys and the Codex `AGENTS.md` and config keys. Set either to `false`
-to leave that surface alone; Claude Code is always managed.
+`"claude": { "manage": true }`, `"codex": { "manage": true }` and
+`"vscode": { "manage": true }` independently select the runtime and editor surfaces that sync
+may manage. Set any of them to `false` to leave that surface alone; neither Claude nor Codex
+requires the other.
 
 ## Permission posture
 
@@ -187,15 +190,15 @@ one tier down under `tiered` (the session model inside a framework repo), untouc
 ## Proposing a new stance or variant
 
 A stance is right when a competent engineer could reasonably want the opposite. Add the
-variants under `claude/stances/<name>/`, add the name to `STANCE_NAMES` in `bin/harness`, add
+variants under `primitives/stances/<name>/`, add the name to `STANCE_NAMES` in `bin/harness`, add
 the default to `config.example.json`, add a row here, and add a line to the CHANGELOG.
 
 ## What is deliberately not a stance
 
-The always-loaded rules in `claude/rules/` do not switch. A rule has to hold whichever way every
+The always-loaded rules in `primitives/rules/` do not switch. A rule has to hold whichever way every
 stance is thrown, which is what lets the harness install for someone whose preferences nobody
 knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
-want the opposite, it belongs in `claude/stances/`, not `claude/rules/`.
+want the opposite, it belongs in `primitives/stances/`, not `primitives/rules/`.
 
 Two rules do not pass that test yet, tracked rather than hidden. `voice-and-format.md` hard-wires
 the Scannable output style (#68), and `conciseness.md` is comment and doc style. `cache-hygiene.md`

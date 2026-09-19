@@ -11,14 +11,18 @@ PREFERENCES = (REPO / "docs" / "preferences.md").read_text()
 
 
 class ReadmeTests(unittest.TestCase):
-    def test_the_prerequisites_come_before_the_install_block(self):
-        self.assertIn("## Before you start", README)
-        self.assertLess(README.index("## Before you start"),
-                        README.index("## Install and inspect"))
+    def test_the_safe_existing_runtime_path_comes_before_full_installation(self):
+        quick_start = "## Try it with runtimes you already have"
+        full_install = "## Full installation and ownership"
+        self.assertIn(quick_start, README)
+        self.assertLess(README.index(quick_start), README.index(full_install))
+        self.assertLess(README.index("bin/harness sync --dry-run"),
+                        README.index("\nbin/harness sync\n"))
 
     def test_the_account_is_stated_rather_than_assumed(self):
-        self.assertIn("an account for each runtime", README)
-        self.assertIn("does not provide model access", README)
+        prose = " ".join(README.split())
+        self.assertIn("your own account for every runtime", prose)
+        self.assertIn("does not provide model access", prose)
 
     def test_the_supported_platforms_are_named(self):
         self.assertIn("macOS and Linux", README)
@@ -28,9 +32,18 @@ class ReadmeTests(unittest.TestCase):
         for needle in ("`git`", "Python 3.9"):
             self.assertIn(needle, README, msg=needle)
 
-    def test_the_guide_is_linked_before_the_install_block_and_in_the_docs_list(self):
+    def test_the_guide_is_linked_before_full_installation_and_detailed_docs_are_listed(self):
         self.assertIn("](docs/getting-started.md)", README)
-        self.assertLess(README.index("](docs/getting-started.md)"), README.index("## Install and inspect"))
+        self.assertLess(README.index("](docs/getting-started.md)"),
+                        README.index("## Full installation and ownership"))
+        self.assertIn("](docs/compatibility.md)", README)
+
+    def test_status_and_native_evidence_limits_are_visible(self):
+        prose = " ".join(README.split())
+        self.assertIn("**Experimental status:**", prose)
+        self.assertIn("Codex CLI is qualified on macOS and Linux", prose)
+        self.assertIn("five required native client surfaces remain unqualified", prose)
+        self.assertIn("Projection generation and unit tests are not proof", prose)
 
 
 class GuideTests(unittest.TestCase):

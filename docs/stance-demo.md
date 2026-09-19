@@ -11,8 +11,9 @@ harness sync
 
 The resolved source is `primitives/stances/delegation/off.md`. Claude's selected rule link and
 Codex's generated instructions carry that same policy. With native hooks active, a Claude `Agent`
-event and a Codex `spawn_agent` event normalize to the same shared spawn policy: deny delegation
-and work inline. `tests/test_lifecycle.py` exercises both native envelopes.
+event and a Codex `spawn_agent` event normalize to the same shared spawn policy: ask before the
+spawn, so only an explicit user request permits it. `tests/test_lifecycle.py` exercises both native
+envelopes.
 
 ```sh
 harness config set stances.delegation tiered
