@@ -50,9 +50,9 @@ configuration through its ownership journal, preserving conflicts and adopted ba
 live pages and release identity again. Infrastructure rollback is separate and must not be inferred
 from a static-content rollback.
 
-## Candidate status
+## Release status
 
-The 0.9.0 candidate is not released. Native qualification, independent review, tag publication,
-GitHub About updates, final site pinning, production deployments and live verification remain
-required. The reference reader and personal-site copy can be built and reviewed while those
-external checks are blocked. Never bypass the release preflight to make the rollout appear done.
+The 0.9.0 catalog records every required Claude Code and Codex client as qualified. The release is
+complete only when the exact merged commit carries the immutable `v0.9.0` tag and the release
+workflow publishes it. Reference and personal-site deployment status remains independently
+verifiable; never infer a deployment from a source merge or bypass the release preflight.
