@@ -14,14 +14,15 @@ there, land the result through the repo's normal path, remove the worktree.
 ```bash
 REPO=$(git rev-parse --show-toplevel)
 NAME=<task-slug>
-git -C "$REPO" fetch origin
-git -C "$REPO" worktree add -b "$NAME" "../$(basename "$REPO")-$NAME" origin/main
-cd "../$(basename "$REPO")-$NAME"
+DEST=$(harness worktree create "$NAME" "$REPO")
+cd "$DEST"
 ```
 
-Sibling directory, named after the repo and the task, branched from the remote default branch
-so it starts from what is actually merged. If the repo's instructions name a different base or
-location, follow them.
+The dedicated root keeps temporary task checkouts separate from permanent clones. It defaults to
+`~/worktrees/<repo>/<task>`; `HARNESS_WORKTREE_ROOT` may replace `~/worktrees`. The helper fetches
+`origin` and branches from `origin/main`, so it starts from what is actually merged. If the repo's
+instructions name a different base, pass `--base`; if they name a different location, follow them.
+Never create a task worktree as a sibling under the directory holding permanent repositories.
 
 ## Work
 
@@ -35,7 +36,7 @@ location, follow them.
 Push the branch and open a PR, or push to `main` if the repo's instructions allow it. Then:
 
 ```bash
-git -C "$REPO" worktree remove "../$(basename "$REPO")-$NAME"
+harness worktree remove "$NAME" "$REPO"
 git -C "$REPO" branch -d "$NAME"      # only after it is merged
 ```
 
@@ -49,4 +50,6 @@ git -C "$REPO" branch -d "$NAME"      # only after it is merged
   default branch in one place.
 - **Generated index files** are rebuilt once at merge, never on both sides.
 - **Leftover worktrees** confuse `git status` and history rewrites. `git worktree list` before
-  any operation that touches every branch.
+  any operation that touches every branch. `harness worktree audit "$REPO"` reports dirty and
+  stale checkouts; a clean checkout can still contain unpublished commits, so audit branch history
+  before removal.
