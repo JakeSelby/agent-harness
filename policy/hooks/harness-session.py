@@ -3,6 +3,10 @@
 """SessionStart hook: report harness drift, per-session HARNESS_* overrides, and the handoff,
 and check BMad integration without modifying repository configuration.
 
+It also records, silently, which agent definitions this session's registry holds, because the
+tool loads that registry once at process start: `posture.sessions_dir` says why, and the spawn
+hook reroutes only to a worker the record names.
+
 Silent when there is nothing to say, so a clean session costs no context. Never fails.
 """
 import importlib.util
@@ -146,6 +150,25 @@ def bmad_lines(repo, cwd):
     return ["BMad integration check: " + "; ".join(notable)] if notable else []
 
 
+def record_session(data):
+    """Record what this session's agent registry holds, for the spawn hook to route by.
+
+    Only a new process has a new registry — the tool loads agent definitions once and does not
+    reload them — so `clear` and `compact` must leave a record alone rather than restate it
+    from a disk that has changed since. The shape and the write are `posture.py`'s, which is
+    the copy the spawn hook reads. Best effort throughout: a session never fails over a record.
+    """
+    if data.get("source") not in ("startup", "resume"):
+        return
+    module = sibling("posture")
+    session = data.get("session_id")
+    if module is None:
+        return
+    module.write_session_record(session, {"agents": module.installed_agents(os.environ),
+                                          "at": int(time.time())})
+    module.prune_session_records(keep=session if isinstance(session, str) else None)
+
+
 def payload():
     try:
         if sys.stdin.isatty():
@@ -165,6 +188,11 @@ def config_path():
 
 
 def main():
+    data = payload()
+    try:
+        record_session(data)
+    except Exception:
+        pass
     manifest = load(STATE / "manifest.json")
     config = load(config_path())
     lines = []
@@ -177,7 +205,7 @@ def main():
     else:
         lines.extend(override_lines(config))
     tool = Path(manifest["repo"]) / "bin" / "harness" if manifest and manifest.get("repo") else None
-    cwd = payload().get("cwd") or os.getcwd()
+    cwd = data.get("cwd") or os.getcwd()
     if tool and (Path(cwd) / ".agent-harness" / "task.json").exists():
         out = subprocess.run([sys.executable, str(tool), "task", "show", cwd],
                              capture_output=True, text=True, timeout=remaining(2))

@@ -111,6 +111,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An unnamed spawn was rerouted to a band worker whenever the definition existed on disk, which
+  failed every such spawn in a session that was already running when `harness sync` installed the
+  workers: the tool loads its agent registry once, at process start, and rejected the type. The
+  SessionStart policy now records what each session's registry held, and a reroute requires the
+  worker to be in that record; without one the spawn keeps the previous one-rung behaviour and the
+  session is told once to restart. Records are private to their owner, swept after a fortnight,
+  and removed by `harness uninstall`.
 - A session whose transcript carried both a subagent's sidechain lines and that subagent's own
   file counted every delegated token twice. The session's totals are now taken over one map of
   message ids that both reads fill, so a message recorded in two places is one message. Agents

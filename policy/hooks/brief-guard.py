@@ -95,9 +95,9 @@ def effective_role(payload, tool_input, posture, router, table, variant):
     would sooner or later price the wrong band. Which spawns count as unnamed is that hook's
     predicate too, so a `subagent_type` of whitespace cannot be priced here and routed nowhere.
 
-    A spawn nothing routes — another runtime, no default band, a worker that is not installed,
-    a repository that ships its own, a delegation stance that is not `tiered` — is priced by
-    nothing, as it was before.
+    A spawn nothing routes — another runtime, no default band, a worker that is not installed
+    or not in this session's registry, a repository that ships its own, a delegation stance
+    that is not `tiered` — is priced by nothing, as it was before.
     """
     if router is None:
         return None
@@ -108,7 +108,8 @@ def effective_role(payload, tool_input, posture, router, table, variant):
     models = posture.tier_models()
     if len(models) < 2:
         return None
-    route, _ = router.band_route(posture, models, payload.get("cwd"), table())
+    route, _ = router.band_route(posture, models, payload.get("cwd"), table(),
+                                 payload.get("session_id"))
     return route["worker"] if route else None
 
 

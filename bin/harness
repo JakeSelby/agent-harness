@@ -1306,13 +1306,15 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
         say(f"  restore {global_gitignore_path()}")
     if remove_local_bin_from_path():
         say(f"  restore {home() / '.zprofile'}")
-    # The usage feed's per-session files are harness state, not the user's: they hold an offset,
-    # counts and agent type names this install wrote. The usage log stays, because it is the
-    # measurement history `harness usage` reports and nobody else writes it.
-    feed = state_dir() / "feed"
-    if feed.is_dir():
-        shutil.rmtree(str(feed), ignore_errors=True)
-        say(f"  remove  {feed}")
+    # The usage feed's per-session files and the session registry are harness state, not the
+    # user's: an offset, counts, agent type names and the registry each session started with,
+    # all written by this install. The usage log stays, because it is the measurement history
+    # `harness usage` reports and nobody else writes it.
+    for name in ("feed", "sessions"):
+        directory = state_dir() / name
+        if directory.is_dir():
+            shutil.rmtree(str(directory), ignore_errors=True)
+            say(f"  remove  {directory}")
     if not store.conflicts:
         for f in (manifest_path(), applied_path()):
             if f.exists():
