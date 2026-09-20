@@ -21,14 +21,23 @@ fixed here: every number comes from the table and none of the words do. It is so
 sentence says to finish if close and otherwise return — because a hard cap would truncate the
 work rather than the spend. A row with no budgets, a table that will not build, and a brief that
 already prices itself all mean no sentence, which is what keeps a null variant byte-identical.
+
+A spawn that named a role is priced on every runtime. A spawn that named none is priced by the
+band worker it is about to be routed to, so it is priced only where that reroute happens — Claude
+Code, whose hook rewrites `subagent_type`. On any other runtime nothing routes such a spawn, and
+a budget naming a band it will not run in is worse than none.
 """
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
 HOOK = "harness:brief-guard"
 HOOKS = Path(__file__).resolve().parent
+# The runtime whose spawn hook reroutes an unnamed spawn to a band worker. The coordinator sets
+# `HARNESS_RUNTIME`; a hook run by hand has no coordinator and is this one.
+ROUTING_RUNTIME = "claude-code"
 
 # Written so it matches the detector's own cap pattern; a bound the detector cannot see is
 # not a bound. `tests/test_brief_guard.py` asserts that parity.
@@ -75,47 +84,46 @@ def needs_bound(module, tool_input):
     return not module.WORD_CAP_RE.search(prompt)
 
 
-def named_type(tool_input):
-    """The agent definition this spawn named, or None for a spawn that named none."""
-    kind = tool_input.get("subagent_type")
-    kind = kind.strip() if isinstance(kind, str) else ""
-    return kind if kind and kind != "general-purpose" else None
-
-
-def effective_role(payload, tool_input, posture, variant):
+def effective_role(payload, tool_input, posture, router, table, variant):
     """The role whose row prices this spawn, or None when nothing prices it.
 
     A spawn that named a definition is priced by that role. A spawn that named none is priced
     by the band worker it is about to be routed to — which this hook cannot read off the event,
     because the coordinator hands both hooks the original call and not each other's rewrite. So
-    the route is computed by calling `tier-agent-spawns`' own `band_route`: a second answer to
-    "where does an unnamed spawn go" would sooner or later price the wrong band. A spawn nothing
-    routes — no default band, a worker that is not installed, a repository that ships its own,
-    a delegation stance that is not `tiered` — is priced by nothing, as it was before.
+    the route is computed by calling `tier-agent-spawns`' own `band_route`, on the one table
+    `table()` builds: a second answer to "where does an unnamed spawn go", or a second table,
+    would sooner or later price the wrong band. Which spawns count as unnamed is that hook's
+    predicate too, so a `subagent_type` of whitespace cannot be priced here and routed nowhere.
+
+    A spawn nothing routes — another runtime, no default band, a worker that is not installed,
+    a repository that ships its own, a delegation stance that is not `tiered` — is priced by
+    nothing, as it was before.
     """
-    kind = named_type(tool_input)
-    if kind:
-        return kind
-    if variant != "tiered":
-        return None
-    router = sibling("tier-agent-spawns")
     if router is None:
+        return None
+    if not router.is_unnamed(tool_input):
+        return tool_input.get("subagent_type")
+    if variant != "tiered" or os.environ.get("HARNESS_RUNTIME", ROUTING_RUNTIME) != ROUTING_RUNTIME:
         return None
     models = posture.tier_models()
     if len(models) < 2:
         return None
-    route, _ = router.band_route(posture, models, payload.get("cwd"))
+    route, _ = router.band_route(posture, models, payload.get("cwd"), table())
     return route["worker"] if route else None
 
 
 def budget_sentence(row):
-    """The sentence one row's soft budget is stated in, or None when the row prices nothing."""
+    """The sentence one row's soft budget is stated in, or None when the row prices nothing.
+
+    A half under one unit is left out with the nulls: "about 0 output tokens" would read as an
+    instruction to do nothing, which is a budget nobody wrote.
+    """
     if not isinstance(row, dict):
         return None
     parts = []
     for key, unit in UNITS:
         value = row.get(key)
-        if isinstance(value, int) and not isinstance(value, bool):
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
             parts.append("about {:,} {}".format(value, unit))
     if not parts:
         return None
@@ -126,20 +134,28 @@ def budget_sentence(row):
 def budget_for(payload, tool_input, module, variant):
     """The budget sentence this brief is missing, or None. Never raises: a spawn outranks a row.
 
-    The cost table is read here and nowhere else in this hook, so it is built only for a call
-    this hook would price, and any failure building it is simply no sentence.
+    The cost table is read here and nowhere else in this hook, at most once, and never for a
+    spawn nothing would price: a table is a walk of every sidecar on the `extends` chain, and
+    this hook runs on a tool call. Any failure building it is simply no sentence.
     """
     pattern = getattr(module, "BUDGET_RE", None)
     if pattern is None or pattern.search(tool_input.get("prompt") or ""):
         return None
-    posture = sibling("posture")
-    if posture is None:
+    posture, router = sibling("posture"), sibling("tier-agent-spawns")
+    if posture is None or router is None:
         return None
+    built = []
+
+    def table():
+        if not built:
+            built.append(posture.cost_table())
+        return built[0]
+
     try:
-        role = effective_role(payload, tool_input, posture, variant)
+        role = effective_role(payload, tool_input, posture, router, table, variant)
         if not role:
             return None
-        return budget_sentence(posture.row_for(posture.cost_table(), role))
+        return budget_sentence(posture.row_for(table(), role))
     except Exception:
         return None
 

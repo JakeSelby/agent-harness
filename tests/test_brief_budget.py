@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: MIT
-"""The soft budget a brief carries, and the note a spawn wider than the posture gets.
+"""The soft budget a brief carries.
 
 `brief-guard` states the row's expected spend in the brief, because a subagent cannot see the
-cost variant that priced it; `tier-agent-spawns` says when a fan-out is already wider than the
-variant's `max_parallel`, and never denies it. Both are informational, so the guarantee these
-tests hold is the null one: a variant that prices nothing and sets no width produces exactly the
-bytes 0.10.0 produced, for every shape of spawn.
+cost variant that priced it. It is informational, so the guarantee these tests hold is the null
+one: a variant that prices nothing produces exactly the bytes 0.10.0 produced, for every shape
+of spawn, and so does a table that will not build.
 
 Run: python3 -m unittest discover tests
 """
@@ -189,7 +188,7 @@ class LeavesAloneTests(HookCase):
 
     def test_a_brief_that_prices_itself(self):
         for own in ("Stay under 20 tool calls.", "Spend at most 9,000 output tokens.",
-                    "Work to a budget of two passes."):
+                    "Keep to a budget of 30 tool calls."):
             with self.subTest(brief=own):
                 self.assertIsNone(self.guard({"prompt": own, "subagent_type": "gatherer"}))
 
@@ -253,7 +252,7 @@ class OneRouterTests(HookCase):
         def patched(name):
             loaded = real(name)
             if name == "tier-agent-spawns":
-                def band_route(posture, models, cwd):
+                def band_route(posture, models, cwd, table=None):
                     asked.append(cwd)
                     return {"worker": "gatherer", "row": {}}, None
                 loaded.band_route = band_route
@@ -273,74 +272,115 @@ class OneRouterTests(HookCase):
         self.assertIn("about 8,500 output tokens and about 15 tool calls", prompt)
 
 
-class FanOutNoteTests(HookCase):
-    """The width is a stance, so the note says the number and changes nothing."""
+class DetectorTests(unittest.TestCase):
+    """A spend is a limiting word, a quantity and a unit; any one of them alone is prose."""
 
-    def spawns(self, started, finished=()):
-        """A transcript whose newest assistant message issues `started` `Agent` calls at once."""
-        blocks = [{"type": "tool_use", "id": use, "name": "Agent", "input": {"prompt": "x"}}
-                  for use in started]
-        lines = [json.dumps({"type": "assistant", "message": {
-            "role": "assistant", "model": "claude-opus-5", "content": blocks}})]
-        if finished:
-            lines.append(json.dumps({"type": "user", "message": {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": use, "content": "done"} for use in finished]}}))
-        self.transcript.write_text("\n".join(lines) + "\n")
+    def test_what_counts_as_a_brief_that_prices_itself(self):
+        pattern = load(REPO / "claude" / "hooks" / "rule-detectors.py", "harness_detectors").BUDGET_RE
+        for text, priced in (("fix the 3 tool calls in parser.py", False),
+                             ("the budget of the project", False),
+                             ("align the 12 tokens", False),
+                             ("under 20k output tokens", True),
+                             ("Return at most 400 words.", False),
+                             ("Keep to a budget of 30 tool calls.", True),
+                             ("Expected spend: about 8,500 output tokens.", True)):
+            with self.subTest(text=text):
+                self.assertEqual(bool(pattern.search(text)), priced)
 
-    def test_one_past_the_width_says_so_with_the_fan_outs_budget(self):
+
+class RuntimeTests(HookCase):
+    """Only Claude Code reroutes an unnamed spawn, so only there is one priced by a band."""
+
+    def test_another_runtime_prices_no_unnamed_spawn(self):
         self.install_workers()
-        self.spawns([f"t{n}" for n in range(6)])  # balanced: max_parallel 6
-        out = self.run_hook(TIER, {"prompt": "x"})
-        self.assertIn("6 subagents in flight against a posture width of 6; this spawn's budget "
-                      "is about 39,000 output tokens, about 234,000 across the fan-out",
-                      out["systemMessage"])
-        self.assertIn("routed to worker-b", out["systemMessage"])
+        for runtime in ("codex", "some-future-runtime"):
+            with self.subTest(runtime=runtime):
+                prompt = self.prompt({"prompt": "x"}, env={"HARNESS_RUNTIME": runtime})
+                self.assertNotIn("Expected spend", prompt)
 
-    def test_at_the_width_there_is_no_note(self):
+    def test_another_runtime_still_prices_a_named_role(self):
+        prompt = self.prompt({"prompt": "x", "subagent_type": "gatherer"},
+                             env={"HARNESS_RUNTIME": "codex"})
+        self.assertIn("about 8,500 output tokens", prompt)
+
+    def test_claude_code_named_explicitly_prices_it_like_a_bare_run(self):
         self.install_workers()
-        self.spawns([f"t{n}" for n in range(5)])
-        self.assertNotIn("in flight", self.run_hook(TIER, {"prompt": "x"})["systemMessage"])
+        self.assertIn("about 39,000 output tokens",
+                      self.prompt({"prompt": "x"}, env={"HARNESS_RUNTIME": "claude-code"}))
 
-    def test_a_result_already_back_is_not_in_flight(self):
+
+class WhitespaceAndZeroTests(HookCase):
+    def test_a_subagent_type_of_whitespace_is_priced_by_nothing(self):
+        # The spawn hook reads this as a named type and routes it nowhere, so pricing it as a
+        # band worker would state a budget for a spawn that never runs as one.
         self.install_workers()
-        self.spawns([f"t{n}" for n in range(6)], finished=["t0"])
-        self.assertNotIn("in flight", self.run_hook(TIER, {"prompt": "x"})["systemMessage"])
+        self.assertNotIn("Expected spend", self.prompt({"prompt": "x", "subagent_type": "  "}))
 
-    def test_a_variant_with_no_width_never_notes(self):
+    def test_a_half_that_rounds_below_one_is_left_out_like_a_null(self):
+        self.variant("tiny", {"schema_version": 1, "extends": "balanced",
+                              "switches": {"budget_multiplier": 0.01},
+                              "rows": {"gatherer": {"budget_output_tokens": 900,
+                                                    "budget_tool_calls": 15}}})
+        # 900 × 0.01 rounds to 0 output tokens; 15 × 0.01 rounds to 0 tool calls. `gatherer`
+        # needs no bound either, so the hook has nothing at all to say.
+        self.assertIsNone(self.guard({"prompt": "x", "subagent_type": "gatherer"}))
+
+    def test_a_zero_half_leaves_the_other_half_stated(self):
+        self.variant("half", {"schema_version": 1, "extends": "balanced", "rows": {
+            "gatherer": {"budget_output_tokens": 4000, "budget_tool_calls": 0}}})
+        prompt = self.prompt({"prompt": "x", "subagent_type": "gatherer"})
+        self.assertIn("Expected spend: about 4,000 output tokens. Past that,", prompt)
+
+
+class OneTableTests(HookCase):
+    """A table is a walk of every sidecar on the chain, and this hook runs on a tool call."""
+
+    def builds(self, tool_input):
+        module = load(GUARD, "harness_brief_guard")
+        real, built = module.sibling, []
+
+        def counted(name):
+            loaded = real(name)
+            if name == "posture" and loaded is not None:
+                inner = loaded.cost_table
+
+                def cost_table(*args, **kwargs):
+                    built.append(name)
+                    return inner(*args, **kwargs)
+
+                loaded.cost_table = cost_table
+            return loaded
+
+        module.sibling = counted
+        payload = {"tool_name": "Agent", "tool_input": tool_input,
+                   "transcript_path": str(self.transcript)}
+        with unittest.mock.patch.dict(os.environ, self.env(), clear=True), \
+                unittest.mock.patch.object(module.sys, "stdin", io.StringIO(json.dumps(payload))), \
+                contextlib.redirect_stdout(io.StringIO()):
+            module.main()
+        return len(built)
+
+    def test_a_priced_spawn_builds_it_once_however_it_was_priced(self):
         self.install_workers()
-        self.spawns([f"t{n}" for n in range(40)])
-        out = self.run_hook(TIER, {"prompt": "x"}, env={"HARNESS_STANCE_COST": "max"})
-        self.assertNotIn("in flight", out["systemMessage"])
+        self.assertEqual(self.builds({"prompt": "x", "subagent_type": "gatherer"}), 1)
+        self.assertEqual(self.builds({"prompt": "x"}), 1)
 
-    def test_a_named_role_the_hook_would_not_change_still_hears_it(self):
-        # `planner` is priced at null, so the note carries the count and no budget clause, and
-        # the call itself is untouched: no `updatedInput`, and never a permission decision.
-        self.spawns([f"t{n}" for n in range(6)])
-        out = self.run_hook(TIER, {"prompt": "x", "subagent_type": "planner"})
-        self.assertEqual(out, {"systemMessage": "tier-agent-spawns hook: 6 subagents in flight "
-                                                "against a posture width of 6"})
-
-    def test_a_named_role_with_a_budget_carries_its_own(self):
-        self.spawns([f"t{n}" for n in range(6)])
-        out = self.run_hook(TIER, {"prompt": "x", "subagent_type": "reviewer"})
-        self.assertIn("about 22,000 output tokens, about 132,000 across the fan-out",
-                      out["systemMessage"])
-
-    def test_the_note_never_denies_and_never_asks(self):
+    def test_a_spawn_the_cheap_gates_stop_never_builds_it(self):
         self.install_workers()
-        self.spawns([f"t{n}" for n in range(9)])
-        for tool_input in ({"prompt": "x"}, {"prompt": "x", "subagent_type": "planner"},
-                           {"prompt": "x", "subagent_type": "reviewer", "model": "fable"}):
-            with self.subTest(tool_input=tool_input):
-                out = self.run_hook(TIER, tool_input)
-                self.assertIn("in flight", out["systemMessage"])
-                self.assertNotIn("permissionDecision",
-                                 json.dumps(out.get("hookSpecificOutput", {})))
+        self.assertEqual(self.builds({"prompt": "Stay under 20 tool calls."}), 0)
+        self.config("session-model")
+        self.assertEqual(self.builds({"prompt": "x"}), 0)
 
-    def test_no_transcript_is_no_note(self):
-        self.install_workers()
-        out = self.run_hook(TIER, {"prompt": "x"}, transcript=False)
-        self.assertNotIn("in flight", out["systemMessage"])
+
+class SpawnHookTests(unittest.TestCase):
+    """The spawn hook carries no budget behaviour of its own; the usage feed sees what runs."""
+
+    def test_it_holds_nothing_but_the_shared_router(self):
+        text = TIER.read_text(encoding="utf-8")
+        for absent in ("in_flight", "fanout", "max_parallel", "in flight"):
+            self.assertNotIn(absent, text)
+        module = load(TIER, "harness_tier_spawns")
+        self.assertIn("table", module.band_route.__code__.co_varnames)
 
 
 if __name__ == "__main__":

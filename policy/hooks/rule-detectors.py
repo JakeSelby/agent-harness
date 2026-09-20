@@ -107,14 +107,18 @@ WORD_CAP_RE = re.compile(
     r"|word\s+cap\s*(?:of\s+)?\d+)"
 )
 # A brief that already prices itself: the sentence `brief-guard` writes, or a spend the author
-# wrote in their own words ("about 20 tool calls", "9,000 output tokens", "a budget of 30 calls").
-# It exists so the hook adds a budget to a brief that states none and leaves every other one
-# alone; a number without one of these units is not a spend, so "read 40 files" is still a miss.
+# wrote in their own words ("under 20k output tokens", "at most 30 tool calls"). A spend is three
+# things together — a limiting word, a quantity and one of the two units — because any one of
+# them alone is ordinary prose: "fix the 3 tool calls in parser.py" counts nothing, and neither
+# does "the budget of the project".
+_BUDGET_LIMIT = (r"(?:at most|no more than|not more than|fewer than|less than|up to|under|within"
+                 r"|about|around|approx(?:\.|imately)?|expected|expect|spend|budget(?:ed)?|cap(?:ped)?"
+                 r"|limit(?:ed)?|max(?:imum)?|≤|<=|<|~)")
+_BUDGET_UNIT = r"(?:(?:output|completion)[- ]tokens?|tool[- ]?calls?)"
 BUDGET_RE = re.compile(
     r"(?i)(?:expected spend:"
-    r"|\d[\d,]*\s*(?:output\s+|completion\s+)?tokens?\b"
-    r"|\d[\d,]*\s*tool[- ]?calls?\b"
-    r"|budget of\b|token budget\b|call budget\b)"
+    r"|" + _BUDGET_LIMIT + r"(?:\s+[\w,'’-]+){0,3}\s*"
+    r"\d[\d,._]*\s*[kKmM]?\s*(?:of\s+)?" + _BUDGET_UNIT + r")"
 )
 # The autonomy gate's two marks: the prefix the model re-runs a denied command behind, and the
 # signature the grade hook writes into the reason it denies with. The marker pattern mirrors
