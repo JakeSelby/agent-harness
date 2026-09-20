@@ -49,6 +49,17 @@ For every target listed in the catalog, verify every `required_cases` entry nati
 6. Run a BMad workflow from its shared framework checkout against an assigned worktree.
 7. Continue the same task Claude→Codex and Codex→Claude, including changed-tree and stale-writer
    cases; establish permissions anew. Verify migration, drift and uninstall preserve user data.
+8. Select a non-default cost variant and sync; confirm that only the roles it changes are
+   rewritten and that every other role keeps its link. In a session started after that sync,
+   spawn a subagent that names no role, and confirm from the subagent's own transcript that it
+   ran as the variant's default band worker at that row's model and effort, that its brief ends
+   with the budget sentence, that the usage feed reported its spend against that budget, and that
+   `harness usage --rescan --by role` records the routed row. Confirm that a session already
+   running before the workers were installed is not rerouted and that its spawn still succeeds.
+   Then select a variant with the feed off, no default band and no budgets, and confirm that none
+   of this occurs. On a runtime that does not route native spawns, verify the posture through an
+   isolated role worker's model and effort and the budget sentence in a named role's brief, and
+   record the feed as not applicable with that reason.
 
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
 `source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, and a `cases`
