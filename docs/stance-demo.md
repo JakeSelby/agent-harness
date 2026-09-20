@@ -22,9 +22,10 @@ harness sync
 ```
 
 Both projections now carry `primitives/stances/delegation/tiered.md`: bounded gathering is allowed;
-judgment stays with the session. Model and tool choices come from native role bindings. Claude
-has tier mappings; Codex currently inherits the session model where no cheaper mapping is qualified.
-The harness reports this limit rather than interpreting Claude aliases as Codex models.
+judgment stays with the session. Each shared role names a capability class and each adapter's
+`tiers` table maps the classes to its own native models, so neither adapter interprets the
+other's names. Both map all four. A class an adapter leaves out resolves upward or inherits the
+session model, and a `role_bindings` override of `model` to `inherit` does the same per role.
 
 For communication, switch `stances.voice` from `answer-card` to `scannable`: the resolved text
 changes from the answer/why/catch contract to verdict-first sections and explicit status labels.

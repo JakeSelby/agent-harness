@@ -13,9 +13,20 @@ every tier boundary below as extrapolation unless it names a Claude-tier measure
 
 ## Runtime mapping
 
-Use shared role intent and the active adapter's bindings. Provider model names and benchmark
-examples below describe their original evaluation context; they are not cross-provider
-capability equivalences. With no qualified cheaper mapping, inherit the session model and
+A shared role names one of four capability classes, strongest first — `frontier`, `strong`,
+`standard`, `light` — in its contract's `tier:` line, and each adapter's `bindings.json` maps the
+classes it has qualified to native models in a `tiers` table. The class is a statement about the
+work; the table is the only place a provider's model names appear. An unmapped class resolves to
+the nearest *stronger* mapped class and otherwise inherits the session model — never downward,
+because a weaker model than the role asked for is a silent failure. Both adapters map all four.
+Claude Code's table uses version-free aliases. Codex has none — every id carries a version and
+keeps resolving after its successor ships — so `harness tiers check` reads the catalog Codex
+fetches from its provider and flags a mapped model that is gone, superseded or out of order.
+`tiers.<runtime>.<class>` in your config remaps a class in one line; on a provider that lacks
+these ids, override a role's `model` to `inherit` in `role_bindings`.
+
+Provider model names and benchmark examples below describe their original evaluation context;
+they are not cross-provider capability equivalences. With no qualified cheaper mapping, inherit the session model and
 report the gap. Codex does not interpret Claude model aliases. Role authority remains subject
 to native restrictions; read-only defaults are not proof of confinement.
 
@@ -87,9 +98,12 @@ Ranked by evidential strength.
 
 ## The bands
 
+The bands class the *work*; the classes above rank the *models*. An unnamed spawn has no role to
+carry a class, so the orchestrator bands the work and picks the class the band allows.
+
 ### Band A — down-class freely
 
-The adapter’s inexpensive bounded-work mapping, at low effort when supported.
+Class `light` or `standard`, at low effort when supported.
 
 | Work | Why it is safe |
 | --- | --- |
@@ -105,7 +119,7 @@ terms, or up-class.
 
 ### Band B — down-class only with a named guard
 
-The adapter’s capable mapping at low effort, or Band A plus a verifier.
+Class `standard`, or `strong` at low effort, or Band A plus a verifier.
 
 | Work | Guard |
 | --- | --- |
@@ -117,7 +131,8 @@ The adapter’s capable mapping at low effort, or Band A plus a verifier.
 
 ### Band C — never down-class
 
-Session model, default effort.
+Class `strong`, or a named role. Never `frontier` by request: that class is reached through a
+role whose contract declares it, and effort above `high` is not available to a spawn at all.
 
 Branching on an intermediate result · multi-source synthesis with conflicting evidence ·
 long-horizon agentic coding · retrieval over >256K or mid-document · security-relevant review ·
@@ -306,9 +321,16 @@ re-delegate its whole assignment.
 
 **Drop effort before you drop tier — where the dial exists.** A stronger model at low effort
 beats a weaker model at default effort on both quality and cost per solved task. A plain spawn
-has only the tier dial, so the tiers ship as frontmatter in `claude/agents/`: `gatherer` (one
-tier down, low effort, read-only), `reviewer` (`inherit`, high effort, fresh context) and
-`log-compressor` (two tiers down, no verdict). Spawn one by name, not a hand-written brief.
+has only the tier dial, so a role's class and effort ship as frontmatter in `claude/agents/`:
+`gatherer` (`strong`, low effort, read-only), `reviewer` (`strong`, high effort, fresh context)
+and `log-compressor` (`standard`, no verdict). Spawn one by name, not a hand-written brief.
+
+**A judgment role names its class; it does not inherit the session's.** Inheriting made a
+reviewer's cost and capability a side effect of whatever the session ran, and from a session on
+the scarcest tier it did the very thing the next rule forbids. A reviewer's value is fresh
+context first and tier third, so `strong` keeps most of it. The inherited model was also a crude
+difficulty signal — *this session was escalated, so review it hard* — and that signal now has to
+be a decision: a role that declares `frontier`, as `design-judge` does.
 
 **Never spawn subagents on the orchestrator's own tier when that tier is rate-limited or
 capacity-gated.** One notch down costs a few points; two notches costs many. Step once.
@@ -321,6 +343,13 @@ options in workflow scripts.
 tier below the session under this stance. That is right for gathering and wrong for judgment,
 so a framework skill whose spawn is a reviewer names `reviewer` in its override instead of
 leaving the spawn bare; `docs/bmad.md` shows the pattern.
+
+**A framework does not choose model or effort.** Planning frameworks hard-code lines such as
+"review subagents run at the session's capability" in step files their override contract cannot
+reach. The hook therefore tiers a framework repository like any other and drops a request for
+the top class, which leaves the framework its personas, prompts and review structure and takes
+only the two dials. Where a recipe exposes a key, the override names a harness role, and the
+role carries tools and effort with it.
 
 **Session model everywhere**, the alternative stance, keeps subagents on the session model and
 spends the effort dial instead, with the number of agents kept small.

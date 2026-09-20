@@ -7,6 +7,10 @@ from pathlib import Path
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
 KINDS = {"rules": "rules", "stances": "stances", "skills": "skills",
          "roles": "roles", "workflows": "workflows", "presentation": "presentation"}
+# Capability classes, strongest first. A shared role names the class its work needs; each
+# adapter's bindings.json maps the classes it has qualified onto its own native models.
+TIER_CLASSES = ("frontier", "strong", "standard", "light")
+EFFORTS = ("low", "medium", "high")
 
 
 def identifier(value):
@@ -106,19 +110,83 @@ def role_contract(root, name):
         raise ValueError("invalid shared role name or authority: " + name)
     if fields.get("context") != "fresh" or fields.get("delegation") != "none":
         raise ValueError("unsupported role context or delegation contract: " + name)
+    if fields.get("tier") not in TIER_CLASSES:
+        raise ValueError("shared role tier must be one of " + ", ".join(TIER_CLASSES) + ": " + name)
     return fields, body
 
 
-def role_projection(root, runtime, path, overrides=None):
-    fields, body = role_contract(root, path.stem)
-    binding = json.loads((root / "adapters" / runtime / "bindings.json").read_text())["roles"][fields["name"]]
-    allowed = {"model", "model_reasoning_effort"} if runtime == "codex" else {"model", "effort"}
-    if set(overrides or {}) - allowed:
+def native_model(tiers, tier):
+    """The adapter's model for a class, or the nearest stronger class it maps; None if neither.
+
+    An unmapped class never resolves downward: a weaker model than the role asked for is a
+    silent failure, while None makes the caller inherit the session model and say so.
+    """
+    for name in reversed(TIER_CLASSES[:TIER_CLASSES.index(tier) + 1]):
+        if name in tiers:
+            return tiers[name]
+    return None
+
+
+def adapter_tiers(root, runtime, tiers=None):
+    """The adapter's class table with a user's `tiers.<runtime>` entries laid over it."""
+    data = json.loads((root / "adapters" / runtime / "bindings.json").read_text())
+    merged = dict(data.get("tiers", {}), **(tiers or {}))
+    if set(merged) - set(TIER_CLASSES) or not all(
+            isinstance(v, str) and v.strip() and not v.startswith("-") and not any(c.isspace() for c in v)
+            for v in merged.values()):
+        raise ValueError("adapter tiers map " + ", ".join(TIER_CLASSES) + " to native model identifiers")
+    return data, merged
+
+
+def tier_findings(tiers, models):
+    """What a provider's model catalog says is wrong with a class table, as (class, model, problem).
+
+    `models` is the provider's own list: `slug`, `priority` (lower is stronger) and `upgrade`, the
+    successor it names once a model is superseded. A versioned id keeps resolving after its
+    successor ships, so without this the table goes stale silently.
+    """
+    known = {m.get("slug"): m for m in models if isinstance(m, dict)}
+    findings, last = [], None
+    for name in TIER_CLASSES:
+        model = tiers.get(name)
+        if model is None:
+            continue
+        entry = known.get(model)
+        if entry is None:
+            findings.append((name, model, "not in the provider's catalog"))
+            continue
+        successor = entry.get("upgrade")
+        successor = successor.get("model") or successor.get("slug") if isinstance(successor, dict) else successor
+        if successor:
+            findings.append((name, model, "superseded by " + str(successor)))
+        priority = entry.get("priority")
+        if isinstance(priority, int):
+            if last is not None and priority < last:
+                findings.append((name, model, "the catalog ranks it above the class before it"))
+            last = priority
+    return findings
+
+
+def role_binding(root, runtime, fields, overrides=None, tiers=None):
+    """A role's native binding: the adapter's entry, its class resolved to a model, then overrides."""
+    data, tiers = adapter_tiers(root, runtime, tiers)
+    effort_key = "model_reasoning_effort" if runtime == "codex" else "effort"
+    if set(overrides or {}) - {"model", effort_key}:
         raise ValueError("role bindings may change model and effort only")
-    binding = dict(binding, **(overrides or {}))
+    binding = dict(data["roles"][fields["name"]], **(overrides or {}))
+    if binding.get(effort_key, EFFORTS[0]) not in EFFORTS:
+        raise ValueError("role effort must be one of " + ", ".join(EFFORTS) + ": " + fields["name"])
+    model = binding.pop("model", None) or native_model(tiers, fields["tier"])
+    # An `inherit` override is the way back to the session model, for a provider without these ids.
+    return dict({"model": model} if model and model != "inherit" else {}, **binding)
+
+
+def role_projection(root, runtime, path, overrides=None, tiers=None):
+    fields, body = role_contract(root, path.stem)
+    binding = role_binding(root, runtime, fields, overrides, tiers)
     if runtime == "claude-code":
         values = {k: fields[k] for k in ("name", "description")}
-        values.update(binding)
+        values.update(dict({"model": "inherit"}, **binding))
         return "---\n" + "".join(k + ": " + v + "\n" for k, v in values.items()) + "---\n\n" + body
     if runtime != "codex":
         raise ValueError("unsupported runtime: " + runtime)

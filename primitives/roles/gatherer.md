@@ -1,6 +1,7 @@
 ---
 name: gatherer
 description: Read-only information gathering — locate, read, extract and summarize a named list of files or sources. Returns at most 400 words plus a path to the long version. Never edits, never decides. Use for grep fan-outs, bulk read-and-summarize over a bounded scope, and doc lookups.
+tier: strong
 authority: read-only
 context: fresh
 delegation: none

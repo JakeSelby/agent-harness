@@ -24,6 +24,79 @@ class CatalogTests(unittest.TestCase):
             self.assertIn('sandbox_mode = "read-only"' if fields["authority"] != "workspace-write"
                           else 'sandbox_mode = "workspace-write"', codex)
 
+    def test_roles_name_a_class_and_each_adapter_maps_it(self):
+        classes = {p.stem: catalog.frontmatter(p)[0]["tier"] for p in (REPO / "primitives/roles").glob("*.md")}
+        self.assertEqual(classes, {"builder": "strong", "design-judge": "frontier", "gatherer": "strong",
+                                   "log-compressor": "standard", "planner": "strong", "reviewer": "strong",
+                                   "spec-reviewer": "standard"})
+        for source in (REPO / "primitives/roles").glob("*.md"):
+            self.assertNotIn("\nmodel: inherit\n", catalog.role_projection(REPO, "claude-code", source))
+            self.assertIn("\nmodel = ", catalog.role_projection(REPO, "codex", source))
+        reviewer = REPO / "primitives/roles/reviewer.md"
+        self.assertIn('model = "chosen"', catalog.role_projection(REPO, "codex", reviewer, {"model": "chosen"}))
+        # `inherit` is the override back to the session model: Codex omits the key, Claude Code spells it.
+        self.assertNotIn("\nmodel = ", catalog.role_projection(REPO, "codex", reviewer, {"model": "inherit"}))
+        self.assertIn("\nmodel: inherit\n", catalog.role_projection(REPO, "claude-code", reviewer, {"model": "inherit"}))
+        for runtime in ("claude-code", "codex"):
+            tiers = json.loads((REPO / "adapters" / runtime / "bindings.json").read_text())["tiers"]
+            self.assertEqual(list(tiers), list(catalog.TIER_CLASSES), msg=runtime)
+
+    def test_an_unmapped_class_resolves_upward_or_not_at_all(self):
+        self.assertEqual(catalog.native_model({"strong": "b", "light": "d"}, "standard"), "b")
+        self.assertEqual(catalog.native_model({"strong": "b", "light": "d"}, "light"), "d")
+        self.assertIsNone(catalog.native_model({"standard": "c", "light": "d"}, "strong"))
+        self.assertIsNone(catalog.native_model({}, "frontier"))
+
+    def test_bindings_reject_unknown_classes_and_effort_above_high(self):
+        fields = catalog.role_contract(REPO, "reviewer")[0]
+        for effort in ("xhigh", "max"):
+            with self.assertRaisesRegex(ValueError, "effort must be one of"):
+                catalog.role_binding(REPO, "claude-code", fields, {"effort": effort})
+        self.assertEqual(catalog.role_binding(REPO, "claude-code", fields, {"model": "chosen"})["model"], "chosen")
+        with patch.object(catalog.json, "loads", return_value={"tiers": {"premium": "x"}, "roles": {"reviewer": {}}}):
+            with self.assertRaisesRegex(ValueError, "adapter tiers"):
+                catalog.role_binding(REPO, "claude-code", fields)
+        with patch.object(catalog, "frontmatter", return_value=({"name": "reviewer", "authority": "read-only",
+                          "context": "fresh", "delegation": "none", "tier": "premium"}, "body")):
+            with self.assertRaisesRegex(ValueError, "tier must be one of"):
+                catalog.role_contract(REPO, "reviewer")
+
+    def test_a_configured_class_table_lays_over_the_adapters(self):
+        reviewer = REPO / "primitives/roles/reviewer.md"
+        self.assertIn('model = "next-strong"', catalog.role_projection(REPO, "codex", reviewer, None, {"strong": "next-strong"}))
+        fields = catalog.role_contract(REPO, "reviewer")[0]
+        self.assertEqual(catalog.role_binding(REPO, "claude-code", fields, None, {"strong": "next"})["model"], "next")
+        # A per-role override still beats the class, and an unknown class is refused wherever it comes from.
+        self.assertEqual(catalog.role_binding(REPO, "claude-code", fields, {"model": "mine"}, {"strong": "next"})["model"], "mine")
+        with self.assertRaisesRegex(ValueError, "adapter tiers"):
+            catalog.role_binding(REPO, "codex", fields, None, {"premium": "x"})
+
+    def test_a_class_table_is_checked_against_the_providers_catalog(self):
+        tiers = {"frontier": "a", "strong": "b", "standard": "c", "light": "d"}
+        models = [{"slug": "a", "priority": 1, "upgrade": None}, {"slug": "b", "priority": 4},
+                  {"slug": "c", "priority": 7}, {"slug": "d", "priority": 8}, "junk"]
+        self.assertEqual(catalog.tier_findings(tiers, models), [])
+        self.assertEqual(catalog.tier_findings(tiers, []), [(n, m, "not in the provider's catalog") for n, m in tiers.items()])
+        models[1] = {"slug": "b", "priority": 4, "upgrade": {"model": "b2"}}
+        models[2] = {"slug": "c", "priority": 2, "upgrade": "c2"}
+        self.assertEqual(catalog.tier_findings(tiers, models),
+                         [("strong", "b", "superseded by b2"), ("standard", "c", "superseded by c2"),
+                          ("standard", "c", "the catalog ranks it above the class before it")])
+        self.assertEqual(catalog.tier_findings({"light": "d"}, models), [])
+
+    def test_tiers_check_reports_stale_models_and_never_passes_a_missing_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = []
+            with patch.object(harness, "codex_dir", return_value=Path(tmp)), patch.object(harness, "say", out.append), \
+                    patch.object(harness, "load_config", return_value={"tiers": {"codex": {"strong": "old-sol"}}}):
+                self.assertEqual(harness.main(["tiers", "check"]), 0)
+                self.assertIn("unverified", out[-1])
+                (Path(tmp) / "models_cache.json").write_text(json.dumps({"models": [
+                    {"slug": "gpt-6-astra", "priority": 1}, {"slug": "old-sol", "priority": 4, "upgrade": "new-sol"},
+                    {"slug": "gpt-5.6-terra", "priority": 7}, {"slug": "gpt-5.6-luna", "priority": 8}]}))
+                self.assertEqual(harness.main(["tiers", "check"]), 1)
+                self.assertEqual(out[-1], "codex: strong -> old-sol: superseded by new-sol")
+
     def test_catalog_uses_neutral_unique_source_ids(self):
         items = catalog.catalog(REPO)["primitives"]
         self.assertEqual(len(items), len({(x["kind"], x["id"]) for x in items}))

@@ -86,10 +86,15 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "delegation is off"):
             workers.resolve(REPO, self.cfg, "codex", "reviewer", "fixture-model")
 
-    def test_inherited_model_is_not_silently_replaced_with_native_default(self):
-        for runtime in workers.RUNTIMES:
-            with self.assertRaisesRegex(ValueError, "parent session"):
-                workers.resolve(REPO, self.cfg, runtime, "reviewer")
+    def test_a_role_runs_on_its_class_and_an_unmapped_class_is_never_guessed(self):
+        self.assertEqual(workers.resolve(REPO, self.cfg, "claude-code", "reviewer")[1]["model"], "opus")
+        self.assertEqual(workers.resolve(REPO, self.cfg, "claude-code", "reviewer", "chosen")[1]["model"], "chosen")
+        self.assertEqual(workers.resolve(REPO, self.cfg, "codex", "reviewer")[1]["model"], "gpt-5.6-sol")
+        self.cfg["tiers"] = {"codex": {"strong": "next-strong"}}
+        self.assertEqual(workers.resolve(REPO, self.cfg, "codex", "reviewer")[1]["model"], "next-strong")
+        self.cfg["role_bindings"] = {"codex": {"reviewer": {"model": "inherit"}}}
+        with self.assertRaisesRegex(ValueError, "parent session"):
+            workers.resolve(REPO, self.cfg, "codex", "reviewer")
         self.cfg["role_bindings"] = {"codex": {"reviewer": {"model": "selected-model"}}}
         self.assertEqual(workers.resolve(REPO, self.cfg, "codex", "reviewer")[1]["model"], "selected-model")
         self.cfg["role_bindings"]["codex"]["reviewer"]["sandbox_mode"] = "danger-full-access"
@@ -178,6 +183,12 @@ class WorkerTests(unittest.TestCase):
                 decision = lifecycle.dispatch(runtime, {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": inputs})["hookSpecificOutput"]
                 self.assertEqual(decision["permissionDecision"], "deny")
                 self.assertIn("harness role run", decision["permissionDecisionReason"])
+                self.assertNotIn("--model", decision["permissionDecisionReason"])
+            # Only an adapter that maps no model for the role's class is told to pass the session's.
+            with patch.object(catalog, "role_binding", return_value={}):
+                reason = lifecycle.dispatch("codex", {"hook_event_name": "PreToolUse", "tool_name": "spawn_agent",
+                    "tool_input": {"agent_type": "reviewer", "message": "review"}})["hookSpecificOutput"]["permissionDecisionReason"]
+            self.assertIn("--model <session-model>", reason)
 
     def test_execute_passes_brief_as_data_and_records_logs(self):
         run_dir = self.base / "run"

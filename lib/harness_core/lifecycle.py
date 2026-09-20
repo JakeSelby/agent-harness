@@ -155,9 +155,12 @@ def dispatch(runtime, payload):
                     from . import catalog
                     fields, _ = catalog.role_contract(ROOT, role_name)
                     if fields["authority"] in ("read-only", "artifact-write"):
+                        # The role's class picks the model; the session's is the fallback, never the default.
+                        mapped = "model" in catalog.role_binding(ROOT, runtime, fields)
                         results.append({"hookSpecificOutput": {"permissionDecision": "deny",
                             "permissionDecisionReason": "This constrained harness role requires an isolated worker. Use harness role run "
-                            + role_name + " --runtime " + runtime + " --model <session-model> --workspace <repo> --prompt-file <brief-file>. "
+                            + role_name + " --runtime " + runtime + ("" if mapped else " --model <session-model>")
+                            + " --workspace <repo> --prompt-file <brief-file>. "
                             "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement."}})
             if delegation == "off":
                 results.append({"hookSpecificOutput": {"permissionDecision": "deny",
