@@ -388,6 +388,11 @@ whole of the choice, because only an agent definition can carry a band's class a
 spawn and the `Agent` tool takes no effort at all. A spawn that still names nothing is routed to
 the variant's default band, which is a default and not a reading of your task.
 
+The three workers exist for you only in a session that started after they were installed, because
+the runtime loads its agent list once and rejects a type that is not on it. So if `worker-a`,
+`worker-b` and `worker-c` are not in your agent list, do not name them: spawn unnamed, which falls
+back to one class below the session model, and expect band routing from your next new session.
+
 You do not choose model or effort for a banded spawn; the worker definition carries both. You may
 pass an explicit `model` — never the top class, which is reached only through a role that declares
 it — and when you do, say in the brief why this work needs it, since the row that would have

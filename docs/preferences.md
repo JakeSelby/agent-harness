@@ -221,8 +221,9 @@ render into, and they exist for one reason: the `Agent` tool takes no effort, so
 definition can carry the posture's effort to a spawn that named nothing. Such a spawn is
 rewritten to the variant's `default_band` worker — `B` under `balanced`, `A` under `frugal` —
 and an orchestrator that wants another band spawns that worker by name; their descriptions
-carry the band rule the `delegation-tiering` skill argues. A variant with no `default_band`
-routes nothing, and a machine that has not synced the definitions is left exactly as before.
+carry the band rule the `delegation-tiering` skill argues. A variant with no `default_band` routes
+nothing; so does a machine that has not synced the definitions, and so does a session that started
+before it did, which is why a sync that installs them wants a new session after it.
 
 ## Proposing a new stance or variant
 

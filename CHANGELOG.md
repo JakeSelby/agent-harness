@@ -83,11 +83,11 @@ All notable changes to this project are documented here. The format follows
   variant's default band worker and runs on that band's class — the only way the posture's
   effort reaches it, because the `Agent` tool has no effort input. A model the caller named is
   kept, a request for the top class is refused and the band's class applies in its place, and a
-  variant with no `default_band`, an unreadable table or a machine whose worker definitions are
-  not installed leaves the spawn exactly as the previous release did. A repository that ships
-  its own `.claude/agents/worker-<band>.md` is never routed to, because a project definition
-  outranks the user's. The cost table is read only for a spawn that named nothing, so naming a
-  role costs nothing.
+  variant with no `default_band`, an unreadable table, a machine whose worker definitions are not
+  installed and a session whose agent registry predates them all leave the spawn exactly as the
+  previous release did. A repository that ships its own `.claude/agents/worker-<band>.md` is never
+  routed to, because a project definition outranks the user's. The cost table is read only for a
+  spawn that named nothing, so naming a role costs nothing.
 - Subagent usage rows carry `requested_type` and set `rerouted` when the type the parent
   recorded differs from the one the subagent ran as, joined on the tool use id. The reroute is
   measured from the transcript rather than reported by the hook that made it.

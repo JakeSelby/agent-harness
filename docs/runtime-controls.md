@@ -37,6 +37,15 @@ hook says so.
 Before downgrading to a release that only links these definitions, either select `balanced` with
 no role bindings and sync once, which restores the links, or run `harness uninstall`.
 
+Routing is session-scoped for the same reason that effort is sync-scoped: what a native agent is
+comes from files read at a moment, not from a live lookup. Claude Code loads its agent registry
+when the session process starts and never reloads it, so session start records which definitions
+that registry held, and an unnamed spawn is routed only to a worker named in its own session's
+record. A `startup` writes the record, a `resume` may only narrow an existing one, and `clear` and
+`compact` leave it alone. A session with no record keeps the previous behaviour and is told once
+to start a new one, so start a new session after a sync that installs or changes the band workers.
+Any failure to answer the routing question leaves the spawn unrouted and silent, never refused.
+
 Usage records identify the runtime and available runtime version. Codex cumulative token snapshots
 are counted once; missing measurements remain null and reports label partial totals. Detector
 failures are reported separately and excluded from clean-session denominators. Lock contention
