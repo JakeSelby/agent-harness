@@ -111,13 +111,14 @@ class SpecReviewerSyncTests(unittest.TestCase):
     def _sync(self, adopt=False):
         return harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=adopt, adopt_codex=False, print_only=False))
 
-    def test_sync_links_the_agent_and_uninstall_removes_it(self):
+    def test_sync_renders_the_agent_and_uninstall_removes_it(self):
         self.assertEqual(self._sync(adopt=True), 0)
-        link = self.home / ".claude" / "agents" / "spec-reviewer.md"
-        self.assertTrue(link.is_symlink(), msg=str(link))
-        self.assertEqual(link.resolve(), AGENT.resolve())
+        native = self.home / ".claude" / "agents" / "spec-reviewer.md"
+        self.assertFalse(native.is_symlink(), msg=str(native))
+        # `posture: fixed`, so no cost variant moves it off the committed rendering.
+        self.assertEqual(native.read_text(encoding="utf-8"), AGENT.read_text(encoding="utf-8"))
         harness.cmd_uninstall(harness.argparse.Namespace())
-        self.assertFalse(link.exists() or link.is_symlink())
+        self.assertFalse(native.exists() or native.is_symlink())
 
 
 if __name__ == "__main__":

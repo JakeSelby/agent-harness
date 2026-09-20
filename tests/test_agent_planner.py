@@ -144,13 +144,13 @@ class PlannerSyncTests(unittest.TestCase):
         os.environ.update(self._old_environ)
         self.tmp.cleanup()
 
-    def test_sync_links_the_agent_into_the_home_directory(self):
+    def test_sync_renders_the_agent_into_the_home_directory(self):
         code = harness.cmd_sync(harness.argparse.Namespace(
             dry_run=False, adopt=True, adopt_codex=False, print_only=False))
         self.assertEqual(code, 0)
-        link = self.home / ".claude" / "agents" / "planner.md"
-        self.assertTrue(link.is_symlink())
-        self.assertEqual(link.resolve(), AGENT.resolve())
+        native = self.home / ".claude" / "agents" / "planner.md"
+        self.assertFalse(native.is_symlink())
+        self.assertEqual(native.read_text(encoding="utf-8"), AGENT.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

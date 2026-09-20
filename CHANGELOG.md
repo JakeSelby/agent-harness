@@ -36,6 +36,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Claude Code's native agent definitions are rendered at sync from the resolved cost variant and
+  written as managed files, where 0.10.0 symlinked the committed projection. The class the
+  variant's row names resolves through the adapter's `tiers` table and its effort is written into
+  the frontmatter, so selecting a cost variant finally moves the model and effort a native agent
+  runs on. Precedence is the role's own tier and the adapter's effort, then the variant's row,
+  then `role_bindings.<runtime>.<role>`, which still wins; a `posture: fixed` role takes neither
+  cell, and a role with no row renders exactly as before. Effort and model are therefore
+  sync-scoped: a session `HARNESS_STANCE_COST` does not move them until the next sync. The
+  committed projection is unchanged, and it is what `balanced` renders, byte for byte. On
+  upgrade, sync replaces each symlink it made with the rendered file; a link you redirected and a
+  definition you wrote yourself are preserved and reported, never replaced. `sync --dry-run`
+  names each role whose rendering has moved, with its class, model and effort.
 - Stances resolve in one place for the dispatcher and every policy hook alike: built-in defaults,
   the user configuration, the file `HARNESS_PROJECT_CONFIG` names, then `HARNESS_STANCE_*`. The
   hooks therefore honour `HARNESS_HOME` and a project configuration, which they ignored before,

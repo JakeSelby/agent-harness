@@ -34,8 +34,8 @@ or silently substitute the CLI default.
 Two keys in `~/.config/agent-harness/config.json` change the mapping without a harness release.
 `tiers.<runtime>.<class>` remaps a class for every role that names it, which is the one-line fix
 when a provider's lineup turns over; `role_bindings.<runtime>.<role>` sets `model` or effort for
-one role and wins over the class. Both reach workers and the Codex agent projections; Claude
-Code's native agents are the committed projections and follow the adapter's own table.
+one role and wins over the class. Both reach workers and both runtimes' agent definitions, which
+sync renders from the adapter's table and the resolved cost variant.
 
 `harness tiers check` compares the Codex table with the model catalog Codex fetches from its
 provider (`models_cache.json` in the Codex home), offline. It fails on a mapped model the catalog
