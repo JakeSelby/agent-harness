@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "extends": "balanced",
+  "switches": {
+    "session_effort": "low",
+    "max_parallel": 3,
+    "fast_mode": "never",
+    "compaction": "clear-only",
+    "budget_multiplier": 0.6
+  },
+  "default_band": "A",
+  "rows": {
+    "gatherer": {"class": "standard", "effort": "low"},
+    "builder": {"class": "strong", "effort": "low"},
+    "A": {"class": "light", "effort": "low"},
+    "B": {"class": "standard", "effort": "low"},
+    "C": {"class": "strong", "effort": "medium"}
+  }
+}

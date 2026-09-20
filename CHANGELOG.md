@@ -21,6 +21,15 @@ All notable changes to this project are documented here. The format follows
   session row, each naming its `kind`, agent type, model, effort, token counts, tool calls and
   spawn depth. Rows are upserted by `(session_id, runtime, kind, agent_id)` and hold counts
   only: no prompt text and no command text.
+- Each `cost` variant carries a JSON sidecar beside its `.md` holding its switches and its
+  model class, effort and soft budgets per role and per band. A variant resolves over its
+  `extends` chain, a variant with no sidecar resolves to `balanced`'s, and an unknown key is a
+  warning rather than an error so a later release cannot break a variant you wrote.
+- `posture: fixed` in a role's frontmatter, set on `reviewer`, `spec-reviewer`, `design-judge`
+  and `log-compressor`: a cost variant may budget the role but never change its class or effort.
+- `harness stances --json` carries the resolved cost table — switches, rows with base and scaled
+  budgets, default band, the `extends` chain with each sidecar's path, and warnings. Lint
+  validates shipped sidecars against the schema and against their own prose.
 - `harness usage --by role` reports, per agent type, the number of runs and the p50, p75 and p90
   of output tokens and of tool calls over the window — the distribution a per-role budget has to
   be set against. A run whose runtime reported no counts is named, never averaged in as a zero.

@@ -142,6 +142,7 @@ class Ladder(unittest.TestCase):
 
     def test_the_classes_are_the_catalogs_and_the_ladder_is_the_adapters_table(self):
         self.assertEqual(posture.TIER_CLASSES, catalog.TIER_CLASSES)
+        self.assertEqual(posture.EFFORTS, catalog.EFFORTS)
         tiers = json.loads((REPO / "adapters" / "claude-code" / "bindings.json").read_text())["tiers"]
         self.assertEqual(posture.ladder(), [tiers[name] for name in catalog.TIER_CLASSES])
 
