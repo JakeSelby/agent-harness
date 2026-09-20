@@ -37,6 +37,11 @@ its personas, prompts and review structure; model and effort are the harness's t
 the framework's override templates name the harness's roles where the recipe allows, which is
 what carries tools and effort.
 
+A spawn issued while the cost variant's `max_parallel` subagents are already in flight carries a
+note saying so, with this spawn's budget and the fan-out's, counted from the same transcript
+tail. It is a stance and not a limit: the note never denies, never asks, and never changes the
+call. A variant whose `max_parallel` is null has no width to exceed and gets no note.
+
 The session model is read from the newest main-line assistant record in the transcript, which
 Claude Code writes once a response has started executing tools, so a spawn in a session's very
 first response is left alone: nothing else says what the session runs on (the `model` key in
@@ -84,8 +89,8 @@ def tier_of(model, ladder):
     return None
 
 
-def transcript_model(path):
-    """The model on the newest main-line assistant record, reading only the transcript's tail."""
+def tail(path):
+    """The last `TAIL_BYTES` of a transcript as text, or None. The first line may be cut in half."""
     if not path:
         return None
     try:
@@ -93,10 +98,17 @@ def transcript_model(path):
             fh.seek(0, 2)
             size = fh.tell()
             fh.seek(max(0, size - TAIL_BYTES))
-            tail = fh.read().decode("utf-8", "replace")
+            return fh.read().decode("utf-8", "replace")
     except Exception:
         return None
-    for line in reversed(tail.splitlines()):
+
+
+def transcript_model(path):
+    """The model on the newest main-line assistant record, reading only the transcript's tail."""
+    tail_text = tail(path)
+    if tail_text is None:
+        return None
+    for line in reversed(tail_text.splitlines()):
         if '"assistant"' not in line:
             continue
         try:
@@ -111,6 +123,73 @@ def transcript_model(path):
         if isinstance(model, str) and model and not model.startswith("<"):
             return model
     return None
+
+
+def in_flight(path):
+    """`Agent` calls in the transcript tail that no result has come back for yet.
+
+    Parallel spawns issued in one assistant message all see the same tail, and the record
+    carrying that message's `tool_use` blocks is written before the tools run, so siblings of
+    this call are counted. One undercount remains and is not worth chasing: an `Agent` call
+    whose record has not reached the tail — older than the 1 MiB window, or not yet flushed —
+    is invisible, so a very wide fan-out reads low rather than high.
+    """
+    text = tail(path)
+    if text is None:
+        return 0
+    started, finished = set(), set()
+    for line in text.splitlines():
+        if '"tool_use"' not in line and '"tool_result"' not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except Exception:
+            continue  # the tail's first line is usually cut in half
+        if not isinstance(record, dict) or record.get("isSidechain"):
+            continue
+        message = record.get("message")
+        blocks = message.get("content") if isinstance(message, dict) else None
+        for block in blocks if isinstance(blocks, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") == "Agent":
+                started.add(block.get("id"))
+            elif block.get("type") == "tool_result":
+                finished.add(block.get("tool_use_id"))
+    return len(started - finished)
+
+
+def fanout_note(payload, posture, role):
+    """The line a spawn wider than the posture's parallel width carries, or None.
+
+    Informational only: the width is a stance, not a limit, so this hook never denies a spawn
+    for being the seventh. The table is read only once something is already in flight, because
+    a width of one or more can never be exceeded by a single call.
+    """
+    count = in_flight(payload.get("transcript_path"))
+    if count < 1 or posture is None:
+        return None
+    try:
+        table = posture.cost_table()
+        width = table.get("switches", {}).get("max_parallel")
+        if not isinstance(width, int) or isinstance(width, bool) or count + 1 <= width:
+            return None
+        note = f"{count} subagents in flight against a posture width of {width}"
+        row = (posture.row_for(table, role) if role else None) or {}
+        tokens = row.get("budget_output_tokens")
+        if isinstance(tokens, int) and not isinstance(tokens, bool):
+            note += (f"; this spawn's budget is about {tokens:,} output tokens, about "
+                     f"{count * tokens:,} across the fan-out")
+        return note
+    except Exception:
+        return None
+
+
+def with_note(message, note):
+    """The one `systemMessage` a call prints: what the hook decided, then the fan-out note."""
+    if not note:
+        return message
+    return (message + " · " + note) if message else (HOOK + ": " + note)
 
 
 def agents_dirs(cwd):
@@ -249,6 +328,12 @@ def routed_message(route, model, requested):
              "`harness sync` to apply the selected posture" if route.get("stale") else ""))
 
 
+def say(message):
+    """A record carrying nothing but a message, for a call this hook decided not to change."""
+    if message:
+        print(json.dumps({"systemMessage": message}))
+
+
 def emit(fields, system_message=None):
     fields["hookEventName"] = "PreToolUse"
     out = {"hookSpecificOutput": fields}
@@ -281,30 +366,38 @@ def main():
     # spawn to, so the call runs as written and says why, exactly as an unknown model does.
     models = posture.tier_models() if posture and hasattr(posture, "tier_models") else {}
     ladder = list(models.values())
+    kind = tool_input.get("subagent_type")
+    named = bool(kind) and kind != "general-purpose"
     if len(ladder) < 2:
         # Only a call whose model this hook would have decided — a bare spawn, or one asking for
         # a class by name — is worth a notice; a named role with its own model is not this hook's.
+        message = None
         if is_bare(tool_input) or tool_input.get("model"):
-            print(json.dumps({"systemMessage": f"{HOOK}: the adapter's class table names no tier to move a "
-                              "spawn to, so this one runs as written; check the harness installation"}))
+            message = (f"{HOOK}: the adapter's class table names no tier to move a spawn to, so "
+                       "this one runs as written; check the harness installation")
+        say(with_note(message, fanout_note(payload, posture, kind if named else None)))
         return
     # Where a spawn that named nothing goes, which only the cost table knows. Built here and
-    # only here, so a spawn naming a role never reads a sidecar.
+    # only here, so a spawn naming a role never reads a sidecar for its route.
     route = notice = None
     if posture and is_unnamed(tool_input) and hasattr(posture, "row_for"):
         route, notice = band_route(posture, models, payload.get("cwd"))
+    # The fan-out note prices whichever role this spawn ends up being: the one it named, or the
+    # worker it is routed to.
+    note = fanout_note(payload, posture, route["worker"] if route else (kind if named else None))
     top = tier_of(tool_input.get("model"), ladder) == ladder[0]
     if top and not route:
-        kind = tool_input.get("subagent_type")
-        named = bool(kind) and kind != "general-purpose"
         declared = defined_tier(kind, payload.get("cwd"), ladder) if named else None
         if declared == ladder[0]:
-            return  # the role declares the top class itself; the request only repeats it
+            # The role declares the top class itself; the request only repeats it.
+            say(with_note(None, note))
+            return
         updated = dict(tool_input, model=declared or ladder[1])
         emit({"updatedInput": updated},
-             system_message=f"{HOOK}: {ladder[0]} is reached through a role that declares it, not by request; "
-                            f"{kind if named else 'this spawn'} runs on {updated['model']}"
-                            + (" · " + notice if notice else ""))
+             system_message=with_note(
+                 f"{HOOK}: {ladder[0]} is reached through a role that declares it, not by request; "
+                 f"{kind if named else 'this spawn'} runs on {updated['model']}"
+                 + (" · " + notice if notice else ""), note))
         return
     if route:
         updated = dict(tool_input, subagent_type=route["worker"])
@@ -323,22 +416,23 @@ def main():
                 if fallback:
                     updated["model"] = fallback
         emit({"updatedInput": updated},
-             system_message=routed_message(route, updated.get("model"), requested)
-             + (" · " + message if message else "")
-             + (f" · {ladder[0]} is reached through a role that declares it, not by request"
-                if top else ""))
+             system_message=with_note(
+                 routed_message(route, updated.get("model"), requested)
+                 + (" · " + message if message else "")
+                 + (f" · {ladder[0]} is reached through a role that declares it, not by request"
+                    if top else ""), note))
         return
     if not is_bare(tool_input):
+        say(with_note(None, note))
         return
     below, message = one_rung(payload, ladder)
     if below is None:
-        if message:
-            print(json.dumps({"systemMessage": f"{HOOK}: {message}"
-                              + (" · " + notice if notice else "")}))
+        say(with_note(f"{HOOK}: {message}" + (" · " + notice if notice else "") if message else None,
+                      note))
         return
     updated = dict(tool_input, model=below)
     emit({"updatedInput": updated},
-         system_message=f"{HOOK}: {message}" + (" · " + notice if notice else ""))
+         system_message=with_note(f"{HOOK}: {message}" + (" · " + notice if notice else ""), note))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""PreToolUse on `Agent`: append a return bound to a brief that states none.
+"""PreToolUse on `Agent`: append a return bound, and the posture's soft budget, to a brief
+that states neither.
 
 `delegation.md` says to bound the brief, and `transcript-hygiene/brief-without-cap` measures
 that it is not: 536 hits across 30 percent of sessions. Asking the orchestrator to write the
@@ -13,6 +14,13 @@ it never writes.
 What counts as a bound, and which agents are exempt, come from `rule-detectors.py` rather than
 a second copy here. If the hook and the detector disagreed, the hook would append text the
 detector still counts as missing and the number would never move.
+
+The budget is the same argument for spend. A subagent cannot see the cost variant that priced
+it, so the row's expected output tokens and tool calls are stated in the brief, once, in wording
+fixed here: every number comes from the table and none of the words do. It is soft — the
+sentence says to finish if close and otherwise return — because a hard cap would truncate the
+work rather than the spend. A row with no budgets, a table that will not build, and a brief that
+already prices itself all mean no sentence, which is what keeps a null variant byte-identical.
 """
 import importlib.util
 import json
@@ -26,6 +34,11 @@ HOOKS = Path(__file__).resolve().parent
 # not a bound. `tests/test_brief_guard.py` asserts that parity.
 BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
          "decision. Write anything longer to a file and return its path, not its contents.")
+CAP_NOTE = "the brief stated no return bound, so a 400-word cap was added"
+BUDGET_NOTE = "the brief stated no spend, so the cost variant's soft budget was added"
+# The units a row prices, in the order the sentence states them; a null cell is left out rather
+# than written as "no budget", which would read as permission to spend without limit.
+UNITS = (("budget_output_tokens", "output tokens"), ("budget_tool_calls", "tool calls"))
 
 
 def sibling(name):
@@ -62,6 +75,75 @@ def needs_bound(module, tool_input):
     return not module.WORD_CAP_RE.search(prompt)
 
 
+def named_type(tool_input):
+    """The agent definition this spawn named, or None for a spawn that named none."""
+    kind = tool_input.get("subagent_type")
+    kind = kind.strip() if isinstance(kind, str) else ""
+    return kind if kind and kind != "general-purpose" else None
+
+
+def effective_role(payload, tool_input, posture, variant):
+    """The role whose row prices this spawn, or None when nothing prices it.
+
+    A spawn that named a definition is priced by that role. A spawn that named none is priced
+    by the band worker it is about to be routed to — which this hook cannot read off the event,
+    because the coordinator hands both hooks the original call and not each other's rewrite. So
+    the route is computed by calling `tier-agent-spawns`' own `band_route`: a second answer to
+    "where does an unnamed spawn go" would sooner or later price the wrong band. A spawn nothing
+    routes — no default band, a worker that is not installed, a repository that ships its own,
+    a delegation stance that is not `tiered` — is priced by nothing, as it was before.
+    """
+    kind = named_type(tool_input)
+    if kind:
+        return kind
+    if variant != "tiered":
+        return None
+    router = sibling("tier-agent-spawns")
+    if router is None:
+        return None
+    models = posture.tier_models()
+    if len(models) < 2:
+        return None
+    route, _ = router.band_route(posture, models, payload.get("cwd"))
+    return route["worker"] if route else None
+
+
+def budget_sentence(row):
+    """The sentence one row's soft budget is stated in, or None when the row prices nothing."""
+    if not isinstance(row, dict):
+        return None
+    parts = []
+    for key, unit in UNITS:
+        value = row.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            parts.append("about {:,} {}".format(value, unit))
+    if not parts:
+        return None
+    return ("\n\nExpected spend: " + " and ".join(parts) + ". Past that, finish if you are "
+            "close; otherwise return what you have and say why.")
+
+
+def budget_for(payload, tool_input, module, variant):
+    """The budget sentence this brief is missing, or None. Never raises: a spawn outranks a row.
+
+    The cost table is read here and nowhere else in this hook, so it is built only for a call
+    this hook would price, and any failure building it is simply no sentence.
+    """
+    pattern = getattr(module, "BUDGET_RE", None)
+    if pattern is None or pattern.search(tool_input.get("prompt") or ""):
+        return None
+    posture = sibling("posture")
+    if posture is None:
+        return None
+    try:
+        role = effective_role(payload, tool_input, posture, variant)
+        if not role:
+            return None
+        return budget_sentence(posture.row_for(posture.cost_table(), role))
+    except Exception:
+        return None
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -72,18 +154,30 @@ def main():
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return
-    if stance() == "off":
+    variant = stance()
+    if variant == "off":
         # `tier-agent-spawns` already asks before any spawn here; two hooks answering one
         # event is worse than one.
         return
     module = detectors()
-    if module is None or not needs_bound(module, tool_input):
+    prompt = tool_input.get("prompt")
+    if module is None or not isinstance(prompt, str) or not prompt.strip():
+        return
+    # The bound first and the budget after it, so a brief that is missing both reads as the
+    # shape of the return and then what it may spend getting there.
+    added, notes = "", []
+    if needs_bound(module, tool_input):
+        added, notes = BOUND, [CAP_NOTE]
+    budget = budget_for(payload, tool_input, module, variant)
+    if budget:
+        added, notes = added + budget, notes + [BUDGET_NOTE]
+    if not added:
         return
     updated = dict(tool_input)
-    updated["prompt"] = tool_input["prompt"].rstrip() + BOUND
+    updated["prompt"] = prompt.rstrip() + added
     print(json.dumps({
         "hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated},
-        "systemMessage": f"{HOOK}: the brief stated no return bound, so a 400-word cap was added",
+        "systemMessage": f"{HOOK}: " + " · ".join(notes),
     }))
 
 

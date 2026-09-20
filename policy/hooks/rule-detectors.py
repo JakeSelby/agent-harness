@@ -106,6 +106,16 @@ WORD_CAP_RE = re.compile(
     r"|cap[^.\n]{0,40}?\d+\s*[- ]?words?"
     r"|word\s+cap\s*(?:of\s+)?\d+)"
 )
+# A brief that already prices itself: the sentence `brief-guard` writes, or a spend the author
+# wrote in their own words ("about 20 tool calls", "9,000 output tokens", "a budget of 30 calls").
+# It exists so the hook adds a budget to a brief that states none and leaves every other one
+# alone; a number without one of these units is not a spend, so "read 40 files" is still a miss.
+BUDGET_RE = re.compile(
+    r"(?i)(?:expected spend:"
+    r"|\d[\d,]*\s*(?:output\s+|completion\s+)?tokens?\b"
+    r"|\d[\d,]*\s*tool[- ]?calls?\b"
+    r"|budget of\b|token budget\b|call budget\b)"
+)
 # The autonomy gate's two marks: the prefix the model re-runs a denied command behind, and the
 # signature the grade hook writes into the reason it denies with. The marker pattern mirrors
 # `grade-bash.py`'s own `MARKER_RE`, so what the gate lets through is what this counts; a
