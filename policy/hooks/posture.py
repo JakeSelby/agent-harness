@@ -34,6 +34,8 @@ PREFIX = "HARNESS_STANCE_"
 # will never spawn again, and its record is three fields nobody reads.
 SESSION_TTL_DAYS = 14
 SESSION_ID_MAX = 128
+# How stale a record may get before a spawn that read it moves its mtime out of the sweep's way.
+SESSION_REFRESH_SECONDS = 86400
 
 # The dimensions `bin/harness` resolves and the variant each falls back to, which is
 # `config.example.json`'s — the file the CLI layers the user config over, and a test holds the
@@ -171,27 +173,51 @@ def write_session_record(session_id, record, env=None):
 
 
 def session_agents(session_id, env=None):
-    """The agent names this session's registry held, or None when nothing recorded them."""
+    """The agent names this session's registry held, or None when nothing recorded them.
+
+    An absent or unusable `agents` key is None, which every caller reads as unknown, and
+    unknown is never routable. That is what lets a record exist purely to remember a notice
+    without ever authorising a reroute.
+    """
     record = read_session_record(session_id, env)
     names = record.get("agents") if record else None
     return [name for name in names if isinstance(name, str)] if isinstance(names, list) else None
 
 
-def note_once(session_id, key, env=None):
-    """`True` the first time this session is told `key`; `False` once its record remembers it.
+def refresh_session_record(session_id, env=None, older_than=SESSION_REFRESH_SECONDS):
+    """Keep a session in use out of another session's sweep. `True` when the mtime was moved.
 
-    A session with no record remembers nothing, so the notice repeats rather than being lost:
-    saying a thing twice is a smaller failure than never saying it.
+    A session open longer than the TTL would otherwise have its record pruned under it and stop
+    routing halfway through, so reading the record is evidence the session is alive. A day's
+    granularity, because this runs on a spawn and the sweep measures a fortnight.
+    """
+    path = session_record_path(session_id, env)
+    try:
+        if path is not None and time.time() - path.stat().st_mtime > older_than:
+            os.utime(str(path), None)
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def note_once(session_id, key, env=None):
+    """`True` the first time this session is told `key`; `False` once anything remembers it.
+
+    A session with no record is exactly the session these notices are for, so one is created
+    to hold the memory — with no `agents` key, which reads as unknown and can never authorise
+    a reroute. A hook is a process per event, so nothing but the record remembers: when it
+    cannot be written this says nothing at all, because a notice repeated on every spawn is a
+    worse failure than one never given.
     """
     record = read_session_record(session_id, env)
     if record is None:
-        return True
+        return write_session_record(session_id, {"notified": [key], "at": int(time.time())}, env)
     seen = record.get("notified")
     seen = sorted({name for name in seen if isinstance(name, str)}) if isinstance(seen, list) else []
     if key in seen:
         return False
-    write_session_record(session_id, dict(record, notified=sorted(seen + [key])), env)
-    return True
+    return write_session_record(session_id, dict(record, notified=sorted(seen + [key])), env)
 
 
 def prune_session_records(keep=None, days=SESSION_TTL_DAYS, env=None):

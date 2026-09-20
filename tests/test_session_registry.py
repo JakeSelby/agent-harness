@@ -9,8 +9,10 @@ pricing hook that asks it where a spawn goes — reroutes only to a name in that
 
 Run: python3 -m unittest discover tests
 """
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -19,6 +21,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -104,9 +107,36 @@ class RecordingTests(RegistryCase):
         self.assertEqual(json.loads(self.record_path().read_text())["agents"],
                          ["worker-a", "worker-b"])
 
-    def test_resume_records_them_too(self):
+    def test_resume_narrows_an_existing_record_and_never_widens_it(self):
+        # `resume` is also raised by a session resuming in place, whose registry is still the
+        # one its process loaded. Widening would reinstate the defect; narrowing cannot.
+        self.record("worker-b", "worker-c")
+        self.install_workers("worker-a", "worker-b")
+        self.start(source="resume")
+        self.assertEqual(json.loads(self.record_path().read_text())["agents"], ["worker-b"])
+
+    def test_resume_creates_no_record(self):
         self.install_workers()
         self.start(source="resume")
+        self.assertFalse(self.record_path().exists())
+
+    def test_resume_keeps_an_unknown_registry_unknown(self):
+        # A record written to remember a notice names no registry; a resume learns none either.
+        self.sessions().mkdir(parents=True)
+        self.record_path().write_text(json.dumps({"notified": ["worker-unresolvable"], "at": 0}))
+        self.install_workers()
+        self.start(source="resume")
+        record = json.loads(self.record_path().read_text())
+        self.assertNotIn("agents", record)
+        self.assertEqual(record["notified"], ["worker-unresolvable"])
+        self.assertIsNone(self.spawn().get("hookSpecificOutput", {})
+                          .get("updatedInput", {}).get("subagent_type"))
+
+    def test_startup_after_a_sync_does_widen(self):
+        # The new process is the one event that may: its registry was loaded from this disk.
+        self.record("worker-a")
+        self.install_workers()
+        self.start()
         self.assertEqual(json.loads(self.record_path().read_text())["agents"], list(WORKERS))
 
     def test_the_record_carries_the_time_it_was_written(self):
@@ -179,6 +209,29 @@ class PruneTests(RegistryCase):
         self.start()
         self.assertTrue(self.record_path("other-session").exists())
 
+    def settled(self, age):
+        """A record of a session that has already heard every notice, `age` seconds old."""
+        self.sessions().mkdir(parents=True, exist_ok=True)
+        self.record_path().write_text(json.dumps(
+            {"agents": list(WORKERS), "notified": ["routed-to-band"], "at": 0}))
+        stamp = time.time() - age
+        os.utime(self.record_path(), (stamp, stamp))
+        return stamp
+
+    def test_a_spawn_keeps_a_long_session_out_of_the_sweep(self):
+        # A session open longer than the TTL would have its record pruned under it, and routing
+        # would stop mid-session. Reading the record is evidence the session is alive.
+        self.install_workers()
+        self.settled(10 * 86400)
+        self.spawn()
+        self.assertGreater(self.record_path().stat().st_mtime, time.time() - 60)
+
+    def test_a_record_read_today_is_left_alone(self):
+        self.install_workers()
+        stamp = self.settled(600)
+        self.spawn()
+        self.assertAlmostEqual(self.record_path().stat().st_mtime, stamp, delta=2)
+
 
 class RerouteTests(RegistryCase):
     """The defect: a reroute must never turn a spawn that would have worked into one that fails."""
@@ -203,7 +256,7 @@ class RerouteTests(RegistryCase):
         self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["model"], "sonnet")
         self.assertIn("worker-b is installed but this session started before it was",
                       out["systemMessage"])
-        self.assertIn("restart the session", out["systemMessage"])
+        self.assertIn("start a new session to route unnamed spawns", out["systemMessage"])
 
     def test_that_notice_is_said_once_a_session(self):
         self.install_workers()
@@ -237,13 +290,34 @@ class RerouteTests(RegistryCase):
             self.assertEqual(self.routed(out), "worker-b")
             self.assertIn("not by request", out["systemMessage"])
 
-    def test_no_record_at_all_reroutes_nothing(self):
-        # A session that started before this fix shipped: no record, so no evidence, so no reroute.
+    def test_no_record_at_all_reroutes_nothing_and_says_so_once(self):
+        # A session that started before this fix shipped: no record, so no evidence, so no
+        # reroute — and the notice is remembered in a record created for that alone.
         self.install_workers()
         out = self.spawn()
         self.assertIsNone(self.routed(out))
         self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["model"], "sonnet")
         self.assertIn("started before it was", out["systemMessage"])
+        record = json.loads(self.record_path().read_text())
+        self.assertEqual(record["notified"], ["worker-unresolvable"])
+        # No `agents` key at all: unknown, which can never authorise a reroute.
+        self.assertNotIn("agents", record)
+        second = self.spawn()
+        self.assertIsNone(self.routed(second))
+        self.assertNotIn("started before it was", second.get("systemMessage", ""))
+
+    def test_a_notice_that_cannot_be_remembered_is_not_given(self):
+        # An unwritable state directory would otherwise mean the notice on every single spawn.
+        self.install_workers()
+        state = self.home / ".local" / "state" / "agent-harness"
+        state.mkdir(parents=True)
+        state.chmod(0o500)
+        self.addCleanup(state.chmod, 0o700)
+        out = self.spawn()
+        self.assertIsNone(self.routed(out))
+        self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["model"], "sonnet")
+        self.assertNotIn("started before it was", out.get("systemMessage", ""))
+        self.assertFalse((state / "sessions").exists())
 
     def test_a_spawn_that_carries_no_session_id_reroutes_nothing(self):
         self.install_workers()
@@ -308,6 +382,75 @@ class GuardTests(RegistryCase):
         self.record("reviewer")
         self.assertNotIn("Expected spend", self.prompt())
         self.assertIn("started before it was", self.spawn()["systemMessage"])
+
+
+class OlderSiblingTests(RegistryCase):
+    """An installed hook beside an older `posture.py` answers none of these questions.
+
+    The whole routing decision is one all-or-nothing question, because an exception escaping it
+    reaches the coordinator, which turns it into a deny on every `Agent` call. So any failure
+    means the behaviour this hook had before bands existed: not routed, and nothing said about
+    routing.
+    """
+
+    MISSING = ("session_agents", "note_once", "refresh_session_record")
+
+    def hook(self, path, name):
+        spec = importlib.util.spec_from_file_location(name, str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def stripped(self, module):
+        posture = module.sibling("posture")
+        for name in self.MISSING:
+            delattr(posture, name)
+        return posture
+
+    def output(self, module):
+        payload = {"tool_name": "Agent", "tool_input": {"prompt": "x"}, "session_id": SESSION,
+                   "transcript_path": str(self.transcript)}
+        out = io.StringIO()
+        with unittest.mock.patch.dict(os.environ, self.env(), clear=True), \
+                unittest.mock.patch.object(module.sys, "stdin", io.StringIO(json.dumps(payload))), \
+                contextlib.redirect_stdout(out):
+            module.main()
+        text = out.getvalue()
+        return json.loads(text) if text.strip() else None
+
+    def test_the_spawn_hook_falls_back_and_says_nothing_about_routing(self):
+        self.install_workers()
+        self.record(*WORKERS)
+        module = self.hook(SPAWN_HOOK, "harness_tier_spawns")
+        module._LOADED["posture"] = self.stripped(module)
+        out = self.output(module)
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        self.assertNotIn("subagent_type", updated)
+        self.assertEqual(updated["model"], "sonnet")  # the rule that predates the bands
+        self.assertNotIn("routed to", out["systemMessage"])
+        self.assertNotIn("started before it was", out["systemMessage"])
+
+    def test_the_pricing_hook_prices_nothing_and_raises_nothing(self):
+        self.install_workers()
+        self.record(*WORKERS)
+        module = self.hook(GUARD_HOOK, "harness_brief_guard")
+        real = module.sibling
+
+        def patched(name):
+            loaded = real(name)
+            if loaded is None:
+                return None
+            if name == "posture":
+                for missing in self.MISSING:
+                    delattr(loaded, missing)
+            if name == "tier-agent-spawns":
+                loaded._LOADED["posture"] = self.stripped(loaded)
+            return loaded
+
+        module.sibling = patched
+        prompt = self.output(module)["hookSpecificOutput"]["updatedInput"]["prompt"]
+        self.assertIn("Return at most 400 words", prompt)
+        self.assertNotIn("Expected spend", prompt)
 
 
 class UninstallTests(unittest.TestCase):

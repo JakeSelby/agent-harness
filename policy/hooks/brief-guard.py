@@ -140,7 +140,9 @@ def budget_for(payload, tool_input, module, variant):
 
     The cost table is read here and nowhere else in this hook, at most once, and never for a
     spawn nothing would price: a table is a walk of every sidecar on the `extends` chain, and
-    this hook runs on a tool call. Any failure building it is simply no sentence.
+    this hook runs on a tool call. Any failure building it is simply no sentence — as is any
+    failure asking where the spawn goes, including an older `posture.py` beside a newer spawn
+    hook, whose missing functions would otherwise raise into the coordinator and deny the call.
     """
     pattern = getattr(module, "BUDGET_RE", None)
     if pattern is None or pattern.search(tool_input.get("prompt") or ""):

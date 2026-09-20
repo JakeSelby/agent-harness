@@ -93,10 +93,14 @@ def posture_module():
 def notice_once(session, key):
     """Whether to say `key` in this session now; the session record is what remembers it.
 
-    A session with no record remembers nothing, so the notice repeats rather than being lost.
+    Nothing that cannot be remembered is said, because a hook is a process per event and a
+    notice nobody records is a notice repeated on every spawn.
     """
     module = posture_module()
-    return module.note_once(session, key) if module else True
+    try:
+        return bool(module.note_once(session, key))
+    except Exception:
+        return False
 
 
 def tier_of(model, ladder):
@@ -225,10 +229,14 @@ def routable(kind, cwd, session=None, announce=False):
                       "the variant's default band; run `harness sync`")
     module = posture_module()
     known = module.session_agents(session) if module else None
+    if known is not None:
+        # Reading the record is evidence this session is alive, which keeps a long-running one
+        # out of another session's sweep.
+        module.refresh_session_record(session)
     if known is None or kind not in known:
-        notice = (kind + " is installed but this session started before it was; restart the "
+        notice = (kind + " is installed but this session started before it was; start a new "
                   "session to route unnamed spawns")
-        if announce and not notice_once(session, UNRESOLVABLE_NOTICE):
+        if not (announce and notice_once(session, UNRESOLVABLE_NOTICE)):
             notice = None
         return None, notice
     return definition(kind, cwd) or {}, None
@@ -342,8 +350,15 @@ def main():
     # only here, so a spawn naming a role never reads a sidecar.
     route = notice = None
     if posture and is_unnamed(tool_input) and hasattr(posture, "row_for"):
-        route, notice = band_route(posture, models, payload.get("cwd"), None,
-                                   payload.get("session_id"), True)
+        try:
+            route, notice = band_route(posture, models, payload.get("cwd"), None,
+                                       payload.get("session_id"), True)
+        except Exception:
+            # An older `posture.py` beside a newer hook answers none of this. The whole routing
+            # decision is one all-or-nothing question, and the safe answer is the behaviour
+            # this hook had before bands existed: do not route, say nothing about it. An
+            # exception escaping here reaches the coordinator, which denies the spawn.
+            route = notice = None
     top = tier_of(tool_input.get("model"), ladder) == ladder[0]
     if top and not route:
         kind = tool_input.get("subagent_type")
