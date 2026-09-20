@@ -1,5 +1,6 @@
 """Native envelopes compose shared policy without weakening permission decisions."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -23,6 +24,30 @@ class LifecycleTests(unittest.TestCase):
             {"hookSpecificOutput": {"updatedInput": {"prompt": "work", "model": "new"}}},
             {"hookSpecificOutput": {"updatedInput": {"prompt": "bounded work", "model": "old"}}}])
         self.assertEqual(result["hookSpecificOutput"]["updatedInput"], {"prompt": "bounded work", "model": "new"})
+
+    def test_a_policys_notice_survives_composition_on_claude_code_only(self):
+        original = {"tool_name": "Agent", "tool_input": {"prompt": "work"}}
+        results = [{"hookSpecificOutput": {"updatedInput": {"prompt": "work", "model": "new"}}, "systemMessage": "tiered"},
+                   {"systemMessage": "off the ladder"}, {}]
+        encoded = lifecycle.encode_pre("claude-code", original, lifecycle.normalize(original), results)
+        self.assertEqual(encoded["systemMessage"], "tiered\noff the ladder")
+        self.assertEqual(encoded["hookSpecificOutput"]["updatedInput"]["model"], "new")
+        # A notice with no rewrite still reaches the user, and Codex's envelope is left as it was.
+        self.assertEqual(lifecycle.encode_pre("claude-code", original, lifecycle.normalize(original), results[1:]),
+                         {"systemMessage": "off the ladder"})
+        self.assertNotIn("systemMessage", lifecycle.encode_pre("codex", original, lifecycle.normalize(original), results))
+
+    def test_a_top_tier_request_for_a_named_agent_is_rewritten_through_the_coordinator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            agents = Path(tmp) / ".claude" / "agents"
+            agents.mkdir(parents=True)
+            (agents / "builder.md").write_text("---\nname: builder\nmodel: opus\n---\n")
+            with patch.dict(os.environ, {"HOME": tmp, "HARNESS_STANCE_DELEGATION": "tiered"}):
+                out = lifecycle.dispatch("claude-code", {"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                    "tool_input": {"prompt": "build", "subagent_type": "builder", "model": "fable"}})
+        self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["model"], "opus")
+        self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["subagent_type"], "builder")
+        self.assertIn("role that declares it", out["systemMessage"])
 
     def test_codex_rewrite_does_not_manufacture_shell_permission(self):
         original = {"tool_name": "exec_command", "tool_input": {"cmd": "make"}}

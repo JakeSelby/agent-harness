@@ -75,6 +75,15 @@ def selected(name, fallback):
 
 
 def encode_pre(runtime, original, normalized, results):
+    encoded = _encode_pre(runtime, original, normalized, results)
+    # A policy's notice is the only trace of a rewrite the user would otherwise never see.
+    notices = [r["systemMessage"] for r in results if isinstance(r.get("systemMessage"), str) and r["systemMessage"]]
+    if notices and runtime == "claude-code":
+        encoded = dict(encoded, systemMessage="\n".join(notices))
+    return encoded
+
+
+def _encode_pre(runtime, original, normalized, results):
     decisions = [r.get("hookSpecificOutput", {}).get("permissionDecision") for r in results]
     strongest = next((choice for choice in ("deny", "ask", "allow") if choice in decisions), None)
     reasons = [r.get("hookSpecificOutput", {}).get("permissionDecisionReason", "") for r in results]

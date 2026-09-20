@@ -8,9 +8,10 @@ and no `model` — is what a planning framework or a plugin produces when its sk
 "launch a subagent", and nothing else in the harness reaches it. This hook does. A call that
 names an agent definition or passes `model` is left as it was, with one exception: the
 strongest class is reached through a role that declares it, never by request. A spawn that
-asks for it by `model` loses the request — a named agent falls back to its own definition,
-an unnamed one runs on the class below — so neither an orchestrator nor a framework's skill
-text ("run reviewers at the session's capability") can put ad-hoc work on the scarcest tier.
+asks for it by `model` gets the model its agent definition names instead, or the class below
+when there is no definition to read — so neither an orchestrator nor a framework's skill text
+("run reviewers at the session's capability") can put ad-hoc work on the scarcest tier. The
+request is rewritten, never removed: a rewrite survives composition with other hooks.
 
 What a bare spawn gets depends on the `delegation` stance, read from
 `HARNESS_STANCE_DELEGATION` or `~/.config/agent-harness/config.json`:
@@ -37,6 +38,7 @@ Test: printf '%s' '{"tool_name":"Agent","tool_input":{"prompt":"x"}}' | HARNESS_
 """
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -47,6 +49,7 @@ LADDER = ["fable", "opus", "sonnet", "haiku"]
 DEFAULT_STANCE = "tiered"
 TAIL_BYTES = 1 << 20
 HOOK = "tier-agent-spawns hook"
+AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
 def load(path):
@@ -105,6 +108,24 @@ def transcript_model(path):
     return None
 
 
+def defined_tier(kind, cwd):
+    """The ladder name an agent definition's `model:` line carries, project before user, or None."""
+    if not isinstance(kind, str) or not AGENT_NAME.fullmatch(kind):
+        return None
+    roots = ([Path(cwd) / ".claude" / "agents"] if isinstance(cwd, str) and cwd else []) + [Path.home() / ".claude" / "agents"]
+    for root in roots:
+        try:
+            lines = (root / (kind + ".md")).read_text(encoding="utf-8").split("---", 2)[1].splitlines()
+        except Exception:
+            continue
+        for line in lines:
+            key, _, value = line.partition(":")
+            if key.strip() == "model":
+                return tier_of(value)
+        return None
+    return None
+
+
 def is_bare(tool_input):
     kind = tool_input.get("subagent_type")
     return not tool_input.get("model") and (not kind or kind == "general-purpose")
@@ -138,16 +159,15 @@ def main():
     if variant != "tiered":
         return
     if tier_of(tool_input.get("model")) == LADDER[0]:
-        updated = dict(tool_input)
-        kind = updated.get("subagent_type")
-        if kind and kind != "general-purpose":
-            del updated["model"]
-            outcome = f"{kind} runs on the model its definition names"
-        else:
-            updated["model"] = LADDER[1]
-            outcome = f"this spawn runs on {LADDER[1]}"
+        kind = tool_input.get("subagent_type")
+        named = bool(kind) and kind != "general-purpose"
+        declared = defined_tier(kind, payload.get("cwd")) if named else None
+        if declared == LADDER[0]:
+            return  # the role declares the top class itself; the request only repeats it
+        updated = dict(tool_input, model=declared or LADDER[1])
         emit({"updatedInput": updated},
-             system_message=f"{HOOK}: {LADDER[0]} is reached through a role that declares it, not by request; {outcome}")
+             system_message=f"{HOOK}: {LADDER[0]} is reached through a role that declares it, not by request; "
+                            f"{kind if named else 'this spawn'} runs on {updated['model']}")
         return
     if not is_bare(tool_input):
         return
