@@ -500,11 +500,24 @@ def _adopt(path: Path, manifest: Dict[str, Any], dry: bool) -> Optional[Path]:
     return dest
 
 
+def _leads_to(path: Path, target: Any) -> bool:
+    """Whether the symlink at path leads to target: by that spelling, or by an alias of the same file.
+
+    The checkout reaches some directories two ways, so a link made under one spelling and recorded
+    under the other is still the harness's link, not a redirect. Every judgment about a managed
+    link goes through here; comparing the text alone reports drift that is not there and makes
+    uninstall leave the link behind.
+    """
+    if not target:
+        return False
+    return Path(os.readlink(path)) == Path(target) or path.resolve() == Path(target).resolve()
+
+
 def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, adopt: bool, report: List[str]) -> None:
     managed = any(l.get("path") == str(path) for l in manifest.get("links", []))
     if path.is_symlink():
         current = Path(os.readlink(path))
-        if current == target or path.resolve() == target.resolve():
+        if _leads_to(path, target):
             _record(manifest, "links", {"path": str(path), "target": str(target)})
             return
         previous = next((entry for entry in manifest.get("links", []) if entry["path"] == str(path)), None)
@@ -547,7 +560,7 @@ def link_dir_files(source: Path, dest: Path, manifest: Dict[str, Any], dry: bool
         if Path(old["path"]).parent == dest and old["path"] not in wanted:
             say(f"  unlink  {old['path']} (no longer in the harness)")
             path = Path(old["path"])
-            if path.is_symlink() and os.readlink(path) != old["target"]:
+            if path.is_symlink() and not _leads_to(path, old["target"]):
                 report.append(str(path) + ": retired link was redirected; preserved")
                 continue
             if not dry and path.is_symlink():
@@ -762,7 +775,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
             if "/rules/harness-stances/" in old["path"] and old["path"] not in wanted_stance_links:
                 say(f"  unlink  {old['path']} (stance no longer selected)")
                 path = Path(old["path"])
-                if path.is_symlink() and os.readlink(path) != old["target"]:
+                if path.is_symlink() and not _leads_to(path, old["target"]):
                     report.append(str(path) + ": retired stance link was redirected; preserved")
                     continue
                 if not dry and path.is_symlink():
@@ -901,7 +914,7 @@ def _diff_lines() -> List[str]:
         p = Path(link["path"])
         if not p.is_symlink():
             lines.append(f"missing link {p}")
-        elif Path(os.readlink(p)) != Path(link["target"]):
+        elif not _leads_to(p, link["target"]):
             lines.append(f"redirected link {p} -> {os.readlink(p)}")
         elif not p.exists():
             lines.append(f"broken link {p}")
@@ -1082,7 +1095,7 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
     conflicts = []
     for link in manifest.get("links", []):
         p = Path(link["path"])
-        if p.is_symlink() and os.readlink(p) in (link["target"], link.get("pending_from")):
+        if p.is_symlink() and (_leads_to(p, link["target"]) or _leads_to(p, link.get("pending_from"))):
             p.unlink()
             say(f"  unlink  {p}")
         elif p.exists() or p.is_symlink():

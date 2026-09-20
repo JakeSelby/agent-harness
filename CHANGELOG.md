@@ -34,6 +34,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A managed link that reaches its file through an alias of the checkout, such as `claude/stances`
+  for `primitives/stances`, is no longer reported as redirected. `harness uninstall` and the
+  retirement of a removed link treated the same link as the user's and left it behind; they now
+  remove it. A link pointed at a different file is still reported and still preserved.
 - A named agent asked onto the top tier now gets the model its definition names, or the class
   below when there is none to read. The hook used to remove the request, and the lifecycle
   coordinator only carries rewrites, so the top-tier request reached the spawn unchanged.
