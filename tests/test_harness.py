@@ -249,6 +249,48 @@ class SyncTests(TempHome):
         self.assertEqual(moved[0].read_text(), "mine")
 
 
+class LinkAliasTests(TempHome):
+    """A managed link that reaches its file through an alias of the checkout is still the harness's."""
+
+    def sync(self):
+        return harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=True, adopt_codex=False, print_only=False))
+
+    def alias(self, link):
+        # The checkout spells one directory two ways: claude/stances is a link to primitives/stances.
+        recorded = Path(os.readlink(link))
+        spelled = REPO / "claude" / "stances" / recorded.relative_to(REPO / "primitives" / "stances")
+        self.assertNotEqual(spelled, recorded)
+        self.assertEqual(spelled.resolve(), recorded.resolve())
+        link.unlink()
+        link.symlink_to(spelled)
+        return spelled
+
+    def test_an_alias_of_the_recorded_target_is_not_drift_and_a_real_redirect_still_is(self):
+        self.assertEqual(self.sync(), 0)
+        stances = self.home / ".claude" / "rules" / "harness-stances"
+        self.alias(stances / "testing.md")
+        self.assertEqual(harness._diff_lines(), [])
+        self.assertEqual(self.sync(), 0)
+        self.assertEqual(harness._diff_lines(), [])
+        elsewhere = self.home / "mine.md"
+        elsewhere.write_text("mine\n")
+        (stances / "voice.md").unlink()
+        (stances / "voice.md").symlink_to(elsewhere)
+        self.assertEqual(harness._diff_lines(), [f"redirected link {stances / 'voice.md'} -> {elsewhere}"])
+
+    def test_uninstall_removes_an_aliased_link_and_preserves_a_real_redirect(self):
+        self.assertEqual(self.sync(), 0)
+        stances = self.home / ".claude" / "rules" / "harness-stances"
+        self.alias(stances / "testing.md")
+        elsewhere = self.home / "mine.md"
+        elsewhere.write_text("mine\n")
+        (stances / "voice.md").unlink()
+        (stances / "voice.md").symlink_to(elsewhere)
+        harness.cmd_uninstall(harness.argparse.Namespace())
+        self.assertFalse((stances / "testing.md").is_symlink())
+        self.assertEqual(Path(os.readlink(stances / "voice.md")), elsewhere)
+
+
 class LintTests(TempHome):
     def _fixture(self):
         root = Path(self.tmp.name) / "repo"
