@@ -1912,8 +1912,9 @@ def role_report(rows: List[Dict[str, Any]], days: int) -> int:
         group = groups[key]
         output = sorted(int(r["output"]) for r in group if isinstance(r.get("output"), int))
         tools = sorted(int(r["tool_calls"]) for r in group if isinstance(r.get("tool_calls"), int))
-        # A run whose runtime reported no counts is named, never averaged in as a zero.
-        gaps = len(group) - min(len(output), len(tools))
+        # A run whose runtime reported no tool-call count is named, never averaged in as a
+        # zero; the percentiles are taken over the runs that do report one.
+        gaps = sum(1 for r in group if not isinstance(r.get("tool_calls"), int))
         cells = [f"{percentile(output, s):>10,}" if output else f"{'-':>10}" for s in (0.5, 0.75, 0.9)]
         cells += [f"{percentile(tools, s):>11,}" if tools else f"{'-':>11}" for s in (0.5, 0.75, 0.9)]
         say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}")
@@ -1923,9 +1924,10 @@ def role_report(rows: List[Dict[str, Any]], days: int) -> int:
 def cmd_usage(args: argparse.Namespace) -> int:
     """Summarize the records the usage-log hook writes. Local file only.
 
-    Every row names its `kind`. A session's totals already include its subagents', so the
-    token groupings sum session rows alone; `--by role` reads the subagent and worker rows,
-    which carry the same tokens a second time, attributed.
+    Every row names its `kind`. A session's totals already include its subagents', so the token
+    groupings sum session and worker rows and never a subagent's; a role-run worker has no
+    session row, so leaving workers out would hide their spend entirely. `--by role` reads the
+    subagent and worker rows, which carry the same tokens a second time, attributed.
     """
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
@@ -1959,11 +1961,14 @@ def cmd_usage(args: argparse.Namespace) -> int:
         kind = row.get("kind") or "session"
         if kind != "session":
             delegated.append(row)
-            continue
-        if by == "role":
+        # A subagent's tokens are already in its session's row; a worker's are in no session's,
+        # because a role-run worker has no session. So the totals are sessions plus workers.
+        if by == "role" or kind == "subagent":
             continue
         if rules_mode:
-            kept.append(row)
+            # Only a session's own conduct was measured by the detectors.
+            if kind == "session":
+                kept.append(row)
             continue
         if by == "repo":
             key = row.get("repo") or "(no repo)"
@@ -1996,7 +2001,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
 
     if unknown_metrics:
         say("Partial totals: unavailable metrics are excluded: " + ", ".join(sorted(unknown_metrics)))
-    head = (f"{by:<34}{'sessions':>9}{'input':>12}{'output':>12}"
+    head = (f"{by:<34}{'runs':>9}{'input':>12}{'output':>12}"
             f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}")
     say(head)
     say("-" * len(head))

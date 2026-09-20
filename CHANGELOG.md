@@ -41,6 +41,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A session whose transcript carried both a subagent's sidechain lines and that subagent's own
+  file counted every delegated token twice. The session's totals are now taken over one map of
+  message ids that both reads fill, so a message recorded in two places is one message. Agents
+  nested under `subagents/workflows/wf_<id>/`, which the Workflow tool writes and a flat walk
+  missed entirely, are counted too and name their workflow.
 - Output tokens were undercounted, by a factor of several on a long response. The log took each
   message id's usage from the first transcript record carrying it, and the early records of one
   streamed response carry a partial `output_tokens` — 7,126 against the response's real 40,868

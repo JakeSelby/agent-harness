@@ -136,12 +136,16 @@ def summed(per_message):
     return {name: sum(slot[name] for slot in per_message.values()) for name, _ in FIELDS}
 
 
-def _agent_row(path):
+def _agent_row(path, shared=None):
     """One `kind: "subagent"` row from one `agent-<id>.jsonl`, or None when it holds no turn.
 
     The sibling `agent-<id>.meta.json` names the agent type, the model and the spawn depth;
     the transcript carries the tokens, the tool calls and, on some records, the effort. Counts
     only: no prompt text and no command text reaches the record.
+
+    `shared` is the session's message-id map. The row keeps its own total, but the session's
+    total is taken over that shared map, so a message id written both here and as a sidechain
+    line in the session file is one message and is paid for once.
     """
     per_message, anonymous = {}, 0
     try:
@@ -187,11 +191,15 @@ def _agent_row(path):
                     continue
                 tools.add(key)
                 calls += 1
-            if mid:
-                record_usage(per_message, mid, message.get("usage") or {})
-            else:
+            usage = message.get("usage") or {}
+            # A line with no message id cannot be matched across files, so its key names the
+            # file it came from: two such lines from two sources are two messages, not one.
+            key = mid if mid else ("line", str(path), anonymous)
+            if not mid:
                 anonymous += 1
-                record_usage(per_message, ("line", anonymous), message.get("usage") or {})
+            record_usage(per_message, key, usage)
+            if shared is not None:
+                record_usage(shared, key, usage)
             if mid and mid in seen:
                 continue
             seen.add(mid)
@@ -199,32 +207,37 @@ def _agent_row(path):
             model = model or message.get("model") or ""
     if not turns:
         return None
-    totals = summed(per_message)
+    workflow = path.parent.name if path.parent.name.startswith("wf_") else None
     row = {"kind": "subagent", "runtime": "claude-code", "session_id": "", "repo": "",
-           "agent_id": path.stem[len("agent-"):], "agent_type": meta.get("agentType") or "",
+           "agent_id": path.stem[len("agent-"):],
+           # A Workflow-tool agent may have no meta file at all; unnamed is a fact about the
+           # record, and "unknown" says so where an empty string would read as a missing field.
+           "agent_type": meta.get("agentType") or "unknown",
            "model": meta.get("model") or model, "effort": effort or meta.get("effort") or "",
-           "tool_calls": calls, "spawn_depth": meta.get("spawnDepth"),
+           "tool_calls": calls, "spawn_depth": meta.get("spawnDepth"), "workflow": workflow,
            # A later step sets this when the spawn hook rewrote the requested agent type.
            "rerouted": False, "turns": turns, "started": started, "ended": ended}
-    row.update(totals)
+    row.update(summed(per_message))
     return row
 
 
-def agent_rows(transcript, session_id=""):
-    """Every subagent row belonging to one session transcript, oldest agent id first.
+def agent_rows(transcript, session_id="", shared=None):
+    """Every subagent row belonging to one session transcript, by path.
 
     Claude Code writes each subagent to `<session>/subagents/agent-<id>.jsonl` beside the
-    session's own `<session>.jsonl`. Those tokens were spent by this session, so the session
-    row sums them too; the per-agent rows are what makes `usage --by role` true.
+    session's own `<session>.jsonl`, and a Workflow-tool agent one level deeper still, under
+    `subagents/workflows/wf_<id>/`. The walk is recursive for that reason. Those tokens were
+    spent by this session, so the session row counts them too; the per-agent rows are what
+    makes `usage --by role` true.
     """
     path = Path(os.path.expanduser(str(transcript)))
     rows = []
     try:
-        files = sorted((path.with_suffix("") / "subagents").glob("agent-*.jsonl"))
+        files = sorted((path.with_suffix("") / "subagents").rglob("agent-*.jsonl"))
     except OSError:
         return rows
     for file in files:
-        row = _agent_row(file)
+        row = _agent_row(file, shared)
         if row:
             row["session_id"] = session_id or path.stem
             rows.append(row)
@@ -233,8 +246,9 @@ def agent_rows(transcript, session_id=""):
 
 def scan_all(transcript, session_id="", cwd="", prior=None, rescan=False):
     """Every row one transcript yields: the session first, then one row per subagent."""
-    agents = agent_rows(transcript, session_id)
-    record = scan(transcript, session_id, cwd, prior, rescan, agents=agents)
+    shared = {}
+    agents = agent_rows(transcript, session_id, shared)
+    record = scan(transcript, session_id, cwd, prior, rescan, agents=agents, shared=shared)
     if record is None:
         return []
     if record.get("runtime") != "claude-code":
@@ -245,15 +259,22 @@ def scan_all(transcript, session_id="", cwd="", prior=None, rescan=False):
     return [record] + agents
 
 
-def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=None):
+def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=None, shared=None):
     """One record from one transcript, or None when there is nothing worth recording.
 
     `prior` is the record this session already has, when there is one; `rescan` says the read
     is a backfill rather than the session's own end. Together they decide the `stances` field,
     which a backfill can only guess at. `agents` is the subagent rows when the caller has
-    already read them, so `scan_all` reads each subagent file once rather than twice.
+    already read them, so `scan_all` reads each subagent file once rather than twice, and
+    `shared` is the message-id map those reads filled.
+
+    The session's totals are taken over that one map, never as a sum of two sources. Older
+    Claude Code wrote a subagent's turns into the session file as sidechain lines while newer
+    Claude Code writes them to the subagent's own file; a transcript carrying both would pay
+    for every delegated token twice if the two were added.
     """
-    per_message, anonymous = {}, 0
+    per_message = {} if shared is None else shared
+    anonymous = 0
     models, agent_calls, seen = [], set(), set()
     started = ended = branch = ""
     turns = 0
@@ -268,6 +289,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         handle.seek(0)
         if '"session_meta"' in first:
             return scan_codex(transcript, session_id, cwd, prior, rescan)
+        if agents is None:
+            agents = agent_rows(transcript, session_id, per_message)
         for line in handle:
             try:
                 entry = json.loads(line)
@@ -351,7 +374,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 record_usage(per_message, mid, message.get("usage") or {})
             else:
                 anonymous += 1
-                record_usage(per_message, ("line", anonymous), message.get("usage") or {})
+                record_usage(per_message, ("line", "session", anonymous),
+                             message.get("usage") or {})
             if mid and mid in seen:
                 continue
             seen.add(mid)
@@ -363,8 +387,6 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     if not session_id or not turns:
         return None
     totals = summed(per_message)
-    if agents is None:
-        agents = agent_rows(transcript, session_id)
     top = git(cwd, "rev-parse", "--show-toplevel") if cwd and os.path.isdir(cwd) else ""
     record = {
         "kind": "session",
@@ -377,10 +399,11 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         "started": started,
         "ended": ended,
     }
-    # A subagent's tokens are the session's bill, so the session row carries them; the per-agent
-    # rows carry the same tokens again, which is why every grouping sums session rows alone.
+    # A subagent's tokens are the session's bill, so the session row carries them — once,
+    # because `totals` is taken over the one map both reads filled. The per-agent rows carry
+    # the same tokens again, attributed, which is why no grouping sums both.
     for name, _ in FIELDS:
-        record[name] = totals[name] + sum(row[name] for row in agents)
+        record[name] = totals[name]
     record["subagents"] = max(len(agents), len(agent_calls))
     record["turns"] = turns
     # A live SessionEnd write knows the stances the session actually ran under. A rescan does
@@ -503,8 +526,12 @@ def row_key(row):
 
 
 def upsert(record, path=None):
-    """Replace the rows these records identify, or append them. Takes one record or many."""
-    records = [record] if isinstance(record, dict) else list(record)
+    """Replace the rows these records identify, or append them. Takes one record or many.
+
+    A batch keeps the last record for a key, so one locked rewrite is what a whole rescan costs.
+    """
+    records = [record] if isinstance(record, dict) else list(
+        {row_key(r): r for r in record}.values())
     if not records:
         return Path(path) if path else usage_path()
     path = Path(path) if path else usage_path()
@@ -584,6 +611,12 @@ def worker_rows(cutoff=0.0):
     writes them into the status record. A worker that reported none keeps its row and leaves the
     token fields unknown, which the report then excludes from its sums rather than reading as
     zero. The role name is the agent type, so a worker and a subagent group the same way.
+
+    Only a completed run is recorded: a run that timed out, failed or is still running has no
+    total worth comparing against another role's. The window is applied by file modification
+    time before the file is opened, so a sweep reads the recent runs and not the archive, and
+    a record whose own timestamps are unusable is dated by that same mtime rather than by a
+    stamp the report could never place in a window.
     """
     rows = []
     try:
@@ -592,25 +625,28 @@ def worker_rows(cutoff=0.0):
         return rows
     for path in paths:
         try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime < cutoff:
+            continue
+        try:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if not isinstance(record, dict) or not record.get("id") or not record.get("role"):
             continue
-        ended = record.get("finished_at") or record.get("started_at")
-        try:
-            if float(ended or 0) < cutoff:
-                continue
-        except (TypeError, ValueError):
-            pass
+        if record.get("status") != "completed":
+            continue
+        ended = stamp(record.get("finished_at") or record.get("started_at")) or stamp(mtime)
         usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
         row = {"kind": "worker", "runtime": record.get("runtime") or "claude-code",
                "session_id": record["id"], "agent_id": record["id"],
                "agent_type": record["role"], "repo": os.path.basename(str(record.get("workspace") or "").rstrip("/")),
                "model": record.get("model") or "", "effort": record.get("effort") or "",
                "tool_calls": usage.get("tool_calls"), "spawn_depth": 1, "rerouted": False,
-               "status": record.get("status") or "", "stances": record.get("stances") or {},
-               "started": stamp(record.get("started_at")), "ended": stamp(ended)}
+               "status": record.get("status"), "stances": record.get("stances") or {},
+               "started": stamp(record.get("started_at")) or ended, "ended": ended}
         for name, _ in FIELDS:
             row[name] = usage.get(name)
         rows.append(row)
@@ -618,9 +654,15 @@ def worker_rows(cutoff=0.0):
 
 
 def rescan(days=30):
+    """Re-read every transcript in the window and rewrite the file once.
+
+    A backfill of a month reads hundreds of transcripts. Upserting each one separately would
+    take the lock and rewrite the whole file that many times, so the rows are collected and
+    written in a single locked pass; `SessionEnd` keeps the one-session path.
+    """
     cutoff = time.time() - max(days, 0) * 86400
     prior = recorded()
-    found = 0
+    found, batch = 0, []
     codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
     paths = list(projects_dir().glob("*/*.jsonl")) + list((codex_home / "sessions").rglob("*.jsonl"))
     for path in sorted(paths):
@@ -645,11 +687,11 @@ def rescan(days=30):
             pass
         records = scan_all(path, prior=prior.get(ident), rescan=True)
         if records:
-            upsert(records)
+            batch.extend(records)
             found += 1
-    workers = worker_rows(cutoff)
-    if workers:
-        upsert(workers)
+    batch.extend(worker_rows(cutoff))
+    if batch:
+        upsert(batch)
     return found
 
 

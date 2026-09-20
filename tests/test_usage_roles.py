@@ -172,8 +172,79 @@ class SubagentRows(Fixture):
     def test_a_subagent_transcript_without_its_meta_file_still_counts(self):
         (self.project / "s-1" / "subagents" / "agent-bbb.meta.json").unlink()
         rows = {r["agent_id"]: r for r in self.record() if r["kind"] == "subagent"}
-        self.assertEqual(rows["bbb"]["agent_type"], "")
+        self.assertEqual(rows["bbb"]["agent_type"], "unknown")
         self.assertEqual(rows["bbb"]["model"], "model-opus")
+        self.assertIsNone(rows["bbb"]["workflow"])
+
+
+class OneSourcePerMessage(Fixture):
+    """A delegated token is the session's once, however many files record the message."""
+
+    def test_a_sidechain_line_and_a_subagent_file_of_the_same_ids_count_once(self):
+        """Older Claude Code wrote a subagent's turns into the session file as sidechain lines;
+        newer Claude Code writes them to the agent's own file. A transcript carrying both would
+        pay for every delegated token twice if the two totals were added."""
+        plain = [r for r in self.record() if r["kind"] == "session"][0]
+        sidechain = []
+        for spec in self.AGENTS.values():
+            for mid, out, tools in spec["messages"]:
+                entry = message(mid, STAMPS[4], out, tools, spec["model"])
+                entry["isSidechain"] = True
+                sidechain.append(entry)
+        write(self.transcript, [json.loads(ln) for ln in self.transcript.read_text().splitlines()]
+              + sidechain)
+        doubled = [r for r in self.record() if r["kind"] == "session"][0]
+        self.assertEqual(doubled["output"], plain["output"])
+        self.assertEqual(doubled["input"], plain["input"])
+        self.assertEqual(doubled["cache_read"], plain["cache_read"])
+        # The agent's own row still carries its own file's total, whole.
+        rows = {r["agent_id"]: r for r in self.record() if r["kind"] == "subagent"}
+        self.assertEqual(rows["aaa"]["output"], 400)
+
+    def test_an_unidentified_line_in_two_files_is_two_messages(self):
+        """A line with no message id cannot be matched across files, so it is never merged."""
+        anon = {"type": "assistant", "sessionId": "s-1", "cwd": "", "timestamp": STAMPS[2],
+                "message": {"model": "model-a", "content": [],
+                            "usage": {"output_tokens": 500, "input_tokens": 0,
+                                      "cache_read_input_tokens": 0,
+                                      "cache_creation_input_tokens": 0}}}
+        write(self.transcript, [anon])
+        write(self.project / "s-1" / "subagents" / "agent-aaa.jsonl", [anon])
+        (self.project / "s-1" / "subagents" / "agent-bbb.jsonl").unlink()
+        session = [r for r in self.record() if r["kind"] == "session"][0]
+        self.assertEqual(session["output"], 1000)
+
+
+class WorkflowAgents(Fixture):
+    """The Workflow tool nests its agents a directory deeper; the walk is recursive for it."""
+
+    def nested(self, with_meta=True):
+        directory = self.project / "s-1" / "subagents" / "workflows" / "wf_7f3"
+        write(directory / "agent-ccc.jsonl", [message("c1", STAMPS[4], 250, ("t9",))])
+        if with_meta:
+            (directory / "agent-ccc.meta.json").write_text(json.dumps(
+                {"agentType": "researcher", "spawnDepth": 2, "model": "model-haiku"}),
+                encoding="utf-8")
+
+    def test_a_nested_workflow_agent_is_found_and_names_its_workflow(self):
+        self.nested()
+        row = [r for r in self.record() if r.get("agent_id") == "ccc"][0]
+        self.assertEqual(row["agent_type"], "researcher")
+        self.assertEqual(row["workflow"], "wf_7f3")
+        self.assertEqual((row["output"], row["tool_calls"]), (250, 1))
+
+    def test_its_tokens_reach_the_session_total(self):
+        before = [r for r in self.record() if r["kind"] == "session"][0]["output"]
+        self.nested()
+        after = [r for r in self.record() if r["kind"] == "session"][0]["output"]
+        self.assertEqual(after - before, 250)
+
+    def test_a_nested_agent_with_no_meta_file_is_recorded_as_unknown(self):
+        self.nested(with_meta=False)
+        row = [r for r in self.record() if r.get("agent_id") == "ccc"][0]
+        self.assertEqual(row["agent_type"], "unknown")
+        self.assertEqual(row["workflow"], "wf_7f3")
+        self.assertEqual(row["output"], 250)
 
 
 class RescanRows(Fixture):
@@ -193,6 +264,22 @@ class RescanRows(Fixture):
         self.assertEqual({r["session_id"] for r in rows}, {"s-1"})
         self.assertNotIn("ccc", [r.get("agent_id") for r in rows])
         self.assertEqual([r["kind"] for r in rows].count("session"), 1)
+
+    def test_a_rescan_of_many_transcripts_rewrites_the_file_once(self):
+        """Upserting per transcript took the lock and rewrote the whole file each time."""
+        for i in range(2, 8):
+            entry = message("m%d" % i, STAMPS[2], 10)
+            entry["sessionId"] = "s-%d" % i
+            write(self.project / ("s-%d.jsonl" % i), [entry])
+        writes = []
+        original = usage_log.os.replace
+        usage_log.os.replace = lambda src, dst: (writes.append(dst), original(src, dst))[1]
+        try:
+            self.assertEqual(usage_log.rescan(30), 7)
+        finally:
+            usage_log.os.replace = original
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(len([r for r in self.rows() if r["kind"] == "session"]), 7)
 
     def test_a_row_written_before_kind_existed_reports_and_a_rescan_upgrades_it(self):
         legacy = {"session_id": "s-1", "runtime": "claude-code", "repo": "a-repo",
@@ -235,6 +322,15 @@ class RoleReport(Fixture):
         row = [ln for ln in self.report(by="role").splitlines() if ln.startswith("gatherer")][0]
         self.assertEqual(row.split()[1:], ["3", "100", "100", "100", "1", "1", "1", "1"])
 
+    def test_unmeasured_counts_the_runs_missing_a_tool_call_figure(self):
+        """It is a count of what the column above it could not be taken over, so a run with
+        tokens but no tool-call figure is named even though its output was measured."""
+        self.write_rows([self.agent(0, "gatherer", 100, 1),
+                         dict(self.agent(1, "gatherer", 200, 0), tool_calls=None),
+                         dict(self.agent(2, "gatherer", 300, 0), tool_calls=None)])
+        row = [ln for ln in self.report(by="role").splitlines() if ln.startswith("gatherer")][0]
+        self.assertEqual(row.split()[1:], ["3", "200", "300", "300", "1", "1", "1", "2"])
+
     def test_a_worker_row_groups_under_its_role_beside_a_subagent(self):
         worker = {"kind": "worker", "runtime": "codex", "session_id": "w1", "agent_id": "w1",
                   "agent_type": "reviewer", "model": "model-x", "effort": "high", "input": 9,
@@ -249,11 +345,25 @@ class RoleReport(Fixture):
         self.write_rows([])
         self.assertIn("no subagent or worker runs recorded", self.report(by="role"))
 
-    def test_the_token_groupings_count_session_rows_alone(self):
+    def test_the_token_groupings_never_count_a_subagent_row(self):
         self.record()
         for grouping in ("day", "repo", "model"):
             total = [ln for ln in self.report(by=grouping).splitlines() if ln.startswith("TOTAL")][0]
             self.assertEqual(total.split()[1:4], ["1", "5", "1,200"])
+
+    def test_the_token_groupings_do_count_a_worker_row(self):
+        """A role-run worker has no session row of its own, so leaving workers out of the
+        totals would hide their spend in every report there is."""
+        self.write_rows([{"kind": "session", "runtime": "claude-code", "session_id": "s-1",
+                          "repo": "alpha", "models": ["model-a"], "ended": STAMPS[5],
+                          "input": 10, "output": 100, "cache_read": 0, "cache_write": 0},
+                         {"kind": "worker", "runtime": "codex", "session_id": "w1",
+                          "agent_id": "w1", "agent_type": "reviewer", "repo": "alpha",
+                          "ended": STAMPS[5], "input": 5, "output": 250, "cache_read": 0,
+                          "cache_write": 0, "tool_calls": None},
+                         self.agent(0, "gatherer", 999, 3)])
+        total = [ln for ln in self.report(by="repo").splitlines() if ln.startswith("TOTAL")][0]
+        self.assertEqual(total.split()[1:4], ["2", "15", "350"])
 
     def test_rules_by_role_is_refused_rather_than_quietly_regrouped(self):
         self.write_rows([self.agent(0, "gatherer", 100, 1)])
@@ -293,6 +403,26 @@ class WorkerIngest(Fixture):
         row = [r for r in self.record() if r["kind"] == "worker"][0]
         self.assertIsNone(row["output"])
         self.assertIsNone(row["input"])
+
+    def test_a_run_that_did_not_complete_is_not_recorded(self):
+        """A timed-out or failed run has no total worth comparing against another role's."""
+        self.status(status="timed-out", usage={"output": 250})
+        self.assertEqual([r for r in self.record() if r["kind"] == "worker"], [])
+
+    def test_a_run_older_than_the_window_is_not_even_opened(self):
+        record = self.status(usage={"output": 250})
+        path = self.home / ".local/state/agent-harness/workers" / record["id"] / "status.json"
+        stale = time.time() - 60 * 86400
+        os.utime(path, (stale, stale))
+        self.assertEqual([r for r in self.record() if r["kind"] == "worker"], [])
+
+    def test_an_unusable_timestamp_falls_back_to_the_file_rather_than_going_unreportable(self):
+        """A row the report cannot place in any window is a row nobody ever sees."""
+        self.status(started_at=None, finished_at="not a time", usage={"output": 250})
+        row = [r for r in self.record() if r["kind"] == "worker"][0]
+        self.assertTrue(row["ended"] > STAMPS[0], row["ended"])
+        self.assertEqual(row["started"], row["ended"])
+        self.assertIn("reviewer", self.report(by="role"))
 
     def test_a_worker_row_never_displaces_a_session_of_the_same_runtime(self):
         self.status(usage={"output": 250})
