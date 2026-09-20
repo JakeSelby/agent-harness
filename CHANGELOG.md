@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   moment (at most a second, over the transcript's tail) for the response to end, says `(so far)`
   when it never does, and raises the session totals from the settled figure the journal brings
   afterwards without naming the agent a second time.
+- A usage row names a subagent's model one way. A routed spawn's row carried the alias the spawn
+  hook asked for and a directly spawned agent's the full id its transcript records, so one model
+  appeared under two names. A subagent row now records what its own transcript reports — the most
+  frequent model across its assistant records — and falls back to the requested alias only when
+  it recorded none; `harness usage --rescan` normalises rows already on file. Worker rows still
+  record what the worker reported, which is the only thing that knows.
 
 ## [0.11.0] — 2026-09-20
 

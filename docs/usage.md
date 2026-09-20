@@ -35,7 +35,10 @@ the tree Claude Code writes beside the session's own file. The walk is recursive
 Workflow-tool agent lives a level deeper, at `subagents/workflows/wf_<id>/`, and its `workflow`
 field names that directory. `agent_id`, `agent_type` and `spawn_depth` come from the sibling
 `.meta.json`, and an agent written without one is recorded as `agent_type: "unknown"` rather
-than dropped. Then `model`, `effort`, the four token fields and `tool_calls`. `tool_use_id` is
+than dropped. Then `model` — the id the agent's own transcript reports, most frequent across its
+assistant records, falling back to the alias the spawn asked for only when it recorded none, so
+a routed spawn and a direct one on the same model group under one name — `effort`, the four
+token fields and `tool_calls`. `tool_use_id` is
 the parent call this row belongs to, `requested_type` is the agent type that call asked for, and
 `rerouted` is the two disagreeing — the measure of how often a spawn hook moved a spawn. A
 requested type is kept only when it is a name the tool could have resolved; anything else is
