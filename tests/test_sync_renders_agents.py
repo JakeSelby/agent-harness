@@ -16,6 +16,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -83,6 +84,12 @@ class RenderedAgentTests(unittest.TestCase):
 
     def rendered(self, role):
         return (self.agents / (role + ".md")).read_text(encoding="utf-8")
+
+    def own_generated(self, path, applied):
+        """Record a file as one the harness generated, the way a previous sync would have."""
+        store = harness.reconcile.Store(harness.state_dir())
+        store.data["files"][str(path)] = {"kind": "generated", "prior": None, "applied": applied}
+        store.save()
 
     def link_as_0_10_0(self):
         """The previous release's install: one managed symlink per role, recorded in the manifest."""
@@ -186,6 +193,123 @@ class RenderedAgentTests(unittest.TestCase):
 
     def test_the_committed_projection_is_still_what_generate_checks(self):
         self.assertEqual(catalog.projection_drift(REPO), [])
+
+    def test_a_dangling_managed_link_is_ours_to_retire(self):
+        self.link_as_0_10_0()
+        link = self.agents / "gatherer.md"
+        link.unlink()
+        link.symlink_to(self.home / "moved-checkout" / "claude" / "agents" / "gatherer.md")
+        manifest = harness.read_json(harness.manifest_path())
+        for entry in manifest["links"]:
+            if entry["path"] == str(link):
+                entry["target"] = str(self.home / "moved-checkout" / "claude" / "agents" / "gatherer.md")
+        harness.write_json_atomic(harness.manifest_path(), manifest)
+        self.assertEqual(self.sync(), 0)
+        self.assertFalse(link.is_symlink())
+        self.assertEqual(self.rendered("gatherer"),
+                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+
+    def test_a_link_through_another_spelling_of_this_checkout_is_ours_to_retire(self):
+        alias = self.home / "alias"
+        alias.symlink_to(REPO)
+        self.agents.mkdir(parents=True)
+        (self.agents / "gatherer.md").symlink_to(alias / "claude" / "agents" / "gatherer.md")
+        self.assertEqual(self.sync(), 0)
+        self.assertFalse((self.agents / "gatherer.md").is_symlink())
+        self.assertEqual(self.rendered("gatherer"),
+                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+
+    def test_an_unrecorded_user_symlink_is_reported_and_never_silently_skipped(self):
+        mine = self.home / "my-gatherer.md"
+        mine.write_text("mine", encoding="utf-8")
+        self.agents.mkdir(parents=True)
+        (self.agents / "gatherer.md").symlink_to(mine)
+        with loud() as out:
+            self.assertEqual(self.sync(), 2)
+        self.assertTrue((self.agents / "gatherer.md").is_symlink())
+        self.assertIn("gatherer.md", out.getvalue())
+        self.assertIn("--adopt", out.getvalue())
+
+    def test_adopt_resolves_a_redirected_link_and_renders(self):
+        self.link_as_0_10_0()
+        mine = self.home / "my-gatherer.md"
+        mine.write_text("mine", encoding="utf-8")
+        link = self.agents / "gatherer.md"
+        link.unlink()
+        link.symlink_to(mine)
+        self.assertEqual(self.sync(adopt=True), 0)
+        self.assertFalse(link.is_symlink())
+        self.assertEqual(self.rendered("gatherer"),
+                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+        self.assertTrue(any(Path(i["path"]) == link
+                            for i in (harness.read_json(harness.manifest_path()) or {}).get("adopted", [])))
+
+    def test_a_generated_definition_whose_role_is_gone_retires(self):
+        self.assertEqual(self.sync(), 0)
+        orphan = self.agents / "retired-role.md"
+        text = self.rendered("gatherer")
+        orphan.write_text(text, encoding="utf-8")
+        self.own_generated(orphan, text)
+        self.assertEqual(self.sync(), 0)
+        self.assertFalse(orphan.exists())
+        self.assertNotIn(str(orphan), harness.reconcile.Store(harness.state_dir()).data["files"])
+
+    def test_a_hand_edited_generated_definition_is_never_retired(self):
+        self.assertEqual(self.sync(), 0)
+        orphan = self.agents / "retired-role.md"
+        orphan.write_text("mine now", encoding="utf-8")
+        self.own_generated(orphan, self.rendered("gatherer"))
+        self.assertEqual(self.sync(), 2)
+        self.assertEqual(orphan.read_text(encoding="utf-8"), "mine now")
+
+    def test_a_render_that_fails_removes_nothing(self):
+        self.link_as_0_10_0()
+        original = catalog.role_projection
+
+        def explode(root, runtime, path, *args, **kwargs):
+            if runtime == "claude-code" and path.stem == "spec-reviewer":
+                raise RuntimeError("no binding for this role")
+            return original(root, runtime, path, *args, **kwargs)
+
+        with unittest.mock.patch.object(harness.primitive_catalog, "role_projection", explode):
+            with self.assertRaises(RuntimeError):
+                self.sync()
+        for role in ROLES:
+            path = self.agents / (role + ".md")
+            self.assertTrue(path.is_symlink(), msg=role)
+            self.assertEqual(path.read_text(encoding="utf-8"),
+                             (COMMITTED / (role + ".md")).read_text(encoding="utf-8"), msg=role)
+
+    def test_an_unusable_sidecar_is_a_notice_and_not_a_failed_sync(self):
+        root = self.home / "primitives"
+        (root / "stances" / "cost").mkdir(parents=True)
+        (root / "stances" / "cost" / "mine.md").write_text("# Cost stance: mine\n", encoding="utf-8")
+        (root / "stances" / "cost" / "mine.json").write_text(
+            json.dumps({"schema_version": 1, "extends": "balanced", "switches": {"nope": 1}}),
+            encoding="utf-8")
+        self.configure(stances={"cost": "mine"}, primitive_roots=[str(root)])
+        with loud() as out:
+            self.assertEqual(self.sync(), 0)
+        self.assertIn("notice  cost variant:", out.getvalue())
+        self.assertIn("nope", out.getvalue())
+        self.assertEqual(self.rendered("gatherer"),
+                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+
+    def test_a_dry_run_over_a_linked_install_names_the_writes(self):
+        self.link_as_0_10_0()
+        with loud() as out:
+            self.assertEqual(self.sync(dry=True), 0)
+        printed = out.getvalue()
+        self.assertIn("agents/gatherer.md (agent definitions are rendered, not linked)", printed)
+        self.assertIn("render  " + str(self.agents / "gatherer.md"), printed)
+        self.assertTrue((self.agents / "gatherer.md").is_symlink())
+
+    def test_a_dry_run_refuses_an_impossible_binding_the_way_a_real_one_does(self):
+        self.configure(role_bindings={"claude-code": {"gatherer": {"effort": "max"}}})
+        for dry in (True, False):
+            with self.assertRaises(SystemExit) as raised:
+                self.sync(dry=dry)
+            self.assertIn("role effort must be one of", str(raised.exception))
 
 
 class RoleOverrideTests(unittest.TestCase):

@@ -28,6 +28,7 @@ and effort a role runs with are written into the file on disk rather than decide
 session-scoped `HARNESS_STANCE_COST`, like any `HARNESS_STANCE_*`, stays in that session and does
 not move them until the next `harness sync`; role-run workers resolve their class and effort per
 run and do follow it. A `role_bindings.<runtime>.<role>` entry still wins over the variant's row.
+Run `harness uninstall` before downgrading to a release that links these definitions instead.
 
 Usage records identify the runtime and available runtime version. Codex cumulative token snapshots
 are counted once; missing measurements remain null and reports label partial totals. Detector

@@ -104,9 +104,12 @@ class AgentSyncTests(unittest.TestCase):
         mine.write_text("mine")
         self.assertEqual(self._sync(), 2)
         self.assertEqual(mine.read_text(), "mine")
-        # Adopting a rendered file keeps the user's text as the content uninstall restores.
+        # Adopting moves the user's file aside, as it did when agents were linked.
         self.assertEqual(self._sync(adopt=True), 0)
         self.assertEqual(mine.read_text(), (AGENTS / "gatherer.md").read_text(encoding="utf-8"))
+        moved = list((self.home / ".local/state/agent-harness/pre-harness").rglob("gatherer.md"))
+        self.assertEqual(len(moved), 1)
+        self.assertEqual(moved[0].read_text(), "mine")
         harness.cmd_uninstall(harness.argparse.Namespace())
         self.assertEqual(mine.read_text(), "mine")
 
