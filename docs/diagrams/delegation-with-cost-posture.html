@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delegation with the cost posture layer</title>
+<!-- Fonts: Inter and Source Serif 4, both SIL Open Font License 1.1, via Google Fonts. No other third-party assets. -->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap');
+
+  :root {
+    --bg: #FAFAF9;
+    --surface: #FFFFFF;
+    --surface-warm: #FFF9F3;
+    --surface-muted: #F5F3EF;
+    --border: #E8E4DE;
+    --border-warm: #E8D4C0;
+    --border-accent: #D4A574;
+    --text: #2C2418;
+    --text-secondary: #5C5347;
+    --text-muted: #6F675D;      /* darkened from the reference for WCAG AA at small sizes */
+    --accent-warm: #C4763B;
+    --warm-ink: #96511F;        /* accent-warm, darkened for small text */
+    --new: #2F7A4D;
+    --new-ink: #1F5C38;
+    --new-bg: #EAF4EE;
+    --new-border: #B5D6C2;
+    --gap: #9C4A2C;
+    --gap-bg: #FDF3EF;
+    --gap-border: #E9C3B4;
+    --shadow-sm: 0 1px 3px rgba(44,36,24,0.06);
+    --shadow-md: 0 4px 16px rgba(44,36,24,0.08);
+    --radius: 16px;
+    --radius-sm: 12px;
+    --radius-xs: 8px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  code {
+    font-family: var(--mono);
+    font-size: max(12px, 0.86em);
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0 5px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* ── Header ── */
+  .header { text-align: center; padding: 52px 24px 28px; max-width: 900px; margin: 0 auto; }
+  .eyebrow {
+    font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 12px;
+  }
+  .header h1 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 2.6rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; margin-bottom: 14px;
+  }
+  .header h1 em { font-style: italic; color: var(--accent-warm); }
+  .header .subtitle { font-size: 1.15rem; color: var(--text-secondary); max-width: 900px; margin: 0 auto; line-height: 1.6; text-wrap: balance; }
+
+  .canvas { max-width: 1400px; margin: 0 auto; padding: 0 28px 40px; }
+
+  /* ── Principle / status chips ── */
+  .chips { display: grid; gap: 16px; margin: 8px auto 0; max-width: 1120px; }
+  .chips-3 { grid-template-columns: repeat(3, 1fr); }
+  .chips-4 { grid-template-columns: repeat(4, 1fr); }
+  .chip {
+    background: var(--surface-warm); border: 1px solid var(--border-warm); border-radius: var(--radius);
+    padding: 18px 20px; text-align: center; display: flex; flex-direction: column; justify-content: center;
+  }
+  .chip .chip-k {
+    display: block; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--warm-ink); margin-bottom: 4px;
+  }
+  .chip .chip-v { font-family: 'Source Serif 4', Georgia, serif; font-size: 1.3rem; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+  .chip.ok { background: var(--surface); border-color: var(--border); }
+  .chip.ok .chip-k { color: var(--text-secondary); }
+  .chip.bad { background: var(--gap-bg); border-color: var(--gap-border); }
+  .chip.bad .chip-k { color: var(--gap); }
+
+  /* ── Legend ── */
+  .legend { display: flex; flex-wrap: wrap; gap: 22px; justify-content: center; padding: 22px 16px 6px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-secondary); }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .legend-line { width: 26px; height: 0; border-top: 2px solid var(--new); flex: none; }
+  .legend-line.dashed { border-top-style: dashed; }
+  .legend-line.dotted { border-top: 2px dotted var(--text-muted); }
+  .legend-line.gapline { border-top: 2px dashed var(--gap); }
+
+  /* ── Section title (rule with dot) ── */
+  .section-title {
+    display: flex; align-items: center; gap: 10px; margin: 26px 0 18px;
+    font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted);
+  }
+  .section-title .line { flex: 1; height: 1px; background: var(--border); }
+  .section-title .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-warm); }
+
+  .col-heads { display: grid; grid-template-columns: 40px 330px 96px minmax(0,1fr) 28px 300px; margin-bottom: 10px; }
+  .col-head { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+
+  /* ── The diagram grid ── */
+  .diagram {
+    display: grid;
+    grid-template-columns: 40px 330px 96px minmax(0,1fr) 28px 300px;
+    align-items: start;
+  }
+  .gutter { grid-column: 1; grid-row: 1 / span 11; align-self: stretch; position: relative; }
+  .rail   { grid-column: 2; grid-row: 1 / span 11; align-self: stretch; display: flex; flex-direction: column; gap: 0; }
+  .strip  { grid-column: 3; align-self: stretch; margin: 0 32px 0 24px; border-radius: 12px; position: relative; }
+  .step, .flow-arrow { grid-column: 4; }
+  .note { grid-column: 6; }
+
+  /* ── Cards ── */
+  .card, .step {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 22px; position: relative; box-shadow: var(--shadow-sm);
+  }
+  .step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .num {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--text); color: #fff;
+    font-size: 0.8rem; font-weight: 700; display: grid; place-items: center; flex: none;
+  }
+  .num.is-new { background: var(--new); }
+  .step h3, .card h3 { font-size: 1.08rem; font-weight: 600; letter-spacing: -0.01em; }
+  .kicker { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .step p, .card p { font-size: 0.9rem; color: var(--text-secondary); }
+  .step p + p, .card p + p { margin-top: 6px; }
+  .step strong, .card strong { color: var(--text); font-weight: 600; }
+  .unchanged { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); border: 1px solid var(--border); border-radius: 20px; padding: 0 8px; white-space: nowrap; }
+
+  .card-new { border-top: 3px solid var(--new); }
+  .card-warm { background: var(--surface-warm); border-color: var(--border-warm); }
+  .card-prose { border-style: dashed; border-color: var(--border-accent); background: var(--surface-warm); }
+
+  /* new pieces inside a persisting card */
+  .new {
+    background: var(--new-bg); color: var(--new-ink); font-weight: 600; border-radius: 4px; padding: 1px 3px 1px 5px;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  }
+  .tag-new, .new::before {
+    display: inline-block; font-size: 0.75rem; line-height: 1.35; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    background: var(--new); color: #fff; border-radius: 4px; padding: 0 5px; vertical-align: 1px;
+  }
+  .new::before { content: 'new'; margin-right: 6px; }
+  .new code { background: #fff; border-color: var(--new-border); }
+
+  /* ── Flow arrows between steps ── */
+  .flow-arrow { text-align: center; padding: 6px 0 4px; color: var(--border-accent); font-size: 1.3rem; line-height: 1.2; }
+  .flow-arrow span { display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-muted); letter-spacing: 0.04em; margin-top: -2px; }
+
+  /* ── Spawn-gate checks ── */
+  .checks { display: grid; gap: 10px; margin-top: 12px; }
+  .check { background: var(--surface-muted); border-radius: var(--radius-sm); padding: 12px 14px; }
+  .check-k { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--warm-ink); }
+  .check h4 { font-size: 0.95rem; font-weight: 600; margin: 1px 0 4px; }
+  .check p { font-size: 0.86rem; }
+  .roles { font-family: var(--mono); font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; }
+  .outcomes { list-style: none; display: grid; gap: 5px; margin-top: 6px; }
+  .outcomes li { font-size: 0.86rem; color: var(--text-secondary); padding-left: 20px; position: relative; }
+  .outcomes li::before { content: '→'; position: absolute; left: 0; color: var(--accent-warm); font-weight: 700; }
+  .worker {
+    margin-top: 8px; background: var(--surface); border: 1px solid var(--border-accent); border-radius: var(--radius-xs);
+    padding: 8px 12px; font-size: 0.86rem; color: var(--text-secondary);
+  }
+
+  /* ── Bands, variant table ── */
+  .bands { display: grid; gap: 8px; margin-top: 10px; }
+  .band { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; font-size: 0.84rem; color: var(--text-secondary); }
+  .band b { width: 28px; height: 28px; border-radius: 8px; background: var(--new-bg); color: var(--new-ink); border: 1px solid var(--new-border); display: grid; place-items: center; font-size: 0.85rem; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+  .pill { font-size: 0.8rem; font-weight: 500; border: 1px solid var(--border); background: var(--surface); border-radius: 40px; padding: 3px 11px; color: var(--text); }
+  .pill.on { border-color: var(--accent-warm); background: var(--surface-warm); color: var(--warm-ink); font-weight: 600; }
+  .tbl { border: 1px solid var(--border); border-radius: var(--radius-xs); overflow: hidden; background: var(--surface); }
+  .tbl + .tbl { margin-top: 10px; }
+  .tbl-h { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); background: var(--surface-muted); padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .switches { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px; }
+  .switches span { font-size: 0.78rem; background: var(--surface-muted); border-radius: 5px; padding: 2px 8px; color: var(--text-secondary); }
+  .rowdef { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1.2fr; font-size: 0.78rem; }
+  .rowdef > div { padding: 6px 8px 6px 12px; border-top: 1px solid var(--border); color: var(--text-secondary); }
+  .rowdef > .h { border-top: none; font-weight: 600; color: var(--text); }
+  .bar { display: block; height: 7px; border-radius: 4px; background: var(--border); margin-top: 6px; }
+  .caption { font-family: 'Source Serif 4', Georgia, serif; font-style: italic; font-size: 1rem; color: var(--text); margin-top: 12px; line-height: 1.4; }
+
+  /* ── Rail connectors ── */
+  .rail-arrow { text-align: center; color: var(--new); font-size: 1.1rem; padding: 6px 0 2px; line-height: 1.2; }
+  .rail-arrow span { display: block; font-size: 0.75rem; color: var(--text-muted); font-weight: 500; }
+
+  /* strip = the posture resolver, everything to its right reads it */
+  .strip.resolver { background: var(--new-bg); border: 1px solid var(--new-border); border-top: 3px solid var(--new); grid-row: 1 / span 9; }
+  .strip.ghost { border: 2px dashed var(--border); grid-row: 3 / span 7; }
+  .strip-label {
+    position: absolute; top: 16px; left: 0; right: 0; margin: 0 auto; width: 100%;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+    font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--new-ink); white-space: nowrap;
+  }
+  .strip.ghost .strip-label { color: var(--text-muted); font-weight: 600; }
+  .strip-label .tag-new { writing-mode: vertical-rl; padding: 5px 0; }
+  .strip-label small { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.06em; text-transform: none; color: var(--text-secondary); }
+  .strip-mobile { display: none; }
+
+  /* taps: strip → step */
+  .tap::before { content: ''; position: absolute; left: -33px; top: 32px; width: 26px; height: 2px; background: var(--new); }
+  .tap::after { content: ''; position: absolute; left: -9px; top: 27px; border: 6px solid transparent; border-left: 8px solid var(--new); border-right: 0; }
+  /* feeds: variant → strip ; strip → sync */
+  .feeds::before { content: ''; position: absolute; right: -25px; top: 32px; width: 18px; height: 2px; background: var(--new); }
+  .feeds::after { content: ''; position: absolute; right: -25px; top: 27px; border: 6px solid transparent; border-left: 8px solid var(--new); border-right: 0; }
+  .fed::before { content: ''; position: absolute; right: -25px; top: 32px; width: 18px; height: 2px; background: var(--new); }
+  .fed::after { content: ''; position: absolute; right: -8px; top: 27px; border: 6px solid transparent; border-right: 8px solid var(--new); border-left: 0; }
+
+  /* diagram 1: what is NOT connected */
+  .no-tap::before { content: ''; position: absolute; left: -33px; top: 32px; width: 14px; height: 0; border-top: 2px dashed var(--gap); }
+  .no-tap::after {
+    content: '×'; position: absolute; left: -18px; top: 21px; width: 18px; height: 22px; text-align: center;
+    font-size: 1.25rem; line-height: 22px; font-weight: 700; color: var(--gap);
+  }
+  .prose-link { grid-column: 3; grid-row: 1; position: relative; height: 66px; }
+  .prose-link::before { content: ''; position: absolute; left: 1px; right: 9px; top: 32px; border-top: 2px dotted var(--text-muted); }
+  .prose-link::after { content: ''; position: absolute; right: 1px; top: 27px; border: 6px solid transparent; border-left: 8px solid var(--text-muted); border-right: 0; }
+
+  /* ── Notes column ── */
+  .note { align-self: start; position: relative; }
+  .note::before { content: ''; position: absolute; left: -28px; top: 32px; width: 28px; border-top: 2px dashed var(--border-accent); }
+  .gapnote { background: var(--gap-bg); border: 1px solid var(--gap-border); border-left: 3px solid var(--gap); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 14px 18px; }
+  .gapnote::before { border-top-color: var(--gap); }
+  .gap-k { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gap); margin-bottom: 2px; }
+  .gapnote p { font-family: 'Source Serif 4', Georgia, serif; font-size: 1.08rem; font-weight: 600; line-height: 1.35; color: var(--text); }
+
+  /* ── Example panel ── */
+  .ex-k { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--warm-ink); }
+  .ex-rows { margin-top: 10px; border-top: 1px solid var(--border-warm); }
+  .ex-row { display: grid; grid-template-columns: 1fr 64px 52px; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border-warm); font-size: 0.86rem; align-items: baseline; }
+  .ex-row span:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+  .ex-row.h { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+  .ex-row.h span:nth-child(n+2) { color: var(--text-muted); }
+  .ex-row .n { font-family: var(--mono); font-size: 0.82rem; color: var(--text); }
+  .ex-row.sep { border-top: 2px solid var(--border-warm); }
+  .ex-foot { font-size: 0.78rem; color: var(--text-muted); margin-top: 10px; }
+
+  /* ── Feedback loop ── */
+  .loop-label {
+    margin-top: auto; min-height: 80px; display: flex; align-items: center;
+  }
+  .loop-label > div {
+    width: 100%; background: var(--new-bg); border: 2px dashed var(--new); border-radius: var(--radius-sm);
+    padding: 10px 14px; font-size: 0.9rem; font-weight: 600; color: var(--new-ink); line-height: 1.35;
+  }
+  .loop-label small { display: block; font-size: 0.78rem; font-weight: 500; color: var(--text-secondary); }
+  .loop-h { grid-column: 3; grid-row: 11; align-self: end; height: 80px; position: relative; }
+  .loop-h::before { content: ''; position: absolute; left: 0; right: 0; top: 39px; border-top: 2px dashed var(--new); }
+  .loop-h::after { content: ''; position: absolute; left: 0; top: 34px; border: 6px solid transparent; border-right: 8px solid var(--new); border-left: 0; }
+  .gutter i {
+    position: absolute; left: 14px; right: 0; top: 32px; bottom: 39px;
+    border: 2px dashed var(--new); border-right: 0; border-radius: 14px 0 0 14px;
+  }
+  .gutter i::after { content: ''; position: absolute; right: -2px; top: -7px; border: 6px solid transparent; border-left: 8px solid var(--new); border-right: 0; }
+  .rail-spacer { flex: 1; min-height: 24px; }
+  .rail .step-head { flex-wrap: nowrap; align-items: flex-start; }
+  .rail .step-head h3 { flex: 1; min-width: 0; line-height: 1.3; padding-top: 1px; }
+  .rail .step-head .tag-new, .rail .step-head .kicker { margin-top: 4px; flex: none; }
+
+  /* ── Footer ── */
+  .footer { text-align: center; padding: 28px 24px 44px; color: var(--text-muted); font-size: 0.8rem; }
+  .footer a { color: var(--warm-ink); font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--border-accent); }
+
+  /* ── Stacked layout ── */
+  @media (max-width: 1180px) {
+    .canvas { padding: 0 16px 32px; }
+    .header { padding: 36px 16px 20px; }
+    .header h1 { font-size: 2rem; }
+    .header .subtitle { font-size: 1.02rem; }
+    .chips-3, .chips-4 { grid-template-columns: 1fr; gap: 10px; }
+    .chip { padding: 12px 16px; }
+    .chip .chip-v { font-size: 1.12rem; }
+    .legend { gap: 12px 18px; justify-content: flex-start; padding: 18px 4px 0; }
+    .col-heads, .gutter, .prose-link, .loop-h { display: none; }
+    .diagram { display: flex; flex-direction: column; align-items: stretch; }
+    .rail { display: contents; }
+    .rail-spacer { display: none; }
+    .rail > .card { order: -4; }
+    .rail > .rail-arrow { order: -3; }
+    .strip { order: -2; margin: 0; align-self: stretch; }
+    .rail > .card.sync { order: -1; margin-bottom: 0; }
+    .sync-after { order: -1; }
+    .loop-label { order: 2; min-height: 0; margin-top: 10px; }
+    .strip-label { position: static; writing-mode: horizontal-tb; transform: none; justify-content: flex-start; flex-wrap: wrap; padding: 12px 16px; white-space: normal; }
+    .strip-label .tag-new { writing-mode: horizontal-tb; padding: 0 5px; }
+    .strip.ghost { margin-top: 10px; }
+    .tap::before, .tap::after, .feeds::before, .feeds::after, .fed::before, .fed::after, .no-tap::before, .no-tap::after, .note::before { display: none; }
+    .note { margin-top: 8px; margin-left: 18px; align-self: stretch; }
+    .step > .step-head .kicker { margin-left: 0; width: 100%; }
+    .reads { display: inline-block; }
+  }
+  .m-arrow { display: none; text-align: center; color: var(--new); font-size: 1.1rem; line-height: 1.2; padding: 6px 0 4px; }
+  .m-arrow span { display: block; font-size: 0.75rem; color: var(--text-muted); }
+  @media (max-width: 1180px) {
+    .m-arrow { display: block; }
+    .rail > .card { order: -6; margin-top: 0 !important; }
+    .rail > .m-arrow.o-4 { order: -5; }
+    .strip { order: -4; }
+    .rail > .m-arrow.o-2 { order: -3; }
+    .rail > .card.sync { order: -2; }
+    .rail > .m-arrow.o-1 { order: -1; }
+    .strip.ghost { order: -4; margin-bottom: 14px; }
+  }
+  .version { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; color: var(--text-muted); margin-top: 10px; }
+  .step p.fine { font-size: 0.82rem; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="eyebrow">Subagent delegation · 2 of 2 · after</div>
+  <h1>Delegation <em>with</em> the cost posture layer</h1>
+  <p class="subtitle">One selectable table decides model, effort, soft budget and fan-out. Nothing is ever denied for cost.</p>
+  <p class="version">agent-harness 0.11</p>
+</div>
+
+<div class="canvas">
+
+  <div class="chips chips-3">
+    <div class="chip"><span class="chip-k">Principle</span><span class="chip-v">Soft, never a cap</span></div>
+    <div class="chip"><span class="chip-k">Principle</span><span class="chip-v">Opinion is data, not code</span></div>
+    <div class="chip"><span class="chip-k">Principle</span><span class="chip-v">A null variant behaves exactly like before</span></div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--text)"></div> Step in the flow, as before</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--new)"></div> New with the cost posture layer <span class="tag-new">new</span></div>
+    <div class="legend-item"><div class="legend-line"></div> Reads the posture</div>
+    <div class="legend-item"><div class="legend-line dashed"></div> Feedback loop</div>
+  </div>
+
+  <div class="section-title"><div class="dot"></div> One spawn, top to bottom <div class="line"></div></div>
+
+  <div class="col-heads">
+    <div></div><div class="col-head">Cost posture</div><div></div><div class="col-head">Delegation flow</div><div></div><div class="col-head">Bands and an example</div>
+  </div>
+
+  <div class="diagram">
+    <div class="gutter"><i></i></div>
+
+    <div class="rail">
+      <div class="card card-new feeds">
+        <div class="step-head"><span class="num is-new">0</span><h3>Cost variant = prose + table</h3><span class="tag-new">new</span></div>
+        <div class="pills"><span class="pill">frugal</span><span class="pill on">balanced</span><span class="pill">max</span><span class="pill">your own (extends balanced)</span></div>
+        <div class="tbl">
+          <div class="tbl-h">Switches</div>
+          <div class="switches"><span>session effort</span><span>max parallel</span><span>fast mode</span><span>compaction</span><span>budget multiplier</span><span>turn feed</span><span>nudge thresholds</span></div>
+        </div>
+        <div class="tbl">
+          <div class="tbl-h">One row per role or band</div>
+          <div class="rowdef">
+            <div class="h">role / band</div><div class="h">class</div><div class="h">effort</div><div class="h">soft budget</div>
+            <div><i class="bar" style="width:80%"></i></div><div><i class="bar" style="width:60%"></i></div><div><i class="bar" style="width:50%"></i></div><div><i class="bar" style="width:70%"></i></div>
+            <div><i class="bar" style="width:60%"></i></div><div><i class="bar" style="width:70%"></i></div><div><i class="bar" style="width:40%"></i></div><div><i class="bar" style="width:55%"></i></div>
+            <div><i class="bar" style="width:70%"></i></div><div><i class="bar" style="width:50%"></i></div><div><i class="bar" style="width:60%"></i></div><div><i class="bar" style="width:80%"></i></div>
+          </div>
+        </div>
+        <p class="caption">Every number lives here. Hook code holds none.</p>
+      </div>
+      <div class="m-arrow o-4">▼<span>feeds</span></div>
+      <div class="m-arrow o-2">▼</div>
+
+      <div class="card card-new fed sync" style="margin-top:22px">
+        <div class="step-head"><span class="num is-new">1</span><h3>Sync renders agent definitions</h3><span class="tag-new">new</span></div>
+        <ul class="outcomes">
+          <li>Class and effort per role — written only where the posture changes them; an unchanged role keeps its link.</li>
+          <li>Verifier roles are <strong>fixed</strong>: <span class="roles">reviewer · spec-reviewer · design-judge · log-compressor</span></li>
+          <li>Your explicit per-role bindings always win.</li>
+        </ul>
+      </div>
+      <div class="m-arrow o-1">▼</div>
+      <div class="rail-spacer"></div>
+      <div class="loop-label"><div>Measured p75 seeds the budgets <span class="tag-new">new</span><small>Telemetry loops back into the table.</small></div></div>
+    </div>
+
+    <div class="strip resolver"><div class="strip-label"><span class="tag-new">new</span> Posture resolver <small>everything below reads it</small></div></div>
+    <div class="loop-h"></div>
+
+    <!-- 2 -->
+    <div class="step tap" style="grid-row:1">
+      <div class="step-head"><span class="num">2</span><h3>Orchestrator session</h3></div>
+      <p>Picks the band by spawning <span class="new"><code>worker-a</code> / <code>worker-b</code> / <code>worker-c</code></span>, or a named role.</p>
+      <p class="fine">Workers exist in sessions started after they were installed.</p>
+      <p>Sees a <span class="new">usage line every turn</span>.</p>
+    </div>
+    <div class="note card card-new" style="grid-row:1 / span 3">
+      <div class="step-head"><h3>Bands</h3><span class="tag-new">new</span></div>
+      <div class="bands">
+        <div class="band"><b>A</b><span>Extraction, reformatting, named-scope search, log compression.</span></div>
+        <div class="band"><b>B</b><span>Bounded multi-step work with a guard.</span></div>
+        <div class="band"><b>C</b><span>Branching, synthesis, long-horizon coding, security review.</span></div>
+      </div>
+    </div>
+    <div class="flow-arrow" style="grid-row:2">▼<span>Agent tool call</span></div>
+
+    <!-- 3 -->
+    <div class="step tap" style="grid-row:3">
+      <div class="step-head"><span class="num">3</span><h3>Spawn gate</h3><span class="kicker">PreToolUse hook</span></div>
+      <div class="checks">
+        <div class="check">
+          <h4>Constrained roles <span class="unchanged">unchanged</span></h4>
+          <ul class="outcomes"><li>Isolated worker.</li></ul>
+        </div>
+        <div class="check">
+          <h4>Unnamed spawn</h4>
+          <ul class="outcomes"><li><span class="new">Routed to the default band worker</span>, model from the row — only in a session that can resolve it.</li></ul>
+        </div>
+        <div class="check">
+          <h4>Top-class request</h4>
+          <ul class="outcomes"><li>Still demoted.</li></ul>
+        </div>
+        <div class="check">
+          <h4>A worker a repository ships</h4>
+          <ul class="outcomes"><li>Never a routing target; routing turns off there.</li></ul>
+        </div>
+      </div>
+    </div>
+    <div class="flow-arrow" style="grid-row:4">▼</div>
+
+    <!-- 4 -->
+    <div class="step tap" style="grid-row:5">
+      <div class="step-head"><span class="num">4</span><h3>Brief guard</h3></div>
+      <p>Return cap <span class="unchanged">unchanged</span> plus a <span class="new">soft budget</span> <span class="unchanged">added silently</span>:</p>
+      <p class="caption" style="margin-top:8px">“Expected ~N output tokens / ~M tool calls; past that, finish if close, otherwise return what you have and say why.”</p>
+    </div>
+    <div class="note card card-warm" style="grid-row:5 / span 7">
+      <div class="ex-k">Example</div>
+      <h3 style="margin-top:2px">Balanced, measured over 90 days</h3>
+      <div class="ex-rows">
+        <div class="ex-row h"><span>Role or band</span><span>Tokens</span><span>Calls</span></div>
+        <div class="ex-row"><span class="n">gatherer</span><span>8.5K</span><span>15</span></div>
+        <div class="ex-row"><span class="n">spec-reviewer</span><span>9K</span><span>20</span></div>
+        <div class="ex-row"><span class="n">reviewer</span><span>22K</span><span>30</span></div>
+        <div class="ex-row"><span class="n">builder</span><span>135K</span><span>135</span></div>
+        <div class="ex-row sep"><span>Band A</span><span>17K</span><span>35</span></div>
+        <div class="ex-row"><span>Band B</span><span>39K</span><span>90</span></div>
+        <div class="ex-row"><span>Band C</span><span>82K</span><span>130</span></div>
+      </div>
+      <p class="ex-foot">Units: output tokens and tool calls. Bands provisional.</p>
+    </div>
+    <div class="flow-arrow" style="grid-row:6">▼</div>
+
+    <!-- 5 -->
+    <div class="step tap" style="grid-row:7">
+      <div class="step-head"><span class="num">5</span><h3>Subagent runs</h3></div>
+      <p>At the posture's effort; counts its own tool calls against the brief.</p>
+    </div>
+    <div class="flow-arrow" style="grid-row:8">▼</div>
+
+    <!-- 6 -->
+    <div class="step tap" style="grid-row:9">
+      <div class="step-head"><span class="num">6</span><h3>Return</h3></div>
+      <p><span class="new">Actual vs budget</span> shown to the orchestrator for every spawn — on return for synchronous spawns, at the next turn for background ones, flagged at 1.0× and 1.5×.</p>
+      <p><span class="new">Running subagents vs the posture's width</span>.</p>
+    </div>
+    <div class="flow-arrow" style="grid-row:10">▼</div>
+
+    <!-- 7 -->
+    <div class="step" style="grid-row:11">
+      <div class="step-head"><span class="num">7</span><h3>Telemetry</h3></div>
+      <p>A row per session, <span class="new">per subagent and per worker</span>.</p>
+      <p><code>usage --by role</code> gives p50 / p75 / p90.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <p>Subagent delegation, before and after · 2 of 2</p>
+  <p style="margin-top:6px"><a href="delegation-before.html">← Previous: Delegation before the cost posture layer</a></p>
+</div>
+
+</body>
+</html>

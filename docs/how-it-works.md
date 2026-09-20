@@ -46,6 +46,13 @@ measurements. What each variant sets: [preferences](preferences.md#what-a-sessio
 is written: [primitive authoring](primitive-authoring.md). What is measured, and what is not:
 [usage](usage.md).
 
+One spawn, drawn top to bottom, before and after that layer:
+[delegation before the cost posture layer](diagrams/delegation-before.html)
+([image](diagrams/delegation-before-1440.png)) and
+[delegation with it](diagrams/delegation-with-cost-posture.html)
+([image](diagrams/delegation-with-cost-posture-1440.png)). The example budgets in the second are the shipped
+`balanced` rows, seeded from one machine's measured p75; [re-seed them](usage.md) from your own.
+
 ## Working with installed files
 
 [Sync and ownership](sync-model.md) explains links, generated files, structural merges,
