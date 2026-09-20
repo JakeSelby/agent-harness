@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-09-20
+
 ### Added
 
 - Add the `designer` role: one pass of visual design work toward a locked target, validated and

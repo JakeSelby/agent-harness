@@ -1,8 +1,7 @@
 {
   "schema_version": 1,
-  "harness_version": "0.10.0",
-  "release_state": "released",
-  "qualification_source_commit": "8b776064db3d662c17c197b9bca0968225beea27",
+  "harness_version": "0.11.0",
+  "release_state": "candidate",
   "required_cases": [
     "installation",
     "stance-switch",
@@ -22,16 +21,9 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "macos",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/claude-code-cli-macos-0.10.0.json",
-          "sha256": "d757d831f1a1c1640b8b4f9bf9c72142f8921454c97d222fdb6e62971a919aa4"
-        }
-      ],
-      "runtime_version": "2.1.273",
-      "client_version": "2.1.273"
+      "evidence": []
     },
     {
       "id": "claude-code-vscode-macos",
@@ -49,16 +41,9 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "linux",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/claude-code-cli-linux-0.10.0.json",
-          "sha256": "5e64d4a4bd11452d0d047187e93881be79f905763a6ecbc6f49c242febc1bed9"
-        }
-      ],
-      "runtime_version": "2.1.278",
-      "client_version": "2.1.278"
+      "evidence": []
     },
     {
       "id": "codex-cli-macos",
@@ -66,16 +51,9 @@
       "provider": "openai",
       "client": "cli",
       "platform": "macos",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-cli-macos-0.10.0.json",
-          "sha256": "79789bdbff33c7eb6acd672bfb4801de988256925e24aad3caa59ed3f60d2bde"
-        }
-      ],
-      "runtime_version": "0.155.0-alpha.9",
-      "client_version": "0.155.0-alpha.9"
+      "evidence": []
     },
     {
       "id": "codex-vscode-macos",
@@ -103,16 +81,9 @@
       "provider": "openai",
       "client": "cli",
       "platform": "linux",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-cli-linux-0.10.0.json",
-          "sha256": "07a75bf886cdb18f4de977a995ce1c5a8d42ca8f021adaadeb18608344432f4b"
-        }
-      ],
-      "runtime_version": "0.155.1",
-      "client_version": "0.155.1"
+      "evidence": []
     },
     {
       "id": "cursor",
@@ -140,6 +111,7 @@
     "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
     "Planner publication is mediated by the harness after constrained workers return result data.",
     "The architecture-viewer integration is a preview for a separately installed implementation. A local protocol 1 candidate passed process-level harness acceptance; no viewer is bundled, and native viewer interaction and distribution/license clearance remain unverified.",
+    "The usage feed is a Claude Code capability: Codex raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back there and no such event is registered.",
     "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred."
   ]
 }
