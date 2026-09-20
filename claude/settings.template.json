@@ -91,30 +91,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/harness/usage-feed.py # harness:usage-feed-turn",
-            "timeout": 10,
-            "statusMessage": "Reading this turn's spend"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/harness/usage-feed.py # harness:usage-feed-agent",
-            "timeout": 10,
-            "statusMessage": "Recording a subagent's spend"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "startup|resume|clear",

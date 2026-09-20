@@ -19,9 +19,7 @@
       "neutralize": {"event": "PostToolUse", "always": true},
       "session": {"event": "SessionStart", "always": true},
       "stop-gate": {"event": "Stop", "always": true},
-      "usage-log": {"event": "SessionEnd", "always": true},
-      "usage-feed-turn": {"event": "UserPromptSubmit", "always": true},
-      "usage-feed-agent": {"event": "SubagentStop", "always": true}
+      "usage-log": {"event": "SessionEnd", "always": true}
     },
     "commands": "every file in claude/commands/, linked into ~/.claude/commands/",
     "never_touch": ["model", "theme", "viewMode", "effortLevel", "alwaysThinkingEnabled", "skipDangerousModePermissionPrompt", "env", "permissions.deny", "permissions.ask", "autoUpdatesChannel", "remoteControlAtStartup", "agentPushNotifEnabled"]

@@ -68,33 +68,60 @@ sees what it is spending before it delegates again.
   That second part is how a background spawn is reported at all: its `PostToolUse` fires at
   launch, before the agent has spent anything. At most five agents are listed, then `… and n more`.
 - On **`PostToolUse`** for a synchronous `Agent` return, one line for that subagent, on the spot.
-- On **`SubagentStop`**, nothing is injected — that event's context would reach the agent that
-  has just finished — but the agent's cost is recorded for the lines above.
+  Any `Agent` call, a background launch included, also carries a line when more agents are
+  running than `max_parallel`: `usage-feed: 7 subagents running against a posture width of 6`.
+  It is a note and never a decision — the feed has no deny path and writes no permission field.
+- On **`SubagentStart`** and **`SubagentStop`**, nothing is injected — a `SubagentStop` context
+  would reach the agent that has just finished — but the start and the cost are recorded for the
+  lines above. Running means started and not yet stopped.
 
 A subagent's figure is summed from its own transcript, never from the tool response, which
 reports only the agent's **last** response: measured at 3,143 output tokens against 10,575
 actually spent. Each line names the agent type, what it spent and, when its row carries budgets,
 the larger of the two ratios against them, prefixed `over budget` past a `nudge_at` multiple.
 
-Three settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
+Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
 number of its own:
 
-- `turn_feed: "off"` — nothing is injected anywhere and no state file is written.
+- `turn_feed: "off"` — nothing is injected anywhere and no file is written.
 - `turn_feed: "thresholds"` — no turn line; only subagents at or over the smallest `nudge_at`.
+  An agent nothing was said about stays unreported, so a later threshold crossing can still name it.
 - `turn_feed: "every-turn"` — the turn line and every finished subagent. `balanced` and `frugal`
   ship this.
 - `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
   means never.
+- `max_parallel` — the width the running-agent note measures against. `null`, which `max` ships,
+  means the note never appears.
 
-State lives in `~/.local/state/agent-harness/feed/<session-id>.json`, one file per session,
-0600 in a 0700 directory. It holds the byte offset read so far, running counts and one record
-per finished subagent — the agent type, its output tokens, its tool calls and whether it has
-been reported. No prompt text, no command text, no agent output. The offset is what keeps the
-hot path cheap: each event reads from it to EOF and no further, and a transcript that shrank
-resets to the current EOF and marks the totals `(partial)`.
+### State, and why it is two files
 
-Codex raises neither `UserPromptSubmit` nor `SubagentStop`, so the feed is declared uncovered
-there in `adapters/codex/capabilities.json`; posture still reaches Codex through role-run workers.
+These hooks are separate processes that run at the same time: tool calls go out in parallel and
+several agents finish at once. So the state is split, both files 0600 in a 0700 directory under
+`~/.local/state/agent-harness/feed/`.
+
+- `<session-id>.events.jsonl` is append-only. A subagent starting or finishing is one line under
+  4 KB written with a single `os.write` on an `O_APPEND` descriptor — an atomic append no handler
+  ever rewrites, so no record can be lost to a concurrent one.
+- `<session-id>.json` is the main thread's reader state: the transcript offset, the running
+  totals, the open message ids and the agents already reported. Everything that reads and then
+  writes it does so under an exclusive `flock` on `<session-id>.lock` with a two-second bound.
+  No lock, no write, and nothing said.
+
+Both hold counts and agent type names only — no prompt text, no command text, no agent output —
+and an agent type that is not a plain name is recorded as `other`. Files untouched for a
+fortnight are swept once a day, and `harness uninstall` removes the directory.
+
+The offset is what keeps the hot path cheap: each prompt reads from it to EOF and no further.
+It is trusted only while the file is the same file, which the inode and a hash of the first
+record decide, so a transcript replaced by a *larger* one resets exactly as a truncated one does.
+With no usable state the read starts 8 MiB from the end rather than at byte zero, because a
+resumed session's transcript runs to hundreds of megabytes and a hook killed at its timeout
+would stall every prompt after it. Any read that skipped content, or that ran past its
+three-second budget, marks the totals `(partial)`.
+
+Codex raises none of `UserPromptSubmit`, `SubagentStart` or `SubagentStop`, so the feed is
+declared uncovered there in `adapters/codex/capabilities.json`; posture still reaches Codex
+through role-run workers.
 
 ## Reading it
 

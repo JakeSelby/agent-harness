@@ -46,7 +46,7 @@
   "limitations": [
     "Native restrictions take precedence. Hook activation requires runtime trust.",
     "Unsupported controls remain visible; custom stance prose does not add enforcement.",
-    "The usage feed is uncovered: this runtime raises neither UserPromptSubmit nor SubagentStop, so turn spend and finished-subagent spend are not fed back and no such event is registered."
+    "The usage feed is uncovered: this runtime raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back and no such event is registered."
   ],
   "role_execution": {
     "constrained": "isolated-cli",

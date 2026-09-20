@@ -16,7 +16,7 @@ ALIASES = {"exec_command": "Bash", "shell_command": "Bash", "shell": "Bash",
 BASE_EVENTS = ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd")
 # The usage feed's own events. Only Claude Code carries them; `adapters/codex/capabilities.json`
 # declares the gap rather than registering an event that runtime does not raise.
-FEED_EVENTS = ("UserPromptSubmit", "SubagentStop")
+FEED_EVENTS = ("UserPromptSubmit", "SubagentStart", "SubagentStop")
 EVENTS = {"claude-code": BASE_EVENTS + FEED_EVENTS, "codex": BASE_EVENTS}
 
 
