@@ -138,6 +138,37 @@ class SubagentRows(Fixture):
         self.assertEqual(rows["aaa"]["output"], 400)
         self.assertEqual(rows["aaa"]["tool_calls"], 3)
 
+    def streamed(self, path, figures):
+        """One message id written as several records, as a streamed response is written.
+
+        The early records carry a partial `output_tokens`; only the last carries the whole
+        response. The other three fields repeat unchanged and must not multiply.
+        """
+        write(path, [{"type": "assistant", "sessionId": "s-1", "cwd": "", "timestamp": STAMPS[3],
+                      "message": {"id": "one", "model": "model-a", "content": [],
+                                  "usage": {"input_tokens": 12, "output_tokens": figure,
+                                            "cache_read_input_tokens": 340,
+                                            "cache_creation_input_tokens": 56}}}
+                     for figure in figures])
+
+    def test_a_message_id_counts_its_final_output_figure_not_its_first(self):
+        self.streamed(self.project / "s-1" / "subagents" / "agent-aaa.jsonl", [8, 120, 900])
+        row = [r for r in self.record() if r.get("agent_id") == "aaa"][0]
+        self.assertEqual(row["output"], 900)
+        self.assertEqual((row["input"], row["cache_read"], row["cache_write"]), (12, 340, 56))
+
+    def test_a_truncated_or_reordered_tail_cannot_lower_the_figure(self):
+        self.streamed(self.project / "s-1" / "subagents" / "agent-aaa.jsonl", [8, 900, 120])
+        row = [r for r in self.record() if r.get("agent_id") == "aaa"][0]
+        self.assertEqual(row["output"], 900)
+
+    def test_the_session_scan_takes_the_final_figure_the_same_way(self):
+        self.streamed(self.transcript, [8, 120, 900])
+        session = [r for r in self.record() if r["kind"] == "session"][0]
+        self.assertEqual(session["output"], 900 + 400 + 700)
+        self.assertEqual(session["input"], 12 + 3)
+        self.assertEqual(session["turns"], 1)
+
     def test_a_subagent_transcript_without_its_meta_file_still_counts(self):
         (self.project / "s-1" / "subagents" / "agent-bbb.meta.json").unlink()
         rows = {r["agent_id"]: r for r in self.record() if r["kind"] == "subagent"}

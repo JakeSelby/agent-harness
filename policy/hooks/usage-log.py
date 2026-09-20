@@ -112,6 +112,30 @@ def _result_text(content, tool_name):
     return text[:MAX_RESULT_TEXT]
 
 
+def record_usage(per_message, key, usage):
+    """Keep the largest figure a message id ever reported for each field.
+
+    One API response is written as several records. The early ones carry a partial streaming
+    `output_tokens` and the last carries the true figure, so taking the first undercounts the
+    response badly — on a real subagent transcript, 7,126 output tokens against 40,868. The
+    field-wise maximum keeps the final figure without trusting the file's order, which a
+    reordered or truncated tail would otherwise lower.
+    """
+    slot = per_message.setdefault(key, {name: 0 for name, _ in FIELDS})
+    for name, field in FIELDS:
+        try:
+            value = int(usage.get(field) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > slot[name]:
+            slot[name] = value
+
+
+def summed(per_message):
+    """The four token totals over the messages, each counted once at its largest figure."""
+    return {name: sum(slot[name] for slot in per_message.values()) for name, _ in FIELDS}
+
+
 def _agent_row(path):
     """One `kind: "subagent"` row from one `agent-<id>.jsonl`, or None when it holds no turn.
 
@@ -119,7 +143,7 @@ def _agent_row(path):
     the transcript carries the tokens, the tool calls and, on some records, the effort. Counts
     only: no prompt text and no command text reaches the record.
     """
-    totals = {name: 0 for name, _ in FIELDS}
+    per_message, anonymous = {}, 0
     try:
         meta = json.loads(path.with_name(path.stem + ".meta.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -163,19 +187,19 @@ def _agent_row(path):
                     continue
                 tools.add(key)
                 calls += 1
+            if mid:
+                record_usage(per_message, mid, message.get("usage") or {})
+            else:
+                anonymous += 1
+                record_usage(per_message, ("line", anonymous), message.get("usage") or {})
             if mid and mid in seen:
                 continue
             seen.add(mid)
             turns += 1
             model = model or message.get("model") or ""
-            usage = message.get("usage") or {}
-            for name, key in FIELDS:
-                try:
-                    totals[name] += int(usage.get(key) or 0)
-                except (TypeError, ValueError):
-                    pass
     if not turns:
         return None
+    totals = summed(per_message)
     row = {"kind": "subagent", "runtime": "claude-code", "session_id": "", "repo": "",
            "agent_id": path.stem[len("agent-"):], "agent_type": meta.get("agentType") or "",
            "model": meta.get("model") or model, "effort": effort or meta.get("effort") or "",
@@ -229,7 +253,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     which a backfill can only guess at. `agents` is the subagent rows when the caller has
     already read them, so `scan_all` reads each subagent file once rather than twice.
     """
-    totals = {name: 0 for name, _ in FIELDS}
+    per_message, anonymous = {}, 0
     models, agent_calls, seen = [], set(), set()
     started = ended = branch = ""
     turns = 0
@@ -320,24 +344,25 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 if isinstance(block, dict) and block.get("type") == "tool_use" \
                         and block.get("name") == "Agent":
                     agent_calls.add(block.get("id") or len(agent_calls))
-            # The same repetition is why the token sums are taken once per message id, not
-            # once per line: every one of those lines repeats the same `usage` object.
+            # The same repetition is why the token sums are taken once per message id, not once
+            # per line, and at that id's largest figure rather than its first: the early lines
+            # of one response carry a partial streaming count.
+            if mid:
+                record_usage(per_message, mid, message.get("usage") or {})
+            else:
+                anonymous += 1
+                record_usage(per_message, ("line", anonymous), message.get("usage") or {})
             if mid and mid in seen:
                 continue
             seen.add(mid)
             turns += 1
             if model and model not in models:
                 models.append(model)
-            usage = message.get("usage") or {}
-            for name, key in FIELDS:
-                try:
-                    totals[name] += int(usage.get(key) or 0)
-                except (TypeError, ValueError):
-                    pass
     if pending_final is not None:
         pending_final["final"] = True
     if not session_id or not turns:
         return None
+    totals = summed(per_message)
     if agents is None:
         agents = agent_rows(transcript, session_id)
     top = git(cwd, "rev-parse", "--show-toplevel") if cwd and os.path.isdir(cwd) else ""

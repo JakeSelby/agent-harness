@@ -41,6 +41,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Output tokens were undercounted, by a factor of several on a long response. The log took each
+  message id's usage from the first transcript record carrying it, and the early records of one
+  streamed response carry a partial `output_tokens` — 7,126 against the response's real 40,868
+  on a measured subagent transcript. Each message id now counts at the largest figure it ever
+  reported, so a reordered or truncated tail cannot lower it either. `harness usage --rescan`
+  corrects the recorded history.
 - Every session total was short by whatever its delegation cost. A subagent's tokens live in its
   own transcript, which the log never read, so a session that fanned out reported only the
   orchestrator's own spend. Session totals now include their subagents'; `harness usage --rescan`

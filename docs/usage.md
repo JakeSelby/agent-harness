@@ -19,9 +19,12 @@ existed is read as a session, which is all there was to record, and `--rescan` u
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`. The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
-token fields over assistant messages **once per message id**: one API response is written as
-several transcript entries that each repeat the same `usage` object, so counting per line
-inflates every total. `subagents` counts `Agent` tool calls. The token totals **include the
+token fields over assistant messages **once per message id, at that id's largest figure**: one
+API response is written as several transcript entries, so counting per line inflates every
+total — but those entries do not repeat one `usage` object. The early ones carry a partial
+streaming `output_tokens` and the last carries the response's true figure, so taking the first
+undercounts it. The field-wise maximum is the final figure, and a reordered or truncated tail
+cannot lower it. `subagents` counts `Agent` tool calls. The token totals **include the
 session's subagents**, because their tokens are the session's bill.
 
 **`kind: "subagent"`** — one row per `<session>/subagents/agent-<id>.jsonl`, the file Claude
