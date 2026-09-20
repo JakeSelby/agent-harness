@@ -139,6 +139,15 @@ Codex raises none of `UserPromptSubmit`, `SubagentStart` or `SubagentStop`, so t
 declared uncovered there in `adapters/codex/capabilities.json`; posture still reaches Codex
 through role-run workers.
 
+### The session registry
+
+One more directory sits beside the feed's, `~/.local/state/agent-harness/sessions/`, written by
+session start rather than by any measurement: one small file per session naming the agent
+definitions that session's registry held, which is what decides whether an unnamed spawn can be
+routed to a band worker — see [runtime controls](runtime-controls.md). It holds agent names and a
+timestamp, nothing about the work; the files are owner-only in an owner-only directory, swept
+after a fortnight of not being used, and removed by `harness uninstall`.
+
 ## Reading it
 
 ```sh
@@ -160,6 +169,13 @@ no session row at all, so leaving it out would hide its spend in every report th
 A session that crashes or is killed never fires `SessionEnd` and so is never recorded live;
 `--rescan` walks every transcript touched inside `--days` and upserts it, which is how you fill
 those gaps.
+
+### Re-seeding budgets
+
+A cost variant's per-role budgets are measured, not guessed, so they go stale as roles change.
+Run `bin/harness usage --rescan --by role` over a window wide enough to hold a few dozen runs,
+read the p75 column for the role — the shipped figures are that point on the curve — and write it
+into your variant's row as `budget_output_tokens` and `budget_tool_calls`.
 
 ## What the hit rate tells you
 

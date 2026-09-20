@@ -83,11 +83,11 @@ All notable changes to this project are documented here. The format follows
   variant's default band worker and runs on that band's class — the only way the posture's
   effort reaches it, because the `Agent` tool has no effort input. A model the caller named is
   kept, a request for the top class is refused and the band's class applies in its place, and a
-  variant with no `default_band`, an unreadable table or a machine whose worker definitions are
-  not installed leaves the spawn exactly as the previous release did. A repository that ships
-  its own `.claude/agents/worker-<band>.md` is never routed to, because a project definition
-  outranks the user's. The cost table is read only for a spawn that named nothing, so naming a
-  role costs nothing.
+  variant with no `default_band`, an unreadable table, a machine whose worker definitions are not
+  installed and a session whose agent registry predates them all leave the spawn exactly as the
+  previous release did. A repository that ships its own `.claude/agents/worker-<band>.md` is never
+  routed to, because a project definition outranks the user's. The cost table is read only for a
+  spawn that named nothing, so naming a role costs nothing.
 - Subagent usage rows carry `requested_type` and set `rerouted` when the type the parent
   recorded differs from the one the subagent ran as, joined on the tool use id. The reroute is
   measured from the transcript rather than reported by the hook that made it.
@@ -102,9 +102,10 @@ All notable changes to this project are documented here. The format follows
   the session happens to run. An unmapped class resolves upward or inherits, never downward.
 - Codex roles gain model tiering: its table maps the four classes to `gpt-6-astra`, `gpt-5.6-sol`,
   `gpt-5.6-terra` and `gpt-5.6-luna`. Codex roles previously inherited the session model.
-- The spawn hook tiers a planning-framework repository like any other, and refuses the top tier
-  by request: an unnamed spawn asking for it runs one class below, a named agent falls back to its
-  definition. The `session-model` stance is unchanged and remains the opt-out.
+- The spawn hook tiers a planning-framework repository like any other, and refuses the top class
+  by request: an unnamed spawn asking for it runs on the band it is routed to, or one class below
+  the session where nothing routes it, and a named agent falls back to its definition. The
+  `session-model` stance is unchanged and remains the opt-out.
 - `harness role run`, the constrained-role refusal message and the BMad override templates no
   longer tell the caller to pass the parent session's model; they name it only where the adapter
   maps none. Role effort above `high` is rejected.
@@ -146,9 +147,9 @@ All notable changes to this project are documented here. The format follows
   for `primitives/stances`, is no longer reported as redirected. `harness uninstall` and the
   retirement of a removed link treated the same link as the user's and left it behind; they now
   remove it. A link pointed at a different file is still reported and still preserved.
-- A named agent asked onto the top tier now gets the model its definition names, or the class
+- A named agent asked onto the top class now gets the model its definition names, or the class
   below when there is none to read. The hook used to remove the request, and the lifecycle
-  coordinator only carries rewrites, so the top-tier request reached the spawn unchanged.
+  coordinator only carries rewrites, so the request reached the spawn unchanged.
 - The lifecycle coordinator relays a hook's notice on Claude Code instead of dropping it, so a
   tiered spawn and a session model the ladder does not know are both reported.
 

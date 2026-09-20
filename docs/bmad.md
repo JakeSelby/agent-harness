@@ -108,7 +108,13 @@ existed during the original delivery.
 
 `templates/bmad/custom/` names harness roles: `builder`, `reviewer`, and `spec-reviewer`.
 The active runtime adapter supplies their model and effort; the framework's own skill text does
-not, and the spawn hook tiers a framework repository like any other. Constrained review roles use
+not, and the spawn hook tiers a framework repository like any other.
+
+A framework spawn that names one of those roles is priced from that role's row in the active cost
+variant. A framework spawn that names no role at all — the "launch a subagent" a step file writes,
+which no override template reaches — is routed to the variant's default band worker and priced
+from that band's row instead, so its class, effort and soft budget come from the posture rather
+than from the recipe. Nothing in the framework's own templates changes. Constrained review roles use
 `harness role run` with explicit input roots; builders retain their normal
 workflow. See [isolated role workers](role-workers.md). Recipes retain
 complete keyed review-layer records so BMad's replacement merge does not discard required fields.

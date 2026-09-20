@@ -159,6 +159,14 @@ savings benchmark. `bin/harness usage` summarizes available local session measur
 partial data and leaves unavailable metrics unknown. It does not send telemetry to a service.
 Read [usage and its limits](docs/usage.md).
 
+Each variant also carries a resolved table—a model class, a reasoning effort and a soft budget for
+each shared role and for each of the three work bands—which `bin/harness stances --json` prints.
+A subagent brief states the budget its row expects; a subagent past it finishes or returns and says
+why, and nothing is truncated. A spawn that names no role is routed to the variant's default band
+worker, which is the only way a posture's effort reaches a spawn that named nothing. While a
+session runs, a usage feed reports the turn's and each subagent's measured spend against those
+budgets. All of it is a working posture and local measurement; none of it is a savings claim.
+
 ## Full installation and ownership
 
 If you also want the harness to provision missing tools, use the broader installation path:
