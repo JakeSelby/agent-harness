@@ -330,7 +330,7 @@ reviewer's cost and capability a side effect of whatever the session ran, and fr
 the scarcest tier it did the very thing the next rule forbids. A reviewer's value is fresh
 context first and tier third, so `strong` keeps most of it. The inherited model was also a crude
 difficulty signal — *this session was escalated, so review it hard* — and that signal now has to
-be a decision: a role that declares `frontier`, as `design-judge` does.
+be a decision: a role that declares `frontier`, as `design-judge` and `designer` do.
 
 **Never spawn subagents on the orchestrator's own tier when that tier is rate-limited or
 capacity-gated.** One notch down costs a few points; two notches costs many. Step once.
