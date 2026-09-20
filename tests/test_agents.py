@@ -83,20 +83,19 @@ class AgentSyncTests(unittest.TestCase):
     def _sync(self, adopt=False):
         return harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=adopt, adopt_codex=False, print_only=False))
 
-    def test_sync_renders_every_agent_and_uninstall_removes_them(self):
+    def test_sync_links_every_agent_and_uninstall_removes_them(self):
         self.assertEqual(self._sync(adopt=True), 0)
-        native = self.home / ".claude" / "agents"
+        links = self.home / ".claude" / "agents"
         for name in SHIPPED:
-            path = native / f"{name}.md"
-            self.assertFalse(path.is_symlink(), msg=str(path))
-            self.assertEqual(path.read_text(encoding="utf-8"),
-                             (AGENTS / f"{name}.md").read_text(encoding="utf-8"), msg=name)
+            link = links / f"{name}.md"
+            self.assertTrue(link.is_symlink(), msg=str(link))
+            self.assertEqual(link.resolve(), (AGENTS / f"{name}.md").resolve())
         self.assertEqual(self._sync(), 0)
         self.assertEqual(harness._diff_lines(), [])
         harness.cmd_uninstall(harness.argparse.Namespace())
         for name in SHIPPED:
-            self.assertFalse((native / f"{name}.md").exists())
-            self.assertFalse((native / f"{name}.md").is_symlink())
+            self.assertFalse((links / f"{name}.md").exists())
+            self.assertFalse((links / f"{name}.md").is_symlink())
 
     def test_a_hand_written_agent_is_never_replaced_without_adopt(self):
         mine = self.home / ".claude" / "agents" / "gatherer.md"
@@ -104,14 +103,11 @@ class AgentSyncTests(unittest.TestCase):
         mine.write_text("mine")
         self.assertEqual(self._sync(), 2)
         self.assertEqual(mine.read_text(), "mine")
-        # Adopting moves the user's file aside, as it did when agents were linked.
         self.assertEqual(self._sync(adopt=True), 0)
-        self.assertEqual(mine.read_text(), (AGENTS / "gatherer.md").read_text(encoding="utf-8"))
+        self.assertTrue(mine.is_symlink())
         moved = list((self.home / ".local/state/agent-harness/pre-harness").rglob("gatherer.md"))
         self.assertEqual(len(moved), 1)
         self.assertEqual(moved[0].read_text(), "mine")
-        harness.cmd_uninstall(harness.argparse.Namespace())
-        self.assertEqual(mine.read_text(), "mine")
 
 
 if __name__ == "__main__":

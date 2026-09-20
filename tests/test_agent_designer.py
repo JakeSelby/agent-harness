@@ -124,15 +124,14 @@ class DesignerSyncTests(unittest.TestCase):
         os.environ.update(self._old_environ)
         self.tmp.cleanup()
 
-    def test_sync_renders_the_agent_and_uninstall_removes_it(self):
+    def test_sync_links_the_agent_and_uninstall_removes_it(self):
         args = harness.argparse.Namespace(dry_run=False, adopt=True, adopt_codex=False, print_only=False)
         self.assertEqual(harness.cmd_sync(args), 0)
-        native = self.home / ".claude" / "agents" / "designer.md"
-        self.assertFalse(native.is_symlink())
-        # No cost row names the designer, so it renders exactly as the committed projection.
-        self.assertEqual(native.read_text(encoding="utf-8"), AGENT.read_text(encoding="utf-8"))
+        link = self.home / ".claude" / "agents" / "designer.md"
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.resolve(), AGENT.resolve())
         harness.cmd_uninstall(harness.argparse.Namespace())
-        self.assertFalse(native.exists() or native.is_symlink())
+        self.assertFalse(link.is_symlink())
 
 
 if __name__ == "__main__":

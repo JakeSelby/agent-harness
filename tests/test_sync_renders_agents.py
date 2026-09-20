@@ -98,24 +98,67 @@ class RenderedAgentTests(unittest.TestCase):
         harness.write_json_atomic(harness.manifest_path(), manifest)
         return manifest
 
-    def test_balanced_renders_the_committed_projection_byte_for_byte(self):
+    def agent_links(self):
+        """The manifest's link entries for the agents directory, as the installer wrote them."""
+        manifest = harness.read_json(harness.manifest_path()) or {}
+        return sorted((l["path"], l["target"]) for l in manifest.get("links", [])
+                      if Path(l["path"]).parent == self.agents)
+
+    def test_balanced_keeps_the_projection_links_the_previous_release_wrote(self):
         self.assertEqual(self.sync(), 0)
         for role in ROLES:
             path = self.agents / (role + ".md")
-            self.assertTrue(path.is_file() and not path.is_symlink(), msg=role)
-            self.assertEqual(self.rendered(role),
-                             (COMMITTED / (role + ".md")).read_text(encoding="utf-8"), msg=role)
+            self.assertTrue(path.is_symlink(), msg=role)
+            self.assertEqual(path.resolve(), (COMMITTED / (role + ".md")).resolve(), msg=role)
+        mine = self.agent_links()
+        # Byte for byte the previous release's install, so downgrading needs nothing.
         self.assertEqual(self.sync(), 0)
         self.assertEqual(harness._diff_lines(), [])
+        harness.cmd_uninstall(harness.argparse.Namespace())
+        harness.write_json_atomic(harness.manifest_path(), {"version": 1, "repo": str(REPO)})
+        self.link_as_0_10_0()
+        self.assertEqual(mine, self.agent_links())
 
-    def test_a_frugal_row_moves_the_gatherer_and_leaves_a_fixed_role_alone(self):
+    def test_a_frugal_row_renders_the_gatherer_and_leaves_a_fixed_role_linked(self):
         self.configure(stances={"cost": "frugal"})
         self.assertEqual(self.sync(), 0)
+        self.assertFalse((self.agents / "gatherer.md").is_symlink())
         gatherer = fields(self.rendered("gatherer"))
         self.assertEqual(gatherer["model"], "sonnet")
         self.assertEqual(gatherer["effort"], "low")
+        self.assertTrue((self.agents / "reviewer.md").is_symlink())
         self.assertEqual(self.rendered("reviewer"),
                          (COMMITTED / "reviewer.md").read_text(encoding="utf-8"))
+
+    def test_a_role_moves_from_link_to_generated_and_back(self):
+        self.assertEqual(self.sync(), 0)
+        gatherer = self.agents / "gatherer.md"
+        self.assertTrue(gatherer.is_symlink())
+        self.configure(stances={"cost": "frugal"})
+        self.assertEqual(self.sync(), 0)
+        self.assertFalse(gatherer.is_symlink())
+        self.assertIn(str(gatherer), harness.reconcile.Store(harness.state_dir()).data["files"])
+        self.assertEqual(self.agent_links(),
+                         [l for l in self.agent_links() if Path(l[0]).stem != "gatherer"])
+        self.assertEqual(self.sync(), 0)  # idempotent
+        self.assertEqual(harness._diff_lines(), [])
+        self.configure(stances={"cost": "balanced"})
+        self.assertEqual(self.sync(), 0)
+        self.assertTrue(gatherer.is_symlink())
+        self.assertEqual(gatherer.resolve(), (COMMITTED / "gatherer.md").resolve())
+        self.assertNotIn(str(gatherer), harness.reconcile.Store(harness.state_dir()).data["files"])
+        self.assertEqual(self.sync(), 0)  # idempotent in the other direction too
+        self.assertEqual(harness._diff_lines(), [])
+
+    def test_a_hand_edited_generated_definition_is_never_replaced_by_a_link(self):
+        self.configure(stances={"cost": "frugal"})
+        self.assertEqual(self.sync(), 0)
+        gatherer = self.agents / "gatherer.md"
+        gatherer.write_text("mine now", encoding="utf-8")
+        self.configure(stances={"cost": "balanced"})
+        self.assertEqual(self.sync(), 2)
+        self.assertFalse(gatherer.is_symlink())
+        self.assertEqual(gatherer.read_text(encoding="utf-8"), "mine now")
 
     def test_without_a_tiered_delegation_the_row_changes_effort_and_not_the_model(self):
         self.configure(stances={"cost": "frugal", "delegation": "session-model"})
@@ -131,21 +174,19 @@ class RenderedAgentTests(unittest.TestCase):
         self.assertEqual(fields(self.rendered("gatherer"))["model"], "haiku")
         self.assertEqual(fields(self.rendered("gatherer"))["effort"], "low")
 
-    def test_a_linked_install_migrates_to_generated_files(self):
+    def test_a_linked_install_migrates_only_the_roles_the_variant_moves(self):
+        self.configure(stances={"cost": "frugal"})
         self.link_as_0_10_0()
         self.assertTrue((self.agents / "gatherer.md").is_symlink())
         self.assertEqual(self.sync(), 0)
-        for role in ROLES:
-            path = self.agents / (role + ".md")
-            self.assertFalse(path.is_symlink(), msg=role)
-            self.assertEqual(path.read_text(encoding="utf-8"),
-                             (COMMITTED / (role + ".md")).read_text(encoding="utf-8"), msg=role)
-        manifest = harness.read_json(harness.manifest_path()) or {}
-        self.assertEqual([l for l in manifest.get("links", [])
-                          if Path(l["path"]).parent == self.agents], [])
+        self.assertFalse((self.agents / "gatherer.md").is_symlink())
+        self.assertEqual(fields(self.rendered("gatherer"))["model"], "sonnet")
+        self.assertTrue((self.agents / "reviewer.md").is_symlink())
+        self.assertEqual([p for p, _ in self.agent_links() if Path(p).stem == "gatherer"], [])
         self.assertEqual(harness._diff_lines(), [])
 
     def test_a_redirected_agent_link_is_preserved_and_reported(self):
+        self.configure(stances={"cost": "frugal"})
         self.link_as_0_10_0()
         mine = self.home / "my-gatherer.md"
         mine.write_text("mine", encoding="utf-8")
@@ -173,21 +214,24 @@ class RenderedAgentTests(unittest.TestCase):
             self.assertEqual(self.sync(dry=True), 0)
         self.assertEqual([l for l in out.getvalue().splitlines() if l.startswith("  agent ")], [])
 
-    def test_uninstall_removes_the_generated_definitions(self):
+    def test_uninstall_removes_both_a_linked_and_a_generated_definition(self):
+        self.configure(stances={"cost": "frugal"})
         self.assertEqual(self.sync(), 0)
+        self.assertFalse((self.agents / "gatherer.md").is_symlink())
+        self.assertTrue((self.agents / "reviewer.md").is_symlink())
         harness.cmd_uninstall(harness.argparse.Namespace())
         for role in ROLES:
             path = self.agents / (role + ".md")
             self.assertFalse(path.exists() or path.is_symlink(), msg=role)
 
     def test_a_hand_written_definition_is_never_replaced_without_adopt(self):
+        self.configure(stances={"cost": "frugal"})
         self.agents.mkdir(parents=True)
         (self.agents / "gatherer.md").write_text("mine", encoding="utf-8")
         self.assertEqual(self.sync(), 2)
         self.assertEqual(self.rendered("gatherer"), "mine")
         self.assertEqual(self.sync(adopt=True), 0)
-        self.assertEqual(self.rendered("gatherer"),
-                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+        self.assertEqual(fields(self.rendered("gatherer"))["model"], "sonnet")
         harness.cmd_uninstall(harness.argparse.Namespace())
         self.assertEqual((self.agents / "gatherer.md").read_text(encoding="utf-8"), "mine")
 
@@ -195,6 +239,7 @@ class RenderedAgentTests(unittest.TestCase):
         self.assertEqual(catalog.projection_drift(REPO), [])
 
     def test_a_dangling_managed_link_is_ours_to_retire(self):
+        self.configure(stances={"cost": "frugal"})
         self.link_as_0_10_0()
         link = self.agents / "gatherer.md"
         link.unlink()
@@ -206,20 +251,20 @@ class RenderedAgentTests(unittest.TestCase):
         harness.write_json_atomic(harness.manifest_path(), manifest)
         self.assertEqual(self.sync(), 0)
         self.assertFalse(link.is_symlink())
-        self.assertEqual(self.rendered("gatherer"),
-                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+        self.assertEqual(fields(self.rendered("gatherer"))["model"], "sonnet")
 
     def test_a_link_through_another_spelling_of_this_checkout_is_ours_to_retire(self):
+        self.configure(stances={"cost": "frugal"})
         alias = self.home / "alias"
         alias.symlink_to(REPO)
         self.agents.mkdir(parents=True)
         (self.agents / "gatherer.md").symlink_to(alias / "claude" / "agents" / "gatherer.md")
         self.assertEqual(self.sync(), 0)
         self.assertFalse((self.agents / "gatherer.md").is_symlink())
-        self.assertEqual(self.rendered("gatherer"),
-                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+        self.assertEqual(fields(self.rendered("gatherer"))["model"], "sonnet")
 
     def test_an_unrecorded_user_symlink_is_reported_and_never_silently_skipped(self):
+        self.configure(stances={"cost": "frugal"})
         mine = self.home / "my-gatherer.md"
         mine.write_text("mine", encoding="utf-8")
         self.agents.mkdir(parents=True)
@@ -231,6 +276,7 @@ class RenderedAgentTests(unittest.TestCase):
         self.assertIn("--adopt", out.getvalue())
 
     def test_adopt_resolves_a_redirected_link_and_renders(self):
+        self.configure(stances={"cost": "frugal"})
         self.link_as_0_10_0()
         mine = self.home / "my-gatherer.md"
         mine.write_text("mine", encoding="utf-8")
@@ -239,8 +285,7 @@ class RenderedAgentTests(unittest.TestCase):
         link.symlink_to(mine)
         self.assertEqual(self.sync(adopt=True), 0)
         self.assertFalse(link.is_symlink())
-        self.assertEqual(self.rendered("gatherer"),
-                         (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
+        self.assertEqual(fields(self.rendered("gatherer"))["model"], "sonnet")
         self.assertTrue(any(Path(i["path"]) == link
                             for i in (harness.read_json(harness.manifest_path()) or {}).get("adopted", [])))
 
@@ -296,6 +341,7 @@ class RenderedAgentTests(unittest.TestCase):
                          (COMMITTED / "gatherer.md").read_text(encoding="utf-8"))
 
     def test_a_dry_run_over_a_linked_install_names_the_writes(self):
+        self.configure(stances={"cost": "frugal"})
         self.link_as_0_10_0()
         with loud() as out:
             self.assertEqual(self.sync(dry=True), 0)

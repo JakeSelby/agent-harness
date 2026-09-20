@@ -575,7 +575,14 @@ def _leads_to(path: Path, target: Any) -> bool:
     return Path(os.readlink(path)) == Path(target) or path.resolve() == Path(target).resolve()
 
 
-def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, adopt: bool, report: List[str]) -> None:
+def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, adopt: bool,
+                report: List[str], over_file: bool = False) -> None:
+    """Put the harness's symlink at `path`.
+
+    `over_file` says the caller has just retired a harness-owned file there. A real run has
+    already removed it; a dry run has not, and without this it would report the file it is
+    about to replace as the user's.
+    """
     managed = any(l.get("path") == str(path) for l in manifest.get("links", []))
     if path.is_symlink():
         current = Path(os.readlink(path))
@@ -596,7 +603,7 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
             return
         report.append(f"{path} is a symlink to {current}, not managed by the harness; pass --adopt to replace it")
         return
-    if path.exists():
+    if path.exists() and not over_file:
         if adopt:
             _adopt(path, manifest, dry)
         else:
@@ -893,10 +900,12 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
                 manifest["links"].remove(old)
         for skill in sorted(p_ for p_ in (REPO / "claude" / "skills").iterdir() if p_.is_dir()):
             ensure_link(cd / "skills" / skill.name, skill, manifest, dry, args.adopt, report)
-        # Agent definitions are rendered rather than linked, because the cost variant's class and
-        # effort have to reach the native file. Every role is rendered before the first unlink or
-        # write, so a binding that will not resolve cannot leave a role with no definition at all;
-        # `baseline` is the same rendering with no overrides, which is the committed projection.
+        # An agent definition the selected posture moves is rendered into the Claude home, because
+        # the variant's class and effort have to reach the native file; one it does not move stays
+        # the symlink to the committed projection, so the common install is exactly what earlier
+        # releases wrote and downgrades cleanly. `baseline` is the same rendering with no
+        # overrides, which is that projection. Every role is rendered before the first unlink or
+        # write, so a binding that will not resolve cannot leave a role without a definition.
         # Anything else the harness ships in `claude/agents` keeps being linked.
         roles = sorted((REPO / "primitives" / "roles").glob("*.md"))
         rendered = {role.stem: (
@@ -908,11 +917,19 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
                        skip={role.name for role in roles})
         for role in roles:
             content, baseline = rendered[role.stem]
-            target = cd / "agents" / role.name
-            if content != baseline:
-                say("  agent   " + role.stem + "  " + _agent_change(table, role.stem, content))
-            if not claim_agent_path(target, REPO / "claude" / "agents" / role.name,
-                                    manifest, dry, args.adopt, report):
+            target, committed = cd / "agents" / role.name, REPO / "claude" / "agents" / role.name
+            if content == baseline:
+                # The selected posture does not move this role, so it stays the link the previous
+                # release made: a machine on `balanced` can downgrade without a single conflict.
+                retired = str(target) in store.data["files"]
+                if retired and not store.retire(target):
+                    continue  # the user edited what the harness generated; reported, never removed
+                if retired:
+                    say(f"  unlink  {target} (renders as the committed projection)")
+                ensure_link(target, committed, manifest, dry, args.adopt, report, over_file=retired)
+                continue
+            say("  agent   " + role.stem + "  " + _agent_change(table, role.stem, content))
+            if not claim_agent_path(target, committed, manifest, dry, args.adopt, report):
                 continue
             if (args.adopt and not target.is_symlink() and target.is_file()
                     and str(target) not in store.data["files"]):

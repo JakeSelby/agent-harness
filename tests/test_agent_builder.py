@@ -112,13 +112,12 @@ class BuilderSyncTests(unittest.TestCase):
         os.environ.update(self._old_environ)
         self.tmp.cleanup()
 
-    def test_sync_renders_the_builder_agent(self):
+    def test_sync_links_the_builder_agent(self):
         code = harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=True, adopt_codex=False, print_only=False))
         self.assertEqual(code, 0)
-        # Rendered from the resolved cost variant, not linked; `balanced` is the committed text.
-        native = self.home / ".claude" / "agents" / "builder.md"
-        self.assertFalse(native.is_symlink())
-        self.assertEqual(native.read_text(encoding="utf-8"), BUILDER.read_text(encoding="utf-8"))
+        link = self.home / ".claude" / "agents" / "builder.md"
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(link.resolve(), BUILDER.resolve())
 
 
 if __name__ == "__main__":
