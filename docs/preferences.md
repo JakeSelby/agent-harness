@@ -93,6 +93,10 @@ shipped per-role budgets are the 90-day p75 from `harness usage --by role`, and 
 budgets are provisional — the general-purpose distribution at p50, p75 and p90 — until rerouted
 spawns have measured each band.
 
+A row's budget reaches the work as one sentence `brief-guard` appends to a brief that states no
+spend of its own. It is soft — finish if close, otherwise return — and a variant that prices
+nothing changes no brief.
+
 `harness usage` summarises what sessions have actually spent, from a local file with no network
 call — see [usage.md](usage.md).
 

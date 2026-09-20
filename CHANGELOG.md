@@ -39,6 +39,13 @@ All notable changes to this project are documented here. The format follows
 - `harness usage --by role` reports, per agent type, the number of runs and the p50, p75 and p90
   of output tokens and of tool calls over the window — the distribution a per-role budget has to
   be set against. A run whose runtime reported no counts is named, never averaged in as a zero.
+- Every brief states the spend the cost variant expects of it: the row's output tokens and tool
+  calls in one sentence, soft — finish if close, otherwise return what you have — because a
+  subagent cannot see the variant that priced it. A spawn that named a role is priced by that
+  role and one that named none by the band worker it is about to be routed to, computed by the
+  same function that routes it — and only on a runtime that reroutes, so a spawn Codex will run
+  as written is priced by its role or by nothing. A brief that already prices itself, an
+  unbudgeted role and a table that will not build are all left exactly as before.
 
 ### Changed
 

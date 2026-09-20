@@ -91,10 +91,14 @@ class LeavesAlone(HookRun):
                 self.assertIsNone(self.run_hook(self.spawn(prompt)))
 
     def test_an_agent_whose_definition_carries_a_cap(self):
+        # The definition states the bound, so the brief never repeats it. A budget is a separate
+        # question: a priced role still gets its spend sentence, which `test_brief_budget` holds.
         self.write_config("tiered")
         for kind in sorted(detectors().CAPPED_AGENTS):
             with self.subTest(agent=kind):
-                self.assertIsNone(self.run_hook(self.spawn("do a thing", kind)))
+                out = self.run_hook(self.spawn("do a thing", kind))
+                prompt = "" if out is None else out["hookSpecificOutput"]["updatedInput"]["prompt"]
+                self.assertNotIn("400 words", prompt)
 
     def test_delegation_off_is_a_no_op(self):
         self.write_config("off")
