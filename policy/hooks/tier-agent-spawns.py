@@ -188,19 +188,23 @@ def routable(kind, cwd):
     return definition(kind, cwd) or {}, None
 
 
-def band_route(posture, models, cwd):
+def band_route(posture, models, cwd, table=None):
     """`(route, notice)` for a spawn that named nothing; a route is None when nothing routes it.
 
     The cost table is read here and nowhere else in this hook, so a spawn that named a role
     never pays for it. A variant with no `default_band` — and a table that would not resolve —
     routes nothing, which is what keeps 0.10.0 behaviour byte for byte.
 
+    `brief-guard` calls this to price a spawn by the worker it is about to be routed to, and
+    passes the table it has already built rather than making this build a second one; one
+    answer to "where does an unnamed spawn go" is the point of the shared function.
+
     The effort a rerouted spawn actually runs at is the installed definition's, because effort
     is written at sync and the `Agent` tool takes none; the row's is what the selected variant
     would write at the next sync. The route carries both so the notice can name the difference.
     """
     try:
-        table = posture.cost_table()
+        table = posture.cost_table() if table is None else table
     except Exception:
         return None, None
     band = table.get("default_band")
