@@ -178,8 +178,8 @@ class TurnLineTests(Fixture):
         append(self.transcript, [assistant("m1", 400, ("t1",)), assistant("m1", 1200, ("t1",)),
                                  tool_result("t1"), assistant("m2", 300, ("t2", "t3"))])
         self.assertEqual(self.submit()[0],
-                         "usage-feed: last turn 1500 output tokens, 3 tool calls · "
-                         "session 1500 output, 3 tool calls, 0 subagents")
+                         "usage-feed: last turn 1,500 output tokens, 3 tool calls · "
+                         "session 1,500 output, 3 tool calls, 0 subagents")
 
     def test_a_sidechain_line_is_not_the_parents_spend(self):
         append(self.transcript, [assistant("m1", 100), assistant("s1", 9000, sidechain=True)])
@@ -188,7 +188,7 @@ class TurnLineTests(Fixture):
     def test_a_tool_result_carrier_does_not_start_a_turn(self):
         append(self.transcript, [assistant("m1", 100, ("t1",)), tool_result("t1"),
                                  assistant("m2", 50)])
-        self.assertIn("last turn 150 output tokens, 1 tool calls", self.submit()[0])
+        self.assertIn("last turn 150 output tokens, 1 tool call ·", self.submit()[0])
 
     def test_three_successive_prompts_each_read_only_what_arrived(self):
         totals = []
@@ -362,7 +362,7 @@ class SubagentReturnTests(Fixture):
         self.agent("aaa", "gatherer", messages)
         self.stop("aaa")
         lines = self.returned("aaa", "gatherer", usage={"output_tokens": 3143}, totalTokens=3143)
-        self.assertIn("usage-feed: gatherer finished at 13151 output tokens", lines[0])
+        self.assertIn("usage-feed: gatherer finished at 13,151 output tokens", lines[0])
         self.assertNotIn("3143", lines[0])
 
     def test_the_ratio_is_the_larger_of_the_two_and_names_the_budget(self):
@@ -370,13 +370,13 @@ class SubagentReturnTests(Fixture):
         self.agent("aaa", "gatherer", [("a1", 4250, ("t1", "t2", "t3"))])
         self.stop("aaa")
         self.assertEqual(self.returned("aaa")[0],
-                         "usage-feed: gatherer finished at 4250 output tokens and 3 tool "
-                         "calls — 0.5× its budget of 8500 / 15")
+                         "usage-feed: gatherer finished at 4,250 output tokens and 3 tool "
+                         "calls — 0.5× its budget of 8,500 / 15")
 
     def test_crossing_a_nudge_prefixes_over_budget(self):
         self.agent("bbb", "gatherer", [("b1", 17000, tuple("t%d" % i for i in range(20)))])
         self.stop("bbb")
-        self.assertIn("— over budget 2.0× its budget of 8500 / 15", self.returned("bbb")[0])
+        self.assertIn("— over budget 2.0× its budget of 8,500 / 15", self.returned("bbb")[0])
 
     def test_a_row_with_one_budget_names_only_the_half_it_has(self):
         module = load_feed()
@@ -393,7 +393,7 @@ class SubagentReturnTests(Fixture):
         self.agent("ccc", "planner", [("c1", 500, ("t1",))])
         self.stop("ccc")
         self.assertEqual(self.returned("ccc"),
-                         ["usage-feed: planner finished at 500 output tokens and 1 tool calls"])
+                         ["usage-feed: planner finished at 500 output tokens and 1 tool call"])
 
     def test_a_background_spawn_is_reported_at_the_next_prompt_exactly_once(self):
         self.agent("ddd", "gatherer", [("d1", 900, ("t1",))])
@@ -408,8 +408,8 @@ class SubagentReturnTests(Fixture):
 
     def test_a_synchronous_return_before_its_stop_entry_reads_the_transcript(self):
         self.agent("eee", "gatherer", [("e1", 1000, ())])
-        self.assertIn("finished at 1000 output tokens", self.returned("eee", "gatherer")[0])
-        self.assertEqual(self.state()["reported"], ["eee"])
+        self.assertIn("finished at 1,000 output tokens", self.returned("eee", "gatherer")[0])
+        self.assertEqual(self.state()["counted"], ["eee"])
         self.stop("eee")
         self.assertEqual(len(self.submit()), 1)  # never listed again
 
@@ -423,7 +423,7 @@ class SubagentReturnTests(Fixture):
         self.stop("aaa")
         self.stop("bbb")
         append(self.transcript, [assistant("m1", 100)])
-        self.assertIn("session 1100 output, 3 tool calls, 2 subagents", self.submit()[0])
+        self.assertIn("session 1,100 output, 3 tool calls, 2 subagents", self.submit()[0])
 
     def test_more_than_five_pending_agents_collapse(self):
         for index in range(7):
@@ -463,6 +463,19 @@ class WidthTests(Fixture):
         lines = self.submit()
         self.assertTrue(lines[0].startswith("usage-feed: last turn"))
         self.assertEqual(lines[1], "usage-feed: 7 subagents running against a posture width of 6")
+
+    def test_a_start_whose_stop_never_came_decays(self):
+        # Without decay one lost stop makes the width line fire for the rest of the session.
+        module = load_feed()
+        self.running(7)
+        self.assertIn("running against", "\n".join(self.submit()))
+        path = self.feed_dir() / (self.SESSION + ".json")
+        state = json.loads(path.read_text())
+        state["running"] = {agent: at - module.RUNNING_TTL - 60
+                            for agent, at in state["running"].items()}
+        path.write_text(json.dumps(state))
+        self.assertNotIn("running against", "\n".join(self.submit()))
+        self.assertEqual(json.loads(path.read_text())["running"], {})
 
     def test_an_agent_that_stopped_is_not_running(self):
         self.running(7)
@@ -526,8 +539,8 @@ class ConcurrencyTests(Fixture):
                    json.loads(out)["hookSpecificOutput"]["additionalContext"].split("\n")]
         # No agent is announced twice, whatever the interleaving, and the ids the reader has
         # retired hold no duplicate either.
-        reported = list(self.state()["reported"])
-        self.assertEqual(len(reported), len(set(reported)))
+        counted = list(self.state()["counted"])
+        self.assertEqual(len(counted), len(set(counted)))
         said = [line for line in context if "finished at" in line]
         for _ in range(count):  # later prompts name the ones the five-line cap held back
             more = [line for line in self.submit() if "finished at" in line]
@@ -547,6 +560,46 @@ class ConcurrencyTests(Fixture):
         self.assertIsNone(module.run({"hook_event_name": "UserPromptSubmit",
                                       "session_id": self.SESSION,
                                       "transcript_path": str(self.transcript)}, self.env()))
+
+    def test_a_stop_journals_while_another_process_holds_the_lock(self):
+        # The proof that nothing slow runs under the flock: a stop completes with the lock held
+        # by somebody else, so a prompt can never be starved behind one.
+        import fcntl
+        self.agent("aaa", "gatherer", [("a1", 10, ())])
+        self.submit()  # create the directory and the lock file
+        lock = self.feed_dir() / (self.SESSION + ".lock")
+        handle = os.open(str(lock), os.O_WRONLY | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, handle)
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            started = time.monotonic()
+            self.stop("aaa")
+            self.assertLess(time.monotonic() - started, load_feed().LOCK_WAIT)
+            self.assertEqual([r["t"] for r in self.journal()], ["stop"])
+            # The prompt that could not take the lock says nothing rather than half a line.
+            self.assertEqual(self.submit(), [])
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        self.assertIn("finished at 10 output tokens", "\n".join(self.submit()))
+
+    def test_a_huge_subagent_transcript_still_journals_a_stop_inside_the_budget(self):
+        module = load_feed()
+        path = self.agent("big", "gatherer", [("b1", 40, ())])
+        filler = json.dumps({"type": "system", "pad": "y" * 4000}) + "\n"
+        with path.open("a", encoding="utf-8") as handle:
+            for index in range(3000):
+                handle.write(filler)
+                handle.write(json.dumps(assistant("b%d" % index, 2)) + "\n")
+        self.assertGreater(path.stat().st_size, module.AGENT_BYTES)
+        started = time.monotonic()
+        self.stop("big")
+        self.assertLess(time.monotonic() - started, 10)
+        record = self.journal()[0]
+        self.assertEqual(record["t"], "stop")
+        self.assertTrue(record["partial"])
+        # The figures are of the part that was read, not nothing and not a guess.
+        self.assertGreater(record["output"], 0)
+        self.assertIn("(partial)", "\n".join(self.submit()))
 
     def test_a_stop_never_rewrites_the_readers_state(self):
         append(self.transcript, [assistant("m1", 400)])
@@ -598,15 +651,14 @@ class ModeTests(Fixture):
         self.assertEqual(self.submit(), [])
         self.assertEqual(self.returned("small", "gatherer"), [])
 
-    def test_a_quiet_agent_under_thresholds_is_never_marked_reported(self):
+    def test_a_quiet_agent_under_thresholds_stays_pending(self):
         # Saying nothing about it is not the same as having said it: the listing is bounded by
         # the five-line cap, not by silently retiring agents nobody was told about.
         self.thresholds()
         self.assertEqual(self.returned("small", "gatherer"), [])
-        self.assertEqual(self.state(), None)
         self.stop("small")
         self.assertEqual(self.submit(), [])
-        self.assertEqual((self.state() or {}).get("reported", []), [])
+        self.assertEqual([r["id"] for r in self.state()["pending"]], ["small"])
 
     def test_off_writes_nothing_anywhere(self):
         self.variant("plain", {"schema_version": 1, "extends": None, "rows": {}})
@@ -654,9 +706,14 @@ class SafetyTests(Fixture):
         self.fire({"hook_event_name": "UserPromptSubmit", "session_id": self.SESSION,
                    "transcript_path": str(self.transcript)})
 
-    def test_an_unreadable_transcript_is_silence_about_the_agent(self):
+    def test_an_unreadable_transcript_still_journals_the_stop(self):
+        # An agent whose stop never landed would count as running for the rest of the session,
+        # and the width line would then fire falsely forever.
         self.assertEqual(self.stop("nowhere"), [])
-        self.assertEqual(self.journal(), [])
+        self.assertEqual([(r["t"], r["output"], r["tool_calls"]) for r in self.journal()],
+                         [("stop", None, None)])
+        self.assertEqual(self.submit()[1], "usage-feed: unknown finished, spend unknown")
+        self.assertTrue(self.submit()[0].endswith("1 subagent (partial)"), self.submit()[0])
 
     def test_a_malformed_state_file_starts_over_rather_than_failing(self):
         append(self.transcript, [assistant("m1", 400)])
@@ -692,7 +749,7 @@ class SafetyTests(Fixture):
             path = self.feed_dir() / (self.SESSION + name)
             self.assertEqual(os.stat(str(path)).st_mode & 0o777, 0o600, msg=name)
         self.assertEqual(sorted(self.journal()[0]),
-                         ["at", "id", "output", "t", "tool_calls", "type"])
+                         ["at", "id", "output", "partial", "t", "tool_calls", "type"])
 
     def test_stale_feed_files_are_pruned_once_a_day_at_most(self):
         module = load_feed()
@@ -703,7 +760,7 @@ class SafetyTests(Fixture):
         keep = self.feed_dir() / "fresh.json"
         keep.write_text("{}")
         state = module.new_state()
-        module.prune(self.feed_dir(), state)
+        module.prune(self.feed_dir(), state, "s-1")
         self.assertFalse(old.exists())
         self.assertTrue(keep.exists())
         self.assertTrue(state["pruned"])
@@ -711,8 +768,83 @@ class SafetyTests(Fixture):
         stale = self.feed_dir() / "later.json"
         stale.write_text("{}")
         os.utime(str(stale), (0, time.time() - module.FEED_TTL - 60))
-        module.prune(self.feed_dir(), state)
+        module.prune(self.feed_dir(), state, "s-1")
         self.assertTrue(stale.exists())
+
+    def test_the_prune_never_touches_a_live_session_or_the_lock_it_holds(self):
+        module = load_feed()
+        self.feed_dir().mkdir(parents=True)
+        old = time.time() - module.FEED_TTL - 60
+        mine = []
+        for suffix in (".json", ".events.jsonl", ".lock"):
+            path = self.feed_dir() / (self.SESSION + suffix)
+            path.write_text("")
+            os.utime(str(path), (0, old))       # as an unwritten lock file always looks
+            mine.append(path)
+        theirs = []
+        for suffix in (".json", ".lock"):
+            path = self.feed_dir() / ("s-2" + suffix)
+            path.write_text("")
+            theirs.append(path)
+        os.utime(str(theirs[0]), (0, old))      # their state is old; their lock is not
+        module.prune(self.feed_dir(), module.new_state(), self.SESSION)
+        for path in mine + theirs:
+            self.assertTrue(path.exists(), msg=str(path))
+        # Only once the whole set has aged out does a session's files go, and together.
+        os.utime(str(theirs[1]), (0, old))
+        module.prune(self.feed_dir(), module.new_state(), self.SESSION)
+        self.assertFalse(any(path.exists() for path in theirs))
+        self.assertTrue(all(path.exists() for path in mine))
+
+    def test_taking_the_lock_keeps_its_file_young(self):
+        module = load_feed()
+        self.feed_dir().mkdir(parents=True)
+        lock = self.feed_dir() / (self.SESSION + ".lock")
+        lock.write_text("")
+        os.utime(str(lock), (0, time.time() - module.FEED_TTL - 60))
+        with module.Lock(lock) as held:
+            self.assertTrue(held)
+        self.assertGreater(lock.stat().st_mtime, time.time() - 60)
+
+    def test_the_subagent_total_never_falls_as_the_journal_grows(self):
+        module = load_feed()
+        journal = self.feed_dir() / (self.SESSION + ".events.jsonl")
+        journal.parent.mkdir(parents=True)
+        with journal.open("w", encoding="utf-8") as handle:
+            for index in range(12000):
+                handle.write(json.dumps({"t": "stop", "id": "a%05d" % index, "type": "gatherer",
+                                         "at": int(time.time()), "output": 3,
+                                         "tool_calls": 1}) + "\n")
+        self.assertGreater(journal.stat().st_size, 1024 * 1024)  # past any single-read window
+        state = module.ingest(module.new_state(), journal)
+        self.assertEqual(state["subagents"]["count"], 12000)
+        self.assertEqual(state["subagents"]["output"], 36000)
+        first = dict(state["subagents"])
+        with journal.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"t": "stop", "id": "later", "type": "gatherer",
+                                     "at": int(time.time()), "output": 5,
+                                     "tool_calls": 2}) + "\n")
+            handle.write('{"t": "stop", "id": "half')   # a line still being written
+        state = module.ingest(state, journal)
+        self.assertEqual(state["subagents"]["count"], first["count"] + 1)
+        self.assertEqual(state["subagents"]["output"], first["output"] + 5)
+        self.assertEqual(module.ingest(state, journal)["subagents"], state["subagents"])
+
+    def test_a_short_journal_write_leaves_a_line_the_reader_can_drop(self):
+        module = load_feed()
+        journal = self.feed_dir() / (self.SESSION + ".events.jsonl")
+        journal.parent.mkdir(parents=True)
+        real = os.write
+        os.write = lambda fd, data: real(fd, data[:10]) if b'"t"' in data else real(fd, data)
+        try:
+            self.assertFalse(module.journal_append(
+                journal, {"t": "stop", "id": "aaa", "type": "gatherer", "at": 1}))
+        finally:
+            os.write = real
+        module.journal_append(journal, {"t": "stop", "id": "bbb", "type": "gatherer", "at": 1,
+                                        "output": 4, "tool_calls": 1})
+        state = module.ingest(module.new_state(), journal)
+        self.assertEqual([r["id"] for r in state["pending"]], ["bbb"])
 
     def test_no_budget_threshold_model_or_role_name_is_written_in_the_module(self):
         text = HOOK.read_text(encoding="utf-8").split('"""', 2)[2]

@@ -126,7 +126,7 @@ def summed(per_message):
     return {name: sum(slot[name] for slot in per_message.values()) for name, _ in FIELDS}
 
 
-def _agent_row(path, shared=None):
+def _agent_row(path, shared=None, budget=None, max_bytes=None):
     """One `kind: "subagent"` row from one `agent-<id>.jsonl`, or None when it holds no turn.
 
     The sibling `agent-<id>.meta.json` names the agent type, the model and the spawn depth;
@@ -136,8 +136,14 @@ def _agent_row(path, shared=None):
     `shared` is the session's message-id map. The row keeps its own total, but the session's
     total is taken over that shared map, so a message id written both here and as a sidechain
     line in the session file is one message and is paid for once.
+
+    `budget` in seconds and `max_bytes` from the tail are for a caller working against a hook
+    timeout: the detached `SessionEnd` worker has all the time in the world and passes neither,
+    while a live hook cannot be killed halfway through a very large agent's file. When either
+    bites, the row carries `partial: True` and its totals are of the part that was read.
     """
     per_message, anonymous = {}, 0
+    partial = False
     try:
         meta = json.loads(path.with_name(path.stem + ".meta.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -148,13 +154,28 @@ def _agent_row(path, shared=None):
     calls = turns = 0
     model = effort = started = ended = ""
     try:
-        handle = path.open(encoding="utf-8", errors="replace")
+        handle = path.open("rb")
     except OSError:
         return None
+    deadline = None if budget is None else time.monotonic() + budget
     with handle:
-        for line in handle:
+        if max_bytes:
             try:
-                entry = json.loads(line)
+                size = os.fstat(handle.fileno()).st_size
+            except OSError:
+                size = 0
+            if size > max_bytes:
+                # The tail, because the last responses carry the largest figures and a file
+                # this size will not be finished inside a hook's timeout either way.
+                handle.seek(size - max_bytes)
+                handle.readline()
+                partial = True
+        for index, raw in enumerate(handle):
+            if deadline is not None and not index % 256 and time.monotonic() > deadline:
+                partial = True
+                break
+            try:
+                entry = json.loads(raw.decode("utf-8", "replace"))
             except Exception:
                 continue
             if not isinstance(entry, dict):
@@ -196,6 +217,8 @@ def _agent_row(path, shared=None):
             turns += 1
             model = model or message.get("model") or ""
     if not turns:
+        # Nothing readable, whether the file held no turn or the budget stopped before one:
+        # the caller records that as spend unknown rather than as zero.
         return None
     workflow = path.parent.name if path.parent.name.startswith("wf_") else None
     row = {"kind": "subagent", "runtime": "claude-code", "session_id": "", "repo": "",
@@ -209,6 +232,8 @@ def _agent_row(path, shared=None):
            "tool_use_id": meta.get("toolUseId") or "",
            "requested_type": "", "rerouted": False,
            "turns": turns, "started": started, "ended": ended}
+    if partial:
+        row["partial"] = True
     row.update(summed(per_message))
     return row
 

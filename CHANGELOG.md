@@ -19,7 +19,9 @@ All notable changes to this project are documented here. The format follows
   response reports only that agent's last response. The behaviour is `turn_feed`, `nudge_at` and
   `max_parallel` in the active `cost` variant; `off` injects nothing and writes nothing. Per-session
   state is an append-only journal plus a `flock`-guarded reader file, because these hooks run
-  concurrently; stale files are swept after a fortnight and `harness uninstall` removes them.
+  concurrently and nothing slow runs under that lock; a figure that could not be summed inside
+  the hook's budget is reported as `(partial)` or `spend unknown`, never as zero. Stale files are
+  swept after a fortnight and `harness uninstall` removes them.
   Codex raises none of the three events and declares the feed uncovered.
 - `harness tiers check` compares the Codex class table with the model catalog Codex fetches from
   its provider, offline, and fails on a mapped model that is gone, superseded or ranked out of

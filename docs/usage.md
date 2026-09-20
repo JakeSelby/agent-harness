@@ -80,6 +80,12 @@ reports only the agent's **last** response: measured at 3,143 output tokens agai
 actually spent. Each line names the agent type, what it spent and, when its row carries budgets,
 the larger of the two ratios against them, prefixed `over budget` past a `nudge_at` multiple.
 
+That sum is capped at 8 MiB from the end of the agent's transcript and at four seconds, because
+it runs inside a hook's timeout. When a cap bites, the line says `(partial)`; when the sum could
+not be made at all, it says `spend unknown` rather than reporting the agent at zero. Either way
+the stop is recorded, because an agent whose stop went missing would count as running for the
+rest of the session. A start whose stop never arrives is forgotten after three hours.
+
 Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
 number of its own:
 
@@ -102,16 +108,23 @@ several agents finish at once. So the state is split, both files 0600 in a 0700 
 - `<session-id>.events.jsonl` is append-only. A subagent starting or finishing is one line under
   4 KB written with a single `os.write` on an `O_APPEND` descriptor — an atomic append no handler
   ever rewrites, so no record can be lost to a concurrent one.
-- `<session-id>.json` is the main thread's reader state: the transcript offset, the running
-  totals, the open message ids and the agents already reported. Everything that reads and then
-  writes it does so under an exclusive `flock` on `<session-id>.lock` with a two-second bound.
-  No lock, no write, and nothing said.
+- `<session-id>.json` is the main thread's reader state: the transcript offset, the journal
+  offset, the running totals, the open message ids, the agents still in flight and the finished
+  ones not yet named. Everything that reads and then writes it does so under an exclusive
+  `flock` on `<session-id>.lock` with a two-second bound. No lock, no write, and nothing said.
 
-Both hold counts and agent type names only — no prompt text, no command text, no agent output —
-and an agent type that is not a plain name is recorded as `other`. Files untouched for a
-fortnight are swept once a day, and `harness uninstall` removes the directory.
+Nothing slow ever happens while that lock is held. `SubagentStart` and `SubagentStop` never take
+it — they append and exit — and the two main-thread events sum a subagent's transcript before
+acquiring it. A four-second sum under the lock would starve the prompt waiting behind it, and
+that prompt would lose its line in silence.
 
-The offset is what keeps the hot path cheap: each prompt reads from it to EOF and no further.
+Both files hold counts and agent type names only — no prompt text, no command text, no agent
+output — and an agent type that is not a plain name is recorded as `other`. A session's files
+are swept once a day, together and only when the newest of them has gone a fortnight untouched,
+never the running session's; `harness uninstall` removes the directory.
+
+The two offsets are what keep the hot path cheap: each prompt reads the transcript and the
+journal from where it left off, so a long session's subagent total can only ever grow.
 It is trusted only while the file is the same file, which the inode and a hash of the first
 record decide, so a transcript replaced by a *larger* one resets exactly as a truncated one does.
 With no usable state the read starts 8 MiB from the end rather than at byte zero, because a

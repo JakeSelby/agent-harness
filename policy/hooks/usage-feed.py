@@ -8,31 +8,35 @@ and says how many agents are running when that is past the posture's width. `Use
 reports the turn and every subagent that finished since the previous prompt — which is how a
 background spawn, whose `PostToolUse` fires at launch with no totals, is reported at all.
 
-Four facts shape the whole file:
+Five facts shape the whole file:
 
 - **A tool response's token figure describes only the subagent's last response.** Measured on a
   live return: `tool_response.usage.output_tokens` said 3,143 against 10,575 actually spent over
   nineteen responses. The real figure is summed from the subagent's own transcript, once per
   message id at the field-wise maximum, by `usage-log.py`'s per-agent row function and not by a
   second copy of that logic here.
-- **These hooks run concurrently, as separate processes.** Parallel tool calls and several agents
-  finishing at once are ordinary. So state is split in two. A subagent event is one line under
-  4 KB appended to `<session>.events.jsonl` through an `O_APPEND` descriptor, which no handler
-  ever rewrites and which therefore cannot lose a record. Everything the main thread must
-  read-modify-write — the transcript offset, the running totals, the open message ids and which
-  agents have been reported — lives in `<session>.json` and is touched only under an exclusive
-  `flock` on `<session>.lock`, with a bounded wait. No lock, no write, and nothing emitted.
-- **A transcript is read incrementally, and never unboundedly.** The saved offset is trusted only
-  when the file is still the same file: the inode and a hash of its first 512 bytes say so, and a
-  replacement that is *larger* is caught by that where a size comparison alone would miss it. With
-  no usable state the read starts 8 MiB from the end, because a resumed session's transcript can
-  be hundreds of megabytes and a hook killed at its timeout would stall every prompt after it.
-  The offset is saved before the slow part begins, and a wall-clock budget ends the read.
-- **The feed never decides anything.** No permission field, no deny, no budget, threshold, model
-  name or role name in this file: every number comes from the cost table's row for the agent type,
-  and every switch from `switches.turn_feed`, `switches.nudge_at` and `switches.max_parallel`. A
-  variant that sets none of them feeds nothing, which is the null-variant guarantee. Any failure
-  at all emits nothing and exits 0.
+- **These hooks run concurrently, as separate processes.** So state is split in two. A subagent
+  event is one line under 4 KB appended to `<session>.events.jsonl` through an `O_APPEND`
+  descriptor, which no handler ever rewrites and which therefore cannot lose a record. Everything
+  the main thread read-modify-writes lives in `<session>.json`, under an exclusive `flock` on
+  `<session>.lock` with a bounded wait. No lock, no write, and nothing emitted.
+- **Nothing slow happens under the lock.** `SubagentStart` and `SubagentStop` never take it at
+  all, and the two main-thread events sum a subagent's transcript before acquiring it. A stop
+  that took four seconds to read while holding the lock would starve the prompt waiting behind
+  it, and that prompt would silently lose its line.
+- **A record that cannot be computed is still a record.** A stop is journalled in a `finally`,
+  with null totals when the sum failed and `partial` when a budget cut it short. An agent whose
+  stop went missing would otherwise count as running for the rest of the session and the width
+  line would fire falsely forever; a start with no stop also decays after three hours.
+- **Reads are bounded everywhere.** The parent transcript is read from a saved offset, trusted
+  only while the inode and the hash of the first record still match, and from 8 MiB before the
+  end on a cold start. The journal is read from its own saved offset, so a long session's totals
+  can only grow. A subagent's transcript is capped by bytes and by the clock.
+
+No budget, threshold, model name or role name lives here: every number comes from the cost
+table, every switch from `switches.turn_feed`, `switches.nudge_at` and `switches.max_parallel`.
+A variant that sets none of them feeds nothing. Any failure at all emits nothing and exits 0,
+and no line the feed emits is ever a decision.
 """
 import errno
 import hashlib
@@ -54,17 +58,23 @@ PREFIX = "usage-feed: "
 # A journal line is one `os.write`. Far under PIPE_BUF, which is what makes an append atomic.
 MAX_LINE = 4096
 # How many message ids stay open for a later line to raise. One API response is written as
-# several lines that repeat its id contiguously, so a short tail is all that is ever needed.
-OPEN_TAIL = 8
+# several lines repeating its id, and a response whose id is evicted before its final, largest
+# figure arrives would be counted twice; a tail this long is far past that window.
+OPEN_TAIL = 64
 MAX_LISTED = 5
-# Reported ids are append-only under the lock. The cap is generous: an id evicted while its
-# journal entry survives would be announced a second time.
-MAX_REPORTED = 2000
-# A cold start reads this much of the tail, not the whole file.
+# Stops waiting for a line, and ids whose spend is already in the totals. Both bound what one
+# session's state file can grow to, and both are far past any real fan-out.
+MAX_PENDING = 200
+MAX_COUNTED = 1000
+# A cold start reads this much of the transcript's tail, not the whole file.
 COLD_TAIL = 8 * 1024 * 1024
-JOURNAL_TAIL = 1024 * 1024
 READ_BUDGET = 3.0
+# What one subagent's transcript may cost a hook that has ten seconds for everything.
+AGENT_BUDGET = 4.0
+AGENT_BYTES = 8 * 1024 * 1024
 LOCK_WAIT = 2.0
+# A start with no stop this old is not running; something ended it without saying so.
+RUNNING_TTL = 3 * 3600
 FEED_TTL = 14 * 86400
 PRUNE_EVERY = 86400
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}\Z")
@@ -91,9 +101,9 @@ def _open(path):
     return open(str(path), "rb")
 
 
-def _create(path, mode=0o600):
-    """A file that is private from the moment it exists; `chmod` after the fact is a window."""
-    return os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+def plural(number, noun):
+    """`1 tool call`, `15 tool calls`, `135,000 output tokens`. Every emitted number reads."""
+    return "{:,}".format(number) + " " + noun + ("" if number == 1 else "s")
 
 
 # --------------------------------------------------------------------------- paths
@@ -130,88 +140,39 @@ def ensure_dir(directory):
 
 def journal_append(path, record):
     """One line, one `os.write`, on an `O_APPEND` descriptor. Never read-modify-write."""
-    line = json.dumps(record, ensure_ascii=True) + "\n"
-    data = line.encode("utf-8")
-    if len(data) > MAX_LINE:
-        return False
-    if not ensure_dir(path.parent):
+    data = (json.dumps(record, ensure_ascii=True) + "\n").encode("utf-8")
+    if len(data) > MAX_LINE or not ensure_dir(path.parent):
         return False
     try:
         handle = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     except OSError:
         return False
     try:
-        os.write(handle, data)
+        written = os.write(handle, data)
+        if written == len(data):
+            return True
+        # A short write leaves a fragment. Terminating it is all that is owed: the reader drops
+        # an unparseable line, and the next record then starts on a line of its own.
+        if not data[:written].endswith(b"\n"):
+            os.write(handle, b"\n")
+        return False
     except OSError:
         return False
     finally:
         os.close(handle)
-    return True
-
-
-def journal(path):
-    """`(stops by agent id, running agent ids, totals)` from the append-only journal.
-
-    A stop seen twice is one agent at its latest figure, and a start with no stop is an agent
-    still running. Only the tail is read, because a session cannot spawn enough agents to make
-    a megabyte of one-line records and a corrupt head must not cost the recent truth.
-    """
-    stops, started = {}, []
-    totals = {"output": 0, "tool_calls": 0, "count": 0}
-    try:
-        size = path.stat().st_size
-        with open(str(path), "rb") as handle:
-            if size > JOURNAL_TAIL:
-                handle.seek(size - JOURNAL_TAIL)
-                handle.readline()
-            raw = handle.read()
-    except OSError:
-        return stops, [], totals
-    for line in raw.decode("utf-8", "replace").splitlines():
-        try:
-            record = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(record, dict) or not isinstance(record.get("id"), str):
-            continue
-        if record.get("t") == "start":
-            if record["id"] not in started:
-                started.append(record["id"])
-        elif record.get("t") == "stop":
-            stops[record["id"]] = record
-    for record in stops.values():
-        totals["output"] += int(record.get("output") or 0)
-        totals["tool_calls"] += int(record.get("tool_calls") or 0)
-        totals["count"] += 1
-    running = [agent for agent in started if agent not in stops]
-    return stops, running, totals
 
 
 # --------------------------------------------------------------------------- the reader's state
 
 
 def new_state():
-    return {"version": 2, "offset": 0, "size": 0, "inode": None, "head": None, "partial": False,
+    return {"version": 3, "offset": 0, "size": 0, "inode": None, "head": None, "partial": False,
             "session": {"output": 0, "tool_calls": 0},
             "turn": {"output": 0, "tool_calls": 0},
             "previous_turn": {"output": 0, "tool_calls": 0},
-            "open": [], "reported": [], "pruned": 0}
-
-
-def _counter(state, key):
-    value = state.get(key)
-    if not isinstance(value, dict):
-        value = {}
-        state[key] = value
-    for name in ("output", "tool_calls"):
-        if not isinstance(value.get(name), int) or isinstance(value.get(name), bool):
-            value[name] = 0
-    return value
-
-
-def _whole(state, key):
-    if not isinstance(state.get(key), int) or isinstance(state.get(key), bool):
-        state[key] = 0
+            "subagents": {"output": 0, "tool_calls": 0, "count": 0, "unknown": 0},
+            "journal_offset": 0, "running": {}, "pending": [], "counted": [],
+            "open": [], "pruned": 0}
 
 
 def load_state(path):
@@ -220,28 +181,36 @@ def load_state(path):
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return new_state()
-    if not isinstance(data, dict) or data.get("version") != 2:
+    if not isinstance(data, dict) or data.get("version") != 3:
         return new_state()
     state = new_state()
     state.update(data)
-    for key in ("session", "turn", "previous_turn"):
-        _counter(state, key)
-    for key in ("offset", "size", "pruned"):
-        _whole(state, key)
-    state["open"] = [item for item in state.get("open") or []
-                     if isinstance(item, list) and len(item) == 3 and isinstance(item[1], int)]
-    state["reported"] = [i for i in state.get("reported") or [] if isinstance(i, str)]
+    for key in ("session", "turn", "previous_turn", "subagents"):
+        value = state.get(key)
+        state[key] = value if isinstance(value, dict) else new_state()[key]
+        for name, blank in new_state()[key].items():
+            if not isinstance(state[key].get(name), int) or isinstance(state[key].get(name), bool):
+                state[key][name] = blank
+    for key in ("offset", "size", "journal_offset", "pruned"):
+        if not isinstance(state.get(key), int) or isinstance(state.get(key), bool):
+            state[key] = 0
+    if not isinstance(state.get("running"), dict):
+        state["running"] = {}
+    for key in ("pending", "counted", "open"):
+        if not isinstance(state.get(key), list):
+            state[key] = []
     return state
 
 
 def save_state(path, state):
     """Atomic and private. Called before the slow read as well as after it."""
-    state["reported"] = state.get("reported", [])[-MAX_REPORTED:]
+    state["pending"] = state.get("pending", [])[-MAX_PENDING:]
+    state["counted"] = state.get("counted", [])[-MAX_COUNTED:]
     if not ensure_dir(path.parent):
         return
     tmp = path.with_name(path.name + "." + str(os.getpid()) + ".tmp")
     try:
-        handle = _create(tmp)
+        handle = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
             os.write(handle, json.dumps(state).encode("utf-8"))
         finally:
@@ -257,9 +226,9 @@ def save_state(path, state):
 class Lock(object):
     """An exclusive `flock` with a bounded wait. Unavailable or contended means emit nothing.
 
-    The reader's state is the only thing this guards, and every writer of it is a hook process
-    that must finish inside a ten-second timeout. Waiting longer than a couple of seconds for a
-    number the next prompt will recompute anyway is worse than skipping the line.
+    Every writer of the reader's state is a hook process with ten seconds for everything, and
+    nothing slow is ever done while this is held. Waiting longer than a couple of seconds for a
+    figure the next prompt will recompute anyway is worse than skipping the line.
     """
 
     def __init__(self, path, wait=LOCK_WAIT):
@@ -278,6 +247,12 @@ class Lock(object):
         while True:
             try:
                 fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # A lock file is never written, so without this its age is its creation and the
+                # sweep below would eventually delete the file a live session is holding.
+                try:
+                    os.utime(str(self.path), None)
+                except OSError:
+                    pass
                 return True
             except (IOError, OSError) as exc:
                 if getattr(exc, "errno", None) not in (errno.EACCES, errno.EAGAIN):
@@ -299,22 +274,40 @@ class Lock(object):
         return False
 
 
-def prune(directory, state, now=None):
-    """Once a day at most, drop feed files nothing has touched in a fortnight."""
+def prune(directory, state, keep, now=None):
+    """Once a day at most, drop the files of sessions nothing has touched in a fortnight.
+
+    A session's three files go together or not at all, judged by the newest of them: a state
+    file rewritten every prompt beside a journal nobody appended to for a month is one live
+    session. `keep` is this session, which is never a candidate however old its files look.
+    """
     now = time.time() if now is None else now
     if now - state.get("pruned", 0) < PRUNE_EVERY:
         return
     state["pruned"] = int(now)
+    sessions = {}
     try:
         entries = list(directory.iterdir())
     except OSError:
         return
     for entry in entries:
+        stem = entry.name.split(".", 1)[0]
+        if stem == keep:
+            continue
         try:
-            if entry.is_file() and now - entry.stat().st_mtime > FEED_TTL:
-                entry.unlink()
+            if not entry.is_file():
+                continue
+            sessions.setdefault(stem, []).append((entry, entry.stat().st_mtime))
         except OSError:
             continue
+    for files in sessions.values():
+        if now - max(mtime for _, mtime in files) <= FEED_TTL:
+            continue
+        for entry, _ in files:
+            try:
+                entry.unlink()
+            except OSError:
+                continue
 
 
 # --------------------------------------------------------------------------- the parent transcript
@@ -431,11 +424,12 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
             return state
         if (state.get("inode") != inode or state.get("head") != head
                 or state["offset"] > size or size < state["size"]):
-            # Compaction, a rotation, a replacement — of any size. What came before is unknowable.
+            # Compaction, a rotation, a replacement — of any size. What came before is unknowable
+            # about the transcript; what the journal recorded is still true and stays.
             seen = state.get("inode") is not None
-            reported, pruned = state.get("reported", []), state.get("pruned", 0)
-            state = new_state()
-            state["reported"], state["pruned"] = reported, pruned
+            kept = {key: state[key] for key in
+                    ("journal_offset", "running", "pending", "counted", "subagents", "pruned")}
+            state = dict(new_state(), **kept)
             state["inode"], state["head"] = inode, head
             state["offset"] = max(0, size - COLD_TAIL)
             state["partial"] = seen or state["offset"] > 0
@@ -450,9 +444,8 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
             return state
         position = state["offset"]
         deadline = time.monotonic() + budget
-        counted = 0
         handle.seek(position)
-        for raw in handle:
+        for counted, raw in enumerate(handle):
             # A line still being written is not a line; leaving it unconsumed is what makes the
             # next read pick it up whole.
             if not raw.endswith(b"\n"):
@@ -462,8 +455,7 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
                 _apply(state, json.loads(raw.decode("utf-8", "replace")))
             except ValueError:
                 pass
-            counted += 1
-            if counted % 256 == 0 and time.monotonic() > deadline:
+            if not counted % 256 and time.monotonic() > deadline:
                 state["partial"] = True
                 state["timed_out"] = True
                 break
@@ -475,9 +467,11 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
 
 
 def agent_transcript(transcript_path, session_id, agent_id):
-    """`<dirname(transcript)>/<session>/subagents/**/agent-<id>.jsonl`, or None.
+    """`<dirname(transcript)>/<session>/subagents/agent-<id>.jsonl`, or None.
 
-    Recursive because a Workflow-tool agent sits a level deeper, under `subagents/workflows/wf_*/`.
+    A Workflow-tool agent sits one level deeper, under `subagents/workflows/wf_*/`. Both places
+    are named, rather than walked: a recursive search of a session's whole subagent tree is
+    unbounded work for a question with two possible answers.
     """
     if not (isinstance(agent_id, str) and IDENTIFIER.match(agent_id)):
         return None
@@ -486,31 +480,36 @@ def agent_transcript(transcript_path, session_id, agent_id):
     if not transcript_path:
         return None
     base = Path(os.path.expanduser(str(transcript_path))).parent / session_id / "subagents"
+    name = "agent-" + agent_id + ".jsonl"
     try:
-        found = sorted(base.rglob("agent-" + agent_id + ".jsonl"))
+        if (base / name).is_file():
+            return base / name
+        found = sorted(base.glob("workflows/*/" + name))
     except OSError:
         return None
     return found[0] if found else None
 
 
 def agent_totals(path):
-    """`{output, tool_calls, agent_type}` summed from the subagent's own transcript, or None.
+    """`{output, tool_calls, agent_type, partial}` from the subagent's own transcript, or None.
 
     The sum is `usage-log.py`'s per-agent row function, reused rather than reimplemented: it is
     the code that already counts one message id once at its largest figure, which is the only
-    way past the last-response figure a tool response reports.
+    way past the last-response figure a tool response reports. It is given a byte cap and a
+    clock here, because this runs inside a hook timeout and a very large agent would otherwise
+    take the whole process down with it.
     """
     module = sibling("usage-log")
     if module is None or not path:
         return None
     try:
-        row = module._agent_row(Path(path))
+        row = module._agent_row(Path(path), budget=AGENT_BUDGET, max_bytes=AGENT_BYTES)
     except Exception:
         return None
     if not isinstance(row, dict):
         return None
     return {"output": int(row.get("output") or 0), "tool_calls": int(row.get("tool_calls") or 0),
-            "agent_type": agent_name(row.get("agent_type"))}
+            "agent_type": agent_name(row.get("agent_type")), "partial": bool(row.get("partial"))}
 
 
 def agent_name(value, fallback="unknown"):
@@ -520,6 +519,74 @@ def agent_name(value, fallback="unknown"):
     if isinstance(value, str) and AGENT_NAME.match(value):
         return value
     return UNNAMED
+
+
+# --------------------------------------------------------------------------- the journal, ingested
+
+
+def ingest(state, journal_file):
+    """Fold the journal's new bytes into the locked state: running, pending and the totals.
+
+    Only new bytes, from a saved offset, because a session long enough to outgrow one read is
+    exactly the session whose totals must not start going down. A half-written last line is left
+    unconsumed and read whole next time.
+    """
+    try:
+        size = journal_file.stat().st_size
+        handle = open(str(journal_file), "rb")
+    except OSError:
+        return state
+    offset = state["journal_offset"]
+    if offset > size:
+        # A journal replaced under us: re-read it rather than trust an offset into another file.
+        offset = 0
+    position = offset
+    with handle:
+        handle.seek(offset)
+        for raw in handle:
+            if not raw.endswith(b"\n"):
+                break
+            position += len(raw)
+            try:
+                record = json.loads(raw.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+            if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+                continue
+            agent_id = record["id"]
+            if record.get("t") == "start":
+                state["running"][agent_id] = int(record.get("at") or 0)
+                continue
+            if record.get("t") != "stop":
+                continue
+            state["running"].pop(agent_id, None)
+            if agent_id in state["counted"]:
+                continue
+            state["counted"].append(agent_id)
+            count(state, record)
+            state["pending"].append(record)
+    state["journal_offset"] = position
+    return state
+
+
+def count(state, record):
+    """One finished agent against the session's subagent totals, exactly once."""
+    totals = state["subagents"]
+    totals["count"] += 1
+    if record.get("output") is None and record.get("tool_calls") is None:
+        totals["unknown"] += 1
+        return
+    totals["output"] += int(record.get("output") or 0)
+    totals["tool_calls"] += int(record.get("tool_calls") or 0)
+
+
+def running_now(state, now=None):
+    """The agents still in flight, forgetting a start whose stop never came."""
+    now = time.time() if now is None else now
+    stale = [agent for agent, at in state["running"].items() if now - (at or 0) > RUNNING_TTL]
+    for agent in stale:
+        del state["running"][agent]
+    return list(state["running"])
 
 
 # --------------------------------------------------------------------------- the lines
@@ -557,27 +624,32 @@ def budgets(row):
     return out[0], out[1]
 
 
-def agent_line(agent_type, output, calls, row, nudges):
-    """`(line, ratio)` for one finished subagent; ratio is None when the row budgets nothing.
+def agent_line(agent_type, output, calls, row, nudges, partial=False):
+    """`(line, ratio)` for one finished subagent; ratio is None when there is nothing to compare.
 
-    A row that budgets one half of the unit names that half and says which it is; a budget
-    printed as `n / None` would read as a figure somebody could act on.
+    Null counts are what a sum that could not be computed leaves behind, and the line says so:
+    an agent reported at zero would read as an agent that did nothing. A row that budgets one
+    half of the unit names that half, because `n / None` would read as a figure to act on.
     """
-    text = (PREFIX + agent_type + " finished at " + str(output) + " output tokens and "
-            + str(calls) + " tool calls")
+    if output is None and calls is None:
+        return PREFIX + agent_type + " finished, spend unknown", None
+    text = (PREFIX + agent_type + " finished at " + plural(output or 0, "output token")
+            + " and " + plural(calls or 0, "tool call"))
+    if partial:
+        text += " (partial)"
     budget_out, budget_calls = budgets(row)
     ratios, halves = [], []
     if budget_out:
-        ratios.append(output / float(budget_out))
-        halves.append(str(budget_out) + " output tokens")
+        ratios.append((output or 0) / float(budget_out))
+        halves.append(plural(budget_out, "output token"))
     if budget_calls:
-        ratios.append(calls / float(budget_calls))
-        halves.append(str(budget_calls) + " tool calls")
+        ratios.append((calls or 0) / float(budget_calls))
+        halves.append(plural(budget_calls, "tool call"))
     if not ratios:
         return text, None
     ratio = max(ratios)
     if budget_out and budget_calls:
-        halves = [str(budget_out) + " / " + str(budget_calls)]
+        halves = ["{:,}".format(budget_out) + " / " + "{:,}".format(budget_calls)]
     clause = "{:.1f}".format(ratio) + "× its budget of " + " and ".join(halves)
     if any(ratio >= level for level in nudges):
         clause = "over budget " + clause
@@ -588,20 +660,23 @@ def width_line(running, width):
     """One line when more agents are in flight than the posture's width. Never a decision."""
     if width is None or len(running) <= width:
         return None
-    return (PREFIX + str(len(running)) + " subagents running against a posture width of "
-            + str(width))
+    return (PREFIX + plural(len(running), "subagent") + " running against a posture width of "
+            + "{:,}".format(width))
 
 
-def turn_line(state, totals):
+def turn_line(state):
     """The turn and the session so far. Subagent spend is the session's bill, so it is in both."""
     last = state["turn"] if (state["turn"]["output"] or state["turn"]["tool_calls"]) \
         else state["previous_turn"]
-    text = (PREFIX + "last turn " + str(last["output"]) + " output tokens, "
-            + str(last["tool_calls"]) + " tool calls · session "
-            + str(state["session"]["output"] + totals["output"]) + " output, "
-            + str(state["session"]["tool_calls"] + totals["tool_calls"]) + " tool calls, "
-            + str(totals["count"]) + " subagents")
-    return text + " (partial)" if state.get("partial") else text
+    totals = state["subagents"]
+    text = (PREFIX + "last turn " + plural(last["output"], "output token") + ", "
+            + plural(last["tool_calls"], "tool call") + " · session "
+            + "{:,}".format(state["session"]["output"] + totals["output"]) + " output, "
+            + plural(state["session"]["tool_calls"] + totals["tool_calls"], "tool call") + ", "
+            + plural(totals["count"], "subagent"))
+    if totals["unknown"] or state.get("partial"):
+        text += " (partial)"
+    return text
 
 
 def shows(mode, ratio, nudges):
@@ -622,19 +697,21 @@ def row_for(table, agent_type):
 
 
 def stop_line(table, nudges, record):
-    return agent_line(agent_name(record.get("type")), int(record.get("output") or 0),
-                      int(record.get("tool_calls") or 0),
-                      row_for(table, record.get("type")), nudges)
+    return agent_line(agent_name(record.get("type")), record.get("output"),
+                      record.get("tool_calls"), row_for(table, record.get("type")), nudges,
+                      bool(record.get("partial")))
 
 
 # --------------------------------------------------------------------------- the events
 
 
 def on_subagent_event(payload, env, kind):
-    """Journal one subagent lifecycle event. Never emits, never locks, never rewrites a file.
+    """Journal one subagent lifecycle event. Never emits and never takes the lock.
 
     `SubagentStop`'s own `additionalContext` would reach the agent that has just finished, so
-    there is nothing to say here even when there is something to record.
+    there is nothing to say here even when there is something to record. The stop is written in
+    a `finally`: an agent whose stop never landed would be counted as running for the rest of
+    the session, so a stop with nothing in it beats no stop at all.
     """
     if payload.get("stop_hook_active"):
         return None
@@ -652,14 +729,16 @@ def on_subagent_event(payload, env, kind):
     if kind == "start":
         journal_append(found[1], record)
         return None
-    transcript = payload.get("agent_transcript_path") or agent_transcript(
-        payload.get("transcript_path"), payload.get("session_id"), agent_id)
-    totals = agent_totals(transcript)
-    if totals is None:
-        return None
-    record["type"] = agent_name(payload.get("agent_type"), totals["agent_type"])
-    record["output"], record["tool_calls"] = totals["output"], totals["tool_calls"]
-    journal_append(found[1], record)
+    record["output"], record["tool_calls"], record["partial"] = None, None, False
+    try:
+        totals = agent_totals(payload.get("agent_transcript_path") or agent_transcript(
+            payload.get("transcript_path"), payload.get("session_id"), agent_id))
+        if totals is not None:
+            record["type"] = agent_name(payload.get("agent_type"), totals["agent_type"])
+            record["output"], record["tool_calls"] = totals["output"], totals["tool_calls"]
+            record["partial"] = totals["partial"]
+    finally:
+        journal_append(found[1], record)
     return None
 
 
@@ -679,35 +758,41 @@ def on_agent_return(payload, env):
     # note applies to it.
     synchronous = (not response.get("isAsync") and response.get("status") == "completed"
                    and isinstance(agent_id, str) and IDENTIFIER.match(agent_id))
+    fresh = None
+    if synchronous:
+        # Before the lock, always: this is the one slow thing either main-thread event does,
+        # and a prompt waiting behind it would run out its wait and lose its line.
+        totals = agent_totals(agent_transcript(payload.get("transcript_path"),
+                                               payload.get("session_id"), agent_id))
+        if totals is not None:
+            fresh = {"id": agent_id, "output": totals["output"], "partial": totals["partial"],
+                     "tool_calls": totals["tool_calls"],
+                     "type": agent_name(response.get("agentType"), totals["agent_type"])}
     with Lock(lock_file) as held:
         if not held:
             return None
-        stops, running, _ = journal(journal_file)
-        state = load_state(state_file)
+        state = ingest(load_state(state_file), journal_file)
         lines = []
         if synchronous:
-            record = stops.get(agent_id)
-            if record is None:
-                # The SubagentStop entry has not landed yet, so the transcript is read directly.
-                totals = agent_totals(agent_transcript(payload.get("transcript_path"),
-                                                       payload.get("session_id"), agent_id))
-                if totals is not None:
-                    record = {"id": agent_id, "output": totals["output"],
-                              "tool_calls": totals["tool_calls"],
-                              "type": agent_name(response.get("agentType"), totals["agent_type"])}
-                    running = [a for a in running if a != agent_id]
-            if record is not None and agent_id not in state["reported"]:
+            record = next((r for r in state["pending"] if r.get("id") == agent_id), None)
+            if record is not None:
                 line, ratio = stop_line(table, nudges, record)
                 if shows(mode, ratio, nudges):
-                    # Only a line that was said counts as reported, so a quiet return under
-                    # `thresholds` stays listable at the next prompt.
-                    state["reported"].append(agent_id)
+                    state["pending"].remove(record)
                     lines.append(line)
-        note = width_line(running, width)
+            elif fresh is not None and agent_id not in state["counted"]:
+                # The stop has not been journalled yet. Reporting it now means counting it now,
+                # so the journal's copy is skipped when it arrives.
+                line, ratio = stop_line(table, nudges, fresh)
+                if shows(mode, ratio, nudges):
+                    state["counted"].append(agent_id)
+                    count(state, fresh)
+                    state["running"].pop(agent_id, None)
+                    lines.append(line)
+        note = width_line(running_now(state), width)
         if note:
             lines.append(note)
-        if lines:
-            save_state(state_file, state)
+        save_state(state_file, state)
         return lines or None
 
 
@@ -723,33 +808,30 @@ def on_prompt(payload, env):
     with Lock(lock_file) as held:
         if not held:
             return None
-        state = load_state(state_file)
-        prune(state_file.parent, state)
+        state = ingest(load_state(state_file), journal_file)
+        prune(state_file.parent, state, state_file.name.split(".", 1)[0])
         state = advance(state, payload.get("transcript_path"),
                         save=lambda current: save_state(state_file, current))
-        stops, running, totals = journal(journal_file)
         if state.get("timed_out"):
             save_state(state_file, state)
             return None
-        lines = [turn_line(state, totals)] if mode == "every-turn" else []
-        note = width_line(running, width)
+        lines = [turn_line(state)] if mode == "every-turn" else []
+        note = width_line(running_now(state), width)
         if note:
             lines.append(note)
-        listed = []
-        for agent_id, record in stops.items():
-            if agent_id in state["reported"]:
-                continue
+        said = []
+        for record in list(state["pending"]):
             line, ratio = stop_line(table, nudges, record)
             if not shows(mode, ratio, nudges):
                 continue
-            listed.append((agent_id, line))
+            said.append((record, line))
         # Only the agents this turn actually names are retired. The cap bounds how much is said
         # at once, so the rest are named at the next prompt rather than dropped unsaid.
-        for agent_id, line in listed[:MAX_LISTED]:
-            state["reported"].append(agent_id)
+        for record, line in said[:MAX_LISTED]:
+            state["pending"].remove(record)
             lines.append(line)
-        if len(listed) > MAX_LISTED:
-            lines.append("… and " + str(len(listed) - MAX_LISTED) + " more")
+        if len(said) > MAX_LISTED:
+            lines.append("… and " + "{:,}".format(len(said) - MAX_LISTED) + " more")
         save_state(state_file, state)
     return lines or None
 
