@@ -44,7 +44,10 @@ ROUTING_RUNTIME = "claude-code"
 BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
          "decision. Write anything longer to a file and return its path, not its contents.")
 CAP_NOTE = "the brief stated no return bound, so a 400-word cap was added"
-BUDGET_NOTE = "the brief stated no spend, so the cost variant's soft budget was added"
+# The budget sentence carries no notice of its own. Stating the variant's spend is what this hook
+# does on almost every spawn, and an alert on the ordinary case is noise a reader learns to
+# ignore; the cap keeps its notice because a brief that states no bound is the exception.
+#
 # The units a row prices, in the order the sentence states them; a null cell is left out rather
 # than written as "no budget", which would read as permission to spend without limit.
 UNITS = (("budget_output_tokens", "output tokens"), ("budget_tool_calls", "tool calls"))
@@ -95,9 +98,9 @@ def effective_role(payload, tool_input, posture, router, table, variant):
     would sooner or later price the wrong band. Which spawns count as unnamed is that hook's
     predicate too, so a `subagent_type` of whitespace cannot be priced here and routed nowhere.
 
-    A spawn nothing routes — another runtime, no default band, a worker that is not installed,
-    a repository that ships its own, a delegation stance that is not `tiered` — is priced by
-    nothing, as it was before.
+    A spawn nothing routes — another runtime, no default band, a worker that is not installed
+    or not in this session's registry, a repository that ships its own, a delegation stance
+    that is not `tiered` — is priced by nothing, as it was before.
     """
     if router is None:
         return None
@@ -108,7 +111,8 @@ def effective_role(payload, tool_input, posture, router, table, variant):
     models = posture.tier_models()
     if len(models) < 2:
         return None
-    route, _ = router.band_route(posture, models, payload.get("cwd"), table())
+    route, _ = router.band_route(posture, models, payload.get("cwd"), table(),
+                                 payload.get("session_id"))
     return route["worker"] if route else None
 
 
@@ -136,7 +140,9 @@ def budget_for(payload, tool_input, module, variant):
 
     The cost table is read here and nowhere else in this hook, at most once, and never for a
     spawn nothing would price: a table is a walk of every sidecar on the `extends` chain, and
-    this hook runs on a tool call. Any failure building it is simply no sentence.
+    this hook runs on a tool call. Any failure building it is simply no sentence — as is any
+    failure asking where the spawn goes, including an older `posture.py` beside a newer spawn
+    hook, whose missing functions would otherwise raise into the coordinator and deny the call.
     """
     pattern = getattr(module, "BUDGET_RE", None)
     if pattern is None or pattern.search(tool_input.get("prompt") or ""):
@@ -186,15 +192,15 @@ def main():
         added, notes = BOUND, [CAP_NOTE]
     budget = budget_for(payload, tool_input, module, variant)
     if budget:
-        added, notes = added + budget, notes + [BUDGET_NOTE]
+        added += budget
     if not added:
         return
     updated = dict(tool_input)
     updated["prompt"] = prompt.rstrip() + added
-    print(json.dumps({
-        "hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated},
-        "systemMessage": f"{HOOK}: " + " · ".join(notes),
-    }))
+    out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated}}
+    if notes:
+        out["systemMessage"] = f"{HOOK}: " + " · ".join(notes)
+    print(json.dumps(out))
 
 
 if __name__ == "__main__":

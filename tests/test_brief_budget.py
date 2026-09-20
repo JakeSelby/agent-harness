@@ -24,13 +24,14 @@ REPO = Path(__file__).resolve().parent.parent
 GUARD = REPO / "claude" / "hooks" / "brief-guard.py"
 TIER = REPO / "claude" / "hooks" / "tier-agent-spawns.py"
 AGENTS = REPO / "claude" / "agents"
+# The session these fixtures spawn from; a reroute needs a record saying it can resolve the type.
+SESSION = "fixture-session"
 
 # What `brief-guard` printed before budgets existed: the cap on a brief that states none, and
 # silence for everything else. A variant with no budgets must still print exactly this.
 BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
          "decision. Write anything longer to a file and return its path, not its contents.")
 CAP_MESSAGE = "harness:brief-guard: the brief stated no return bound, so a 400-word cap was added"
-BUDGET_MESSAGE = "harness:brief-guard: the brief stated no spend, so the cost variant's soft budget was added"
 
 
 def capped(tool_input):
@@ -78,8 +79,13 @@ class HookCase(unittest.TestCase):
     def install_workers(self):
         d = self.home / ".claude" / "agents"
         d.mkdir(parents=True, exist_ok=True)
-        for name in ("worker-a", "worker-b", "worker-c"):
+        names = ("worker-a", "worker-b", "worker-c")
+        for name in names:
             (d / (name + ".md")).write_text((AGENTS / (name + ".md")).read_text(encoding="utf-8"))
+        # The record the SessionStart policy writes: a reroute needs one naming the worker.
+        sessions = self.home / ".local" / "state" / "agent-harness" / "sessions"
+        sessions.mkdir(parents=True, exist_ok=True)
+        (sessions / (SESSION + ".json")).write_text(json.dumps({"agents": list(names), "at": 0}))
 
     def variant(self, name, sidecar):
         """Select a cost variant of the test's own, on a primitive root under the temp home."""
@@ -96,7 +102,7 @@ class HookCase(unittest.TestCase):
         return env
 
     def run_hook(self, hook, tool_input, env=None, cwd=None, transcript=True):
-        payload = {"tool_name": "Agent", "tool_input": tool_input}
+        payload = {"tool_name": "Agent", "tool_input": tool_input, "session_id": SESSION}
         if transcript:
             payload["transcript_path"] = str(self.transcript)
         if cwd:
@@ -171,13 +177,13 @@ class BudgetSentenceTests(HookCase):
         self.install_workers()
         prompt = self.prompt({"prompt": "x"})
         self.assertLess(prompt.index("Return at most 400 words"), prompt.index("Expected spend:"))
-        self.assertEqual(self.guard({"prompt": "x"})["systemMessage"],
-                         CAP_MESSAGE + " · the brief stated no spend, so the cost variant's "
-                         "soft budget was added")
+        # The cap is the exception this hook reports; the budget rides along without a word.
+        self.assertEqual(self.guard({"prompt": "x"})["systemMessage"], CAP_MESSAGE)
 
-    def test_a_budget_alone_says_so(self):
-        self.assertEqual(self.guard({"prompt": "x", "subagent_type": "gatherer"})["systemMessage"],
-                         BUDGET_MESSAGE)
+    def test_a_budget_alone_says_nothing(self):
+        out = self.guard({"prompt": "x", "subagent_type": "gatherer"})
+        self.assertIn("Expected spend", out["hookSpecificOutput"]["updatedInput"]["prompt"])
+        self.assertNotIn("systemMessage", out)
 
 
 class LeavesAloneTests(HookCase):
@@ -252,7 +258,7 @@ class OneRouterTests(HookCase):
         def patched(name):
             loaded = real(name)
             if name == "tier-agent-spawns":
-                def band_route(posture, models, cwd, table=None):
+                def band_route(posture, models, cwd, table=None, session=None, announce=False):
                     asked.append(cwd)
                     return {"worker": "gatherer", "row": {}}, None
                 loaded.band_route = band_route

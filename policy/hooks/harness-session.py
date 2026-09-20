@@ -3,6 +3,10 @@
 """SessionStart hook: report harness drift, per-session HARNESS_* overrides, and the handoff,
 and check BMad integration without modifying repository configuration.
 
+It also records, silently, which agent definitions this session's registry holds, because the
+tool loads that registry once at process start: `posture.sessions_dir` says why, and the spawn
+hook reroutes only to a worker the record names.
+
 Silent when there is nothing to say, so a clean session costs no context. Never fails.
 """
 import importlib.util
@@ -146,6 +150,47 @@ def bmad_lines(repo, cwd):
     return ["BMad integration check: " + "; ".join(notable)] if notable else []
 
 
+def record_session(data):
+    """Record what this session's agent registry holds, for the spawn hook to route by.
+
+    Only a new process has a new registry — the tool loads agent definitions once and does not
+    reload them — so `clear` and `compact` leave a record alone rather than restate it from a
+    disk that has changed since.
+
+    `startup` is that new process, and writes what is on disk. `resume` may not be: the event
+    is also raised when a session that is already running resumes in place, whose registry is
+    still the one it loaded. So a resume may only ever narrow — the record becomes the names
+    common to it and the disk — and it creates nothing, because a record it invented would
+    claim a registry nobody observed. Narrowing can only ever refuse a reroute, which is the
+    invariant: a reroute never turns a spawn that would have worked into one that fails.
+
+    The shape and the write are `posture.py`'s, which is the copy the spawn hook reads. Best
+    effort throughout: a session never fails over a record.
+    """
+    source = data.get("source")
+    if source not in ("startup", "resume"):
+        return
+    module = sibling("posture")
+    if module is None:
+        return
+    session = data.get("session_id")
+    on_disk = module.installed_agents(os.environ)
+    if source == "startup":
+        module.write_session_record(session, {"agents": on_disk, "at": int(time.time())})
+    else:
+        record = module.read_session_record(session)
+        if record is not None:
+            known = module.session_agents(session)
+            narrowed = dict(record, at=int(time.time()))
+            # An absent `agents` is unknown, and a resume learns nothing that could end that.
+            if known is None:
+                narrowed.pop("agents", None)
+            else:
+                narrowed["agents"] = sorted(set(known) & set(on_disk))
+            module.write_session_record(session, narrowed)
+    module.prune_session_records(keep=session if isinstance(session, str) else None)
+
+
 def payload():
     try:
         if sys.stdin.isatty():
@@ -165,6 +210,11 @@ def config_path():
 
 
 def main():
+    data = payload()
+    try:
+        record_session(data)
+    except Exception:
+        pass
     manifest = load(STATE / "manifest.json")
     config = load(config_path())
     lines = []
@@ -177,7 +227,7 @@ def main():
     else:
         lines.extend(override_lines(config))
     tool = Path(manifest["repo"]) / "bin" / "harness" if manifest and manifest.get("repo") else None
-    cwd = payload().get("cwd") or os.getcwd()
+    cwd = data.get("cwd") or os.getcwd()
     if tool and (Path(cwd) / ".agent-harness" / "task.json").exists():
         out = subprocess.run([sys.executable, str(tool), "task", "show", cwd],
                              capture_output=True, text=True, timeout=remaining(2))

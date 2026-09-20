@@ -27,7 +27,10 @@ inherits the session's effort, and only an agent definition can carry the postur
 with no `subagent_type`, or `general-purpose`, is rewritten to `worker-a`, `worker-b` or
 `worker-c` — the variant's `default_band` — and the orchestrator that wanted a different band
 spawns that worker by name. A machine whose worker definitions are not installed is not routed
-at all: a `subagent_type` the tool cannot resolve would fail the spawn.
+at all: a `subagent_type` the tool cannot resolve would fail the spawn. Neither is a session
+that started before they were installed, because the tool loads its agent registry once, at
+process start — so the reroute asks the session registry `posture.sessions_dir` describes, not
+the disk, and a reroute never turns a spawn that would have worked into one that fails.
 
 The ladder is the adapter's `bindings.json` class table, strongest class first, matched as
 substrings of the model ids a transcript records; no model name is written here.
@@ -59,6 +62,13 @@ DEFAULT_STANCE = "tiered"
 TAIL_BYTES = 1 << 20
 HOOK = "tier-agent-spawns hook"
 AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+# The two notices a session hears once rather than on every spawn: where an unnamed spawn goes,
+# and that the worker is on disk but this session's registry predates it. Both describe the
+# standing arrangement, so repeating them on each spawn is noise. A notice about something the
+# caller asked for being changed or refused stays per-occurrence.
+ROUTED_NOTICE = "routed-to-band"
+UNRESOLVABLE_NOTICE = "worker-unresolvable"
+_LOADED = {}
 
 
 def sibling(name):
@@ -71,6 +81,26 @@ def sibling(name):
         return module
     except Exception:
         return None
+
+
+def posture_module():
+    """The shared sibling, loaded at most once a run: every question here asks the same copy."""
+    if "posture" not in _LOADED:
+        _LOADED["posture"] = sibling("posture")
+    return _LOADED["posture"]
+
+
+def notice_once(session, key):
+    """Whether to say `key` in this session now; the session record is what remembers it.
+
+    Nothing that cannot be remembered is said, because a hook is a process per event and a
+    notice nobody records is a notice repeated on every spawn.
+    """
+    module = posture_module()
+    try:
+        return bool(module.note_once(session, key))
+    except Exception:
+        return False
 
 
 def tier_of(model, ladder):
@@ -116,11 +146,16 @@ def transcript_model(path):
 def agents_dirs(cwd):
     """`(project directories, the user's)` where Claude Code resolves an agent definition.
 
-    Project before user, which is the tool's own precedence, and `CLAUDE_CONFIG_DIR` moves the
-    user's one exactly as `bin/harness` reads it.
+    Project before user, which is the tool's own precedence. `posture.user_agents_dir` holds the
+    user directory's rule, so this hook and the SessionStart policy read one directory; the same
+    expression stands in for the run where that sibling would not import.
     """
-    config = os.environ.get("CLAUDE_CONFIG_DIR")
-    user = (Path(config) if config else Path.home() / ".claude") / "agents"
+    module = posture_module()
+    if module is not None:
+        user = module.user_agents_dir(os.environ)
+    else:
+        config = os.environ.get("CLAUDE_CONFIG_DIR")
+        user = (Path(config) if config else Path.home() / ".claude") / "agents"
     return ([Path(cwd) / ".claude" / "agents"] if isinstance(cwd, str) and cwd else []), user
 
 
@@ -164,7 +199,7 @@ def is_bare(tool_input):
     return not tool_input.get("model") and is_unnamed(tool_input)
 
 
-def routable(kind, cwd):
+def routable(kind, cwd, session=None, announce=False):
     """`(the user's definition, notice)` for a worker a reroute would name; one of them is None.
 
     A reroute must land on the definition the harness synced and on no other. A project-level
@@ -172,6 +207,13 @@ def routable(kind, cwd):
     its own instructions on every unnamed spawn of anyone who cloned it: that file is a reason
     to route nothing, named out loud. A machine that has not synced the workers is the same
     answer for the plainer reason that the tool could not resolve the type at all.
+
+    A file on disk is not enough: the tool loads its agent registry when the session process
+    starts and never reloads it, so this session must also have recorded the worker at its own
+    start (`posture.sessions_dir`). Without that record the spawn is left as it was, because a
+    `subagent_type` this session cannot resolve fails the call outright. `announce` is the
+    caller that speaks — the spawn hook, not the pricing one — and only it spends the
+    once-per-session memory on that notice.
     """
     if not isinstance(kind, str) or not AGENT_NAME.fullmatch(kind):
         return None, None
@@ -185,10 +227,22 @@ def routable(kind, cwd):
     if not (user / (kind + ".md")).is_file():
         return None, ("no " + kind + " definition is installed, so this spawn is not routed to "
                       "the variant's default band; run `harness sync`")
+    module = posture_module()
+    known = module.session_agents(session) if module else None
+    if known is not None:
+        # Reading the record is evidence this session is alive, which keeps a long-running one
+        # out of another session's sweep.
+        module.refresh_session_record(session)
+    if known is None or kind not in known:
+        notice = (kind + " is installed but this session started before it was; start a new "
+                  "session to route unnamed spawns")
+        if not (announce and notice_once(session, UNRESOLVABLE_NOTICE)):
+            notice = None
+        return None, notice
     return definition(kind, cwd) or {}, None
 
 
-def band_route(posture, models, cwd, table=None):
+def band_route(posture, models, cwd, table=None, session=None, announce=False):
     """`(route, notice)` for a spawn that named nothing; a route is None when nothing routes it.
 
     The cost table is read here and nowhere else in this hook, so a spawn that named a role
@@ -211,7 +265,7 @@ def band_route(posture, models, cwd, table=None):
     if band not in getattr(posture, "BANDS", ()):
         return None, None
     worker = posture.BAND_ROLES[band]
-    fields, notice = routable(worker, cwd)
+    fields, notice = routable(worker, cwd, session, announce)
     if fields is None:
         return None, notice
     row = posture.row_for(table, worker) or {}
@@ -241,13 +295,13 @@ def one_rung(payload, ladder):
 
 
 def routed_message(route, model, requested):
-    """The one line a reroute says: where the spawn went, on what, and how to choose next time."""
+    """Where the spawn went, on what, and how to choose next time; the hook's prefix is the caller's."""
     detail = [("model " + requested + " as asked") if requested
               else (route["row"].get("class") or model)]
     if route.get("effort"):
         detail.append(route["effort"] + " effort")
     shown = ", ".join(part for part in detail if part)
-    return (f"{HOOK}: unnamed subagent routed to {route['worker']}" + (f" ({shown})" if shown else "") +
+    return (f"unnamed subagent routed to {route['worker']}" + (f" ({shown})" if shown else "") +
             "; spawn worker-a, worker-b or worker-c to choose the band" +
             (" · the installed definition's effort is not the selected variant's; run "
              "`harness sync` to apply the selected posture" if route.get("stale") else ""))
@@ -271,7 +325,7 @@ def main():
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return
-    posture = sibling("posture")
+    posture = posture_module()
     variant = posture.selected("delegation", DEFAULT_STANCE, strict=False) if posture else DEFAULT_STANCE
     if variant == "off":
         emit({
@@ -296,7 +350,15 @@ def main():
     # only here, so a spawn naming a role never reads a sidecar.
     route = notice = None
     if posture and is_unnamed(tool_input) and hasattr(posture, "row_for"):
-        route, notice = band_route(posture, models, payload.get("cwd"))
+        try:
+            route, notice = band_route(posture, models, payload.get("cwd"), None,
+                                       payload.get("session_id"), True)
+        except Exception:
+            # An older `posture.py` beside a newer hook answers none of this. The whole routing
+            # decision is one all-or-nothing question, and the safe answer is the behaviour
+            # this hook had before bands existed: do not route, say nothing about it. An
+            # exception escaping here reaches the coordinator, which denies the spawn.
+            route = notice = None
     top = tier_of(tool_input.get("model"), ladder) == ladder[0]
     if top and not route:
         kind = tool_input.get("subagent_type")
@@ -326,11 +388,17 @@ def main():
                 fallback, message = one_rung(payload, ladder)
                 if fallback:
                     updated["model"] = fallback
+        # Where an unnamed spawn goes is the standing arrangement, said once a session. What the
+        # caller asked for and did not get is said every time it happens.
+        parts = []
+        if notice_once(payload.get("session_id"), ROUTED_NOTICE):
+            parts.append(routed_message(route, updated.get("model"), requested))
+        if message:
+            parts.append(message)
+        if top:
+            parts.append(f"{ladder[0]} is reached through a role that declares it, not by request")
         emit({"updatedInput": updated},
-             system_message=routed_message(route, updated.get("model"), requested)
-             + (" · " + message if message else "")
-             + (f" · {ladder[0]} is reached through a role that declares it, not by request"
-                if top else ""))
+             system_message=(f"{HOOK}: " + " · ".join(parts)) if parts else None)
         return
     if not is_bare(tool_input):
         return

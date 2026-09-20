@@ -34,6 +34,8 @@ HOOK = REPO / "claude" / "hooks" / "tier-agent-spawns.py"
 ROLES = REPO / "primitives" / "roles"
 COMMITTED = REPO / "claude" / "agents"
 WORKERS = ("worker-a", "worker-b", "worker-c")
+# The session these fixtures spawn from; a reroute needs a record saying it can resolve the type.
+SESSION = "fixture-session"
 
 # What the hook printed for these five calls before band workers existed, recorded from the
 # 0.10.0 behaviour the suite already pins. A variant with no `default_band` must still print
@@ -202,6 +204,13 @@ class RerouteTests(unittest.TestCase):
         d.mkdir(parents=True, exist_ok=True)
         for name in names or WORKERS:
             (d / (name + ".md")).write_text((COMMITTED / (name + ".md")).read_text(encoding="utf-8"))
+        self.record(*(names or WORKERS))
+
+    def record(self, *names):
+        """The session registry record the SessionStart policy writes: what this session resolves."""
+        d = self.home / ".local" / "state" / "agent-harness" / "sessions"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / (SESSION + ".json")).write_text(json.dumps({"agents": sorted(names), "at": 0}))
 
     def null_variant(self):
         """A cost variant with rows, no `default_band`, on the user's own primitive root."""
@@ -219,7 +228,7 @@ class RerouteTests(unittest.TestCase):
         merged["HOME"] = str(self.home)
         merged.update(env or {})
         payload = {"tool_name": "Agent", "transcript_path": str(self.transcript),
-                   "tool_input": tool_input}
+                   "session_id": SESSION, "tool_input": tool_input}
         if cwd:
             payload["cwd"] = cwd
         out = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload),
@@ -239,6 +248,7 @@ class RerouteTests(unittest.TestCase):
         self.install_workers()
         for tool_input in ({"prompt": "x"}, {"prompt": "x", "subagent_type": "general-purpose"}):
             with self.subTest(tool_input=tool_input):
+                self.record(*WORKERS)  # the routed notice is said once a session
                 out = self.parsed(tool_input)
                 updated = out["hookSpecificOutput"]["updatedInput"]
                 self.assertEqual(updated["subagent_type"], "worker-b")
@@ -308,6 +318,7 @@ class RerouteTests(unittest.TestCase):
         (alt / "agents").mkdir(parents=True)
         (alt / "agents" / "worker-b.md").write_text(
             (COMMITTED / "worker-b.md").read_text(encoding="utf-8"))
+        self.record("worker-b")
         self.assertIsNone(self.parsed({"prompt": "x"})["hookSpecificOutput"]["updatedInput"]
                           .get("subagent_type"))
         env = {"CLAUDE_CONFIG_DIR": str(alt)}
