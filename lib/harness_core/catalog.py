@@ -112,6 +112,10 @@ def role_contract(root, name):
         raise ValueError("unsupported role context or delegation contract: " + name)
     if fields.get("tier") not in TIER_CLASSES:
         raise ValueError("shared role tier must be one of " + ", ".join(TIER_CLASSES) + ": " + name)
+    # `posture: fixed` is the role's refusal of a cost variant's class and effort; its budgets
+    # still apply. Absent means the variant decides, which is the default for every other role.
+    if fields.get("posture", "fixed") != "fixed":
+        raise ValueError("shared role posture, when present, must be 'fixed': " + name)
     return fields, body
 
 

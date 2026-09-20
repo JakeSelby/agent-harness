@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "extends": "balanced",
+  "switches": {
+    "session_effort": "default",
+    "max_parallel": null,
+    "fast_mode": "allowed",
+    "compaction": "compact-allowed",
+    "nudge_at": []
+  },
+  "rows": {
+    "gatherer": {"class": "strong", "effort": "medium"},
+    "builder": {"class": "strong", "effort": "high"},
+    "B": {"class": "strong", "effort": "medium"}
+  }
+}

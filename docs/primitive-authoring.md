@@ -50,6 +50,36 @@ Each rule has a nonempty `when` selection and optional `requires` and `excludes`
 All `when` entries must match to activate the rule; every requirement must match and no
 excluded choice may be selected. Validation runs before sync changes files.
 
+## A cost variant with numbers in it
+
+A `cost` variant is prose in `<variant>.md` and, optionally, data in `<variant>.json` beside it.
+The sidecar is what the harness resolves; the prose is what your agent reads. In your primitive
+root — `~/.config/agent-harness/primitives`, say — write `stances/cost/careful.md` with your
+policy, then `stances/cost/careful.json`:
+
+```json
+{"schema_version": 1, "extends": "balanced",
+ "switches": {"session_effort": "high", "budget_multiplier": 1.4},
+ "rows": {"gatherer": {"effort": "medium"}}}
+```
+
+`extends` names another cost variant and may chain up to five deep; cycles stop resolution with
+a warning. Each layer is merged over the one it extends, switch by switch and row cell by row
+cell, so the example above changes three values and inherits every other one. A variant with no
+sidecar resolves to `balanced`'s table.
+
+A row is keyed by a role name or by a band — `A`, `B` or `C` — and may set `class`, `effort`,
+`budget_output_tokens` and `budget_tool_calls`; any of them may be omitted, and a null budget
+means unbudgeted. `budget_multiplier` scales both budgets, and `harness stances --json` reports
+the base figure and the scaled one. `class` never names the top class: reaching it by request is
+exactly what the `delegation` stance forbids, and it only applies at all when that stance
+resolves to `tiered`. A role whose frontmatter says `posture: fixed` — the verifiers — keeps its
+own class and effort whatever a row says, and takes the row's budgets.
+
+Unknown keys are ignored with a warning rather than an error, so a switch added in a later
+release never breaks a variant you wrote. Run `bin/harness stances --json` to see the resolved
+table, its `extends_chain`, each sidecar's path, and any warnings.
+
 ## Contribute shared primitives
 
 Author rules, stances, skills, roles, workflows and presentation under `primitives/`.

@@ -112,6 +112,26 @@ SHAPE_PATTERNS = [
 ]
 
 
+def load_posture(root: Path = REPO):
+    """The stance and cost resolver the hooks run, loaded by path, or None when it is missing.
+
+    Loading the same file the hooks load is what keeps one answer to "what does this variant
+    say": lint validates sidecars with the resolver's own schema, never a second copy of it.
+    """
+    import importlib.util
+
+    path = root / "claude" / "hooks" / "posture.py"
+    if not path.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("harness_posture", str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
 def load_detectors(root: Path = REPO):
     """The rule-detector registry from `root`'s checkout, or None when it has none.
 
@@ -1201,6 +1221,50 @@ def check_detectors(root: Path) -> List[str]:
     return hits
 
 
+NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+                "ten", "eleven", "twelve"]
+
+
+def check_cost_sidecars(root: Path) -> List[str]:
+    """Fail when a shipped cost sidecar breaks the schema or disagrees with its own prose.
+
+    A variant is read by a person as prose and by the resolver as data, and only one of the two
+    is tested by anything else. Holding `session_effort` and `max_parallel` to words in the `.md`
+    is what stops the pair drifting into two different opinions.
+    """
+    posture = load_posture(root)
+    directory = root / "primitives" / "stances" / "cost"
+    if posture is None or not directory.is_dir():
+        return []
+    hits = []
+    for path in sorted(directory.glob("*.json")):
+        rel = path.relative_to(root)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            hits.append(f"{rel}: not readable JSON: {exc}")
+            continue
+        if not isinstance(data, dict):
+            hits.append(f"{rel}: not a JSON object")
+            continue
+        hits += [f"{rel}: {finding}" for finding in posture.validate_sidecar(data)[1]]
+        prose = path.with_suffix(".md")
+        if not prose.is_file():
+            hits.append(f"{rel}: no {prose.name} beside it")
+            continue
+        text = prose.read_text(encoding="utf-8").lower()
+        switches = data.get("switches") if isinstance(data.get("switches"), dict) else {}
+        effort = switches.get("session_effort")
+        if isinstance(effort, str) and not re.search(r"\b" + re.escape(effort.lower()) + r"\b", text):
+            hits.append(f"{rel}: session_effort '{effort}' is not a word in {prose.name}")
+        width = switches.get("max_parallel")
+        if isinstance(width, int) and not isinstance(width, bool):
+            spellings = [str(width)] + ([NUMBER_WORDS[width]] if width < len(NUMBER_WORDS) else [])
+            if not any(re.search(r"\b" + s + r"\b", text) for s in spellings):
+                hits.append(f"{rel}: max_parallel {width} is not written in {prose.name}")
+    return hits
+
+
 def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -> List[str]:
     """Lint everything git would commit: tracked files plus untracked files that are not ignored.
     Outside a git repository, every file."""
@@ -1272,7 +1336,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     else:
         hits = lint_tree(root)
         scope = str(root)
-    hits = hits + check_context_cap(root)
+    hits = hits + check_context_cap(root) + check_cost_sidecars(root)
     if (root / "primitives" / "roles").is_dir():
         hits += ["projection drift: " + name + "; run `harness generate`"
                  for name in primitive_catalog.projection_drift(root)]
@@ -1310,11 +1374,24 @@ def cmd_stances(args: argparse.Namespace) -> int:
                                 "behavior": path.read_text(encoding="utf-8").strip()}
                         for name, path in choices.items()}}
     data["adapter_coverage"] = compatibility.coverage(REPO, choices)
+    posture = load_posture()
+    cost = posture.cost_table(cfg["stances"], cfg) if posture is not None else None
+    if cost is not None:
+        data["cost"] = cost
     if args.json:
         print(json.dumps(data, indent=2))
     else:
         for name, choice in data["stances"].items():
             say(name + "=" + choice["variant"] + "\n" + choice["behavior"] + "\n")
+        if cost is not None:
+            s = cost["switches"]
+            say("cost table: " + ", ".join(f"{k}={v}" for k, v in sorted(s.items())) +
+                f" · rows={len(cost['rows'])} · default_band={cost['default_band']}" +
+                (" · class applies" if cost["class_applies"] else " · class advisory only"))
+            say("cost sources: " + " <- ".join(c["source"] for c in cost["extends_chain"]) +
+                " (full table: `harness stances --json`)")
+            if cost["warnings"]:
+                say(f"cost warnings: {len(cost['warnings'])}; `harness stances --json` names them")
         say("Native runtime restrictions still apply; stance guidance is not proof of enforcement.")
     return 0
 

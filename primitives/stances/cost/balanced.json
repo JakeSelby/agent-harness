@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "extends": null,
+  "switches": {
+    "session_effort": "medium",
+    "max_parallel": 6,
+    "fast_mode": "off-unless-asked",
+    "compaction": "clear-at-task-end",
+    "budget_multiplier": 1.0,
+    "turn_feed": "every-turn",
+    "nudge_at": [1.0, 1.5]
+  },
+  "default_band": "B",
+  "rows": {
+    "gatherer": {"class": "strong", "effort": "low", "budget_output_tokens": 8500, "budget_tool_calls": 15},
+    "builder": {"class": "strong", "effort": "medium", "budget_output_tokens": 135000, "budget_tool_calls": 135},
+    "planner": {"class": "strong", "effort": "high", "budget_output_tokens": null, "budget_tool_calls": null},
+    "reviewer": {"class": "strong", "effort": "high", "budget_output_tokens": 22000, "budget_tool_calls": 30},
+    "spec-reviewer": {"class": "standard", "effort": "high", "budget_output_tokens": 9000, "budget_tool_calls": 20},
+    "design-judge": {"budget_output_tokens": null, "budget_tool_calls": null},
+    "log-compressor": {"class": "standard", "effort": "low", "budget_output_tokens": null, "budget_tool_calls": null},
+    "A": {"class": "standard", "effort": "low", "budget_output_tokens": 17000, "budget_tool_calls": 35},
+    "B": {"class": "strong", "effort": "low", "budget_output_tokens": 39000, "budget_tool_calls": 90},
+    "C": {"class": "strong", "effort": "high", "budget_output_tokens": 82000, "budget_tool_calls": 130}
+  }
+}

@@ -5,6 +5,7 @@ tier: frontier
 authority: read-only
 context: fresh
 delegation: none
+posture: fixed
 ---
 
 # Design judge

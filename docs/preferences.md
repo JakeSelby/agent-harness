@@ -86,6 +86,13 @@ default, `max` spends freely on hard problems. It sets how much; the `delegation
 gets delegated and to which model tier. `HARNESS_STANCE_COST=frugal claude` applies it to one
 session.
 
+Each variant's switches, and its model class, effort and soft budget per role and per band, are
+data in a JSON sidecar beside its `.md`; `harness stances --json` prints the resolved table, and
+[primitive-authoring.md](primitive-authoring.md) covers writing your own with `extends`. The
+shipped per-role budgets are the 90-day p75 from `harness usage --by role`, and the A/B/C band
+budgets are provisional — the general-purpose distribution at p50, p75 and p90 — until rerouted
+spawns have measured each band.
+
 `harness usage` summarises what sessions have actually spent, from a local file with no network
 call — see [usage.md](usage.md).
 
