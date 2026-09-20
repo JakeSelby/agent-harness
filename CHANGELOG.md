@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness remote-control install|status|uninstall` keeps one Claude Code Remote Control server
+  per `remote_control.folders` entry running under launchd on macOS, so a new session can be
+  started from the mobile app with no terminal open. A folder whose workspace trust was never
+  accepted is reported and skipped, never trusted on the user's behalf.
 - `harness tiers check` compares the Codex class table with the model catalog Codex fetches from
   its provider, offline, and fails on a mapped model that is gone, superseded or ranked out of
   order. A missing catalog reports *unverified*, not a pass.

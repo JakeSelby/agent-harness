@@ -23,6 +23,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness integrations show|register|doctor [architecture-viewer]
     harness viewer validate|open|status|replace-document|close [OPTIONS]
     harness bmad    check|apply [REPO] [--force]
+    harness remote-control install [--dry-run] | status | uninstall
     harness --version
 """
 from __future__ import annotations
@@ -46,6 +47,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
+from harness_core import remote_control
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1799,6 +1801,106 @@ def cmd_trust(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- remote control
+
+
+def launch_agents_dir() -> Path:
+    return home() / "Library" / "LaunchAgents"
+
+
+def remote_control_log_dir() -> Path:
+    return state_dir() / "remote-control"
+
+
+def claude_state_file() -> Path:
+    """Where Claude Code records per-folder workspace trust."""
+    override = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(override) if override else home()) / ".claude.json"
+
+
+def launchctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True)
+
+
+def launchd_domain() -> str:
+    return f"gui/{os.getuid()}"
+
+
+def remote_control_unload(name: str, path: Path) -> None:
+    launchctl("bootout", f"{launchd_domain()}/{name}")
+    if path.exists():
+        path.unlink()
+
+
+def cmd_remote_control(args: argparse.Namespace) -> int:
+    """Keep one `claude remote-control` server per configured folder running under launchd."""
+    if platform.system() != "Darwin":
+        say("remote-control: launchd agents are macOS only; nothing done")
+        return 1
+    agents = launch_agents_dir()
+    if args.action == "uninstall":
+        owned = remote_control.installed(agents)
+        for name, path in owned.items():
+            remote_control_unload(name, path)
+            say(f"removed {name}")
+        say(f"remote-control: {len(owned)} agent(s) removed")
+        return 0
+    try:
+        opts = remote_control.settings(load_config())
+    except ValueError as exc:
+        raise SystemExit(f"remote-control: {exc}")
+    serve, skipped, stale = remote_control.plan(opts, agents, claude_state_file())
+    if args.action == "status":
+        for folder in serve:
+            name = remote_control.label(folder)
+            probe = launchctl("print", f"{launchd_domain()}/{name}")
+            found = re.search(r"^\s*state = (\S+)", probe.stdout, re.M) if probe.returncode == 0 else None
+            state = found.group(1) if found else "not loaded; run `harness remote-control install`"
+            say(f"{folder}: {state}")
+            say(f"  log: {remote_control_log_dir() / (name + '.log')}")
+        for folder, reason in skipped:
+            say(f"{folder}: skipped, {reason}")
+        for name in stale:
+            say(f"{name}: installed but no longer configured; `install` removes it")
+        if not (serve or skipped or stale):
+            say("remote-control: no folders configured; set remote_control.folders in " + str(config_path()))
+        return 0
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        raise SystemExit("remote-control: `claude` is not on PATH")
+    dry = getattr(args, "dry_run", False)
+    for name in stale:
+        say(("would remove " if dry else "removed ") + name)
+        if not dry:
+            remote_control_unload(name, agents / (name + ".plist"))
+    failed = 0
+    for folder in serve:
+        name = remote_control.label(folder)
+        path = agents / (name + ".plist")
+        body = remote_control.render(folder, opts, claude_bin, home(), remote_control_log_dir())
+        loaded = launchctl("print", f"{launchd_domain()}/{name}").returncode == 0
+        # Reloading an unchanged agent would cut off every session its server is carrying.
+        if loaded and path.exists() and path.read_bytes() == body:
+            say(f"unchanged {folder}")
+            continue
+        say(("would serve " if dry else "serving ") + str(folder))
+        if dry:
+            continue
+        agents.mkdir(parents=True, exist_ok=True)
+        remote_control_log_dir().mkdir(parents=True, exist_ok=True)
+        launchctl("bootout", f"{launchd_domain()}/{name}")
+        path.write_bytes(body)
+        result = launchctl("bootstrap", launchd_domain(), str(path))
+        if result.returncode != 0:
+            failed += 1
+            say(f"  launchctl bootstrap failed: {result.stderr.strip()}")
+    for folder, reason in skipped:
+        say(f"skipped {folder}: {reason}")
+    if not (serve or skipped):
+        say("remote-control: no folders configured; set remote_control.folders in " + str(config_path()))
+    return 1 if failed else 0
+
+
 # A rule that trips in more than this share of sessions is prose the agent keeps walking past,
 # and wants to be a hook; one with no hit at all over a full window can leave the 200 lines.
 # Both need a window wide enough for the share to mean anything.
@@ -2270,6 +2372,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     remove.add_argument("name")
     remove.add_argument("repo", nargs="?")
     remove.set_defaults(func=cmd_worktree)
+
+    p = sub.add_parser("remote-control", help="keep a Claude Code Remote Control server running per configured folder (macOS)")
+    rc_sub = p.add_subparsers(dest="action", required=True)
+    rc_install = rc_sub.add_parser("install", help="write and load one launchd agent per remote_control.folders entry")
+    rc_install.add_argument("--dry-run", action="store_true")
+    rc_install.set_defaults(func=cmd_remote_control)
+    rc_sub.add_parser("status", help="report each configured folder's agent").set_defaults(func=cmd_remote_control)
+    rc_sub.add_parser("uninstall", help="unload and remove every agent").set_defaults(func=cmd_remote_control)
 
     p = sub.add_parser("init", help="write the config file by answering questions")
     p.add_argument("--force", action="store_true", help="replace an existing config file")

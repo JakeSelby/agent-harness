@@ -30,6 +30,12 @@
     "manage": true
   },
   "primitive_roots": [],
+  "remote_control": {
+    "folders": [],
+    "spawn": "worktree",
+    "permission_mode": "default",
+    "keep_awake": false
+  },
   "integrations": {
     "architecture-viewer": {
       "implementation": "builtin"
