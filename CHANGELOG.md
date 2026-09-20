@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Add the `designer` role: one pass of visual design work toward a locked target, validated and
+  captured, never self-scored. It declares the `frontier` class, which is the only way a spawn
+  reaches the strongest model now that the hook refuses it by request. The design loop hands it
+  the build and fix steps; `design-judge` still scores from a fresh context.
 - `harness tiers check` compares the Codex class table with the model catalog Codex fetches from
   its provider, offline, and fails on a mapped model that is gone, superseded or ranked out of
   order. A missing catalog reports *unverified*, not a pass.

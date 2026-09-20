@@ -13,6 +13,9 @@
     "design-judge": {
       "model_reasoning_effort": "high"
     },
+    "designer": {
+      "model_reasoning_effort": "high"
+    },
     "gatherer": {
       "model_reasoning_effort": "low"
     },

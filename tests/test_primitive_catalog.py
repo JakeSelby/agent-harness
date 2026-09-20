@@ -26,7 +26,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_roles_name_a_class_and_each_adapter_maps_it(self):
         classes = {p.stem: catalog.frontmatter(p)[0]["tier"] for p in (REPO / "primitives/roles").glob("*.md")}
-        self.assertEqual(classes, {"builder": "strong", "design-judge": "frontier", "gatherer": "strong",
+        self.assertEqual(classes, {"builder": "strong", "design-judge": "frontier", "designer": "frontier", "gatherer": "strong",
                                    "log-compressor": "standard", "planner": "strong", "reviewer": "strong",
                                    "spec-reviewer": "standard"})
         for source in (REPO / "primitives/roles").glob("*.md"):
@@ -101,7 +101,7 @@ class CatalogTests(unittest.TestCase):
         items = catalog.catalog(REPO)["primitives"]
         self.assertEqual(len(items), len({(x["kind"], x["id"]) for x in items}))
         self.assertTrue(all(x["source"].startswith("primitives/") for x in items))
-        self.assertEqual(len([x for x in items if x["kind"] == "roles"]), 7)
+        self.assertEqual(len([x for x in items if x["kind"] == "roles"]), 8)
 
     def test_custom_stance_switch_changes_both_instruction_projections(self):
         with tempfile.TemporaryDirectory() as temp:
