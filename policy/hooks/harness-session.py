@@ -5,6 +5,7 @@ and check BMad integration without modifying repository configuration.
 
 Silent when there is nothing to say, so a clean session costs no context. Never fails.
 """
+import importlib.util
 import json
 import os
 import subprocess
@@ -12,8 +13,8 @@ import sys
 import time
 from pathlib import Path
 
+HOOKS = Path(__file__).resolve().parent
 STATE = Path.home() / ".local" / "state" / "agent-harness"
-CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
 PROGRESS = (".claude", "progress.md")
 PROGRESS_LINES = 80
 LOG_COMMITS = 5
@@ -31,6 +32,18 @@ def load(path):
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
+    except Exception:
+        return None
+
+
+def sibling(name):
+    """A module beside this hook, or None. A hook must never fail a session because an import did."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "harness_" + name.replace("-", "_"), str(HOOKS / (name + ".py")))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
     except Exception:
         return None
 
@@ -62,22 +75,22 @@ def drift_line(repo):
 def override_lines(config):
     lines = []
     stances = (config or {}).get("stances", {})
-    for key, value in os.environ.items():
-        if key.startswith("HARNESS_STANCE_"):
-            name = key[len("HARNESS_STANCE_"):].lower().replace("_", "-")
-            if stances.get(name) != value:
-                lines.append(f"For this session the `{name}` stance is `{value}` "
-                             f"(config says `{stances.get(name, 'unset')}`); follow the "
-                             f"`{value}` variant under primitives/stances/{name}/ in the harness "
-                             "checkout instead of the linked one.")
-        elif key == "HARNESS_PERMISSIONS":
-            if (config or {}).get("permissions") != value:
-                lines.append(f"For this session the requested permission posture is `{value}`; native controls remain unchanged and authoritative.")
+    module = sibling("posture")
+    for name, value in (module.overrides(os.environ) if module else {}).items():
+        if stances.get(name) != value:
+            lines.append(f"For this session the `{name}` stance is `{value}` "
+                         f"(config says `{stances.get(name, 'unset')}`); follow the "
+                         f"`{value}` variant under primitives/stances/{name}/ in the harness "
+                         "checkout instead of the linked one.")
+    permissions = os.environ.get("HARNESS_PERMISSIONS")
+    if permissions and (config or {}).get("permissions") != permissions:
+        lines.append(f"For this session the requested permission posture is `{permissions}`; native controls remain unchanged and authoritative.")
     return lines
 
 
 def resolved_overrides(repo, config):
-    if not any(key.startswith("HARNESS_STANCE_") or key == "HARNESS_PROJECT_CONFIG" for key in os.environ):
+    module = sibling("posture")
+    if not ((module and module.overrides(os.environ)) or os.environ.get("HARNESS_PROJECT_CONFIG")):
         return []
     out = subprocess.run([sys.executable, str(Path(repo) / "bin" / "harness"), "stances", "--json"],
                          capture_output=True, text=True, timeout=remaining(2))
@@ -143,9 +156,17 @@ def payload():
     return data if isinstance(data, dict) else {}
 
 
+def config_path():
+    """The configuration the stances were resolved from, so "config says X" names that file."""
+    module = sibling("posture")
+    if module:
+        return module.config_path(os.environ)
+    return Path.home() / ".config" / "agent-harness" / "config.json"
+
+
 def main():
     manifest = load(STATE / "manifest.json")
-    config = load(CONFIG)
+    config = load(config_path())
     lines = []
     if manifest and manifest.get("repo"):
         d = drift_line(manifest["repo"])
