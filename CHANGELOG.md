@@ -15,6 +15,22 @@ All notable changes to this project are documented here. The format follows
   that predates the workers left alone, and the priced-nothing variant doing none of it. Evidence
   is scoped to the harness version it records, so 0.9.0 and 0.10.0 records stay valid history.
 
+### Fixed
+
+- The usage feed's line for a synchronous subagent return no longer stops short of that agent's
+  last response. Claude Code writes one API response as several records, and the return could
+  fire between a partial streaming count and the record that ends the response — 143 output
+  tokens reported live for an agent a later scan put at 278. The return now waits a bounded
+  moment (at most a second, over the transcript's tail) for the response to end, says `(so far)`
+  when it never does, and raises the session totals from the settled figure the journal brings
+  afterwards without naming the agent a second time.
+- A usage row names a subagent's model one way. A routed spawn's row carried the alias the spawn
+  hook asked for and a directly spawned agent's the full id its transcript records, so one model
+  appeared under two names. A subagent row now records what its own transcript reports — the most
+  frequent model across its assistant records — and falls back to the requested alias only when
+  it recorded none; `harness usage --rescan` normalises rows already on file. Worker rows still
+  record what the worker reported, which is the only thing that knows.
+
 ## [0.11.0] — 2026-09-20
 
 ### Added
