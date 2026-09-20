@@ -14,10 +14,11 @@ for the session. `strict` says what an unusable file means: the dispatcher wants
 a hook wants the spawn to run anyway, so it passes `strict=False` and takes the layers it
 could read.
 
-It also resolves the active `cost` variant's JSON sidecar — switches, per-role and per-band
-rows, the default band — over its `extends` chain. Schema and authoring:
-`docs/primitive-authoring.md`. No number lives here: an unreadable or absent sidecar yields an
-empty table and a warning, never a guessed default.
+`cost_table(env)`, and `resolve(env, table=True)`, additionally resolve the active `cost`
+variant's JSON sidecar — switches, per-role and per-band rows, the default band — over its
+`extends` chain. Schema and authoring: `docs/primitive-authoring.md`. It is opt-in because it
+reads more files than a stance question needs. No number lives here: an unusable sidecar yields
+the base variant's table and a warning, never a guessed default.
 
 Import-cheap on purpose: no work at import, JSON reads only, because the dispatcher loads
 this on every tool call.
@@ -58,9 +59,12 @@ SWITCH_VALUES = {
     "compaction": ("clear-only", "clear-at-task-end", "compact-allowed"),
     "turn_feed": ("off", "thresholds", "every-turn"),
 }
-SWITCH_KEYS = tuple(SWITCH_VALUES) + ("max_parallel", "budget_multiplier", "nudge_at")
-ROW_KEYS = ("class", "effort", "budget_output_tokens", "budget_tool_calls")
 BUDGET_KEYS = ("budget_output_tokens", "budget_tool_calls")
+# Ceilings that only rule out a number no machine could mean. A budget is soft, so the cap is
+# about arithmetic that stays finite, not about an opinion on how much is too much.
+MAX_MULTIPLIER = 100
+MAX_BUDGET = 10 ** 9
+MAX_NUDGES = 8
 SIDECAR_KEYS = ("schema_version", "extends", "switches", "default_band", "rows")
 
 
@@ -130,20 +134,28 @@ def _identifier(value):
             and all(c.isalnum() or c == "-" for c in value) and value.isascii())
 
 
-def _positive_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+def _number(value, low, high, integer=False):
+    """A finite in-range number. `True` is not 1 here, and neither NaN nor an infinity is a value.
+
+    JSON admits `Infinity` and `NaN`, and Python's `json` reads them, so a multiplier arriving
+    from a file can be either; both would raise out of the arithmetic below rather than warn.
+    """
+    if isinstance(value, bool) or not isinstance(value, int if integer else (int, float)):
+        return False
+    if value != value or value in (float("inf"), float("-inf")):
+        return False
+    return low <= value <= high
 
 
-def _budget(value):
-    return value is None or (isinstance(value, int) and not isinstance(value, bool) and value >= 0)
-
-
-def validate_sidecar(data):
+def validate_sidecar(data, roles=None):
     """`(usable copy, findings)` for one sidecar object; every finding drops the value it names.
 
     Findings are warnings to the resolver and failures to lint, which is the whole point: a
     switch added in a later release must never break a variant somebody else authored, while a
     shipped variant with an unknown key is a mistake nobody should have to discover at runtime.
+
+    `roles` is the role catalog when the caller has one, so a row naming no role and no band is
+    reported rather than silently applying to nothing.
     """
     findings, clean = [], {}
     for key in sorted(data):
@@ -174,11 +186,12 @@ def validate_sidecar(data):
         if key in SWITCH_VALUES:
             ok = value in SWITCH_VALUES[key]
         elif key == "max_parallel":
-            ok = value is None or (isinstance(value, int) and not isinstance(value, bool) and value > 0)
+            ok = value is None or _number(value, 1, MAX_BUDGET, integer=True)
         elif key == "budget_multiplier":
-            ok = _positive_number(value)
+            ok = _number(value, 0, MAX_MULTIPLIER) and value > 0
         elif key == "nudge_at":
-            ok = isinstance(value, list) and all(_positive_number(v) for v in value)
+            ok = (isinstance(value, list) and len(value) <= MAX_NUDGES
+                  and all(_number(v, 0, MAX_MULTIPLIER) and v > 0 for v in value))
         else:
             findings.append("unknown switch '" + key + "'")
             continue
@@ -198,6 +211,10 @@ def validate_sidecar(data):
         if not (name in BANDS or _identifier(name)):
             findings.append("row '" + str(name) + "' is a role name or a band")
             continue
+        if roles is not None and name not in BANDS and name not in roles:
+            # A row naming nothing applies to nothing, which is a typo nobody would see.
+            findings.append("row '" + name + "' names no role and no band")
+            continue
         if not isinstance(row, dict):
             findings.append("row '" + name + "' is an object")
             continue
@@ -211,7 +228,7 @@ def validate_sidecar(data):
             elif key == "effort":
                 ok = value in EFFORTS
             elif key in BUDGET_KEYS:
-                ok = _budget(value)
+                ok = value is None or _number(value, 0, MAX_BUDGET, integer=True)
             else:
                 findings.append("row '" + name + "' has an unknown key '" + str(key) + "'")
                 continue
@@ -237,10 +254,40 @@ def stance_roots(config=None, root=None):
     return roots
 
 
+def primitive_roots(config=None, root=None, kind="stances"):
+    """The primitive directories of one kind, the built-in one first, then a user's roots."""
+    roots = [(root or ROOT) / "primitives" / kind]
+    entries = config.get("primitive_roots") if isinstance(config, dict) else None
+    for entry in entries if isinstance(entries, list) else []:
+        if isinstance(entry, str) and entry.strip():
+            path = Path(entry).expanduser()
+            if path.is_absolute():
+                roots.append(path / kind)
+    return roots
+
+
+def stance_roots(config=None, root=None):
+    return primitive_roots(config, root, "stances")
+
+
 def sidecar_path(variant, roots):
+    """The first root holding `cost/<variant>.json`, or None. Never reads outside a root.
+
+    The variant name arrives from a config file or `HARNESS_STANCE_COST`, so it is held to the
+    same identifier rule as the `.md` it accompanies, and the file it names must still resolve
+    inside the root it was found in: a symlink out of the tree is a read nobody asked for.
+    """
+    if not _identifier(variant):
+        return None
     for source in roots:
         path = source / "cost" / (variant + ".json")
-        if path.is_file():
+        if not path.is_file():
+            continue
+        try:
+            real, base = path.resolve(), source.resolve()
+        except OSError:
+            continue
+        if real == base or base in real.parents:
             return path
     return None
 
@@ -262,25 +309,44 @@ def _load_sidecar(path, strict, warnings):
     return data
 
 
-def fixed_roles(root=None):
-    """Role names whose frontmatter carries `posture: fixed`; a missing catalog is an empty set.
+def _frontmatter(path):
+    """A role file's frontmatter fields, or `{}`; the same `key: value` shape `catalog` parses."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    if not text.startswith("---\n") or text.count("---") < 2:
+        return {}
+    fields = {}
+    for line in text.split("---", 2)[1].strip().splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip()] = value.strip()
+    return fields
+
+
+def role_catalog(config=None, root=None):
+    """`(every role name, the names whose frontmatter says `posture: fixed`)`.
 
     A verifier's class and effort are its contract, so a variant row may budget it but never
-    down-class it. The role file is the one place that says so.
+    down-class it, and the role file is the one place that says so. Roles a user added through
+    `primitive_roots` count the same as shipped ones; a missing catalog is two empty sets, which
+    is how an installed hook with no checkout beside it behaves.
     """
-    names = set()
-    directory = (root or ROOT) / "primitives" / "roles"
-    for path in sorted(directory.glob("*.md")) if directory.is_dir() else []:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if not text.startswith("---\n"):
-            continue
-        header = text.split("---", 2)[1]
-        if any(line.strip() == "posture: fixed" for line in header.splitlines()):
+    names, fixed = set(), set()
+    for directory in primitive_roots(config, root, "roles"):
+        for path in sorted(directory.glob("*.md")) if directory.is_dir() else []:
+            fields = _frontmatter(path)
+            if not fields:
+                continue
             names.add(path.stem)
-    return names
+            if fields.get("posture") == "fixed":
+                fixed.add(path.stem)
+    return names, fixed
+
+
+def fixed_roles(config=None, root=None):
+    return role_catalog(config, root)[1]
 
 
 def _merge(base, layer):
@@ -301,47 +367,59 @@ def _round_to(value, step):
     return int((value + step / 2) // step) * step
 
 
-def cost_table(stances=None, config=None, strict=True, root=None):
+def table_for(stances=None, config=None, strict=True, root=None):
     """The active cost variant resolved: switches, rows, default band, chain and warnings.
 
     Budgets carry both figures: `base_*` is what the variant wrote and `budget_*` is that times
-    the resolved `budget_multiplier`, so a reader never multiplies twice.
+    the resolved `budget_multiplier`, so a reader never multiplies twice. A link that cannot be
+    followed — no sidecar, unreadable, a schema this release does not know, a name that is not
+    an identifier — resolves to the base variant rather than to an empty table.
     """
     stances = dict(DEFAULT_STANCES) if stances is None else stances
     variant = stances.get("cost") or BASE_COST_VARIANT
     roots = stance_roots(config, root)
+    roles, fixed = role_catalog(config, root)
     warnings, chain, layers, seen = [], [], [], set()
-    name, first = variant, True
+    name = variant
     while name:
         if name in seen:
-            warnings.append("extends cycle at cost variant '" + name + "'")
+            warnings.append("extends cycle at cost variant '" + str(name) + "'")
             break
         if len(chain) >= MAX_EXTENDS_DEPTH:
             warnings.append("extends chain deeper than " + str(MAX_EXTENDS_DEPTH) +
-                            " variants, stopped at '" + name + "'")
+                            " variants, stopped at '" + str(name) + "'")
             break
         seen.add(name)
-        path = sidecar_path(name, roots)
-        data = _load_sidecar(path, strict, warnings) if path else None
-        if data is None:
-            if first and name != BASE_COST_VARIANT:
-                # No sidecar of its own means the base variant's table, not an empty one.
-                name, first = BASE_COST_VARIANT, False
-                continue
+        data = None
+        if not _identifier(name):
+            warnings.append("cost variant '" + str(name) + "' is not a primitive identifier")
+        else:
+            path = sidecar_path(name, roots)
             if path is None:
                 warnings.append("cost variant '" + name + "' has no sidecar")
+            else:
+                data = _load_sidecar(path, strict, warnings)
+                version = data.get("schema_version") if data is not None else None
+                if data is not None and version != SIDECAR_SCHEMA_VERSION:
+                    warnings.append(name + ".json: schema_version " + json.dumps(version) +
+                                    " is not one this release reads")
+                    data = None
+        if data is None:
+            if name != BASE_COST_VARIANT and BASE_COST_VARIANT not in seen:
+                # An unusable link is the base variant's table, not an empty one.
+                name = BASE_COST_VARIANT
+                continue
             break
-        clean, findings = validate_sidecar(data)
+        clean, findings = validate_sidecar(data, roles or None)
         warnings.extend(name + ".json: " + finding for finding in findings)
         chain.append({"variant": name, "source": str(path)})
         layers.append(clean)
-        name, first = clean.get("extends"), False
+        name = clean.get("extends")
     resolved = {}
     for layer in reversed(layers):
         resolved = _merge(resolved, layer)
     switches = resolved.get("switches", {})
     multiplier = switches.get("budget_multiplier", 1)
-    fixed = fixed_roles(root)
     rows = {}
     for row_name, cells in sorted(resolved.get("rows", {}).items()):
         row = {"class": cells.get("class"), "effort": cells.get("effort")}
@@ -358,24 +436,38 @@ def cost_table(stances=None, config=None, strict=True, root=None):
             "class_applies": stances.get("delegation") == "tiered", "warnings": warnings}
 
 
-def _selection(env, strict):
+def _selection(config, env, strict):
     stances = dict(DEFAULT_STANCES)
-    stances.update(_stances_of(_user_config(env, strict)))
+    stances.update(_stances_of(config))
     stances.update(_stances_of(_project_config(env, strict)))
     stances.update(overrides(env))
     return stances
 
 
-def resolve(env=None, strict=True):
-    """The posture in force: the stances, and the active cost variant's resolved table.
+def resolve(env=None, strict=True, table=False):
+    """The posture in force: `{"stances": {dimension: variant}}`, every dimension present.
 
     A missing config file is the default set and never an empty map, which would read as
-    "no stance in force". Later steps widen the returned mapping; the keys are stable.
+    "no stance in force". The cost table is opt-in with `table=True`, because most callers are
+    hot-path hooks answering one question and walking sidecars for them would be pure cost.
     """
     env = os.environ if env is None else env
-    stances = _selection(env, strict)
-    table = cost_table(stances, _user_config(env, strict), strict=strict)
-    return dict(table, stances=stances)
+    config = _user_config(env, strict)
+    stances = _selection(config, env, strict)
+    if not table:
+        return {"stances": stances}
+    return dict(table_for(stances, config, strict=strict), stances=stances)
+
+
+def cost_table(env=None, strict=False, root=None):
+    """The active cost variant's table for a caller that has only an environment.
+
+    Non-strict by default: an unusable sidecar somewhere on the chain is a warning in the table,
+    never a reason for the work in hand to stop.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, strict)
+    return table_for(_selection(config, env, strict), config, strict=strict, root=root)
 
 
 def selected(name, fallback=None, env=None, strict=True):
@@ -384,7 +476,7 @@ def selected(name, fallback=None, env=None, strict=True):
     Reads the stance ladder only: a hook asking one question should not pay for the cost table.
     """
     env = os.environ if env is None else env
-    return _selection(env, strict).get(name) or fallback
+    return _selection(_user_config(env, strict), env, strict).get(name) or fallback
 
 
 def ladder(runtime="claude-code", root=None):

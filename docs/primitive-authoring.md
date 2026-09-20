@@ -65,8 +65,10 @@ policy, then `stances/cost/careful.json`:
 
 `extends` names another cost variant and may chain up to five deep; cycles stop resolution with
 a warning. Each layer is merged over the one it extends, switch by switch and row cell by row
-cell, so the example above changes three values and inherits every other one. A variant with no
-sidecar resolves to `balanced`'s table.
+cell, so the example above changes three values and inherits every other one. A link that cannot
+be followed — no sidecar, unreadable JSON, a `schema_version` the installed release does not
+read, a name that is not a primitive identifier — resolves to `balanced`'s table with a warning,
+so a variant is never silently empty.
 
 A row is keyed by a role name or by a band — `A`, `B` or `C` — and may set `class`, `effort`,
 `budget_output_tokens` and `budget_tool_calls`; any of them may be omitted, and a null budget

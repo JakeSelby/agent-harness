@@ -9,6 +9,7 @@ Run: python3 -m unittest discover tests
 import importlib.machinery
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -54,7 +55,7 @@ class CustomRoot(unittest.TestCase):
 
     def resolve(self, variant, strict=True, delegation="tiered"):
         stances = dict(posture.DEFAULT_STANCES, cost=variant, delegation=delegation)
-        return posture.cost_table(stances, {"primitive_roots": [str(self.root)]}, strict=strict)
+        return posture.table_for(stances, {"primitive_roots": [str(self.root)]}, strict=strict)
 
 
 class Extends(CustomRoot):
@@ -172,7 +173,7 @@ class Budgets(CustomRoot):
         self.assertIsNone(row["base_budget_output_tokens"])
 
     def test_the_shipped_frugal_multiplier_is_applied_to_every_shipped_row(self):
-        frugal = posture.cost_table(dict(posture.DEFAULT_STANCES, cost="frugal"))
+        frugal = posture.table_for(dict(posture.DEFAULT_STANCES, cost="frugal"))
         multiplier = sidecar("frugal")["switches"]["budget_multiplier"]
         for name, row in frugal["rows"].items():
             with self.subTest(row=name):
@@ -189,7 +190,7 @@ class FixedRoles(unittest.TestCase):
                          {"reviewer", "spec-reviewer", "design-judge", "log-compressor"})
 
     def test_a_fixed_role_keeps_its_own_class_and_effort_and_takes_the_budgets(self):
-        rows = posture.cost_table(dict(posture.DEFAULT_STANCES, cost="balanced"))["rows"]
+        rows = posture.table_for(dict(posture.DEFAULT_STANCES, cost="balanced"))["rows"]
         self.assertEqual(rows["reviewer"]["posture"], "fixed")
         self.assertIsNone(rows["reviewer"]["class"])
         self.assertIsNone(rows["reviewer"]["effort"])
@@ -225,27 +226,37 @@ class ShippedValues(unittest.TestCase):
         self.assertEqual(sorted(p.stem for p in COST.glob("*.json")),
                          sorted(p.stem for p in COST.glob("*.md")))
 
-    def test_the_base_variant_reproduces_todays_class_and_effort_for_every_role(self):
+    def test_the_base_variant_reproduces_todays_class_and_effort_for_every_role_it_names(self):
+        # A role with no row is unbudgeted and takes its own class and effort, which is what a
+        # role added after this variant was written does until somebody measures it.
         rows = sidecar("balanced")["rows"]
         efforts = json.loads((REPO / "adapters" / "claude-code" / "bindings.json")
                              .read_text(encoding="utf-8"))["roles"]
-        for path in sorted(ROLES.glob("*.md")):
-            fields, _ = catalog.role_contract(REPO, path.stem)
-            with self.subTest(role=path.stem):
-                self.assertIn(path.stem, rows)
-                row = rows[path.stem]
+        roles = sorted(p.stem for p in ROLES.glob("*.md"))
+        self.assertTrue(set(rows) - set(posture.BANDS) <= set(roles), sorted(rows))
+        for name in roles:
+            fields, _ = catalog.role_contract(REPO, name)
+            if name not in rows:
+                continue
+            with self.subTest(role=name):
+                row = rows[name]
                 if fields["tier"] == catalog.TIER_CLASSES[0]:
                     # A row may never name the top class, so the role's own tier is all there is.
                     self.assertNotIn("class", row)
                     self.assertNotIn("effort", row)
                     continue
                 self.assertEqual(row["class"], fields["tier"])
-                self.assertEqual(row["effort"], efforts[path.stem]["effort"])
+                self.assertEqual(row["effort"], efforts[name]["effort"])
+
+    def test_the_new_frontier_role_takes_no_row_and_no_fixed_marking(self):
+        self.assertNotIn("designer", sidecar("balanced")["rows"])
+        self.assertNotIn("designer", posture.fixed_roles())
 
     def test_the_shipped_sidecars_are_valid_against_the_schema(self):
+        roles = posture.role_catalog()[0]
         for path in sorted(COST.glob("*.json")):
             with self.subTest(variant=path.stem):
-                self.assertEqual(posture.validate_sidecar(sidecar(path.stem))[1], [])
+                self.assertEqual(posture.validate_sidecar(sidecar(path.stem), roles)[1], [])
 
     def test_the_prose_files_did_not_grow(self):
         for path in sorted(COST.glob("*.md")):
@@ -293,6 +304,31 @@ class LintAndCli(unittest.TestCase):
         self.assertEqual(len(hits), 1, hits)
         self.assertIn("unknown key 'invented'", hits[0])
 
+    def test_lint_reports_a_row_naming_neither_a_band_nor_a_role(self):
+        (self.root / "primitives" / "roles").mkdir(parents=True)
+        shutil.copy2(ROLES / "gatherer.md", self.root / "primitives" / "roles" / "gatherer.md")
+        self.variant("Session effort runs low.\n",
+                     {"schema_version": 1, "switches": {"session_effort": "low"},
+                      "rows": {"gatherer": {"effort": "low"}, "gatherers": {"effort": "low"}}})
+        hits = harness.check_cost_sidecars(self.root)
+        self.assertEqual(len(hits), 1, hits)
+        self.assertIn("'gatherers' names no role and no band", hits[0])
+
+    def test_lint_reports_an_unusable_number_in_a_shipped_sidecar(self):
+        self.variant("Session effort runs low.\n",
+                     {"schema_version": 1, "switches": {"session_effort": "low",
+                                                        "budget_multiplier": float("inf")}})
+        hits = harness.check_cost_sidecars(self.root)
+        self.assertEqual(len(hits), 1, hits)
+        self.assertIn("budget_multiplier", hits[0])
+
+    def test_a_schema_version_this_release_does_not_read_is_a_lint_finding(self):
+        self.variant("Session effort runs low.\n",
+                     {"schema_version": 2, "switches": {"session_effort": "low"}})
+        hits = harness.check_cost_sidecars(self.root)
+        self.assertEqual(len(hits), 1, hits)
+        self.assertIn("schema_version", hits[0])
+
     def test_the_shipped_tree_passes_the_sidecar_lint(self):
         self.assertEqual(harness.check_cost_sidecars(REPO), [])
 
@@ -308,6 +344,208 @@ class LintAndCli(unittest.TestCase):
         self.assertEqual(cost["extends_chain"][0]["source"], str(COST / "balanced.json"))
         self.assertEqual(cost["rows"]["gatherer"]["budget_output_tokens"],
                          sidecar("balanced")["rows"]["gatherer"]["budget_output_tokens"])
+
+
+class NamesAndPaths(CustomRoot):
+    """A variant name comes from a config file or the environment, so it is never a path."""
+
+    def test_a_traversing_variant_name_reads_nothing_and_falls_back(self):
+        outside = Path(self.tmp.name) / "outside.json"
+        outside.write_text(json.dumps({"schema_version": 1, "switches": {"max_parallel": 99}}),
+                           encoding="utf-8")
+        for name in ("../../outside", "/etc/passwd", "cost/../../outside", "Balanced", "b a d"):
+            with self.subTest(name=name):
+                table = self.resolve(name)
+                self.assertEqual([c["variant"] for c in table["extends_chain"]],
+                                 [posture.BASE_COST_VARIANT])
+                self.assertEqual(table["switches"]["max_parallel"], 6)
+                self.assertTrue(table["warnings"])
+        self.assertIsNone(posture.sidecar_path("../../outside",
+                                               [self.root / "stances"]))
+
+    def test_a_sidecar_symlinked_out_of_its_root_is_not_read(self):
+        outside = Path(self.tmp.name) / "outside.json"
+        outside.write_text(json.dumps({"schema_version": 1, "switches": {"max_parallel": 99}}),
+                           encoding="utf-8")
+        link = self.root / "stances" / "cost" / "escape.json"
+        link.symlink_to(outside)
+        link.with_suffix(".md").write_text("# escape\n", encoding="utf-8")
+        self.assertIsNone(posture.sidecar_path("escape", [self.root / "stances"]))
+        table = self.resolve("escape")
+        self.assertEqual(table["switches"]["max_parallel"], 6)
+        self.assertTrue(any("no sidecar" in w for w in table["warnings"]), table["warnings"])
+
+    def test_an_extends_link_to_a_variant_with_no_sidecar_resolves_to_the_base(self):
+        self.write("orphan", {"schema_version": 1, "extends": "absent",
+                              "switches": {"session_effort": "high"}})
+        table = self.resolve("orphan")
+        self.assertEqual([c["variant"] for c in table["extends_chain"]],
+                         ["orphan", posture.BASE_COST_VARIANT])
+        self.assertEqual(table["switches"]["session_effort"], "high")
+        self.assertEqual(table["rows"]["builder"]["budget_output_tokens"], 135000)
+        self.assertTrue(any("absent" in w for w in table["warnings"]), table["warnings"])
+
+    def test_a_schema_version_this_release_does_not_read_falls_back_to_the_base(self):
+        self.write("future", {"schema_version": 2, "switches": {"max_parallel": 99}})
+        table = self.resolve("future")
+        self.assertEqual([c["variant"] for c in table["extends_chain"]],
+                         [posture.BASE_COST_VARIANT])
+        self.assertEqual(table["switches"]["max_parallel"], 6)
+        self.assertTrue(any("schema_version" in w for w in table["warnings"]), table["warnings"])
+
+
+class Numbers(CustomRoot):
+    """No number from a file reaches the arithmetic without being finite and in range."""
+
+    def unusable(self, switches=None, rows=None):
+        data = {"schema_version": 1, "extends": "balanced"}
+        if switches:
+            data["switches"] = switches
+        if rows:
+            data["rows"] = rows
+        self.write("odd", data)
+        return self.resolve("odd")
+
+    def test_a_multiplier_that_is_not_a_finite_number_warns_and_is_dropped(self):
+        for value in (float("inf"), float("nan"), 1e308, 0, -1, True, "2", None):
+            with self.subTest(multiplier=value):
+                table = self.unusable({"budget_multiplier": value})
+                self.assertEqual(len(table["warnings"]), 1, table["warnings"])
+                self.assertIn("budget_multiplier", table["warnings"][0])
+                # The base variant's multiplier still applies; nothing overflowed.
+                self.assertEqual(table["rows"]["gatherer"]["budget_output_tokens"], 8500)
+
+    def test_an_out_of_range_budget_or_nudge_list_warns_and_is_dropped(self):
+        table = self.unusable({"nudge_at": [1.0, float("inf")]})
+        self.assertIn("nudge_at", table["warnings"][0])
+        table = self.unusable({"nudge_at": [1.0] * (posture.MAX_NUDGES + 1)})
+        self.assertIn("nudge_at", table["warnings"][0])
+        table = self.unusable(rows={"gatherer": {"budget_output_tokens": 10 ** 12}})
+        self.assertIn("budget_output_tokens", table["warnings"][0])
+        self.assertEqual(table["rows"]["gatherer"]["base_budget_output_tokens"], 8500)
+
+    def test_a_large_but_usable_multiplier_still_resolves(self):
+        table = self.unusable({"budget_multiplier": posture.MAX_MULTIPLIER})
+        self.assertEqual(table["warnings"], [])
+        self.assertEqual(table["rows"]["gatherer"]["budget_output_tokens"], 850000)
+
+
+class FrontmatterSpacing(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def role(self, directory, name, line):
+        directory.mkdir(parents=True, exist_ok=True)
+        text = (ROLES / "reviewer.md").read_text(encoding="utf-8").replace(
+            "name: reviewer", "name: " + name).replace("posture: fixed", line)
+        (directory / (name + ".md")).write_text(text, encoding="utf-8")
+
+    def test_whitespace_around_the_value_does_not_lose_the_protection(self):
+        self.role(self.root / "primitives" / "roles", "padded", "posture:   fixed  ")
+        self.assertIn("padded", posture.fixed_roles(root=self.root))
+        # The library accepts the same file, so the two cannot disagree about one role.
+        self.assertEqual(catalog.role_contract(self.root, "padded")[0]["posture"], "fixed")
+
+    def test_a_role_from_a_user_primitive_root_can_be_fixed_too(self):
+        custom = self.root / "custom"
+        self.role(custom / "roles", "auditor", "posture: fixed")
+        names, fixed = posture.role_catalog({"primitive_roots": [str(custom)]}, self.root)
+        self.assertIn("auditor", names)
+        self.assertIn("auditor", fixed)
+        self.assertNotIn("auditor", posture.role_catalog(None, self.root)[0])
+
+
+class OffTheHotPath(unittest.TestCase):
+    """The cost table is opt-in: a hook that never asked for it must never pay for it."""
+
+    PAYLOADS = {
+        "usage-log.py": {"hook_event_name": "SessionEnd", "session_id": "s1",
+                         "transcript_path": "", "cwd": "."},
+        "tier-agent-spawns.py": {"tool_name": "Agent", "tool_input": {"prompt": "do a thing"}},
+        "brief-guard.py": {"tool_name": "Agent", "tool_input": {"prompt": "do a thing"}},
+        "grade-bash.py": {"tool_name": "Bash", "cwd": ".", "permission_mode": "default",
+                          "tool_input": {"command": "gh pr create --fill"}},
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name) / "home"
+        self.hooks = Path(self.tmp.name) / "policy" / "hooks"
+        self.home.mkdir()
+        shutil.copytree(HOOKS.resolve(), self.hooks)
+        self.marker = Path(self.tmp.name) / "built"
+        # A shim over the table builder, so the assertion is what the hook ran, not what it says.
+        with (self.hooks / "posture.py").open("a", encoding="utf-8") as handle:
+            handle.write("\n\n_real_table_for = table_for\n\n\n"
+                         "def table_for(*args, **kwargs):\n"
+                         "    Path(os.environ['HARNESS_TABLE_MARKER']).write_text('built')\n"
+                         "    return _real_table_for(*args, **kwargs)\n")
+
+    def run_hook(self, name):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env.update(HOME=str(self.home), HARNESS_TABLE_MARKER=str(self.marker))
+        out = subprocess.run([sys.executable, str(self.hooks / name)],
+                             input=json.dumps(self.PAYLOADS[name]), capture_output=True,
+                             text=True, env=env, cwd=str(self.home))
+        self.assertEqual(out.returncode, 0, out.stderr)
+
+    def test_no_hot_path_hook_builds_the_cost_table(self):
+        for name in sorted(self.PAYLOADS):
+            with self.subTest(hook=name):
+                self.run_hook(name)
+                self.assertFalse(self.marker.exists(),
+                                 name + " built the cost table it does not read")
+
+    def test_the_shim_would_have_caught_a_hook_that_did(self):
+        spec = importlib.util.spec_from_file_location("shimmed", self.hooks / "posture.py")
+        shimmed = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(shimmed)
+        os.environ["HARNESS_TABLE_MARKER"] = str(self.marker)
+        self.addCleanup(os.environ.pop, "HARNESS_TABLE_MARKER", None)
+        shimmed.cost_table(env={"HOME": str(self.home)})
+        self.assertTrue(self.marker.exists())
+
+    def test_resolve_returns_stances_only_unless_the_table_is_asked_for(self):
+        env = {"HOME": str(self.home)}
+        self.assertEqual(set(posture.resolve(env)), {"stances"})
+        self.assertIn("rows", posture.resolve(env, table=True))
+        self.assertIn("rows", posture.cost_table(env))
+
+
+class UnreadableCustomSidecar(unittest.TestCase):
+    """A cost sidecar nobody can read is a warning on the report, never a traceback."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        cost = self.home / "primitives" / "stances" / "cost"
+        cost.mkdir(parents=True)
+        (cost / "thrifty.md").write_text("# Cost stance: thrifty\n", encoding="utf-8")
+        (cost / "thrifty.json").write_text("{not json", encoding="utf-8")
+        config = json.loads((REPO / "config.example.json").read_text(encoding="utf-8"))
+        config["stances"]["cost"] = "thrifty"
+        config["primitive_roots"] = [str(self.home / "primitives")]
+        path = self.home / ".config" / "agent-harness" / "config.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(config), encoding="utf-8")
+
+    def test_the_stances_command_reports_it_and_still_exits_clean(self):
+        out = subprocess.run([sys.executable, str(REPO / "bin" / "harness"), "stances", "--json"],
+                             capture_output=True, text=True, cwd=str(self.home),
+                             env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"})
+        self.assertEqual(out.returncode, 0, out.stderr)
+        cost = json.loads(out.stdout)["cost"]
+        self.assertTrue(any("not readable JSON" in w for w in cost["warnings"]), cost["warnings"])
+        self.assertEqual([c["variant"] for c in cost["extends_chain"]], ["balanced"])
+        plain = subprocess.run([sys.executable, str(REPO / "bin" / "harness"), "stances"],
+                               capture_output=True, text=True, cwd=str(self.home),
+                               env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"})
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        self.assertIn("cost warnings: 1", plain.stdout)
 
 
 if __name__ == "__main__":
