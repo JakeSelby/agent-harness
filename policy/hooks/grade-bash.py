@@ -43,7 +43,6 @@ import shlex
 import sys
 from pathlib import Path
 
-CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
 HOOK = "grade-bash hook"
 MARKER = "HARNESS_CONFIRMED=1"
 DEFAULT_STANCE = "execute"
@@ -60,13 +59,19 @@ PLAIN = {1: "this changes files on this machine",
 PLACEHOLDER = "__GRADESUB__"
 MAX_DEPTH = 4
 
-try:  # a missing or broken sibling grammar leaves the hook silent, never crashing the tool call
-    _spec = importlib.util.spec_from_file_location(
-        "grade_bash_readonly", Path(__file__).resolve().with_name("allow-readonly-bash.py"))
-    ro = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(ro)
-except Exception:
-    ro = None
+
+def _sibling(name, alias):
+    """A module beside this hook, or None: a broken sibling leaves the hook silent, never crashing."""
+    try:
+        spec = importlib.util.spec_from_file_location(alias, Path(__file__).resolve().with_name(name))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+ro = _sibling("allow-readonly-bash.py", "grade_bash_readonly")
 
 # One consequence clause per verb family, plus a generic fallback per grade. The clause is the
 # whole preview: the reason line is verb, target, clause.
@@ -184,28 +189,11 @@ SCAN = [
 SCAN_SPLIT = re.compile(r"[\n;&|]+")
 
 
-def _load(path):
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    except Exception:
-        return None
-
-
 def stance():
-    """The autonomy variant, from the environment, then the config, then the default. Anything
-    malformed in the config falls back rather than turning grading off."""
-    value = os.environ.get("HARNESS_STANCE_AUTONOMY")
-    if value:
-        return value
-    config = _load(CONFIG)
-    if not isinstance(config, dict):
-        return DEFAULT_STANCE
-    stances = config.get("stances")
-    if not isinstance(stances, dict):
-        return DEFAULT_STANCE
-    value = stances.get("autonomy")
-    return value if isinstance(value, str) and value else DEFAULT_STANCE
+    """The autonomy variant, resolved by `posture.py` for every hook alike. Anything malformed
+    on the ladder falls back rather than turning grading off."""
+    module = _sibling("posture.py", "harness_posture")
+    return module.selected("autonomy", DEFAULT_STANCE, strict=False) if module else DEFAULT_STANCE
 
 
 def emit(decision, reason):

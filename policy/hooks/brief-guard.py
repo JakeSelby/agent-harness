@@ -16,12 +16,11 @@ detector still counts as missing and the number would never move.
 """
 import importlib.util
 import json
-import os
 import sys
 from pathlib import Path
 
 HOOK = "harness:brief-guard"
-DETECTORS = Path(__file__).resolve().parent / "rule-detectors.py"
+HOOKS = Path(__file__).resolve().parent
 
 # Written so it matches the detector's own cap pattern; a bound the detector cannot see is
 # not a bound. `tests/test_brief_guard.py` asserts that parity.
@@ -29,10 +28,11 @@ BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what
          "decision. Write anything longer to a file and return its path, not its contents.")
 
 
-def detectors():
-    """The detector module, or None. A hook must never block a spawn because an import failed."""
+def sibling(name):
+    """A module beside this hook, or None. A hook must never block a spawn because an import failed."""
     try:
-        spec = importlib.util.spec_from_file_location("harness_rule_detectors", str(DETECTORS))
+        spec = importlib.util.spec_from_file_location(
+            "harness_" + name.replace("-", "_"), str(HOOKS / (name + ".py")))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -40,17 +40,15 @@ def detectors():
         return None
 
 
+def detectors():
+    """The detector module, or None."""
+    return sibling("rule-detectors")
+
+
 def stance():
-    """The selected `delegation` stance: session override, then config, then the default."""
-    override = (os.environ.get("HARNESS_STANCE_DELEGATION") or "").strip()
-    if override:
-        return override
-    path = Path(os.path.expanduser("~")) / ".config" / "agent-harness" / "config.json"
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return (json.load(fh).get("stances") or {}).get("delegation") or "tiered"
-    except (OSError, ValueError):
-        return "tiered"
+    """The selected `delegation` stance, resolved by `posture.py` for every hook alike."""
+    module = sibling("posture")
+    return module.selected("delegation", "tiered", strict=False) if module else "tiered"
 
 
 def needs_bound(module, tool_input):

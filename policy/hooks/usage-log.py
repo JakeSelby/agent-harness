@@ -26,55 +26,44 @@ FIELDS = (
     ("cache_write", "cache_creation_input_tokens"),
 )
 
-# The eight dimensions `bin/harness` resolves and the variant each falls back to, which is
-# `config.example.json`'s — the file the CLI layers the user config over, and a test here holds
-# the two together. Resolution is that same ladder: defaults, then the user config, then
-# `HARNESS_STANCE_<NAME>` (upper-cased, hyphens as underscores), which hooks inherit.
-DEFAULT_STANCES = {
-    "licensing": "permissive-commercial",
-    "build-vs-buy": "capability-ceiling",
-    "commits": "conventional-attributed",
-    "plan-ceremony": "review-card",
-    "delegation": "tiered",
-    "testing": "required",
-    "autonomy": "execute",
-    "cost": "balanced", "voice": "scannable",
-}
 # A tool result worth keeping the text of: the two the detectors read. 64 KB is far past any
 # brief or fenced block and far short of a transcript's largest result.
 TEXT_KEPT_FOR = ("Bash", "Agent")
 MAX_RESULT_TEXT = 64 * 1024
 
 
+def sibling(name, required=True):
+    """A module beside this one. Raises when required, so the caller can record why it is absent."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name + ".py")
+    try:
+        spec = importlib.util.spec_from_file_location("harness_" + name.replace("-", "_"), path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        if required:
+            raise
+        return None
+
+
 def detectors():
     """The sibling detector registry. Raises, so the caller can record why it is absent."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rule-detectors.py")
-    spec = importlib.util.spec_from_file_location("harness_rule_detectors", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return sibling("rule-detectors")
 
 
 def stances(env=None):
-    """The resolved `{dimension: variant}` map: defaults, then config, then environment.
+    """The resolved `{dimension: variant}` map, from `posture.py` and nowhere else.
 
-    Every dimension is present, because every dimension has a default; a missing config file
-    is the default set and never an empty map, which would read as "no stance in force".
+    A copy of this hook running away from its sibling resolver records no stances rather
+    than a second opinion about them; the record keeps every other field.
     """
-    env = os.environ if env is None else env
-    try:
-        config = json.loads((Path.home() / ".config" / "agent-harness" / "config.json")
-                            .read_text(encoding="utf-8"))
-        configured = config.get("stances") or {}
-    except Exception:
-        configured = {}
-    out = dict(DEFAULT_STANCES)
-    for name in DEFAULT_STANCES:
-        for value in (configured.get(name) if isinstance(configured, dict) else None,
-                      env.get("HARNESS_STANCE_" + name.upper().replace("-", "_"))):
-            if isinstance(value, str) and value.strip():
-                out[name] = value.strip()
-    return out
+    module = sibling("posture", required=False)
+    return module.resolve(env, strict=False)["stances"] if module else {}
+
+
+# Re-exported, not re-declared: the defaults are `posture.py`'s, and a reader of a usage record
+# should not have to know which file holds them.
+DEFAULT_STANCES = getattr(sibling("posture", required=False), "DEFAULT_STANCES", {})
 
 
 def usage_path():

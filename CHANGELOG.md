@@ -23,6 +23,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Stances resolve in one place for the dispatcher and every policy hook alike: built-in defaults,
+  the user configuration, the file `HARNESS_PROJECT_CONFIG` names, then `HARNESS_STANCE_*`. The
+  hooks therefore honour `HARNESS_HOME` and a project configuration, which they ignored before,
+  so a disposable home or a per-repository selection now reaches the spawn, brief, grading and
+  usage hooks rather than only the CLI.
+- The spawn hook reads its model ladder from the adapter's `bindings.json` `tiers` table instead
+  of a list written in the hook; a table it cannot read leaves the spawn as written and says so.
 - The spawn hook says so when the session's model is not on its ladder, instead of leaving the
   subagent on the session model without a word.
 - Shared roles name a provider-neutral capability class (`tier:` — `frontier`, `strong`, `standard`,

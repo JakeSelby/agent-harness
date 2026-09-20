@@ -13,13 +13,16 @@ when there is no definition to read — so neither an orchestrator nor a framewo
 ("run reviewers at the session's capability") can put ad-hoc work on the scarcest tier. The
 request is rewritten, never removed: a rewrite survives composition with other hooks.
 
-What a bare spawn gets depends on the `delegation` stance, read from
-`HARNESS_STANCE_DELEGATION` or `~/.config/agent-harness/config.json`:
+What a bare spawn gets depends on the `delegation` stance, which `posture.py` resolves for
+every hook alike:
 
-    tiered         rewrite `model` to one tier below the session model; `haiku` is the floor;
-                   refuse the top tier by request
+    tiered         rewrite `model` to one tier below the session model; the weakest class on
+                   the ladder is the floor; refuse the top tier by request
     session-model  leave it alone
     off            ask before every spawn, named or not
+
+The ladder is the adapter's `bindings.json` class table, strongest class first, matched as
+substrings of the model ids a transcript records; no model name is written here.
 
 A repository that carries a planning framework is tiered like any other. The framework keeps
 its personas, prompts and review structure; model and effort are the harness's to choose, and
@@ -36,44 +39,37 @@ call runs as written.
 
 Test: printf '%s' '{"tool_name":"Agent","tool_input":{"prompt":"x"}}' | HARNESS_STANCE_DELEGATION=off python3 tier-agent-spawns.py
 """
+import importlib.util
 import json
-import os
 import re
 import sys
 from pathlib import Path
 
-CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
-# Strongest first: the native names of adapters/claude-code/bindings.json `tiers`, which a test
-# holds equal to this list. Matched as substrings of the model ids a transcript records.
-LADDER = ["fable", "opus", "sonnet", "haiku"]
+HOOKS = Path(__file__).resolve().parent
 DEFAULT_STANCE = "tiered"
 TAIL_BYTES = 1 << 20
 HOOK = "tier-agent-spawns hook"
 AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
-def load(path):
+def sibling(name):
+    """A module beside this hook, or None. A hook must never stop a spawn because an import failed."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
+        spec = importlib.util.spec_from_file_location(
+            "harness_" + name.replace("-", "_"), str(HOOKS / (name + ".py")))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
     except Exception:
         return None
 
 
-def stance():
-    value = os.environ.get("HARNESS_STANCE_DELEGATION")
-    if value:
-        return value
-    config = load(CONFIG) or {}
-    return (config.get("stances") or {}).get("delegation") or DEFAULT_STANCE
-
-
-def tier_of(model):
+def tier_of(model, ladder):
     """The ladder name inside a model id or alias, or None for anything the ladder lacks."""
     if not isinstance(model, str):
         return None
     low = model.lower()
-    for name in LADDER:
+    for name in ladder:
         if name in low:
             return name
     return None
@@ -108,7 +104,7 @@ def transcript_model(path):
     return None
 
 
-def defined_tier(kind, cwd):
+def defined_tier(kind, cwd, ladder):
     """The ladder name an agent definition's `model:` line carries, project before user, or None."""
     if not isinstance(kind, str) or not AGENT_NAME.fullmatch(kind):
         return None
@@ -121,7 +117,7 @@ def defined_tier(kind, cwd):
         for line in lines:
             key, _, value = line.partition(":")
             if key.strip() == "model":
-                return tier_of(value)
+                return tier_of(value, ladder)
         return None
     return None
 
@@ -149,7 +145,8 @@ def main():
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return
-    variant = stance()
+    posture = sibling("posture")
+    variant = posture.selected("delegation", DEFAULT_STANCE, strict=False) if posture else DEFAULT_STANCE
     if variant == "off":
         emit({
             "permissionDecision": "ask",
@@ -158,29 +155,36 @@ def main():
         return
     if variant != "tiered":
         return
-    if tier_of(tool_input.get("model")) == LADDER[0]:
+    # Strongest class first, from the adapter's bindings. Without it there is no tier to move a
+    # spawn to, so the call runs as written and says why, exactly as an unknown model does.
+    ladder = posture.ladder() if posture else []
+    if len(ladder) < 2:
+        print(json.dumps({"systemMessage": f"{HOOK}: the adapter's class table names no tier to move a "
+                          "spawn to, so this one runs as written; check the harness installation"}))
+        return
+    if tier_of(tool_input.get("model"), ladder) == ladder[0]:
         kind = tool_input.get("subagent_type")
         named = bool(kind) and kind != "general-purpose"
-        declared = defined_tier(kind, payload.get("cwd")) if named else None
-        if declared == LADDER[0]:
+        declared = defined_tier(kind, payload.get("cwd"), ladder) if named else None
+        if declared == ladder[0]:
             return  # the role declares the top class itself; the request only repeats it
-        updated = dict(tool_input, model=declared or LADDER[1])
+        updated = dict(tool_input, model=declared or ladder[1])
         emit({"updatedInput": updated},
-             system_message=f"{HOOK}: {LADDER[0]} is reached through a role that declares it, not by request; "
+             system_message=f"{HOOK}: {ladder[0]} is reached through a role that declares it, not by request; "
                             f"{kind if named else 'this spawn'} runs on {updated['model']}")
         return
     if not is_bare(tool_input):
         return
     session = transcript_model(payload.get("transcript_path"))
-    current = tier_of(session)
+    current = tier_of(session, ladder)
     if session and current is None:
         # A lineup change the ladder has not caught up with must not pass for "nothing to do".
         print(json.dumps({"systemMessage": f"{HOOK}: the session model {session} is not on the ladder "
-                          f"({', '.join(LADDER)}), so this bare subagent stays on it; name a model or a role"}))
+                          f"({', '.join(ladder)}), so this bare subagent stays on it; name a model or a role"}))
         return
-    if current is None or current == LADDER[-1]:
+    if current is None or current == ladder[-1]:
         return
-    below = LADDER[LADDER.index(current) + 1]
+    below = ladder[ladder.index(current) + 1]
     updated = dict(tool_input)
     updated["model"] = below
     emit({"updatedInput": updated},

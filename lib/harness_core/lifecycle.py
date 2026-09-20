@@ -59,19 +59,8 @@ def invoke(name, event):
 
 
 def selected(name, fallback):
-    override = os.environ.get("HARNESS_STANCE_" + name.upper().replace("-", "_"))
-    if override:
-        return override
-    file = Path(os.environ.get("HARNESS_HOME", str(Path.home()))) / ".config" / "agent-harness" / "config.json"
-    cfg = json.loads(file.read_text()) if file.exists() else {}
-    project_file = os.environ.get("HARNESS_PROJECT_CONFIG")
-    if project_file:
-        project = json.loads(Path(project_file).read_text())
-        if set(project) - {"stances"}:
-            raise ValueError("project configuration cannot change runtime authority")
-        if name in project.get("stances", {}):
-            return project["stances"][name]
-    return cfg.get("stances", {}).get(name, fallback)
+    """One dimension's variant, resolved by the same file the policy hooks load."""
+    return load("posture").selected(name, fallback)
 
 
 def encode_pre(runtime, original, normalized, results):

@@ -146,13 +146,14 @@ class TierSpawnsTests(unittest.TestCase):
 
     def test_the_ladder_is_the_claude_adapters_tier_table(self):
         import importlib.util
-        spec = importlib.util.spec_from_file_location("tier_agent_spawns", HOOK)
-        hook = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(hook)
+        spec = importlib.util.spec_from_file_location(
+            "harness_posture", REPO / "claude" / "hooks" / "posture.py")
+        posture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(posture)
         sys.path.insert(0, str(REPO / "lib"))
         from harness_core import catalog
         tiers = json.loads((REPO / "adapters" / "claude-code" / "bindings.json").read_text())["tiers"]
-        self.assertEqual(hook.LADDER, [tiers[name] for name in catalog.TIER_CLASSES])
+        self.assertEqual(posture.ladder(), [tiers[name] for name in catalog.TIER_CLASSES])
 
     def test_a_session_model_off_the_ladder_is_left_alone_out_loud(self):
         self.write_transcript(record("assistant", "claude-opus-5"), record("assistant", "claude-nova-7"))
