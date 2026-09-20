@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The usage feed's line for a synchronous subagent return no longer stops short of that agent's
+  last response. Claude Code writes one API response as several records, and the return could
+  fire between a partial streaming count and the record that ends the response — 143 output
+  tokens reported live for an agent a later scan put at 278. The return now waits a bounded
+  moment (at most a second, over the transcript's tail) for the response to end, says `(so far)`
+  when it never does, and raises the session totals from the settled figure the journal brings
+  afterwards without naming the agent a second time.
+
 ## [0.11.0] — 2026-09-20
 
 ### Added

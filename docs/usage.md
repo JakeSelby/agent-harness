@@ -89,6 +89,13 @@ not be made at all, it says `spend unknown` rather than reporting the agent at z
 the stop is recorded, because an agent whose stop went missing would count as running for the
 rest of the session. A start whose stop never arrives is forgotten after three hours.
 
+A synchronous return can also arrive before the agent's last response is on disk: one API
+response is written as several records, the early ones carrying a partial streaming count and
+the last one a `stop_reason`. So the return polls the transcript's tail for up to a second,
+waiting for that record, and the line says `(so far)` when it never comes. Whatever figure was
+printed, the settled one the stop records afterwards raises the session totals — the agent is
+never named a second time, and the session total is never below the sum of the final figures.
+
 Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
 number of its own:
 
