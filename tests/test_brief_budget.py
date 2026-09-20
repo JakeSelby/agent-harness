@@ -32,7 +32,6 @@ SESSION = "fixture-session"
 BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
          "decision. Write anything longer to a file and return its path, not its contents.")
 CAP_MESSAGE = "harness:brief-guard: the brief stated no return bound, so a 400-word cap was added"
-BUDGET_MESSAGE = "harness:brief-guard: the brief stated no spend, so the cost variant's soft budget was added"
 
 
 def capped(tool_input):
@@ -178,13 +177,13 @@ class BudgetSentenceTests(HookCase):
         self.install_workers()
         prompt = self.prompt({"prompt": "x"})
         self.assertLess(prompt.index("Return at most 400 words"), prompt.index("Expected spend:"))
-        self.assertEqual(self.guard({"prompt": "x"})["systemMessage"],
-                         CAP_MESSAGE + " · the brief stated no spend, so the cost variant's "
-                         "soft budget was added")
+        # The cap is the exception this hook reports; the budget rides along without a word.
+        self.assertEqual(self.guard({"prompt": "x"})["systemMessage"], CAP_MESSAGE)
 
-    def test_a_budget_alone_says_so(self):
-        self.assertEqual(self.guard({"prompt": "x", "subagent_type": "gatherer"})["systemMessage"],
-                         BUDGET_MESSAGE)
+    def test_a_budget_alone_says_nothing(self):
+        out = self.guard({"prompt": "x", "subagent_type": "gatherer"})
+        self.assertIn("Expected spend", out["hookSpecificOutput"]["updatedInput"]["prompt"])
+        self.assertNotIn("systemMessage", out)
 
 
 class LeavesAloneTests(HookCase):

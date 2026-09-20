@@ -248,6 +248,7 @@ class RerouteTests(unittest.TestCase):
         self.install_workers()
         for tool_input in ({"prompt": "x"}, {"prompt": "x", "subagent_type": "general-purpose"}):
             with self.subTest(tool_input=tool_input):
+                self.record(*WORKERS)  # the routed notice is said once a session
                 out = self.parsed(tool_input)
                 updated = out["hookSpecificOutput"]["updatedInput"]
                 self.assertEqual(updated["subagent_type"], "worker-b")

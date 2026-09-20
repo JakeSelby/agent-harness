@@ -62,7 +62,11 @@ DEFAULT_STANCE = "tiered"
 TAIL_BYTES = 1 << 20
 HOOK = "tier-agent-spawns hook"
 AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
-# The notice a session hears once: the worker is on disk, but this session's registry predates it.
+# The two notices a session hears once rather than on every spawn: where an unnamed spawn goes,
+# and that the worker is on disk but this session's registry predates it. Both describe the
+# standing arrangement, so repeating them on each spawn is noise. A notice about something the
+# caller asked for being changed or refused stays per-occurrence.
+ROUTED_NOTICE = "routed-to-band"
 UNRESOLVABLE_NOTICE = "worker-unresolvable"
 _LOADED = {}
 
@@ -84,6 +88,15 @@ def posture_module():
     if "posture" not in _LOADED:
         _LOADED["posture"] = sibling("posture")
     return _LOADED["posture"]
+
+
+def notice_once(session, key):
+    """Whether to say `key` in this session now; the session record is what remembers it.
+
+    A session with no record remembers nothing, so the notice repeats rather than being lost.
+    """
+    module = posture_module()
+    return module.note_once(session, key) if module else True
 
 
 def tier_of(model, ladder):
@@ -215,7 +228,7 @@ def routable(kind, cwd, session=None, announce=False):
     if known is None or kind not in known:
         notice = (kind + " is installed but this session started before it was; restart the "
                   "session to route unnamed spawns")
-        if announce and module and not module.note_once(session, UNRESOLVABLE_NOTICE):
+        if announce and not notice_once(session, UNRESOLVABLE_NOTICE):
             notice = None
         return None, notice
     return definition(kind, cwd) or {}, None
@@ -274,13 +287,13 @@ def one_rung(payload, ladder):
 
 
 def routed_message(route, model, requested):
-    """The one line a reroute says: where the spawn went, on what, and how to choose next time."""
+    """Where the spawn went, on what, and how to choose next time; the hook's prefix is the caller's."""
     detail = [("model " + requested + " as asked") if requested
               else (route["row"].get("class") or model)]
     if route.get("effort"):
         detail.append(route["effort"] + " effort")
     shown = ", ".join(part for part in detail if part)
-    return (f"{HOOK}: unnamed subagent routed to {route['worker']}" + (f" ({shown})" if shown else "") +
+    return (f"unnamed subagent routed to {route['worker']}" + (f" ({shown})" if shown else "") +
             "; spawn worker-a, worker-b or worker-c to choose the band" +
             (" · the installed definition's effort is not the selected variant's; run "
              "`harness sync` to apply the selected posture" if route.get("stale") else ""))
@@ -360,11 +373,17 @@ def main():
                 fallback, message = one_rung(payload, ladder)
                 if fallback:
                     updated["model"] = fallback
+        # Where an unnamed spawn goes is the standing arrangement, said once a session. What the
+        # caller asked for and did not get is said every time it happens.
+        parts = []
+        if notice_once(payload.get("session_id"), ROUTED_NOTICE):
+            parts.append(routed_message(route, updated.get("model"), requested))
+        if message:
+            parts.append(message)
+        if top:
+            parts.append(f"{ladder[0]} is reached through a role that declares it, not by request")
         emit({"updatedInput": updated},
-             system_message=routed_message(route, updated.get("model"), requested)
-             + (" · " + message if message else "")
-             + (f" · {ladder[0]} is reached through a role that declares it, not by request"
-                if top else ""))
+             system_message=(f"{HOOK}: " + " · ".join(parts)) if parts else None)
         return
     if not is_bare(tool_input):
         return

@@ -217,6 +217,26 @@ class RerouteTests(RegistryCase):
         self.assertIn("started before it was",
                       self.spawn(session="session-two")["systemMessage"])
 
+    def test_the_routed_notice_is_said_once_a_session(self):
+        # Where an unnamed spawn goes is the standing arrangement, not news on every spawn.
+        self.install_workers()
+        self.record(*WORKERS)
+        self.assertIn("routed to worker-b", self.spawn()["systemMessage"])
+        second = self.spawn()
+        self.assertEqual(self.routed(second), "worker-b")
+        self.assertNotIn("systemMessage", second)
+        self.record(*WORKERS, session="session-two")
+        self.assertIn("routed to worker-b", self.spawn(session="session-two")["systemMessage"])
+
+    def test_a_refusal_is_still_said_on_every_routed_spawn(self):
+        # The caller asked for the top class and did not get it; that is news each time.
+        self.install_workers()
+        self.record(*WORKERS)
+        for _ in range(2):
+            out = self.spawn({"prompt": "x", "model": "fable"})
+            self.assertEqual(self.routed(out), "worker-b")
+            self.assertIn("not by request", out["systemMessage"])
+
     def test_no_record_at_all_reroutes_nothing(self):
         # A session that started before this fix shipped: no record, so no evidence, so no reroute.
         self.install_workers()

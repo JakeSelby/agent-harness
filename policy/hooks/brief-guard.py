@@ -44,7 +44,10 @@ ROUTING_RUNTIME = "claude-code"
 BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
          "decision. Write anything longer to a file and return its path, not its contents.")
 CAP_NOTE = "the brief stated no return bound, so a 400-word cap was added"
-BUDGET_NOTE = "the brief stated no spend, so the cost variant's soft budget was added"
+# The budget sentence carries no notice of its own. Stating the variant's spend is what this hook
+# does on almost every spawn, and an alert on the ordinary case is noise a reader learns to
+# ignore; the cap keeps its notice because a brief that states no bound is the exception.
+#
 # The units a row prices, in the order the sentence states them; a null cell is left out rather
 # than written as "no budget", which would read as permission to spend without limit.
 UNITS = (("budget_output_tokens", "output tokens"), ("budget_tool_calls", "tool calls"))
@@ -187,15 +190,15 @@ def main():
         added, notes = BOUND, [CAP_NOTE]
     budget = budget_for(payload, tool_input, module, variant)
     if budget:
-        added, notes = added + budget, notes + [BUDGET_NOTE]
+        added += budget
     if not added:
         return
     updated = dict(tool_input)
     updated["prompt"] = prompt.rstrip() + added
-    print(json.dumps({
-        "hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated},
-        "systemMessage": f"{HOOK}: " + " · ".join(notes),
-    }))
+    out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated}}
+    if notes:
+        out["systemMessage"] = f"{HOOK}: " + " · ".join(notes)
+    print(json.dumps(out))
 
 
 if __name__ == "__main__":
