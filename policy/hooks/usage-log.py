@@ -14,6 +14,7 @@ A registry that will not import costs the record its `rules` key and nothing els
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -215,6 +216,10 @@ def _agent_row(path, shared=None):
 # The two spellings of "this spawn named no agent definition"; they are one request, so a spawn
 # that ran as `general-purpose` after asking for nothing was not rerouted.
 UNNAMED_TYPES = ("", "general-purpose")
+# A requested type is model-authored text. Only a name the tool could actually have resolved is
+# kept; anything else is recorded as the fact that it was something else, because a usage row is
+# a count and must not become a place free text is stored.
+AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 
 
 def mark_reroutes(agents, requested):
@@ -223,7 +228,9 @@ def mark_reroutes(agents, requested):
     A transcript records a tool input as the model wrote it, before any `PreToolUse` hook
     rewrote it, while the subagent's `.meta.json` records the type it actually ran as. The two
     disagreeing is the reroute — measured from what happened, never announced by the hook that
-    did it, so orchestrator compliance is a number and not a claim.
+    did it, so orchestrator compliance is a number and not a claim. Verified on a real
+    transcript: the parent recorded `general-purpose`, the subagent's meta said `Explore`,
+    under the one tool use id.
     """
     for row in agents:
         use_id = row.get("tool_use_id")
@@ -232,7 +239,7 @@ def mark_reroutes(agents, requested):
         asked = requested[use_id]
         asked = asked.strip() if isinstance(asked, str) else ""
         ran = row.get("agent_type") or ""
-        row["requested_type"] = asked
+        row["requested_type"] = asked if not asked or AGENT_NAME.fullmatch(asked) else "other"
         if ran and ran != "unknown":
             row["rerouted"] = asked != ran and not (asked in UNNAMED_TYPES and ran in UNNAMED_TYPES)
 
@@ -665,6 +672,10 @@ def worker_rows(cutoff=0.0):
                "agent_type": record["role"], "repo": os.path.basename(str(record.get("workspace") or "").rstrip("/")),
                "model": record.get("model") or "", "effort": record.get("effort") or "",
                "tool_calls": usage.get("tool_calls"), "spawn_depth": 1, "rerouted": False,
+               # A worker is launched by name from the CLI, so there is no requested type and no
+               # parent tool call to join on; null is that absence, not an empty answer. Present
+               # so every non-session row carries the same keys.
+               "requested_type": None, "tool_use_id": None,
                "status": record.get("status"), "stances": record.get("stances") or {},
                "started": stamp(record.get("started_at")) or ended, "ended": ended}
         for name, _ in FIELDS:

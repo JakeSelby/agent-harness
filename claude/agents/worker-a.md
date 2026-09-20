@@ -2,7 +2,7 @@
 name: worker-a
 description: Band A work — no-tool or single-tool extraction, reformatting, classification, a grep fan-out over a named scope, log compression. Choose this band when nothing branches on what you find and the return is what one search or one read produced. Anything with a decision in it belongs to worker-b or worker-c.
 model: sonnet
-tools: Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch
+disallowedTools: Agent
 effort: low
 ---
 

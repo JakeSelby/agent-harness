@@ -40,15 +40,15 @@
       "effort": "high"
     },
     "worker-a": {
-      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "disallowed_tools": "Agent",
       "effort": "low"
     },
     "worker-b": {
-      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "disallowed_tools": "Agent",
       "effort": "low"
     },
     "worker-c": {
-      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "disallowed_tools": "Agent",
       "effort": "high"
     }
   }

@@ -11,6 +11,14 @@ KINDS = {"rules": "rules", "stances": "stances", "skills": "skills",
 # adapter's bindings.json maps the classes it has qualified onto its own native models.
 TIER_CLASSES = ("frontier", "strong", "standard", "light")
 EFFORTS = ("low", "medium", "high")
+# What an adapter's `roles.<name>` entry may hold, beside the `model` an override may add.
+# `tools` is optional: a role that omits it inherits every tool the session has, which is the
+# only way a rerouted spawn keeps the MCP tools a `general-purpose` spawn would have had, and
+# `disallowed_tools` is then how it gives back the one tool it must not hold.
+BINDING_KEYS = {"claude-code": ("tools", "disallowed_tools", "effort"),
+                "codex": ("model_reasoning_effort",)}
+# The spelling each key takes in the native file; anything absent here is already native.
+NATIVE_KEYS = {"disallowed_tools": "disallowedTools"}
 
 
 def identifier(value):
@@ -201,10 +209,15 @@ def role_binding(root, runtime, fields, overrides=None, tiers=None):
     if set(overrides or {}) - {"model", effort_key}:
         raise ValueError("role bindings may change model and effort only")
     binding = dict(data["roles"][fields["name"]], **(overrides or {}))
+    unknown = set(binding) - set(BINDING_KEYS.get(runtime, ())) - {"model"}
+    if unknown or not all(isinstance(v, str) and v.strip() for v in binding.values()):
+        raise ValueError("an adapter role entry holds " + ", ".join(BINDING_KEYS.get(runtime, ()))
+                         + " as non-empty strings: " + fields["name"])
     if binding.get(effort_key, EFFORTS[0]) not in EFFORTS:
         raise ValueError("role effort must be one of " + ", ".join(EFFORTS) + ": " + fields["name"])
     model = binding.pop("model", None) or native_model(tiers, fields["tier"])
     # An `inherit` override is the way back to the session model, for a provider without these ids.
+    binding = {NATIVE_KEYS.get(key, key): value for key, value in binding.items()}
     return dict({"model": model} if model and model != "inherit" else {}, **binding)
 
 

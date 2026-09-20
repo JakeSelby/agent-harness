@@ -35,18 +35,23 @@ the tree Claude Code writes beside the session's own file. The walk is recursive
 Workflow-tool agent lives a level deeper, at `subagents/workflows/wf_<id>/`, and its `workflow`
 field names that directory. `agent_id`, `agent_type` and `spawn_depth` come from the sibling
 `.meta.json`, and an agent written without one is recorded as `agent_type: "unknown"` rather
-than dropped. Then `model`, `effort`, the four token fields, `tool_calls` and `rerouted`. These
-rows carry the same tokens a second time, attributed, which is why no grouping sums both them
-and their session.
+than dropped. Then `model`, `effort`, the four token fields and `tool_calls`. `tool_use_id` is
+the parent call this row belongs to, `requested_type` is the agent type that call asked for, and
+`rerouted` is the two disagreeing — the measure of how often a spawn hook moved a spawn. A
+requested type is kept only when it is a name the tool could have resolved; anything else is
+recorded as `"other"`. These rows carry the same tokens a second time, attributed, which is why
+no grouping sums both them and their session.
 
 **`kind: "worker"`** — one row per completed `harness role run` worker, with the role name as
 `agent_type`. A worker is an isolated CLI session; its runtime reports what the run cost in the
 envelope or event stream the adapter already reads, and `workers.py` writes those totals into
 its `status.json`. A runtime that reports none leaves the fields unknown rather than zero.
 Neither runtime reports a worker's tool-call count, so `tool_calls` is unknown for workers. A
-run that timed out or failed is not recorded: its total compares to nothing.
+run that timed out or failed is not recorded: its total compares to nothing. A worker is
+launched by name, so its `requested_type` and `tool_use_id` are null.
 
-No row holds prompt text, command text or a brief: counts only.
+No row holds prompt text, command text or a brief: counts, and the identifiers `tool_use_id`
+and `requested_type`, which are a tool call's id and an agent name the tool could have resolved.
 
 `SessionEnd` hooks share a 1.5-second budget, so the hook spawns a detached worker and returns
 at once. Rows are upserted by `(session_id, runtime, kind, agent_id)`, so re-reading a

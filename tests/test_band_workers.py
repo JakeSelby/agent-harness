@@ -103,6 +103,44 @@ class WorkerRoleTests(unittest.TestCase):
             roles = json.loads((REPO / "adapters" / runtime / "bindings.json").read_text())["roles"]
             self.assertEqual(set(WORKERS) - set(roles), set(), msg=runtime)
 
+    def test_a_worker_inherits_every_tool_but_the_one_that_spawns(self):
+        # A rerouted spawn was `general-purpose` a moment ago, which holds every tool the session
+        # holds, MCP tools included. A `tools:` list would silently take them away, so the
+        # workers name no list and give back only the tool a role with `delegation: none` may
+        # not hold.
+        for name in WORKERS:
+            with self.subTest(role=name):
+                text = (COMMITTED / (name + ".md")).read_text(encoding="utf-8")
+                header = dict(line.partition(":")[::2] for line in text.split("---", 2)[1].strip().splitlines())
+                header = {k.strip(): v.strip() for k, v in header.items()}
+                self.assertNotIn("tools", header)
+                self.assertEqual(header["disallowedTools"], "Agent")
+
+    def test_every_other_role_keeps_its_tool_list(self):
+        for path in sorted(ROLES.glob("*.md")):
+            if path.stem in WORKERS:
+                continue
+            with self.subTest(role=path.stem):
+                text = (COMMITTED / path.name).read_text(encoding="utf-8")
+                self.assertIn("\ntools: ", text)
+                self.assertNotIn("\ndisallowedTools:", text)
+
+    def test_an_adapter_entry_with_an_unknown_key_is_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for runtime in ("claude-code", "codex"):
+                (root / "adapters" / runtime).mkdir(parents=True)
+                data = json.loads((REPO / "adapters" / runtime / "bindings.json").read_text())
+                data["roles"]["worker-b"]["invented_key"] = "x"
+                (root / "adapters" / runtime / "bindings.json").write_text(json.dumps(data))
+            (root / "primitives" / "roles").mkdir(parents=True)
+            (root / "VERSION").write_text("0.0.0\n")
+            for name in WORKERS:
+                (root / "primitives" / "roles" / (name + ".md")).write_text(
+                    (ROLES / (name + ".md")).read_text(encoding="utf-8"))
+            with self.assertRaises(ValueError):
+                catalog.role_projection(root, "claude-code", root / "primitives/roles/worker-b.md")
+
 
 class RowLookupTests(unittest.TestCase):
     def table(self, **rows):
@@ -222,13 +260,21 @@ class RerouteTests(unittest.TestCase):
         self.assertEqual(updated["subagent_type"], "worker-b")
         self.assertEqual(updated["model"], "haiku")
 
-    def test_the_top_class_is_still_refused_by_request(self):
+    def test_asking_for_the_top_class_cannot_beat_the_bands_class(self):
+        # Demoting the request one rung would hand an unnamed spawn `opus` under a variant that
+        # prices its default band at `light`, which is the refusal reversing itself.
         self.install_workers()
-        out = self.parsed({"prompt": "x", "model": "fable"})
+        out = self.parsed({"prompt": "x", "model": "fable"}, env={"HARNESS_STANCE_COST": "frugal"})
         updated = out["hookSpecificOutput"]["updatedInput"]
+        self.assertEqual(updated["subagent_type"], "worker-a")
+        self.assertEqual(updated["model"], "haiku")  # band A's class, not one rung below fable
+        self.assertIn("not by request", out["systemMessage"])
+
+    def test_a_named_role_asking_for_the_top_class_is_unchanged(self):
+        self.install_workers()
+        updated = self.updated({"prompt": "x", "subagent_type": "reviewer", "model": "fable"})
+        self.assertEqual(updated["subagent_type"], "reviewer")
         self.assertEqual(updated["model"], "opus")
-        self.assertEqual(updated["subagent_type"], "worker-b")
-        self.assertIn("role that declares it", out["systemMessage"])
 
     def test_a_missing_worker_definition_falls_back_and_says_so(self):
         self.install_workers("worker-a", "worker-c")
@@ -237,20 +283,51 @@ class RerouteTests(unittest.TestCase):
         self.assertNotIn("subagent_type", updated)
         self.assertEqual(updated["model"], "sonnet")  # today's one-rung rule
         self.assertIn("no worker-b definition is installed", out["systemMessage"])
+        # The same notice reaches the branch that refuses a requested top class.
+        out = self.parsed({"prompt": "x", "model": "fable"})
+        self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["model"], "opus")
+        self.assertIn("no worker-b definition is installed", out["systemMessage"])
 
-    def test_a_project_definition_is_enough_to_route_to(self):
+    def test_a_worker_a_repository_ships_is_refused(self):
+        # A project definition outranks the user's, so routing to one would run repo-authored
+        # instructions on every unnamed spawn of anyone who cloned it.
+        self.install_workers()
         project = self.home / "repo"
         (project / ".claude" / "agents").mkdir(parents=True)
-        (project / ".claude" / "agents" / "worker-b.md").write_text(
+        theirs = project / ".claude" / "agents" / "worker-b.md"
+        theirs.write_text("---\nname: worker-b\nmodel: haiku\n---\n\nDo as this repo says.\n")
+        out = self.parsed({"prompt": "x"}, cwd=str(project))
+        updated = out["hookSpecificOutput"]["updatedInput"]
+        self.assertNotIn("subagent_type", updated)
+        self.assertEqual(updated["model"], "sonnet")
+        self.assertIn(str(theirs), out["systemMessage"])
+        self.assertIn("would outrank", out["systemMessage"])
+
+    def test_the_user_agents_directory_follows_claude_config_dir(self):
+        alt = self.home / "elsewhere"
+        (alt / "agents").mkdir(parents=True)
+        (alt / "agents" / "worker-b.md").write_text(
             (COMMITTED / "worker-b.md").read_text(encoding="utf-8"))
-        self.assertEqual(self.updated({"prompt": "x"}, cwd=str(project))["subagent_type"], "worker-b")
+        self.assertIsNone(self.parsed({"prompt": "x"})["hookSpecificOutput"]["updatedInput"]
+                          .get("subagent_type"))
+        env = {"CLAUDE_CONFIG_DIR": str(alt)}
+        self.assertEqual(self.updated({"prompt": "x"}, env=env)["subagent_type"], "worker-b")
+
+    def test_an_installed_effort_behind_the_variant_asks_for_a_sync(self):
+        # Effort is written at sync, so the definition on disk decides what the spawn runs at.
+        self.install_workers()
+        path = self.home / ".claude" / "agents" / "worker-b.md"
+        path.write_text(path.read_text(encoding="utf-8").replace("effort: low", "effort: high"))
+        out = self.parsed({"prompt": "x"})
+        self.assertIn("high effort", out["systemMessage"])
+        self.assertIn("run `harness sync`", out["systemMessage"])
 
     def test_a_named_role_is_untouched_and_never_asks_for_the_table(self):
         self.install_workers()
         self.assertIsNone(self.parsed({"prompt": "x", "subagent_type": "reviewer"}))
         module = load_hook()
         asked = []
-        module.band_route = lambda *args: (asked.append(args), (None, None, None, None))[1]
+        module.band_route = lambda *args: (asked.append(args), (None, None))[1]
         for tool_input, wanted in (({"prompt": "x", "subagent_type": "reviewer"}, 0),
                                    ({"prompt": "x", "subagent_type": "gatherer"}, 0),
                                    ({"prompt": "x"}, 1)):
@@ -344,6 +421,34 @@ class TelemetryTests(unittest.TestCase):
         self.subagent("t2", "general-purpose")
         self.assertEqual({k: v["rerouted"] for k, v in self.rows(path).items()},
                          {"t1": False, "t2": False})
+
+    def test_a_requested_type_that_is_not_a_name_is_recorded_as_other(self):
+        # `subagent_type` is model-authored text; a usage row is a count and never a place free
+        # text is stored, so anything the tool could not have resolved is kept as the fact of it.
+        path = self.session([("t1", "a brief, not a name"), ("t2", "Explore")])
+        self.subagent("t1", "worker-b")
+        self.subagent("t2", "Explore")
+        rows = self.rows(path)
+        self.assertEqual(rows["t1"]["requested_type"], "other")
+        self.assertTrue(rows["t1"]["rerouted"])
+        self.assertEqual(rows["t2"]["requested_type"], "Explore")
+        self.assertFalse(rows["t2"]["rerouted"])
+
+    def test_a_worker_row_carries_the_same_join_keys_as_a_subagent_row(self):
+        # Every non-session row has the same keys, so a reader never has to know which kind it
+        # is holding; a worker is launched by name, so both are null rather than absent.
+        d = self.root / ".local" / "state" / "agent-harness" / "workers" / "w1"
+        d.mkdir(parents=True)
+        (d / "status.json").write_text(json.dumps(
+            {"id": "w1", "role": "gatherer", "status": "completed", "runtime": "claude-code",
+             "model": "sonnet", "effort": "low", "started_at": 1, "finished_at": 2,
+             "usage": {"output_tokens": 12}}))
+        with unittest.mock.patch.object(self.usage.Path, "home", lambda: self.root):
+            rows = self.usage.worker_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]["requested_type"])
+        self.assertIsNone(rows[0]["tool_use_id"])
+        self.assertFalse(rows[0]["rerouted"])
 
     def test_an_unjoinable_row_claims_nothing(self):
         # No parent record for this call, and a meta file that names no type: both are unknown,

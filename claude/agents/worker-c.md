@@ -2,7 +2,7 @@
 name: worker-c
 description: Band C work — branching on intermediate results, multi-source synthesis over conflicting evidence, long-horizon coding, retrieval across a large or mid-document context, security-relevant review. Choose this band when the work is never safe to down-class; a named role beats it whenever one fits.
 model: opus
-tools: Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch
+disallowedTools: Agent
 effort: high
 ---
 
