@@ -38,6 +38,18 @@
     "spec-reviewer": {
       "tools": "Read, Grep, Glob",
       "effort": "high"
+    },
+    "worker-a": {
+      "disallowed_tools": "Agent",
+      "effort": "low"
+    },
+    "worker-b": {
+      "disallowed_tools": "Agent",
+      "effort": "low"
+    },
+    "worker-c": {
+      "disallowed_tools": "Agent",
+      "effort": "high"
     }
   }
 }
