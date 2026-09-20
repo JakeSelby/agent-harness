@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Native qualification now requires an eleventh case, `cost-posture`, so a client cannot be
+  qualified without the cost posture layer having run natively: the roles a variant moves and only
+  those, an unnamed spawn routed to the default band worker at its row's model and effort, the
+  budget sentence in its brief, the feed and `harness usage` rows against that budget, a session
+  that predates the workers left alone, and the priced-nothing variant doing none of it. Evidence
+  is scoped to the harness version it records, so 0.9.0 and 0.10.0 records stay valid history.
+
 ### Fixed
 
 - The usage feed's line for a synchronous subagent return no longer stops short of that agent's

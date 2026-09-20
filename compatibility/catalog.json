@@ -9,6 +9,7 @@
     "permission-controls",
     "hook-composition",
     "role-confinement",
+    "cost-posture",
     "gate-invalidation",
     "bmad-workflow",
     "bidirectional-handoff",
