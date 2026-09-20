@@ -41,7 +41,7 @@ import sys
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
@@ -353,6 +353,47 @@ def resolve_stances(cfg: Dict[str, Any]) -> Dict[str, Path]:
         raise SystemExit(str(exc))
 
 
+def cost_table(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """The configured cost variant's resolved table, never a reason for a sync to fail.
+
+    Built from the user's configuration rather than the environment, because a sync projects
+    user defaults and a session's `HARNESS_STANCE_*` stays in the session. A resolver this
+    checkout does not carry, or a sidecar it cannot use, yields an empty table: the agent
+    definitions then render exactly as they did before cost variants had rows.
+    """
+    module = load_posture()
+    if module is None:
+        return {"rows": {}, "class_applies": False,
+                "warnings": ["no posture resolver in this checkout; rendering without cost rows"]}
+    try:
+        return module.table_for(dict(cfg.get("stances", {})), cfg, strict=False, root=REPO)
+    except Exception as exc:
+        return {"rows": {}, "class_applies": False,
+                "warnings": ["cost table unusable, rendering without cost rows: " + str(exc)]}
+
+
+def agent_overrides(cfg: Dict[str, Any], table: Dict[str, Any], runtime: str, role: str) -> Dict[str, Any]:
+    """The overrides one role's native definition is rendered with, for either runtime."""
+    return primitive_catalog.role_overrides(
+        REPO, runtime, table.get("rows", {}).get(role),
+        class_applies=bool(table.get("class_applies")),
+        tiers=cfg.get("tiers", {}).get(runtime),
+        binding=cfg.get("role_bindings", {}).get(runtime, {}).get(role, {}))
+
+
+def _agent_change(table: Dict[str, Any], role: str, content: str) -> str:
+    """How a rendered agent definition differs from the committed one, in one phrase.
+
+    The committed projection is the `balanced` rendering, so this line appears only when the
+    active variant, or a `role_bindings` entry, actually moved the role.
+    """
+    fields = {k.strip(): v.strip() for k, _, v in
+              (line.partition(":") for line in content.split("---", 2)[1].strip().splitlines())}
+    klass = (table.get("rows", {}).get(role) or {}).get("class")
+    model = (klass + " -> " if klass and table.get("class_applies") else "") + fields.get("model", "inherit")
+    return model + ", effort " + fields.get("effort", "")
+
+
 def posture(cfg: Dict[str, Any]) -> str:
     value = cfg.get("permissions", "inherit")
     if value not in ("inherit",) and value not in POSTURES:
@@ -534,7 +575,14 @@ def _leads_to(path: Path, target: Any) -> bool:
     return Path(os.readlink(path)) == Path(target) or path.resolve() == Path(target).resolve()
 
 
-def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, adopt: bool, report: List[str]) -> None:
+def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, adopt: bool,
+                report: List[str], over_file: bool = False) -> None:
+    """Put the harness's symlink at `path`.
+
+    `over_file` says the caller has just retired a harness-owned file there. A real run has
+    already removed it; a dry run has not, and without this it would report the file it is
+    about to replace as the user's.
+    """
     managed = any(l.get("path") == str(path) for l in manifest.get("links", []))
     if path.is_symlink():
         current = Path(os.readlink(path))
@@ -555,7 +603,7 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
             return
         report.append(f"{path} is a symlink to {current}, not managed by the harness; pass --adopt to replace it")
         return
-    if path.exists():
+    if path.exists() and not over_file:
         if adopt:
             _adopt(path, manifest, dry)
         else:
@@ -569,16 +617,22 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
 
 
 def link_dir_files(source: Path, dest: Path, manifest: Dict[str, Any], dry: bool, adopt: bool,
-                   report: List[str]) -> None:
-    """One link per file, so anything the user keeps in the destination directory survives."""
+                   report: List[str], skip: Optional[Set[str]] = None) -> None:
+    """One link per file, so anything the user keeps in the destination directory survives.
+
+    `skip` names files the harness supplies another way; both the link and any retirement of one
+    at those paths belong to whoever supplies them, so this leaves them entirely alone.
+    """
+    skip = skip or set()
     wanted = set()
     if source.is_dir():
-        for f in sorted(p_ for p_ in source.iterdir() if p_.is_file()):
+        for f in sorted(p_ for p_ in source.iterdir() if p_.is_file() and p_.name not in skip):
             link = dest / f.name
             wanted.add(str(link))
             ensure_link(link, f, manifest, dry, adopt, report)
     for old in list(manifest.get("links", [])):
-        if Path(old["path"]).parent == dest and old["path"] not in wanted:
+        if (Path(old["path"]).parent == dest and old["path"] not in wanted
+                and Path(old["path"]).name not in skip):
             say(f"  unlink  {old['path']} (no longer in the harness)")
             path = Path(old["path"])
             if path.is_symlink() and not _leads_to(path, old["target"]):
@@ -587,6 +641,37 @@ def link_dir_files(source: Path, dest: Path, manifest: Dict[str, Any], dry: bool
             if not dry and path.is_symlink():
                 path.unlink()
             manifest["links"].remove(old)
+
+
+def claim_agent_path(target: Path, committed: Path, manifest: Dict[str, Any], dry: bool,
+                     adopt: bool, report: List[str]) -> bool:
+    """Free the path a rendered agent definition belongs at; False leaves the role unrendered.
+
+    0.10.0 linked these paths, so a link that still leads to this checkout's projection under any
+    spelling, or that dangles because the checkout moved, is the harness's own and retires here.
+    A link the user pointed at something real is theirs: preserved and reported, and `--adopt`
+    moves it aside by the pre-harness convention rather than deleting it. A symlink the manifest
+    never recorded is reported like any other unmanaged file, so no role can end a sync with a
+    definition that is neither the harness's nor repairable.
+    """
+    if not target.is_symlink():
+        return True
+    entry = next((l for l in manifest.get("links", []) if l.get("path") == str(target)), None)
+    ours = _leads_to(target, committed) or (entry is not None and (
+        not target.exists() or _leads_to(target, entry.get("target"))))
+    if ours:
+        say(f"  unlink  {target} (agent definitions are rendered, not linked)")
+        if not dry:
+            target.unlink()
+    elif adopt:
+        _adopt(target, manifest, dry)
+    else:
+        report.append(f"{target} is a symlink to {os.readlink(target)}, not a harness agent "
+                      "definition; preserved — pass --adopt to move it aside and render")
+        return False
+    if entry is not None:
+        manifest["links"].remove(entry)
+    return True
 
 
 def adopt_legacy(path: Path, manifest: Dict[str, Any], dry: bool, adopt: bool, report: List[str]) -> None:
@@ -717,9 +802,10 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if platform.system() == "Windows":
         say(UNSUPPORTED)
         return 1
-    if args.dry_run:
-        return _cmd_sync_unlocked(args)
     try:
+        # A dry run reports the same refusal as the real one; it differs in what it writes.
+        if args.dry_run:
+            return _cmd_sync_unlocked(args)
         with reconcile.lock(state_dir()):
             return _cmd_sync_unlocked(args)
     except ValueError as exc:
@@ -738,18 +824,28 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
     stances = resolve_stances(cfg)
     p = posture(cfg)
+    table = cost_table(cfg)
+    # Render every role for both runtimes before anything is written: a binding that will not
+    # resolve is an error the user sees before a half-synced home directory.
+    for runtime, key in (("codex", "codex"), ("claude-code", "claude")):
+        if not cfg.get(key, {}).get("manage", True):
+            continue
+        for role in (REPO / "primitives" / "roles").glob("*.md"):
+            primitive_catalog.role_projection(REPO, runtime, role,
+                agent_overrides(cfg, table, runtime, role.stem), cfg.get("tiers", {}).get(runtime))
     if cfg.get("codex", {}).get("manage", True):
         ctoml = codex_dir() / "config.toml"
         update_codex_config(ctoml.read_text() if ctoml.is_file() else "", cfg)
-        for role in (REPO / "primitives" / "roles").glob("*.md"):
-            primitive_catalog.role_projection(REPO, "codex", role,
-                cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {}), cfg.get("tiers", {}).get("codex"))
     if cfg.get("claude", {}).get("manage", True):
         read_json(claude_dir() / "settings.json")
     if cfg.get("codex", {}).get("manage", True):
         read_json(codex_dir() / "hooks.json")
     say(f"agent-harness {VERSION} · repo {REPO} · home {home()}{' · DRY RUN' if dry else ''}")
     say("stances: " + ", ".join(f"{k}={v.stem}" for k, v in stances.items()) + f" · permissions={p}")
+    for warning in table.get("warnings", []):
+        # A sidecar nobody can read renders the shipped table instead; silence would make that
+        # look like a deliberate posture.
+        say("  notice  cost variant: " + warning)
     stale = placeholder_identity(cfg)
     if stale:
         say(f"  notice  identity {', '.join(stale)} still at the example value; the agent reads this")
@@ -804,7 +900,50 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
                 manifest["links"].remove(old)
         for skill in sorted(p_ for p_ in (REPO / "claude" / "skills").iterdir() if p_.is_dir()):
             ensure_link(cd / "skills" / skill.name, skill, manifest, dry, args.adopt, report)
-        link_dir_files(REPO / "claude" / "agents", cd / "agents", manifest, dry, args.adopt, report)
+        # An agent definition the selected posture moves is rendered into the Claude home, because
+        # the variant's class and effort have to reach the native file; one it does not move stays
+        # the symlink to the committed projection, so the common install is exactly what earlier
+        # releases wrote and downgrades cleanly. `baseline` is the same rendering with no
+        # overrides, which is that projection. Every role is rendered before the first unlink or
+        # write, so a binding that will not resolve cannot leave a role without a definition.
+        # Anything else the harness ships in `claude/agents` keeps being linked.
+        roles = sorted((REPO / "primitives" / "roles").glob("*.md"))
+        rendered = {role.stem: (
+            primitive_catalog.role_projection(REPO, "claude-code", role,
+                agent_overrides(cfg, table, "claude-code", role.stem),
+                cfg.get("tiers", {}).get("claude-code")),
+            primitive_catalog.role_projection(REPO, "claude-code", role)) for role in roles}
+        link_dir_files(REPO / "claude" / "agents", cd / "agents", manifest, dry, args.adopt, report,
+                       skip={role.name for role in roles})
+        for role in roles:
+            content, baseline = rendered[role.stem]
+            target, committed = cd / "agents" / role.name, REPO / "claude" / "agents" / role.name
+            if content == baseline:
+                # The selected posture does not move this role, so it stays the link the previous
+                # release made: a machine on `balanced` can downgrade without a single conflict.
+                retired = str(target) in store.data["files"]
+                if retired and not store.retire(target):
+                    continue  # the user edited what the harness generated; reported, never removed
+                if retired:
+                    say(f"  unlink  {target} (renders as the committed projection)")
+                ensure_link(target, committed, manifest, dry, args.adopt, report, over_file=retired)
+                continue
+            say("  agent   " + role.stem + "  " + _agent_change(table, role.stem, content))
+            if not claim_agent_path(target, committed, manifest, dry, args.adopt, report):
+                continue
+            if (args.adopt and not target.is_symlink() and target.is_file()
+                    and str(target) not in store.data["files"]):
+                _adopt(target, manifest, dry)
+            # A dry run has not unlinked yet; the write it reports is over the claimed link.
+            over_link = target.is_symlink()
+            if over_link or not target.is_file() or target.read_text(encoding="utf-8") != content:
+                say(f"  render  {target}")
+            store.generated(target, content, adopt=args.adopt, over_link=over_link)
+        for name in [n for n, r in list(store.data["files"].items())
+                     if r.get("kind") == "generated" and Path(n).parent == cd / "agents"
+                     and Path(n).stem not in rendered]:
+            if store.retire(Path(name)):
+                say(f"  unlink  {name} (role no longer in the harness)")
         ensure_link(cd / "hooks" / "harness", REPO / "claude" / "hooks", manifest, dry, args.adopt, report)
         for style in sorted((REPO / "claude" / "output-styles").glob("*.md")):
             ensure_link(cd / "output-styles" / style.name, style, manifest, dry, args.adopt, report)
@@ -889,9 +1028,9 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
             if skill.is_dir():
                 ensure_link(skills_home / skill.name, skill, manifest, dry, args.adopt, report)
         for role in sorted((REPO / "primitives" / "roles").glob("*.md")):
-            binding = cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {})
             store.generated(codex_dir() / "agents" / (role.stem + ".toml"),
-                            primitive_catalog.role_projection(REPO, "codex", role, binding,
+                            primitive_catalog.role_projection(REPO, "codex", role,
+                                                              agent_overrides(cfg, table, "codex", role.stem),
                                                               cfg.get("tiers", {}).get("codex")), adopt=args.adopt)
         for workflow in sorted((REPO / "primitives" / "workflows").glob("*.md")):
             fields, body = primitive_catalog.frontmatter(workflow)
@@ -1121,6 +1260,17 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
             say(f"  unlink  {p}")
         elif p.exists() or p.is_symlink():
             conflicts.append(str(p) + ": changed link or replacement preserved")
+    template = read_json(REPO / "claude" / "settings.template.json") or {}
+    sf = claude_dir() / "settings.json"
+    live = read_json(sf)
+    if live is not None and str(sf) not in reconcile.Store(state_dir()).data["files"]:
+        write_json_atomic(sf, strip_claude_settings(live, template), backup=True)
+        say(f"  strip   {sf}")
+    store = reconcile.Store(state_dir())
+    store.uninstall()
+    # Restore adopted files last: the harness file occupying the destination — a link removed
+    # above, or a generated file the store has just undone — is gone by now, so a path the
+    # harness took over with `--adopt` comes back instead of being reported as occupied.
     for item in manifest.get("adopted", []):
         src, dst = Path(item["moved_to"]), Path(item["path"])
         if src.exists() or src.is_symlink():
@@ -1130,14 +1280,6 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src), str(dst))
                 say(f"  restore {dst}")
-    template = read_json(REPO / "claude" / "settings.template.json") or {}
-    sf = claude_dir() / "settings.json"
-    live = read_json(sf)
-    if live is not None and str(sf) not in reconcile.Store(state_dir()).data["files"]:
-        write_json_atomic(sf, strip_claude_settings(live, template), backup=True)
-        say(f"  strip   {sf}")
-    store = reconcile.Store(state_dir())
-    store.uninstall()
     store.conflicts.extend(conflicts)
     for conflict in store.conflicts:
         say("  conflict " + conflict)

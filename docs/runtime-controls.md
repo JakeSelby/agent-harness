@@ -23,6 +23,16 @@ approved artifact path. Direct native role defaults are not confinement: Codex c
 permission overrides. Active lifecycle hooks route constrained role launches to the worker
 command. Native qualification is still required; do not treat a projection or unit test as certification.
 
+Native agent definitions are resolved at sync from the cost variant in force. A role the selected
+posture does not move stays a symlink to the committed projection, exactly as before; a role it
+moves is rendered into the Claude home, so the class and effort it runs with are written into the
+file on disk rather than decided per session. A
+session-scoped `HARNESS_STANCE_COST`, like any `HARNESS_STANCE_*`, stays in that session and does
+not move them until the next `harness sync`; role-run workers resolve their class and effort per
+run and do follow it. A `role_bindings.<runtime>.<role>` entry still wins over the variant's row.
+Before downgrading to a release that only links these definitions, either select `balanced` with
+no role bindings and sync once, which restores the links, or run `harness uninstall`.
+
 Usage records identify the runtime and available runtime version. Codex cumulative token snapshots
 are counted once; missing measurements remain null and reports label partial totals. Detector
 failures are reported separately and excluded from clean-session denominators. Lock contention

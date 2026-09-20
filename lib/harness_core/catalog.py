@@ -171,6 +171,29 @@ def tier_findings(tiers, models):
     return findings
 
 
+def role_overrides(root, runtime, row=None, class_applies=True, tiers=None, binding=None):
+    """One role's binding overrides: the active cost row, then the user's explicit binding.
+
+    Precedence, lowest first: the role's own `tier` and the adapter's effort, which are not
+    overrides at all and reach `role_binding` by themselves; then the resolved cost row; then
+    `role_bindings.<runtime>.<role>`, which always wins because the user named it. A row carries
+    a capability class and never a model, so the adapter's table stays the only place a native
+    model is written; a `posture: fixed` role arrives with no class and no effort, because the
+    resolver has already stripped them.
+    """
+    effort_key = "model_reasoning_effort" if runtime == "codex" else "effort"
+    out = {}
+    if row:
+        if class_applies and row.get("class") in TIER_CLASSES:
+            model = native_model(adapter_tiers(root, runtime, tiers)[1], row["class"])
+            if model:
+                out["model"] = model
+        if row.get("effort") in EFFORTS:
+            out[effort_key] = row["effort"]
+    out.update(binding or {})
+    return out
+
+
 def role_binding(root, runtime, fields, overrides=None, tiers=None):
     """A role's native binding: the adapter's entry, its class resolved to a model, then overrides."""
     data, tiers = adapter_tiers(root, runtime, tiers)
