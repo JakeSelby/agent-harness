@@ -38,7 +38,7 @@ def resolve(root, config, runtime, name, model=None):
     if fields["authority"] not in ("read-only", "artifact-write"):
         raise ValueError("workspace-write roles use their normal workflow, not a constrained worker")
     overrides = config.get("role_bindings", {}).get(runtime, {}).get(name, {})
-    bindings = catalog.role_binding(root, runtime, fields, overrides)
+    bindings = catalog.role_binding(root, runtime, fields, overrides, config.get("tiers", {}).get(runtime))
     chosen = model or bindings.get("model")
     if not isinstance(chosen, str) or not chosen.strip() or chosen == "inherit":
         raise ValueError("this adapter maps no model for the role's class; supply --model with the parent session's model")

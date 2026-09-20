@@ -132,6 +132,16 @@ class TierSpawnsTests(unittest.TestCase):
         tiers = json.loads((REPO / "adapters" / "claude-code" / "bindings.json").read_text())["tiers"]
         self.assertEqual(hook.LADDER, [tiers[name] for name in catalog.TIER_CLASSES])
 
+    def test_a_session_model_off_the_ladder_is_left_alone_out_loud(self):
+        self.write_transcript(record("assistant", "claude-opus-5"), record("assistant", "claude-nova-7"))
+        out = self.run_hook(self.spawn(prompt="x"))
+        self.assertNotIn("hookSpecificOutput", out)
+        self.assertIn("claude-nova-7", out["systemMessage"])
+        self.assertIn("not on the ladder", out["systemMessage"])
+        # A placeholder record is not a model: the real one behind it still decides.
+        self.write_transcript(record("assistant", "claude-opus-5"), record("assistant", "<synthetic>"))
+        self.assertEqual(self.rewritten(self.spawn(prompt="x")), "sonnet")
+
     def test_haiku_is_the_floor(self):
         self.write_transcript(record("assistant", "claude-haiku-4-5-20251001"))
         self.assertIsNone(self.run_hook(self.spawn(prompt="x")))

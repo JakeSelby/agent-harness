@@ -28,8 +28,10 @@ what carries tools and effort.
 The session model is read from the newest main-line assistant record in the transcript, which
 Claude Code writes once a response has started executing tools, so a spawn in a session's very
 first response is left alone: nothing else says what the session runs on (the `model` key in
-settings is a default the session may not be using), and an unknown tier is left untouched
-rather than guessed. Never fails: every error falls through and the call runs as written.
+settings is a default the session may not be using). A session model the ladder does not know
+is left untouched rather than guessed, and the hook says so, because a new model name would
+otherwise switch tiering off without a sound. Never fails: every error falls through and the
+call runs as written.
 
 Test: printf '%s' '{"tool_name":"Agent","tool_input":{"prompt":"x"}}' | HARNESS_STANCE_DELEGATION=off python3 tier-agent-spawns.py
 """
@@ -97,7 +99,8 @@ def transcript_model(path):
             continue
         message = record.get("message")
         model = message.get("model") if isinstance(message, dict) else None
-        if tier_of(model):
+        # Placeholder records ("<synthetic>") name no model; anything else is the session's, known or not.
+        if isinstance(model, str) and model and not model.startswith("<"):
             return model
     return None
 
@@ -148,7 +151,13 @@ def main():
         return
     if not is_bare(tool_input):
         return
-    current = tier_of(transcript_model(payload.get("transcript_path")))
+    session = transcript_model(payload.get("transcript_path"))
+    current = tier_of(session)
+    if session and current is None:
+        # A lineup change the ladder has not caught up with must not pass for "nothing to do".
+        print(json.dumps({"systemMessage": f"{HOOK}: the session model {session} is not on the ladder "
+                          f"({', '.join(LADDER)}), so this bare subagent stays on it; name a model or a role"}))
+        return
     if current is None or current == LADDER[-1]:
         return
     below = LADDER[LADDER.index(current) + 1]

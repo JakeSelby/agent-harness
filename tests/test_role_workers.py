@@ -90,6 +90,8 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(workers.resolve(REPO, self.cfg, "claude-code", "reviewer")[1]["model"], "opus")
         self.assertEqual(workers.resolve(REPO, self.cfg, "claude-code", "reviewer", "chosen")[1]["model"], "chosen")
         self.assertEqual(workers.resolve(REPO, self.cfg, "codex", "reviewer")[1]["model"], "gpt-5.6-sol")
+        self.cfg["tiers"] = {"codex": {"strong": "next-strong"}}
+        self.assertEqual(workers.resolve(REPO, self.cfg, "codex", "reviewer")[1]["model"], "next-strong")
         self.cfg["role_bindings"] = {"codex": {"reviewer": {"model": "inherit"}}}
         with self.assertRaisesRegex(ValueError, "parent session"):
             workers.resolve(REPO, self.cfg, "codex", "reviewer")

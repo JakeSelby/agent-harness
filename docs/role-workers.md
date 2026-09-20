@@ -29,7 +29,20 @@ or reaching its deadline terminates its process group and prevents artifact publ
 A role's class (`tier:` in its contract) resolves through the adapter's `tiers` table in
 `bindings.json`, so omit `--model` unless you mean to override it. An adapter that maps no model
 for the class requires the caller's actual session model; the worker does not resolve downward
-or silently substitute the CLI default. Native provider connection settings remain separate from
+or silently substitute the CLI default.
+
+Two keys in `~/.config/agent-harness/config.json` change the mapping without a harness release.
+`tiers.<runtime>.<class>` remaps a class for every role that names it, which is the one-line fix
+when a provider's lineup turns over; `role_bindings.<runtime>.<role>` sets `model` or effort for
+one role and wins over the class. Both reach workers and the Codex agent projections; Claude
+Code's native agents are the committed projections and follow the adapter's own table.
+
+`harness tiers check` compares the Codex table with the model catalog Codex fetches from its
+provider (`models_cache.json` in the Codex home), offline. It fails on a mapped model the catalog
+no longer lists, one the catalog names a successor for, or a class the catalog ranks above a
+stronger one, and reports *unverified* rather than passing when there is no catalog to read.
+Codex model ids carry a version and keep resolving after a successor ships, so this is what
+notices. Claude Code's table uses version-free aliases and has nothing to check. Native provider connection settings remain separate from
 shared role semantics. Codex copies only the selected provider's supported connection settings;
 provider credentials must use environment references. Unsupported connection settings fail
 instead of being dropped. Interactive parent overrides are not inferred.

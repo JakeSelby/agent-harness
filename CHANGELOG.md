@@ -6,8 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `harness tiers check` compares the Codex class table with the model catalog Codex fetches from
+  its provider, offline, and fails on a mapped model that is gone, superseded or ranked out of
+  order. A missing catalog reports *unverified*, not a pass.
+- `tiers.<runtime>.<class>` in the configuration remaps a capability class for every role that
+  names it, without a harness release.
+
 ### Changed
 
+- The spawn hook says so when the session's model is not on its ladder, instead of leaving the
+  subagent on the session model without a word.
 - Shared roles name a provider-neutral capability class (`tier:` — `frontier`, `strong`, `standard`,
   `light`) and each adapter's `bindings.json` maps classes to native models in a `tiers` table.
   `reviewer` and `planner` run on `strong`, `spec-reviewer` on `standard` and `design-judge` on

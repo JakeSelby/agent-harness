@@ -709,7 +709,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         update_codex_config(ctoml.read_text() if ctoml.is_file() else "", cfg)
         for role in (REPO / "primitives" / "roles").glob("*.md"):
             primitive_catalog.role_projection(REPO, "codex", role,
-                cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {}))
+                cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {}), cfg.get("tiers", {}).get("codex"))
     if cfg.get("claude", {}).get("manage", True):
         read_json(claude_dir() / "settings.json")
     if cfg.get("codex", {}).get("manage", True):
@@ -857,7 +857,8 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         for role in sorted((REPO / "primitives" / "roles").glob("*.md")):
             binding = cfg.get("role_bindings", {}).get("codex", {}).get(role.stem, {})
             store.generated(codex_dir() / "agents" / (role.stem + ".toml"),
-                            primitive_catalog.role_projection(REPO, "codex", role, binding), adopt=args.adopt)
+                            primitive_catalog.role_projection(REPO, "codex", role, binding,
+                                                              cfg.get("tiers", {}).get("codex")), adopt=args.adopt)
         for workflow in sorted((REPO / "primitives" / "workflows").glob("*.md")):
             fields, body = primitive_catalog.frontmatter(workflow)
             content = "---\nname: harness-" + workflow.stem + "\ndescription: " + fields["description"] + "\n---\n\n"
@@ -2147,6 +2148,30 @@ def cmd_role(args):
         return 1
 
 
+def cmd_tiers(args: argparse.Namespace) -> int:
+    """Check each adapter's class table against the model catalog its provider publishes."""
+    cfg = load_config()
+    try:
+        _, claude = primitive_catalog.adapter_tiers(REPO, "claude-code", cfg.get("tiers", {}).get("claude-code"))
+        _, codex = primitive_catalog.adapter_tiers(REPO, "codex", cfg.get("tiers", {}).get("codex"))
+    except ValueError as exc:
+        print("tiers: " + str(exc), file=sys.stderr)
+        return 1
+    say("claude-code: " + ", ".join(claude.values()) + " — version-free aliases, nothing to go stale")
+    cache = codex_dir() / "models_cache.json"
+    try:
+        models = json.loads(cache.read_text(encoding="utf-8"))["models"]
+    except (OSError, ValueError, KeyError, TypeError):
+        say("codex: unverified — no readable model catalog at " + str(cache) + "; run Codex once to fetch it")
+        return 0
+    findings = primitive_catalog.tier_findings(codex, models)
+    for name, model, problem in findings:
+        say("codex: " + name + " -> " + model + ": " + problem)
+    if not findings:
+        say("codex: " + ", ".join(codex.values()) + " — current in the catalog")
+    return 1 if findings else 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="harness", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--version", action="version", version=f"agent-harness {VERSION}")
@@ -2287,10 +2312,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--workspace", default=str(Path.cwd()), help="project to inspect read-only")
     p.add_argument("--read-dir", action="append", default=[], help="additional directory containing input artifacts")
     p.add_argument("--prompt-file", help="brief file, or - for stdin; its content is never executed")
-    p.add_argument("--model", help="explicit model; required when the shared role inherits the parent model")
+    p.add_argument("--model", help="override the model the role's class resolves to; required only when the adapter maps none")
     p.add_argument("--artifact", help="artifact-write roles only: new Markdown filename under .agent-harness/plans/")
     p.add_argument("--timeout", type=int, default=300, help="worker deadline in seconds (1–3600)")
     p.set_defaults(func=cmd_role)
+
+    p = sub.add_parser("tiers", help="check the adapters' class-to-model tables against their providers' model catalogs")
+    p.add_argument("action", choices=["check"])
+    p.set_defaults(func=cmd_tiers)
 
     args = parser.parse_args(argv)
     return args.func(args)

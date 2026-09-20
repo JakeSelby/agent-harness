@@ -19,8 +19,11 @@ classes it has qualified to native models in a `tiers` table. The class is a sta
 work; the table is the only place a provider's model names appear. An unmapped class resolves to
 the nearest *stronger* mapped class and otherwise inherits the session model — never downward,
 because a weaker model than the role asked for is a silent failure. Both adapters map all four.
-Native ids carry a version and go stale when a lineup turns over, so re-check the tables then; on
-a provider that lacks them, override a role's `model` to `inherit` in `role_bindings`.
+Claude Code's table uses version-free aliases. Codex has none — every id carries a version and
+keeps resolving after its successor ships — so `harness tiers check` reads the catalog Codex
+fetches from its provider and flags a mapped model that is gone, superseded or out of order.
+`tiers.<runtime>.<class>` in your config remaps a class in one line; on a provider that lacks
+these ids, override a role's `model` to `inherit` in `role_bindings`.
 
 Provider model names and benchmark examples below describe their original evaluation context;
 they are not cross-provider capability equivalences. With no qualified cheaper mapping, inherit the session model and
