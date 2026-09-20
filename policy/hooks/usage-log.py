@@ -204,10 +204,37 @@ def _agent_row(path, shared=None):
            "agent_type": meta.get("agentType") or "unknown",
            "model": meta.get("model") or model, "effort": effort or meta.get("effort") or "",
            "tool_calls": calls, "spawn_depth": meta.get("spawnDepth"), "workflow": workflow,
-           # A later step sets this when the spawn hook rewrote the requested agent type.
-           "rerouted": False, "turns": turns, "started": started, "ended": ended}
+           # `mark_reroutes` fills these from the parent's record of the call, joined on this id.
+           "tool_use_id": meta.get("toolUseId") or "",
+           "requested_type": "", "rerouted": False,
+           "turns": turns, "started": started, "ended": ended}
     row.update(summed(per_message))
     return row
+
+
+# The two spellings of "this spawn named no agent definition"; they are one request, so a spawn
+# that ran as `general-purpose` after asking for nothing was not rerouted.
+UNNAMED_TYPES = ("", "general-purpose")
+
+
+def mark_reroutes(agents, requested):
+    """Fill `requested_type` and `rerouted` from the parent's `Agent` inputs, joined on tool use id.
+
+    A transcript records a tool input as the model wrote it, before any `PreToolUse` hook
+    rewrote it, while the subagent's `.meta.json` records the type it actually ran as. The two
+    disagreeing is the reroute — measured from what happened, never announced by the hook that
+    did it, so orchestrator compliance is a number and not a claim.
+    """
+    for row in agents:
+        use_id = row.get("tool_use_id")
+        if not use_id or use_id not in requested:
+            continue
+        asked = requested[use_id]
+        asked = asked.strip() if isinstance(asked, str) else ""
+        ran = row.get("agent_type") or ""
+        row["requested_type"] = asked
+        if ran and ran != "unknown":
+            row["rerouted"] = asked != ran and not (asked in UNNAMED_TYPES and ran in UNNAMED_TYPES)
 
 
 def agent_rows(transcript, session_id="", shared=None):
@@ -264,7 +291,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     """
     per_message = {} if shared is None else shared
     anonymous = 0
-    models, agent_calls, seen = [], set(), set()
+    models, agent_calls, seen, requested = [], set(), set(), {}
     started = ended = branch = ""
     turns = 0
     events, tool_names, blocks_seen = [], {}, set()
@@ -356,6 +383,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 if isinstance(block, dict) and block.get("type") == "tool_use" \
                         and block.get("name") == "Agent":
                     agent_calls.add(block.get("id") or len(agent_calls))
+                    called = block.get("input")
+                    if block.get("id") and isinstance(called, dict):
+                        requested.setdefault(block["id"], called.get("subagent_type") or "")
             # The same repetition is why the token sums are taken once per message id, not once
             # per line, and at that id's largest figure rather than its first: the early lines
             # of one response carry a partial streaming count.
@@ -373,6 +403,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 models.append(model)
     if pending_final is not None:
         pending_final["final"] = True
+    mark_reroutes(agents, requested)
     if not session_id or not turns:
         return None
     totals = summed(per_message)

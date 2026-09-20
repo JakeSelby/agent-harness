@@ -30,6 +30,9 @@ All notable changes to this project are documented here. The format follows
 - `harness stances --json` carries the resolved cost table — switches, rows with base and scaled
   budgets, default band, the `extends` chain with each sidecar's path, and warnings. Lint
   validates shipped sidecars against the schema and against their own prose.
+- Three band worker roles, `worker-a`, `worker-b` and `worker-c`, carrying the A/B/C bands'
+  class and effort into a native spawn. Their descriptions hold the band rule, so an
+  orchestrator chooses a band by spawning one of them by name.
 - `harness usage --by role` reports, per agent type, the number of runs and the p50, p75 and p90
   of output tokens and of tool calls over the window — the distribution a per-role budget has to
   be set against. A run whose runtime reported no counts is named, never averaged in as a zero.
@@ -55,6 +58,16 @@ All notable changes to this project are documented here. The format follows
   same trust level as the `HARNESS_STANCE_*` the hooks already honoured. The grading hook is
   the exception that fails closed: a stance it cannot resolve is graded under the strictest
   variant, named as unresolved in the prompt.
+- A spawn that names no agent definition, or names `general-purpose`, is rewritten to the cost
+  variant's default band worker and runs on that band's class — the only way the posture's
+  effort reaches it, because the `Agent` tool has no effort input. A model the caller named is
+  kept, the top class is still refused by request, and a variant with no `default_band`, an
+  unreadable table or a machine whose worker definitions are not installed leaves the spawn
+  exactly as the previous release did. The cost table is read only for a spawn that named
+  nothing, so naming a role costs nothing.
+- Subagent usage rows carry `requested_type` and set `rerouted` when the type the parent
+  recorded differs from the one the subagent ran as, joined on the tool use id. The reroute is
+  measured from the transcript rather than reported by the hook that made it.
 - The spawn hook reads its model ladder from the adapter's `bindings.json` `tiers` table instead
   of a list written in the hook; a table it cannot read leaves the spawn as written and says so.
 - The spawn hook says so when the session's model is not on its ladder, instead of leaving the

@@ -30,6 +30,15 @@
     },
     "spec-reviewer": {
       "model_reasoning_effort": "high"
+    },
+    "worker-a": {
+      "model_reasoning_effort": "low"
+    },
+    "worker-b": {
+      "model_reasoning_effort": "low"
+    },
+    "worker-c": {
+      "model_reasoning_effort": "high"
     }
   }
 }

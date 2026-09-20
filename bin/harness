@@ -112,14 +112,20 @@ SHAPE_PATTERNS = [
 ]
 
 
+_POSTURE_MODULES: Dict[str, Any] = {}
+
+
 def load_posture(root: Path = REPO):
     """The stance and cost resolver the hooks run, loaded by path, or None when it is missing.
 
     Loading the same file the hooks load is what keeps one answer to "what does this variant
     say": lint validates sidecars with the resolver's own schema, never a second copy of it.
+    Loaded once per root, because a sync asks it a question per role per runtime.
     """
     import importlib.util
 
+    if str(root) in _POSTURE_MODULES:
+        return _POSTURE_MODULES[str(root)]
     path = root / "claude" / "hooks" / "posture.py"
     if not path.is_file():
         return None
@@ -127,6 +133,7 @@ def load_posture(root: Path = REPO):
         spec = importlib.util.spec_from_file_location("harness_posture", str(path))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        _POSTURE_MODULES[str(root)] = module
         return module
     except Exception:
         return None
@@ -372,10 +379,22 @@ def cost_table(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 "warnings": ["cost table unusable, rendering without cost rows: " + str(exc)]}
 
 
+def agent_row(table: Dict[str, Any], role: str) -> Optional[Dict[str, Any]]:
+    """The cost row that governs one role, band rows included; the resolver decides which.
+
+    One lookup for the whole sync path, so a band worker is rendered from the same row the
+    spawn hook reroutes to. A checkout with no resolver falls back to the role's own row.
+    """
+    module = load_posture()
+    if module is None or not hasattr(module, "row_for"):
+        return table.get("rows", {}).get(role)
+    return module.row_for(table, role)
+
+
 def agent_overrides(cfg: Dict[str, Any], table: Dict[str, Any], runtime: str, role: str) -> Dict[str, Any]:
     """The overrides one role's native definition is rendered with, for either runtime."""
     return primitive_catalog.role_overrides(
-        REPO, runtime, table.get("rows", {}).get(role),
+        REPO, runtime, agent_row(table, role),
         class_applies=bool(table.get("class_applies")),
         tiers=cfg.get("tiers", {}).get(runtime),
         binding=cfg.get("role_bindings", {}).get(runtime, {}).get(role, {}))
@@ -389,7 +408,7 @@ def _agent_change(table: Dict[str, Any], role: str, content: str) -> str:
     """
     fields = {k.strip(): v.strip() for k, _, v in
               (line.partition(":") for line in content.split("---", 2)[1].strip().splitlines())}
-    klass = (table.get("rows", {}).get(role) or {}).get("class")
+    klass = (agent_row(table, role) or {}).get("class")
     model = (klass + " -> " if klass and table.get("class_applies") else "") + fields.get("model", "inherit")
     return model + ", effort " + fields.get("effort", "")
 

@@ -191,8 +191,16 @@ inherits no voice, so its brief has to carry the output shape itself.
 **Delegation.** The evidence for the tier bands, the cost-per-solved-task numbers and the
 boundaries where they stop holding are in the `delegation-tiering` skill, not here. The
 `tier-agent-spawns` hook enforces the chosen variant on spawns that name no agent definition:
-one tier down under `tiered` (the session model inside a framework repo), untouched under
+routed to the cost variant's default band worker under `tiered`, untouched under
 `session-model`, a prompt under `off`.
+
+**Band workers.** `worker-a`, `worker-b` and `worker-c` are the three roles the A/B/C bands
+render into, and they exist for one reason: the `Agent` tool takes no effort, so only an agent
+definition can carry the posture's effort to a spawn that named nothing. Such a spawn is
+rewritten to the variant's `default_band` worker — `B` under `balanced`, `A` under `frugal` —
+and an orchestrator that wants another band spawns that worker by name; their descriptions
+carry the band rule the `delegation-tiering` skill argues. A variant with no `default_band`
+routes nothing, and a machine that has not synced the definitions is left exactly as before.
 
 ## Proposing a new stance or variant
 

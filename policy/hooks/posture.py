@@ -49,6 +49,10 @@ DEFAULT_STANCES = {
 TIER_CLASSES = ("frontier", "strong", "standard", "light")
 EFFORTS = ("low", "medium", "high")
 BANDS = ("A", "B", "C")
+# The role a band's row renders and reroutes to. A band classes the *work*, so it needs an agent
+# definition to carry its class and effort into a native spawn; these three are those definitions,
+# and this map is the only place the naming is written.
+BAND_ROLES = {band: "worker-" + band.lower() for band in BANDS}
 # The variant every other one falls back to, and the one a sidecar-less variant resolves to.
 BASE_COST_VARIANT = DEFAULT_STANCES["cost"]
 SIDECAR_SCHEMA_VERSION = 1
@@ -479,16 +483,38 @@ def selected(name, fallback=None, env=None, strict=True):
     return _selection(_user_config(env, strict), env, strict).get(name) or fallback
 
 
-def ladder(runtime="claude-code", root=None):
-    """The adapter's native models, strongest class first, or `[]` when it cannot be read.
+def row_for(table, role):
+    """The row that governs one role: its own, or its band's when it is a band worker.
+
+    The bands exist so a variant can price work it cannot name a role for, and the band workers
+    are the roles that carry a band into a spawn. A row keyed by the role beats the band's,
+    because naming the role is the more specific thing a variant can say.
+    """
+    rows = table.get("rows") if isinstance(table, dict) else None
+    rows = rows if isinstance(rows, dict) else {}
+    if role in rows:
+        return rows[role]
+    for band, name in BAND_ROLES.items():
+        if name == role:
+            return rows.get(band)
+    return None
+
+
+def tier_models(runtime="claude-code", root=None):
+    """The adapter's `{class: native model}`, strongest class first, or `{}` when unreadable.
 
     Model names belong to `adapters/<runtime>/bindings.json`, never to hook code: a lineup
-    change is a data edit, and a caller that gets `[]` says so rather than guessing.
+    change is a data edit, and a caller that gets nothing says so rather than guessing.
     """
     path = (root or ROOT) / "adapters" / runtime / "bindings.json"
     try:
         tiers = json.loads(path.read_text(encoding="utf-8"))["tiers"]
-        return [tiers[name] for name in TIER_CLASSES
-                if isinstance(tiers.get(name), str) and tiers[name].strip()]
+        return {name: tiers[name] for name in TIER_CLASSES
+                if isinstance(tiers.get(name), str) and tiers[name].strip()}
     except Exception:
-        return []
+        return {}
+
+
+def ladder(runtime="claude-code", root=None):
+    """The adapter's native models, strongest class first, or `[]` when it cannot be read."""
+    return list(tier_models(runtime, root).values())

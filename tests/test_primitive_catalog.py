@@ -28,7 +28,8 @@ class CatalogTests(unittest.TestCase):
         classes = {p.stem: catalog.frontmatter(p)[0]["tier"] for p in (REPO / "primitives/roles").glob("*.md")}
         self.assertEqual(classes, {"builder": "strong", "design-judge": "frontier", "designer": "frontier", "gatherer": "strong",
                                    "log-compressor": "standard", "planner": "strong", "reviewer": "strong",
-                                   "spec-reviewer": "standard"})
+                                   "spec-reviewer": "standard", "worker-a": "standard",
+                                   "worker-b": "strong", "worker-c": "strong"})
         for source in (REPO / "primitives/roles").glob("*.md"):
             self.assertNotIn("\nmodel: inherit\n", catalog.role_projection(REPO, "claude-code", source))
             self.assertIn("\nmodel = ", catalog.role_projection(REPO, "codex", source))
@@ -101,7 +102,7 @@ class CatalogTests(unittest.TestCase):
         items = catalog.catalog(REPO)["primitives"]
         self.assertEqual(len(items), len({(x["kind"], x["id"]) for x in items}))
         self.assertTrue(all(x["source"].startswith("primitives/") for x in items))
-        self.assertEqual(len([x for x in items if x["kind"] == "roles"]), 8)
+        self.assertEqual(len([x for x in items if x["kind"] == "roles"]), 11)
 
     def test_custom_stance_switch_changes_both_instruction_projections(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -38,6 +38,18 @@
     "spec-reviewer": {
       "tools": "Read, Grep, Glob",
       "effort": "high"
+    },
+    "worker-a": {
+      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "effort": "low"
+    },
+    "worker-b": {
+      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "effort": "low"
+    },
+    "worker-c": {
+      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "effort": "high"
     }
   }
 }
