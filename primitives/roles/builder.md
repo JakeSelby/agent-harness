@@ -1,6 +1,7 @@
 ---
 name: builder
 description: Implement one issue or approved plan in its own git worktree, with tests, run the repository's gate, and commit once locally. Never pushes and never opens a pull request — the caller verifies the gate and lands the branch. Returns a fixed report: worktree, branch, SHA, files, gate tail, deviations.
+tier: strong
 authority: workspace-write
 context: fresh
 delegation: none

@@ -1,5 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "tiers": {
+    "frontier": "gpt-6-astra",
+    "strong": "gpt-5.6-sol",
+    "standard": "gpt-5.6-terra",
+    "light": "gpt-5.6-luna"
+  },
   "roles": {
     "builder": {
       "model_reasoning_effort": "medium"

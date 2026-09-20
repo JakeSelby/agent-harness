@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Shared roles name a provider-neutral capability class (`tier:` — `frontier`, `strong`, `standard`,
+  `light`) and each adapter's `bindings.json` maps classes to native models in a `tiers` table.
+  `reviewer` and `planner` run on `strong`, `spec-reviewer` on `standard` and `design-judge` on
+  `frontier` instead of inheriting the session model, so their cost no longer follows whatever
+  the session happens to run. An unmapped class resolves upward or inherits, never downward.
+- Codex roles gain model tiering: its table maps the four classes to `gpt-6-astra`, `gpt-5.6-sol`,
+  `gpt-5.6-terra` and `gpt-5.6-luna`. Codex roles previously inherited the session model.
+- The spawn hook tiers a planning-framework repository like any other, and refuses the top tier
+  by request: an unnamed spawn asking for it runs one class below, a named agent falls back to its
+  definition. The `session-model` stance is unchanged and remains the opt-out.
+- `harness role run`, the constrained-role refusal message and the BMad override templates no
+  longer tell the caller to pass the parent session's model; they name it only where the adapter
+  maps none. Role effort above `high` is rejected.
+
+### Migration
+
+- A `role_bindings` override of `model` still wins over the class, so existing overrides keep
+  working. A fork that added a role gives it a `tier:` line.
+- A Codex install on a provider without these model ids sets `model` to `inherit` for each role
+  under `role_bindings.codex`, which restores the previous behavior.
+- Re-run `harness bmad apply <framework-root>` to pick up the revised templates.
+
 ## [0.10.0] — 2026-09-19
 
 ### Added

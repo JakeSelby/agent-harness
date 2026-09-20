@@ -54,7 +54,7 @@ class PlannerFrontmatterTests(unittest.TestCase):
 
     def test_model_and_effort_are_values_the_tool_accepts(self):
         fields, _ = frontmatter(AGENT)
-        self.assertEqual(fields["model"], "inherit")
+        self.assertEqual(fields["model"], "opus")  # a plan file persists, so never below strong
         self.assertEqual(fields["effort"], "high")
         self.assertIn(fields["model"], MODELS)
 

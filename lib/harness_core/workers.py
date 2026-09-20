@@ -37,15 +37,11 @@ def resolve(root, config, runtime, name, model=None):
     fields, body = catalog.role_contract(root, name)
     if fields["authority"] not in ("read-only", "artifact-write"):
         raise ValueError("workspace-write roles use their normal workflow, not a constrained worker")
-    bindings = json.loads((root / "adapters" / runtime / "bindings.json").read_text())["roles"][name]
     overrides = config.get("role_bindings", {}).get(runtime, {}).get(name, {})
-    allowed = {"model", "model_reasoning_effort"} if runtime == "codex" else {"model", "effort"}
-    if set(overrides) - allowed:
-        raise ValueError("role bindings may change model and effort only")
-    bindings = dict(bindings, **overrides)
+    bindings = catalog.role_binding(root, runtime, fields, overrides)
     chosen = model or bindings.get("model")
     if not isinstance(chosen, str) or not chosen.strip() or chosen == "inherit":
-        raise ValueError("this role inherits its model; supply --model with the parent session's model")
+        raise ValueError("this adapter maps no model for the role's class; supply --model with the parent session's model")
     if chosen.startswith("-") or any(c.isspace() for c in chosen):
         raise ValueError("invalid worker model identifier")
     bindings["model"] = chosen

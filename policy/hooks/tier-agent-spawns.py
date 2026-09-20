@@ -6,22 +6,24 @@ The stance's tiers travel as frontmatter on the agents the harness ships, so the
 spawn that names one. A spawn that names nothing — no `subagent_type`, or `general-purpose`,
 and no `model` — is what a planning framework or a plugin produces when its skill text says
 "launch a subagent", and nothing else in the harness reaches it. This hook does. A call that
-names an agent definition or passes `model` is left exactly as it was: the definition or the
-caller already decided.
+names an agent definition or passes `model` is left as it was, with one exception: the
+strongest class is reached through a role that declares it, never by request. A spawn that
+asks for it by `model` loses the request — a named agent falls back to its own definition,
+an unnamed one runs on the class below — so neither an orchestrator nor a framework's skill
+text ("run reviewers at the session's capability") can put ad-hoc work on the scarcest tier.
 
 What a bare spawn gets depends on the `delegation` stance, read from
 `HARNESS_STANCE_DELEGATION` or `~/.config/agent-harness/config.json`:
 
-    tiered         rewrite `model` to one tier below the session model; `haiku` is the floor
+    tiered         rewrite `model` to one tier below the session model; `haiku` is the floor;
+                   refuse the top tier by request
     session-model  leave it alone
     off            ask before every spawn, named or not
 
-A repository that carries a planning-framework runtime (`_bmad/scripts/` or `_bmad/core/`
-at or above `cwd`) is a framework repo: a bare spawn there keeps the session model under
-`tiered`, because the framework's lenses are judgment work its override contract cannot
-rename, and its own rule is same capability. The framework's override templates name the
-harness's agents where the recipe allows, which is what carries tools and effort. A
-worktree of such a repo commits only `_bmad/custom/`, so the tier-down applies there.
+A repository that carries a planning framework is tiered like any other. The framework keeps
+its personas, prompts and review structure; model and effort are the harness's to choose, and
+the framework's override templates name the harness's roles where the recipe allows, which is
+what carries tools and effort.
 
 The session model is read from the newest main-line assistant record in the transcript, which
 Claude Code writes once a response has started executing tools, so a spawn in a session's very
@@ -37,11 +39,12 @@ import sys
 from pathlib import Path
 
 CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
+# Strongest first: the native names of adapters/claude-code/bindings.json `tiers`, which a test
+# holds equal to this list. Matched as substrings of the model ids a transcript records.
 LADDER = ["fable", "opus", "sonnet", "haiku"]
 DEFAULT_STANCE = "tiered"
 TAIL_BYTES = 1 << 20
 HOOK = "tier-agent-spawns hook"
-FRAMEWORK_MARKERS = (("_bmad", "scripts"), ("_bmad", "core"))
 
 
 def load(path):
@@ -99,19 +102,6 @@ def transcript_model(path):
     return None
 
 
-def framework_root(cwd):
-    """The nearest directory at or above cwd that carries a framework runtime, or None."""
-    try:
-        start = Path(cwd).resolve()
-    except Exception:
-        return None
-    for candidate in (start, *start.parents):
-        for parts in FRAMEWORK_MARKERS:
-            if candidate.joinpath(*parts).is_dir():
-                return candidate
-    return None
-
-
 def is_bare(tool_input):
     kind = tool_input.get("subagent_type")
     return not tool_input.get("model") and (not kind or kind == "general-purpose")
@@ -142,9 +132,21 @@ def main():
             "permissionDecisionReason": f"the delegation stance is off: confirm this spawn or do the work inline ({HOOK})",
         })
         return
-    if variant != "tiered" or not is_bare(tool_input):
+    if variant != "tiered":
         return
-    if framework_root(payload.get("cwd")):
+    if tier_of(tool_input.get("model")) == LADDER[0]:
+        updated = dict(tool_input)
+        kind = updated.get("subagent_type")
+        if kind and kind != "general-purpose":
+            del updated["model"]
+            outcome = f"{kind} runs on the model its definition names"
+        else:
+            updated["model"] = LADDER[1]
+            outcome = f"this spawn runs on {LADDER[1]}"
+        emit({"updatedInput": updated},
+             system_message=f"{HOOK}: {LADDER[0]} is reached through a role that declares it, not by request; {outcome}")
+        return
+    if not is_bare(tool_input):
         return
     current = tier_of(transcript_model(payload.get("transcript_path")))
     if current is None or current == LADDER[-1]:

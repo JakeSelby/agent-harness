@@ -7,6 +7,10 @@ from pathlib import Path
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
 KINDS = {"rules": "rules", "stances": "stances", "skills": "skills",
          "roles": "roles", "workflows": "workflows", "presentation": "presentation"}
+# Capability classes, strongest first. A shared role names the class its work needs; each
+# adapter's bindings.json maps the classes it has qualified onto its own native models.
+TIER_CLASSES = ("frontier", "strong", "standard", "light")
+EFFORTS = ("low", "medium", "high")
 
 
 def identifier(value):
@@ -106,19 +110,48 @@ def role_contract(root, name):
         raise ValueError("invalid shared role name or authority: " + name)
     if fields.get("context") != "fresh" or fields.get("delegation") != "none":
         raise ValueError("unsupported role context or delegation contract: " + name)
+    if fields.get("tier") not in TIER_CLASSES:
+        raise ValueError("shared role tier must be one of " + ", ".join(TIER_CLASSES) + ": " + name)
     return fields, body
+
+
+def native_model(tiers, tier):
+    """The adapter's model for a class, or the nearest stronger class it maps; None if neither.
+
+    An unmapped class never resolves downward: a weaker model than the role asked for is a
+    silent failure, while None makes the caller inherit the session model and say so.
+    """
+    for name in reversed(TIER_CLASSES[:TIER_CLASSES.index(tier) + 1]):
+        if name in tiers:
+            return tiers[name]
+    return None
+
+
+def role_binding(root, runtime, fields, overrides=None):
+    """A role's native binding: the adapter's entry, its class resolved to a model, then overrides."""
+    data = json.loads((root / "adapters" / runtime / "bindings.json").read_text())
+    tiers = data.get("tiers", {})
+    if set(tiers) - set(TIER_CLASSES) or not all(
+            isinstance(v, str) and v.strip() and not v.startswith("-") and not any(c.isspace() for c in v)
+            for v in tiers.values()):
+        raise ValueError("adapter tiers map " + ", ".join(TIER_CLASSES) + " to native model identifiers")
+    effort_key = "model_reasoning_effort" if runtime == "codex" else "effort"
+    if set(overrides or {}) - {"model", effort_key}:
+        raise ValueError("role bindings may change model and effort only")
+    binding = dict(data["roles"][fields["name"]], **(overrides or {}))
+    if binding.get(effort_key, EFFORTS[0]) not in EFFORTS:
+        raise ValueError("role effort must be one of " + ", ".join(EFFORTS) + ": " + fields["name"])
+    model = binding.pop("model", None) or native_model(tiers, fields["tier"])
+    # An `inherit` override is the way back to the session model, for a provider without these ids.
+    return dict({"model": model} if model and model != "inherit" else {}, **binding)
 
 
 def role_projection(root, runtime, path, overrides=None):
     fields, body = role_contract(root, path.stem)
-    binding = json.loads((root / "adapters" / runtime / "bindings.json").read_text())["roles"][fields["name"]]
-    allowed = {"model", "model_reasoning_effort"} if runtime == "codex" else {"model", "effort"}
-    if set(overrides or {}) - allowed:
-        raise ValueError("role bindings may change model and effort only")
-    binding = dict(binding, **(overrides or {}))
+    binding = role_binding(root, runtime, fields, overrides)
     if runtime == "claude-code":
         values = {k: fields[k] for k in ("name", "description")}
-        values.update(binding)
+        values.update(dict({"model": "inherit"}, **binding))
         return "---\n" + "".join(k + ": " + v + "\n" for k, v in values.items()) + "---\n\n" + body
     if runtime != "codex":
         raise ValueError("unsupported runtime: " + runtime)

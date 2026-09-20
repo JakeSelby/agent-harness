@@ -96,6 +96,42 @@ class TierSpawnsTests(unittest.TestCase):
             with self.subTest(tool_input=tool_input):
                 self.assertIsNone(self.run_hook(self.spawn(prompt="x", **tool_input)))
 
+    # --- the top tier is a role's to declare, never a spawn's to request ---
+    def test_an_unnamed_spawn_asking_for_the_top_tier_runs_one_class_below_it(self):
+        for session in ("claude-fable-5-1", "claude-opus-5", None):
+            with self.subTest(session=session):
+                self.write_transcript(*([record("assistant", session)] if session else [record("user")]))
+                for kind in ({}, {"subagent_type": "general-purpose"}):
+                    out = self.run_hook(self.spawn(prompt="x", model="fable", **kind))
+                    self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["model"], "opus")
+                    self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["prompt"], "x")
+                    self.assertIn("role that declares it", out["systemMessage"])
+
+    def test_a_named_agent_asked_onto_the_top_tier_falls_back_to_its_definition(self):
+        self.write_transcript(record("assistant", "claude-fable-5-1"))
+        for kind in ("reviewer", "design-judge", "Explore"):
+            with self.subTest(kind=kind):
+                out = self.run_hook(self.spawn(prompt="x", subagent_type=kind, model="fable"))
+                updated = out["hookSpecificOutput"]["updatedInput"]
+                self.assertNotIn("model", updated)
+                self.assertEqual(updated["subagent_type"], kind)
+                self.assertIn(kind, out["systemMessage"])
+
+    def test_the_top_tier_request_stands_under_the_session_model_stance(self):
+        self.write_transcript(record("assistant", "claude-fable-5-1"))
+        self.assertIsNone(self.run_hook(self.spawn(prompt="x", model="fable"),
+                                        env={"HARNESS_STANCE_DELEGATION": "session-model"}))
+
+    def test_the_ladder_is_the_claude_adapters_tier_table(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tier_agent_spawns", HOOK)
+        hook = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hook)
+        sys.path.insert(0, str(REPO / "lib"))
+        from harness_core import catalog
+        tiers = json.loads((REPO / "adapters" / "claude-code" / "bindings.json").read_text())["tiers"]
+        self.assertEqual(hook.LADDER, [tiers[name] for name in catalog.TIER_CLASSES])
+
     def test_haiku_is_the_floor(self):
         self.write_transcript(record("assistant", "claude-haiku-4-5-20251001"))
         self.assertIsNone(self.run_hook(self.spawn(prompt="x")))
@@ -129,21 +165,13 @@ class TierSpawnsTests(unittest.TestCase):
         root.joinpath(*parts).mkdir(parents=True, exist_ok=True)
         return root
 
-    def test_framework_repo_keeps_bare_spawns_on_the_session_model(self):
+    def test_a_framework_repo_is_tiered_like_any_other(self):
         self.write_transcript(record("assistant", "claude-fable-5-1"))
-        for marker in (("_bmad", "scripts"), ("_bmad", "core")):
+        for marker in (("_bmad", "scripts"), ("_bmad", "core"), ("_bmad", "custom")):
             with self.subTest(marker=marker):
                 nested = self.framework(*marker) / "crates" / "core"
                 nested.mkdir(parents=True, exist_ok=True)
-                payload = dict(self.spawn(prompt="x"), cwd=str(nested))
-                self.assertIsNone(self.run_hook(payload))
-                out = self.run_hook(payload, env={"HARNESS_STANCE_DELEGATION": "off"})
-                self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
-
-    def test_a_worktree_with_only_custom_overrides_is_still_tiered(self):
-        self.write_transcript(record("assistant", "claude-fable-5-1"))
-        payload = dict(self.spawn(prompt="x"), cwd=str(self.framework("_bmad", "custom")))
-        self.assertEqual(self.rewritten(payload), "opus")
+                self.assertEqual(self.rewritten(dict(self.spawn(prompt="x"), cwd=str(nested))), "opus")
 
     def test_a_missing_or_malformed_cwd_is_tiered_as_usual(self):
         self.write_transcript(record("assistant", "claude-opus-5"))

@@ -1,6 +1,7 @@
 ---
 name: planner
 description: Writes a reviewable plan file that satisfies the Review Card contract, then returns the chat message the reviewer replies to. Use when producing the plan would cost the orchestrator the context it needs for the review conversation. Never implements anything.
+tier: strong
 authority: artifact-write
 context: fresh
 delegation: none

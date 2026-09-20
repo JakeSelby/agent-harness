@@ -107,8 +107,9 @@ existed during the original delivery.
 ## Shared roles and explicit installation
 
 `templates/bmad/custom/` names harness roles: `builder`, `reviewer`, and `spec-reviewer`.
-The active runtime adapter supplies their model and effort. Constrained review roles use
-`harness role run` with explicit input roots and parent model; builders retain their normal
+The active runtime adapter supplies their model and effort; the framework's own skill text does
+not, and the spawn hook tiers a framework repository like any other. Constrained review roles use
+`harness role run` with explicit input roots; builders retain their normal
 workflow. See [isolated role workers](role-workers.md). Recipes retain
 complete keyed review-layer records so BMad's replacement merge does not discard required fields.
 The assigned implementation worktree, framework checkout, artifact root, baseline commit and

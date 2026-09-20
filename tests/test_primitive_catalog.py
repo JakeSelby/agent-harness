@@ -24,6 +24,43 @@ class CatalogTests(unittest.TestCase):
             self.assertIn('sandbox_mode = "read-only"' if fields["authority"] != "workspace-write"
                           else 'sandbox_mode = "workspace-write"', codex)
 
+    def test_roles_name_a_class_and_each_adapter_maps_it(self):
+        classes = {p.stem: catalog.frontmatter(p)[0]["tier"] for p in (REPO / "primitives/roles").glob("*.md")}
+        self.assertEqual(classes, {"builder": "strong", "design-judge": "frontier", "gatherer": "strong",
+                                   "log-compressor": "standard", "planner": "strong", "reviewer": "strong",
+                                   "spec-reviewer": "standard"})
+        for source in (REPO / "primitives/roles").glob("*.md"):
+            self.assertNotIn("\nmodel: inherit\n", catalog.role_projection(REPO, "claude-code", source))
+            self.assertIn("\nmodel = ", catalog.role_projection(REPO, "codex", source))
+        reviewer = REPO / "primitives/roles/reviewer.md"
+        self.assertIn('model = "chosen"', catalog.role_projection(REPO, "codex", reviewer, {"model": "chosen"}))
+        # `inherit` is the override back to the session model: Codex omits the key, Claude Code spells it.
+        self.assertNotIn("\nmodel = ", catalog.role_projection(REPO, "codex", reviewer, {"model": "inherit"}))
+        self.assertIn("\nmodel: inherit\n", catalog.role_projection(REPO, "claude-code", reviewer, {"model": "inherit"}))
+        for runtime in ("claude-code", "codex"):
+            tiers = json.loads((REPO / "adapters" / runtime / "bindings.json").read_text())["tiers"]
+            self.assertEqual(list(tiers), list(catalog.TIER_CLASSES), msg=runtime)
+
+    def test_an_unmapped_class_resolves_upward_or_not_at_all(self):
+        self.assertEqual(catalog.native_model({"strong": "b", "light": "d"}, "standard"), "b")
+        self.assertEqual(catalog.native_model({"strong": "b", "light": "d"}, "light"), "d")
+        self.assertIsNone(catalog.native_model({"standard": "c", "light": "d"}, "strong"))
+        self.assertIsNone(catalog.native_model({}, "frontier"))
+
+    def test_bindings_reject_unknown_classes_and_effort_above_high(self):
+        fields = catalog.role_contract(REPO, "reviewer")[0]
+        for effort in ("xhigh", "max"):
+            with self.assertRaisesRegex(ValueError, "effort must be one of"):
+                catalog.role_binding(REPO, "claude-code", fields, {"effort": effort})
+        self.assertEqual(catalog.role_binding(REPO, "claude-code", fields, {"model": "chosen"})["model"], "chosen")
+        with patch.object(catalog.json, "loads", return_value={"tiers": {"premium": "x"}, "roles": {"reviewer": {}}}):
+            with self.assertRaisesRegex(ValueError, "adapter tiers"):
+                catalog.role_binding(REPO, "claude-code", fields)
+        with patch.object(catalog, "frontmatter", return_value=({"name": "reviewer", "authority": "read-only",
+                          "context": "fresh", "delegation": "none", "tier": "premium"}, "body")):
+            with self.assertRaisesRegex(ValueError, "tier must be one of"):
+                catalog.role_contract(REPO, "reviewer")
+
     def test_catalog_uses_neutral_unique_source_ids(self):
         items = catalog.catalog(REPO)["primitives"]
         self.assertEqual(len(items), len({(x["kind"], x["id"]) for x in items}))
