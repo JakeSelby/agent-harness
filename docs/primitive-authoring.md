@@ -70,6 +70,9 @@ be followed — no sidecar, unreadable JSON, a `schema_version` the installed re
 read, a name that is not a primitive identifier — resolves to `balanced`'s table with a warning,
 so a variant is never silently empty.
 
+`default_band` names the band an unnamed spawn is routed to, and omitting it everywhere on the
+chain routes nothing at all.
+
 A row is keyed by a role name or by a band — `A`, `B` or `C` — and may set `class`, `effort`,
 `budget_output_tokens` and `budget_tool_calls`; any of them may be omitted, and a null budget
 means unbudgeted. `budget_multiplier` scales both budgets, and `harness stances --json` reports

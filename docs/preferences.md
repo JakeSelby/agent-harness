@@ -81,21 +81,39 @@ Every turn spends tokens against your plan's limit, and the ones that fan work o
 subagents spend several times as much: `/research` and `/build` are the expensive commands, and a
 wide review is the expensive habit.
 
-The `cost` stance is the dial. `frugal` keeps fan-out narrow and effort low, `balanced` is the
-default, `max` spends freely on hard problems. It sets how much; the `delegation` stance sets what
-gets delegated and to which model tier. `HARNESS_STANCE_COST=frugal claude` applies it to one
-session.
+The `cost` stance is the dial. It sets how much; the `delegation` stance sets what gets delegated
+and to which model tier.
 
-Each variant's switches, and its model class, effort and soft budget per role and per band, are
-data in a JSON sidecar beside its `.md`; `harness stances --json` prints the resolved table, and
-[primitive-authoring.md](primitive-authoring.md) covers writing your own with `extends`. The
-shipped per-role budgets are the 90-day p75 from `harness usage --by role`, and the A/B/C band
-budgets are provisional — the general-purpose distribution at p50, p75 and p90 — until rerouted
-spawns have measured each band.
+A variant controls more than the session's own habits. Its switches set the session's reasoning
+effort, the fan-out width, whether fast mode and compaction are available, and how much the usage
+feed says about spend; its rows set a model class, a reasoning effort and a soft budget in output
+tokens and tool calls for each role and for each of the A, B and C bands, and name the band an
+unnamed spawn is routed to. All of it is data in a JSON sidecar beside the variant's `.md`, and
+`harness stances --json` prints the resolved table with the sidecar each layer came from.
+
+- `frugal` runs the session at low effort, keeps the fan-out narrow, never turns fast mode on,
+  ends a task with `/clear`, drops the cheaper bands a class each, and scales every budget down.
+- `balanced` is the shipped default: medium effort, a moderate fan-out, fast mode off unless you
+  ask for it, `/clear` at task end, and the measured budgets unscaled.
+- `max` leaves effort at the model's default, fans out as widely as the task needs, allows fast
+  mode and compaction, and marks nothing as over budget.
+
+Select one with `harness config set stances.cost frugal`, or for a single session with
+`HARNESS_STANCE_COST=frugal claude`. To write your own, put a `.md` and a sidecar in your
+primitive root, `extends` a shipped variant and change only the cells you care about;
+[primitive-authoring.md](primitive-authoring.md) has the worked example and the schema.
+
+Two things a variant never wins against. A `role_bindings.<runtime>.<role>` entry in your config
+always beats the row, because you named the role yourself. And a role whose contract says
+`posture: fixed` — the verifiers — ignores a variant's class and effort entirely and takes only
+its budgets.
 
 A row's budget reaches the work as one sentence `brief-guard` appends to a brief that states no
 spend of its own. It is soft — finish if close, otherwise return — and a variant that prices
-nothing changes no brief.
+nothing changes no brief. The shipped per-role budgets are the 90-day p75 from
+`harness usage --by role`; the A/B/C band budgets are provisional — the general-purpose
+distribution at p50, p75 and p90 — until rerouted spawns have measured each band, and the bands
+themselves are a first cut to be re-seeded the same way.
 
 `harness usage` summarises what sessions have actually spent, from a local file with no network
 call — see [usage.md](usage.md).
@@ -176,12 +194,12 @@ the explicit go-ahead.
 code is cheap now, and an agent-assisted person can maintain custom code fine in three years.
 Capability ceilings are the argument class that decides.
 
-**Cost.** `cost` governs how much you spend, never which model: agent definitions carry model ids.
-`frugal` runs the session at low effort outside design and adversarial review, keeps subagents to
-gatherers with a fan-out of three, never turns on fast mode, and ends a task with `/clear`.
-`balanced` is the shipped default — medium effort, fan-out of six, fast mode off unless asked.
-`max` spends the model's default effort, fans out as widely as the task needs, and allows fast mode
-and compaction. How it meets the tier decision is in the `delegation-tiering` skill.
+**Cost.** `cost` governs how much you spend, never which model: a row names a capability class,
+the adapter's table resolves it, and agent definitions carry the result. Under `frugal` subagents
+are gatherers only and agent teams are off, so an up-class trigger is answered by raising the
+session's own effort rather than by spawning. What each variant sets is above, under
+[what a session costs](#what-a-session-costs); how it meets the tier decision is in the
+`delegation-tiering` skill.
 
 **Voice.** `voice` governs how a reply is laid out, and nothing about what the work is. `scannable`
 defers to the Scannable output style: verdict first, registers separated, at most one table.

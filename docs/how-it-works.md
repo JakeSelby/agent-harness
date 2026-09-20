@@ -34,6 +34,17 @@ composes decisions; each adapter translates native events. Registration is separ
 and activation. Enforcement gaps belong in [runtime controls](runtime-controls.md) and the
 [compatibility catalog](compatibility.md), not in claims that all hooks always enforce policy.
 
+The `cost` stance adds a resolved table on top of that selection — switches for the session, and a
+class, an effort and a soft budget for each role and band — which `policy/hooks/posture.py`
+resolves once for the dispatcher and every hook alike. Two facts shaped where it can act. A native
+subagent's reasoning effort exists only in an agent definition and not in the spawn call, so the
+posture reaches a spawn by being written into that definition at sync time, and an unnamed spawn
+is routed to a band worker that carries one. And an agent can only budget what it can count, so
+the budget in a brief and the feed that reports against it both come from the same local
+measurements. What each variant sets: [preferences](preferences.md#what-a-session-costs). How it
+is written: [primitive authoring](primitive-authoring.md). What is measured, and what is not:
+[usage](usage.md).
+
 ## Working with installed files
 
 [Sync and ownership](sync-model.md) explains links, generated files, structural merges,

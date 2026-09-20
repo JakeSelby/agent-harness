@@ -161,6 +161,13 @@ A session that crashes or is killed never fires `SessionEnd` and so is never rec
 `--rescan` walks every transcript touched inside `--days` and upserts it, which is how you fill
 those gaps.
 
+### Re-seeding budgets
+
+A cost variant's per-role budgets are measured, not guessed, so they go stale as roles change.
+Run `bin/harness usage --rescan --by role` over a window wide enough to hold a few dozen runs,
+read the p75 column for the role — the shipped figures are that point on the curve — and write it
+into your variant's row as `budget_output_tokens` and `budget_tool_calls`.
+
 ## What the hit rate tells you
 
 `hit` is `cache_read / (input + cache_read + cache_write)` — the share of the prompt served from

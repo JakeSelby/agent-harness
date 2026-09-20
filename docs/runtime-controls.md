@@ -30,6 +30,10 @@ file on disk rather than decided per session. A
 session-scoped `HARNESS_STANCE_COST`, like any `HARNESS_STANCE_*`, stays in that session and does
 not move them until the next `harness sync`; role-run workers resolve their class and effort per
 run and do follow it. A `role_bindings.<runtime>.<role>` entry still wins over the variant's row.
+Routing of spawns that name no agent definition turns itself off in a workspace that ships its own
+`.claude/agents/worker-*.md`, since a project definition outranks the user's and routing to it
+would put that repository's instructions on every unnamed spawn; the spawn runs as written and the
+hook says so.
 Before downgrading to a release that only links these definitions, either select `balanced` with
 no role bindings and sync once, which restores the links, or run `harness uninstall`.
 
