@@ -25,10 +25,17 @@ this on every tool call.
 """
 import json
 import os
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = "HARNESS_STANCE_"
+# How long a session record is worth keeping. A session that has not started in a fortnight
+# will never spawn again, and its record is three fields nobody reads.
+SESSION_TTL_DAYS = 14
+SESSION_ID_MAX = 128
+# How stale a record may get before a spawn that read it moves its mtime out of the sweep's way.
+SESSION_REFRESH_SECONDS = 86400
 
 # The dimensions `bin/harness` resolves and the variant each falls back to, which is
 # `config.example.json`'s — the file the CLI layers the user config over, and a test holds the
@@ -79,6 +86,157 @@ def home(env=None):
 
 def config_path(env=None):
     return home(env) / ".config" / "agent-harness" / "config.json"
+
+
+def user_agents_dir(env=None):
+    """Where the tool resolves a user-level agent definition; `CLAUDE_CONFIG_DIR` moves it.
+
+    The one place that rule is written, so the hook that reroutes a spawn and the hook that
+    records what a session can resolve are never looking at two different directories.
+    """
+    env = os.environ if env is None else env
+    config = env.get("CLAUDE_CONFIG_DIR")
+    return (Path(config) if config else Path(env.get("HOME") or Path.home()) / ".claude") / "agents"
+
+
+def installed_agents(env=None):
+    """The user-level agent definitions on disk now, sorted; `[]` when the directory is unreadable."""
+    try:
+        return sorted(path.stem for path in user_agents_dir(env).glob("*.md") if path.is_file())
+    except OSError:
+        return []
+
+
+def state_dir(env=None):
+    return home(env) / ".local" / "state" / "agent-harness"
+
+
+def sessions_dir(env=None):
+    """The session registry: one record per session, written when its process started.
+
+    Claude Code loads its agent registry once, when the session process starts, and does not
+    reload it. So a definition on disk is not evidence that a running session can resolve the
+    type it names — a session that began before `harness sync` installed the band workers
+    cannot spawn one, and rerouting to it turns a spawn that would have worked into one that
+    fails. The SessionStart policy writes what the registry held; the spawn hook reroutes only
+    to a name it finds there.
+    """
+    return state_dir(env) / "sessions"
+
+
+def _session_id(value):
+    """A session identifier safe to make a file name of: no separator, no traversal, bounded."""
+    return (isinstance(value, str) and value.isascii() and 0 < len(value) <= SESSION_ID_MAX
+            and value[0].isalnum() and all(c.isalnum() or c in "._-" for c in value))
+
+
+def session_record_path(session_id, env=None):
+    return sessions_dir(env) / (session_id + ".json") if _session_id(session_id) else None
+
+
+def read_session_record(session_id, env=None):
+    """One session's record, or None for no record, an unreadable one, or anything but an object."""
+    path = session_record_path(session_id, env)
+    if path is None:
+        return None
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def write_session_record(session_id, record, env=None):
+    """Replace one session's record atomically; `True` when it was written.
+
+    The directory is the session's own business and nobody else's, so it is 0700 and the file
+    is 0600 from the moment it exists rather than after a chmod a reader could race.
+    """
+    path = session_record_path(session_id, env)
+    if path is None or not isinstance(record, dict):
+        return False
+    temp = path.with_name(path.name + "." + str(os.getpid()) + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(str(path.parent), 0o700)
+        with os.fdopen(os.open(str(temp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600),
+                       "w", encoding="utf-8") as handle:
+            json.dump(record, handle)
+        os.replace(str(temp), str(path))
+        return True
+    except OSError:
+        try:
+            os.unlink(str(temp))
+        except OSError:
+            pass
+        return False
+
+
+def session_agents(session_id, env=None):
+    """The agent names this session's registry held, or None when nothing recorded them.
+
+    An absent or unusable `agents` key is None, which every caller reads as unknown, and
+    unknown is never routable. That is what lets a record exist purely to remember a notice
+    without ever authorising a reroute.
+    """
+    record = read_session_record(session_id, env)
+    names = record.get("agents") if record else None
+    return [name for name in names if isinstance(name, str)] if isinstance(names, list) else None
+
+
+def refresh_session_record(session_id, env=None, older_than=SESSION_REFRESH_SECONDS):
+    """Keep a session in use out of another session's sweep. `True` when the mtime was moved.
+
+    A session open longer than the TTL would otherwise have its record pruned under it and stop
+    routing halfway through, so reading the record is evidence the session is alive. A day's
+    granularity, because this runs on a spawn and the sweep measures a fortnight.
+    """
+    path = session_record_path(session_id, env)
+    try:
+        if path is not None and time.time() - path.stat().st_mtime > older_than:
+            os.utime(str(path), None)
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def note_once(session_id, key, env=None):
+    """`True` the first time this session is told `key`; `False` once anything remembers it.
+
+    A session with no record is exactly the session these notices are for, so one is created
+    to hold the memory — with no `agents` key, which reads as unknown and can never authorise
+    a reroute. A hook is a process per event, so nothing but the record remembers: when it
+    cannot be written this says nothing at all, because a notice repeated on every spawn is a
+    worse failure than one never given.
+    """
+    record = read_session_record(session_id, env)
+    if record is None:
+        return write_session_record(session_id, {"notified": [key], "at": int(time.time())}, env)
+    seen = record.get("notified")
+    seen = sorted({name for name in seen if isinstance(name, str)}) if isinstance(seen, list) else []
+    if key in seen:
+        return False
+    return write_session_record(session_id, dict(record, notified=sorted(seen + [key])), env)
+
+
+def prune_session_records(keep=None, days=SESSION_TTL_DAYS, env=None):
+    """Drop records older than `days`, never `keep`'s. Best effort: a sweep never fails a session."""
+    cutoff, removed = time.time() - days * 86400, 0
+    try:
+        paths = sorted(sessions_dir(env).glob("*.json"))
+    except OSError:
+        return 0
+    for path in paths:
+        if keep is not None and path.stem == keep:
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def _stances_of(data):
