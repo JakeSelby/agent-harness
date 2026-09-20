@@ -57,6 +57,45 @@ and `requested_type`, which are a tool call's id and an agent name the tool coul
 at once. Rows are upserted by `(session_id, runtime, kind, agent_id)`, so re-reading a
 transcript never duplicates one, and a subagent transcript is only ever read from its session.
 
+## Usage feed
+
+The usage log is read after the fact. The feed is the same measurement while the session is
+still running: the `usage-feed` hook injects one or two lines of context so the orchestrator
+sees what it is spending before it delegates again.
+
+- On **`UserPromptSubmit`**, one line with the last turn's output tokens and tool calls and the
+  session's own, followed by one line per subagent that has finished since the previous prompt.
+  That second part is how a background spawn is reported at all: its `PostToolUse` fires at
+  launch, before the agent has spent anything. At most five agents are listed, then `… and n more`.
+- On **`PostToolUse`** for a synchronous `Agent` return, one line for that subagent, on the spot.
+- On **`SubagentStop`**, nothing is injected — that event's context would reach the agent that
+  has just finished — but the agent's cost is recorded for the lines above.
+
+A subagent's figure is summed from its own transcript, never from the tool response, which
+reports only the agent's **last** response: measured at 3,143 output tokens against 10,575
+actually spent. Each line names the agent type, what it spent and, when its row carries budgets,
+the larger of the two ratios against them, prefixed `over budget` past a `nudge_at` multiple.
+
+Three settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
+number of its own:
+
+- `turn_feed: "off"` — nothing is injected anywhere and no state file is written.
+- `turn_feed: "thresholds"` — no turn line; only subagents at or over the smallest `nudge_at`.
+- `turn_feed: "every-turn"` — the turn line and every finished subagent. `balanced` and `frugal`
+  ship this.
+- `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
+  means never.
+
+State lives in `~/.local/state/agent-harness/feed/<session-id>.json`, one file per session,
+0600 in a 0700 directory. It holds the byte offset read so far, running counts and one record
+per finished subagent — the agent type, its output tokens, its tool calls and whether it has
+been reported. No prompt text, no command text, no agent output. The offset is what keeps the
+hot path cheap: each event reads from it to EOF and no further, and a transcript that shrank
+resets to the current EOF and marks the totals `(partial)`.
+
+Codex raises neither `UserPromptSubmit` nor `SubagentStop`, so the feed is declared uncovered
+there in `adapters/codex/capabilities.json`; posture still reaches Codex through role-run workers.
+
 ## Reading it
 
 ```sh

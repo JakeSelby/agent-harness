@@ -99,9 +99,9 @@ class LifecycleTests(unittest.TestCase):
                 self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
 
     def test_registration_has_one_coordinator_per_event(self):
-        for runtime in ("codex", "claude-code"):
+        for runtime, events in (("codex", 5), ("claude-code", 7)):
             hooks = lifecycle.registration(Path("/fixture with spaces"), runtime)["hooks"]
-            self.assertEqual(len(hooks), 5)
+            self.assertEqual(len(hooks), events)
             self.assertTrue(all(len(entries) == len(entries[0]["hooks"]) == 1 for entries in hooks.values()))
 
     def test_codex_transcript_cumulative_usage_and_unknown_metrics(self):

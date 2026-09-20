@@ -40,7 +40,7 @@ def settings(command):
 
 class HookCommandTests(unittest.TestCase):
     def test_every_template_hook_command_is_found(self):
-        self.assertEqual(len(harness.hook_commands(TEMPLATE)), 11)
+        self.assertEqual(len(harness.hook_commands(TEMPLATE)), 13)
 
     def test_no_hooks_block_is_no_commands(self):
         self.assertEqual(harness.hook_commands({}), [])
