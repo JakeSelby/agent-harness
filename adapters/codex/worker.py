@@ -1,4 +1,5 @@
 """Codex worker configuration is isolated from parent and project settings."""
+import json
 from pathlib import Path
 import re
 from harness_core import reconcile
@@ -53,6 +54,40 @@ def prepare(executable, work, root, workspace, read_roots, instructions, binding
     (home / "config.toml").write_text(reconcile.tomlkit.dumps(config))
     return [executable, "exec", "--ephemeral", "--strict-config", "--ignore-rules", "--skip-git-repo-check",
             "--cd", str(work / "cwd"), "--sandbox", "read-only", "--json", "-o", str(work / "result.md"), "-"]
+
+
+def usage(work, run_dir):
+    """The run's token totals from the `--json` event stream the worker already wrote.
+
+    Codex reports cumulative totals, so the last snapshot is the run's, never a sum of them;
+    its `input_tokens` includes the cached share, which is subtracted out as the transcript
+    reader does. The stream reports no tool-call count, which the record leaves unknown.
+    """
+    totals = None
+    try:
+        lines = (run_dir / "stdout.log").read_text(errors="replace").splitlines()
+    except OSError:
+        return {}
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        for scope in (event, event.get("msg"), event.get("payload"), event.get("info")):
+            info = scope.get("info") if isinstance(scope, dict) else None
+            found = (info or {}).get("total_token_usage") if isinstance(info, dict) else None
+            if isinstance(found, dict):
+                totals = found
+    if not totals:
+        return {}
+    cached = totals.get("cached_input_tokens")
+    served = totals.get("input_tokens")
+    out = {}
+    if isinstance(served, int) and isinstance(cached, int):
+        out["input"], out["cache_read"] = max(0, served - cached), cached
+    if isinstance(totals.get("output_tokens"), int):
+        out["output"] = totals["output_tokens"]
+    return out
 
 
 def result(work, run_dir):

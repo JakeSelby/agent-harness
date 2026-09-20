@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format follows
   order. A missing catalog reports *unverified*, not a pass.
 - `tiers.<runtime>.<class>` in the configuration remaps a capability class for every role that
   names it, without a harness release.
+- The usage log records one row per subagent and one per `harness role run` worker beside the
+  session row, each naming its `kind`, agent type, model, effort, token counts, tool calls and
+  spawn depth. Rows are upserted by `(session_id, runtime, kind, agent_id)` and hold counts
+  only: no prompt text and no command text.
+- `harness usage --by role` reports, per agent type, the number of runs and the p50, p75 and p90
+  of output tokens and of tool calls over the window — the distribution a per-role budget has to
+  be set against. A run whose runtime reported no counts is named, never averaged in as a zero.
 
 ### Changed
 
@@ -34,6 +41,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Every session total was short by whatever its delegation cost. A subagent's tokens live in its
+  own transcript, which the log never read, so a session that fanned out reported only the
+  orchestrator's own spend. Session totals now include their subagents'; `harness usage --rescan`
+  backfills the history, and the token groupings sum session rows alone so nothing is counted
+  twice.
 - A managed link that reaches its file through an alias of the checkout, such as `claude/stances`
   for `primitives/stances`, is no longer reported as redirected. `harness uninstall` and the
   retirement of a removed link treated the same link as the user's and left it behind; they now

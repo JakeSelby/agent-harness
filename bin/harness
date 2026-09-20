@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import platform
 import re
@@ -1882,15 +1883,58 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     return 0
 
 
+def percentile(values: List[int], share: float) -> int:
+    """The nearest-rank percentile of a sorted sample: the smallest value at or above `share`."""
+    if not values:
+        return 0
+    index = math.ceil(share * len(values)) - 1
+    return values[min(max(index, 0), len(values) - 1)]
+
+
+def role_report(rows: List[Dict[str, Any]], days: int) -> int:
+    """Output tokens and tool calls per agent type, over the subagent and worker rows.
+
+    Spend per delegated task is a distribution, not a mean: a budget set at the mean is wrong
+    for most of the sample, which is why the report prints three points on the curve instead.
+    """
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(row.get("agent_type") or "(unnamed)", []).append(row)
+    if not groups:
+        say(f"no subagent or worker runs recorded in the last {days} day(s); "
+            "run `harness usage --rescan` to backfill them from transcripts")
+        return 0
+    head = (f"{'role':<30}{'runs':>6}{'out p50':>10}{'out p75':>10}{'out p90':>10}"
+            f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}{'unmeasured':>12}")
+    say(head)
+    say("-" * len(head))
+    for key in sorted(groups):
+        group = groups[key]
+        output = sorted(int(r["output"]) for r in group if isinstance(r.get("output"), int))
+        tools = sorted(int(r["tool_calls"]) for r in group if isinstance(r.get("tool_calls"), int))
+        # A run whose runtime reported no counts is named, never averaged in as a zero.
+        gaps = len(group) - min(len(output), len(tools))
+        cells = [f"{percentile(output, s):>10,}" if output else f"{'-':>10}" for s in (0.5, 0.75, 0.9)]
+        cells += [f"{percentile(tools, s):>11,}" if tools else f"{'-':>11}" for s in (0.5, 0.75, 0.9)]
+        say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}")
+    return 0
+
+
 def cmd_usage(args: argparse.Namespace) -> int:
-    """Summarize the session records the usage-log hook writes. Local file only."""
+    """Summarize the records the usage-log hook writes. Local file only.
+
+    Every row names its `kind`. A session's totals already include its subagents', so the
+    token groupings sum session rows alone; `--by role` reads the subagent and worker rows,
+    which carry the same tokens a second time, attributed.
+    """
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
     rules_mode = getattr(args, "rules", False) or by in ("rule", "stance")
-    if rules_mode and by == "model":
+    if rules_mode and by in ("model", "role"):
         # Reporting something else silently would be worse than refusing: a rule hit belongs
-        # to a session, and a session's hits cannot be attributed to one of its models.
-        print("usage --rules groups by rule, repo or stance; --by model is not one of them",
+        # to a session, and a session's hits cannot be attributed to one of its models, nor to
+        # a subagent whose conduct the session's detectors never measured.
+        print(f"usage --rules groups by rule, repo or stance; --by {by} is not one of them",
               file=sys.stderr)
         return 2
     if rules_mode and by == "day":
@@ -1902,6 +1946,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - max(args.days, 0) * 86400))
     groups: Dict[str, List[int]] = {}
     kept: List[Dict[str, Any]] = []
+    delegated: List[Dict[str, Any]] = []
     unknown_metrics = set()
     for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
         try:
@@ -1909,6 +1954,13 @@ def cmd_usage(args: argparse.Namespace) -> int:
         except json.JSONDecodeError:
             continue
         if not isinstance(row, dict) or (row.get("ended") or "") < cutoff:
+            continue
+        # A row written before `kind` existed is a session, which is all there was to record.
+        kind = row.get("kind") or "session"
+        if kind != "session":
+            delegated.append(row)
+            continue
+        if by == "role":
             continue
         if rules_mode:
             kept.append(row)
@@ -1928,6 +1980,8 @@ def cmd_usage(args: argparse.Namespace) -> int:
                 acc[i + 1] += int(row.get(name) or 0)
             except (TypeError, ValueError):
                 pass
+    if by == "role":
+        return role_report(delegated, args.days)
     if rules_mode:
         return rule_report(kept, by, args.days)
     if not groups:
@@ -2235,7 +2289,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p = sub.add_parser("usage", help="summarize recorded session tokens and cache hit rate")
     p.add_argument("--days", type=int, default=30)
-    p.add_argument("--by", choices=["day", "repo", "model", "rule", "stance"], default="day")
+    p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance"], default="day")
     p.add_argument("--rules", action="store_true",
                    help="report rule-detector hits instead of tokens (--by rule, repo or stance)")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
