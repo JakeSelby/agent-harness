@@ -32,6 +32,14 @@ All notable changes to this project are documented here. The format follows
   longer tell the caller to pass the parent session's model; they name it only where the adapter
   maps none. Role effort above `high` is rejected.
 
+### Fixed
+
+- A named agent asked onto the top tier now gets the model its definition names, or the class
+  below when there is none to read. The hook used to remove the request, and the lifecycle
+  coordinator only carries rewrites, so the top-tier request reached the spawn unchanged.
+- The lifecycle coordinator relays a hook's notice on Claude Code instead of dropping it, so a
+  tiered spawn and a session model the ladder does not know are both reported.
+
 ### Migration
 
 - A `role_bindings` override of `model` still wins over the class, so existing overrides keep

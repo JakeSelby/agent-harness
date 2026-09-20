@@ -107,15 +107,37 @@ class TierSpawnsTests(unittest.TestCase):
                     self.assertEqual(out["hookSpecificOutput"]["updatedInput"]["prompt"], "x")
                     self.assertIn("role that declares it", out["systemMessage"])
 
-    def test_a_named_agent_asked_onto_the_top_tier_falls_back_to_its_definition(self):
+    def agent(self, root, name, model):
+        d = root / ".claude" / "agents"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / (name + ".md")).write_text(f"---\nname: {name}\ndescription: model: fable is not this line\nmodel: {model}\n---\n\nmodel: fable\n")
+
+    def test_a_named_agent_asked_onto_the_top_tier_gets_the_model_its_definition_names(self):
         self.write_transcript(record("assistant", "claude-fable-5-1"))
-        for kind in ("reviewer", "design-judge", "Explore"):
+        self.agent(self.home, "reviewer", "opus")
+        self.agent(self.home, "spec-reviewer", "sonnet")
+        self.agent(self.home, "inheritor", "inherit")
+        # No definition to read (a built-in agent), one that inherits, and a name that is not a file name
+        # all land on the class below the top. The request is rewritten, never removed.
+        for kind, expected in (("reviewer", "opus"), ("spec-reviewer", "sonnet"), ("inheritor", "opus"),
+                               ("Explore", "opus"), ("../reviewer", "opus")):
             with self.subTest(kind=kind):
                 out = self.run_hook(self.spawn(prompt="x", subagent_type=kind, model="fable"))
                 updated = out["hookSpecificOutput"]["updatedInput"]
-                self.assertNotIn("model", updated)
+                self.assertEqual(updated["model"], expected)
                 self.assertEqual(updated["subagent_type"], kind)
-                self.assertIn(kind, out["systemMessage"])
+                self.assertIn(expected, out["systemMessage"])
+
+    def test_a_role_that_declares_the_top_tier_keeps_it_and_the_project_definition_wins(self):
+        self.write_transcript(record("assistant", "claude-fable-5-1"))
+        self.agent(self.home, "design-judge", "fable")
+        self.assertIsNone(self.run_hook(self.spawn(prompt="x", subagent_type="design-judge", model="fable")))
+        project = self.home / "project"
+        self.agent(self.home, "designer", "opus")
+        self.agent(project, "designer", "fable")
+        payload = dict(self.spawn(prompt="x", subagent_type="designer", model="fable"), cwd=str(project))
+        self.assertIsNone(self.run_hook(payload))
+        self.assertEqual(self.rewritten(self.spawn(prompt="x", subagent_type="designer", model="fable")), "opus")
 
     def test_the_top_tier_request_stands_under_the_session_model_stance(self):
         self.write_transcript(record("assistant", "claude-fable-5-1"))
