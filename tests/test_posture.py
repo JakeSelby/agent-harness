@@ -90,9 +90,27 @@ class Layers(unittest.TestCase):
         stances = posture.resolve(self.env(HARNESS_PROJECT_CONFIG=project), strict=False)["stances"]
         self.assertEqual(stances["commits"], posture.DEFAULT_STANCES["commits"])
 
-    def test_a_project_file_whose_stances_are_not_an_object_is_rejected(self):
-        with self.assertRaises(ValueError):
-            posture.resolve(self.env(HARNESS_PROJECT_CONFIG=self.project({"stances": "tiered"})))
+    def test_a_project_file_whose_stances_are_not_an_object_selects_nothing(self):
+        # Not an error: it never was one, and a raise here denies every tool call of the session.
+        env = self.env(HARNESS_PROJECT_CONFIG=self.project({"stances": "tiered"}))
+        for strict in (True, False):
+            with self.subTest(strict=strict):
+                self.assertEqual(posture.resolve(env, strict=strict)["stances"],
+                                 posture.DEFAULT_STANCES)
+
+    def test_a_user_config_that_exists_but_cannot_be_read_is_an_error_where_it_can_be_reported(self):
+        path = self.config({})
+        path.unlink()
+        path.mkdir()  # a directory where the file should be: present, unreadable, not absent
+        with self.assertRaises(OSError):
+            posture.resolve(self.env())
+        self.assertEqual(posture.resolve(self.env(), strict=False)["stances"], posture.DEFAULT_STANCES)
+
+    def test_a_config_that_is_not_there_is_the_defaults_in_both_modes(self):
+        for strict in (True, False):
+            with self.subTest(strict=strict):
+                self.assertEqual(posture.resolve(self.env(), strict=strict)["stances"],
+                                 posture.DEFAULT_STANCES)
 
     def test_a_missing_project_file_is_an_error_only_where_one_can_be_reported(self):
         env = self.env(HARNESS_PROJECT_CONFIG=str(self.home / "absent.json"))
@@ -189,6 +207,36 @@ class HooksUseIt(unittest.TestCase):
         out = self.run_hook(hooks / "tier-agent-spawns.py", self.spawn(), {})
         self.assertNotIn("hookSpecificOutput", out)
         self.assertIn("runs as written", out["systemMessage"])
+
+    def bash(self, path, command, env):
+        return self.run_hook(path, {"tool_name": "Bash", "cwd": str(self.home),
+                                    "permission_mode": "default",
+                                    "tool_input": {"command": command}}, env)
+
+    def test_the_grading_hook_fails_closed_when_the_resolver_cannot_be_loaded(self):
+        lonely = Path(self.tmp.name) / "lonely"
+        lonely.mkdir()
+        for name in ("grade-bash.py", "allow-readonly-bash.py"):
+            shutil.copy2(HOOKS / name, lonely / name)
+        out = self.bash(lonely / "grade-bash.py", "gh pr create --fill", {})
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
+        self.assertIn("unresolved", out["hookSpecificOutput"]["permissionDecisionReason"])
+        # With the resolver beside it the same command is the user's default to run unasked.
+        self.assertIsNone(self.bash(HOOKS / "grade-bash.py", "gh pr create --fill", {}))
+
+    def test_the_grading_hook_fails_closed_when_the_resolver_raises(self):
+        out = self.bash(HOOKS / "grade-bash.py", "gh pr create --fill",
+                        {"HARNESS_PROJECT_CONFIG": str(self.home / "absent.json")})
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
+        self.assertIn("unresolved", out["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_a_named_role_gets_no_notice_when_the_ladder_is_short(self):
+        hooks = Path(self.tmp.name) / "install" / "policy" / "hooks"
+        hooks.mkdir(parents=True)
+        for name in ("posture.py", "tier-agent-spawns.py"):
+            shutil.copy2(HOOKS / name, hooks / name)
+        payload = {"tool_name": "Agent", "tool_input": {"prompt": "x", "subagent_type": "reviewer"}}
+        self.assertIsNone(self.run_hook(hooks / "tier-agent-spawns.py", payload, {}))
 
     def test_no_model_name_is_written_in_hook_code(self):
         names = [m for m in json.loads(

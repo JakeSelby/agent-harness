@@ -62,12 +62,17 @@ def _stances_of(data):
 
 
 def _user_config(env, strict):
+    """The user's configuration. No file is the defaults; a file that cannot be read is not.
+
+    A config that exists but will not open or will not parse is a selection nobody can see, so
+    strict callers hear about it rather than running under defaults the user did not choose.
+    """
     path = config_path(env)
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except OSError:
-        return {}  # no config file is the defaults, in every mode
-    except ValueError:
+    except (FileNotFoundError, NotADirectoryError):
+        return {}
+    except (OSError, ValueError):
         if strict:
             raise
         return {}
@@ -82,8 +87,8 @@ def _project_config(env, strict):
         data = json.loads(Path(named).expanduser().read_text(encoding="utf-8"))
         if not isinstance(data, dict) or set(data) - {"stances"}:
             raise ValueError("project configuration cannot change runtime authority")
-        if not isinstance(data.get("stances", {}), dict):
-            raise ValueError("project stances must be an object")
+        # A `stances` value that is not an object selects nothing, as it always has; only a key
+        # the project may not set is worth failing a tool call over.
         return data
     except (OSError, ValueError):
         if strict:

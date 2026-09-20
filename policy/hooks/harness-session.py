@@ -15,7 +15,6 @@ from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parent
 STATE = Path.home() / ".local" / "state" / "agent-harness"
-CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
 PROGRESS = (".claude", "progress.md")
 PROGRESS_LINES = 80
 LOG_COMMITS = 5
@@ -157,9 +156,17 @@ def payload():
     return data if isinstance(data, dict) else {}
 
 
+def config_path():
+    """The configuration the stances were resolved from, so "config says X" names that file."""
+    module = sibling("posture")
+    if module:
+        return module.config_path(os.environ)
+    return Path.home() / ".config" / "agent-harness" / "config.json"
+
+
 def main():
     manifest = load(STATE / "manifest.json")
-    config = load(CONFIG)
+    config = load(config_path())
     lines = []
     if manifest and manifest.get("repo"):
         d = drift_line(manifest["repo"])

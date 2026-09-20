@@ -159,8 +159,11 @@ def main():
     # spawn to, so the call runs as written and says why, exactly as an unknown model does.
     ladder = posture.ladder() if posture else []
     if len(ladder) < 2:
-        print(json.dumps({"systemMessage": f"{HOOK}: the adapter's class table names no tier to move a "
-                          "spawn to, so this one runs as written; check the harness installation"}))
+        # Only a call whose model this hook would have decided — a bare spawn, or one asking for
+        # a class by name — is worth a notice; a named role with its own model is not this hook's.
+        if is_bare(tool_input) or tool_input.get("model"):
+            print(json.dumps({"systemMessage": f"{HOOK}: the adapter's class table names no tier to move a "
+                              "spawn to, so this one runs as written; check the harness installation"}))
         return
     if tier_of(tool_input.get("model"), ladder) == ladder[0]:
         kind = tool_input.get("subagent_type")
