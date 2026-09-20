@@ -13,6 +13,11 @@ ROOT = Path(__file__).resolve().parents[2]
 POLICIES = ROOT / "policy" / "hooks"
 ALIASES = {"exec_command": "Bash", "shell_command": "Bash", "shell": "Bash",
            "spawn_agent": "Agent", "write_file": "Write", "edit_file": "Edit"}
+BASE_EVENTS = ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd")
+# The usage feed's own events. Only Claude Code carries them; `adapters/codex/capabilities.json`
+# declares the gap rather than registering an event that runtime does not raise.
+FEED_EVENTS = ("UserPromptSubmit", "SubagentStart", "SubagentStop")
+EVENTS = {"claude-code": BASE_EVENTS + FEED_EVENTS, "codex": BASE_EVENTS}
 
 
 def load(name):
@@ -182,7 +187,15 @@ def dispatch(runtime, payload):
         warning = invoke("neutralize-tool-output", event)
         if warning:
             contexts.append(warning.get("hookSpecificOutput", {}).get("additionalContext") or warning.get("systemMessage", ""))
+        if runtime == "claude-code" and tool == "Agent":
+            feed = invoke("usage-feed", event).get("hookSpecificOutput", {}).get("additionalContext")
+            if feed:
+                contexts.append(feed)
         return {"hookSpecificOutput": {"hookEventName": kind, "additionalContext": "\n".join(contexts)}} if any(contexts) else {}
+    if kind in FEED_EVENTS:
+        # A feed never denies, never blocks and never speaks for another policy, so it answers
+        # its own two events alone.
+        return invoke("usage-feed", event) if runtime == "claude-code" else {}
     if kind == "SessionStart":
         return invoke("harness-session", event)
     if kind == "Stop":
@@ -202,7 +215,7 @@ def registration(root, runtime):
     command = "python3 " + shlex.quote(str(root / "adapters" / runtime / "hook.py"))
     return {"hooks": {event: [{"hooks": [{"type": "command", "command": command + " # harness:runtime-" + event.lower(),
                                          "timeout": 300 if event == "Stop" else 2 if event == "SessionEnd" else 10}]}]
-                      for event in ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd")}}
+                      for event in EVENTS.get(runtime, BASE_EVENTS)}}
 
 
 def main(runtime):

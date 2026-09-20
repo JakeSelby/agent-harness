@@ -57,6 +57,88 @@ and `requested_type`, which are a tool call's id and an agent name the tool coul
 at once. Rows are upserted by `(session_id, runtime, kind, agent_id)`, so re-reading a
 transcript never duplicates one, and a subagent transcript is only ever read from its session.
 
+## Usage feed
+
+The usage log is read after the fact. The feed is the same measurement while the session is
+still running: the `usage-feed` hook injects one or two lines of context so the orchestrator
+sees what it is spending before it delegates again.
+
+- On **`UserPromptSubmit`**, one line with the last turn's output tokens and tool calls and the
+  session's own — but only when there is a turn behind it and its figures are not the ones
+  already printed, because a background agent's completion arrives as a prompt of its own and
+  several in a row otherwise repeat one turn — followed by one line per subagent that has
+  finished since the previous prompt.
+  That second part is how a background spawn is reported at all: its `PostToolUse` fires at
+  launch, before the agent has spent anything. At most five agents are listed, then `… and n more`.
+- On **`PostToolUse`** for a synchronous `Agent` return, one line for that subagent, on the spot.
+  Any `Agent` call, a background launch included, also carries a line when more agents are
+  running than `max_parallel`: `usage-feed: 7 subagents running against a posture width of 6`.
+  It is a note and never a decision — the feed has no deny path and writes no permission field.
+- On **`SubagentStart`** and **`SubagentStop`**, nothing is injected — a `SubagentStop` context
+  would reach the agent that has just finished — but the start and the cost are recorded for the
+  lines above. Running means started and not yet stopped.
+
+A subagent's figure is summed from its own transcript, never from the tool response, which
+reports only the agent's **last** response: measured at 3,143 output tokens against 10,575
+actually spent. Each line names the agent type, what it spent and, when its row carries budgets,
+the larger of the two ratios against them, prefixed `over budget` past a `nudge_at` multiple.
+
+That sum is capped at 8 MiB from the end of the agent's transcript and at four seconds, because
+it runs inside a hook's timeout. When a cap bites, the line says `(partial)`; when the sum could
+not be made at all, it says `spend unknown` rather than reporting the agent at zero. Either way
+the stop is recorded, because an agent whose stop went missing would count as running for the
+rest of the session. A start whose stop never arrives is forgotten after three hours.
+
+Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
+number of its own:
+
+- `turn_feed: "off"` — nothing is injected anywhere and no file is written.
+- `turn_feed: "thresholds"` — no turn line; only subagents at or over the smallest `nudge_at`.
+  An agent nothing was said about stays unreported, so a later threshold crossing can still name it.
+- `turn_feed: "every-turn"` — the turn line and every finished subagent. `balanced` and `frugal`
+  ship this.
+- `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
+  means never.
+- `max_parallel` — the width the running-agent note measures against. `null`, which `max` ships,
+  means the note never appears.
+
+### State, and why it is two files
+
+These hooks are separate processes that run at the same time: tool calls go out in parallel and
+several agents finish at once. So the state is split, both files 0600 in a 0700 directory under
+`~/.local/state/agent-harness/feed/`.
+
+- `<session-id>.events.jsonl` is append-only. A subagent starting or finishing is one line under
+  4 KB written with a single `os.write` on an `O_APPEND` descriptor — an atomic append no handler
+  ever rewrites, so no record can be lost to a concurrent one.
+- `<session-id>.json` is the main thread's reader state: the transcript offset, the journal
+  offset, the running totals, the open message ids, the agents still in flight and the finished
+  ones not yet named. Everything that reads and then writes it does so under an exclusive
+  `flock` on `<session-id>.lock` with a two-second bound. No lock, no write, and nothing said.
+
+Nothing slow ever happens while that lock is held. `SubagentStart` and `SubagentStop` never take
+it — they append and exit — and the two main-thread events sum a subagent's transcript before
+acquiring it. A four-second sum under the lock would starve the prompt waiting behind it, and
+that prompt would lose its line in silence.
+
+Both files hold counts and agent type names only — no prompt text, no command text, no agent
+output — and an agent type that is not a plain name is recorded as `other`. A session's files
+are swept once a day, together and only when the newest of them has gone a fortnight untouched,
+never the running session's; `harness uninstall` removes the directory.
+
+The two offsets are what keep the hot path cheap: each prompt reads the transcript and the
+journal from where it left off, so a long session's subagent total can only ever grow.
+It is trusted only while the file is the same file, which the inode and a hash of the first
+record decide, so a transcript replaced by a *larger* one resets exactly as a truncated one does.
+With no usable state the read starts 8 MiB from the end rather than at byte zero, because a
+resumed session's transcript runs to hundreds of megabytes and a hook killed at its timeout
+would stall every prompt after it. Any read that skipped content, or that ran past its
+three-second budget, marks the totals `(partial)`.
+
+Codex raises none of `UserPromptSubmit`, `SubagentStart` or `SubagentStop`, so the feed is
+declared uncovered there in `adapters/codex/capabilities.json`; posture still reaches Codex
+through role-run workers.
+
 ## Reading it
 
 ```sh

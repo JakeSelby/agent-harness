@@ -12,6 +12,17 @@ All notable changes to this project are documented here. The format follows
   captured, never self-scored. It declares the `frontier` class, which is the only way a spawn
   reaches the strongest model now that the hook refuses it by request. The design loop hands it
   the build and fix steps; `design-judge` still scores from a fresh context.
+- A usage feed tells the orchestrator what it is spending while the session runs: a turn line on
+  `UserPromptSubmit`, a line for each subagent as it returns, a line at the next prompt for every
+  background spawn that finished meanwhile, and a note when more agents are running than the
+  variant's `max_parallel`. A subagent's figure is summed from its own transcript, because a tool
+  response reports only that agent's last response. The behaviour is `turn_feed`, `nudge_at` and
+  `max_parallel` in the active `cost` variant; `off` injects nothing and writes nothing. Per-session
+  state is an append-only journal plus a `flock`-guarded reader file, because these hooks run
+  concurrently and nothing slow runs under that lock; a figure that could not be summed inside
+  the hook's budget is reported as `(partial)` or `spend unknown`, never as zero. Stale files are
+  swept after a fortnight and `harness uninstall` removes them.
+  Codex raises none of the three events and declares the feed uncovered.
 - `harness tiers check` compares the Codex class table with the model catalog Codex fetches from
   its provider, offline, and fails on a mapped model that is gone, superseded or ranked out of
   order. A missing catalog reports *unverified*, not a pass.
