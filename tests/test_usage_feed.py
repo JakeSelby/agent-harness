@@ -181,6 +181,36 @@ class TurnLineTests(Fixture):
                          "usage-feed: last turn 1,500 output tokens, 3 tool calls · "
                          "session 1,500 output, 3 tool calls, 0 subagents")
 
+    def test_the_first_prompt_of_a_session_says_nothing(self):
+        # There is no turn behind it, and "0 output tokens, 0 tool calls" is not news.
+        self.assertEqual(self.submit(), [])
+
+    def test_an_unchanged_turn_is_not_reported_twice(self):
+        # A background agent's completion arrives as a prompt of its own, so several prompts in
+        # a row report the same turn. The second one has nothing to add.
+        append(self.transcript, [assistant("m1", 476, ("t1", "t2"))])
+        first = self.submit()
+        self.assertIn("last turn 476 output tokens, 2 tool calls", first[0])
+        self.assertEqual(self.submit(), [])
+        # A subagent that finished meanwhile is still reported, without the repeated turn line.
+        self.agent("aaa", "gatherer", [("a1", 40, ())])
+        self.stop("aaa")
+        second = self.submit()
+        self.assertEqual(len(second), 1)
+        self.assertIn("gatherer finished at 40 output tokens", second[0])
+        # And the line comes back the moment the turn moves on.
+        append(self.transcript, [prompt(), assistant("m2", 12)])
+        self.assertIn("last turn 12 output tokens", self.submit()[0])
+
+    def test_a_repeated_figure_after_a_real_new_turn_is_still_said(self):
+        # The guard is against repeating one turn, not against two turns costing the same.
+        append(self.transcript, [assistant("m1", 50)])
+        self.assertIn("last turn 50 output tokens", self.submit()[0])
+        append(self.transcript, [prompt(), assistant("m2", 30)])
+        self.assertIn("last turn 30 output tokens", self.submit()[0])
+        append(self.transcript, [prompt(), assistant("m3", 50)])
+        self.assertIn("last turn 50 output tokens", self.submit()[0])
+
     def test_a_sidechain_line_is_not_the_parents_spend(self):
         append(self.transcript, [assistant("m1", 100), assistant("s1", 9000, sidechain=True)])
         self.assertIn("last turn 100 output tokens", self.submit()[0])
@@ -312,7 +342,9 @@ class ColdStartTests(Fixture):
         return counted
 
     def test_a_cold_start_on_a_huge_transcript_reads_its_tail_and_says_partial(self):
-        size = self.big_transcript()
+        self.big_transcript()
+        append(self.transcript, [assistant("m1", 90)])
+        size = self.transcript.stat().st_size
         self.assertGreater(size, 50 * 1024 * 1024)
         module = load_feed()
         counted = self.counting(module)
@@ -400,18 +432,20 @@ class SubagentReturnTests(Fixture):
         # The tool's default: PostToolUse fires at launch with no totals at all.
         self.assertEqual(self.returned("ddd", "gatherer", isAsync=True, status="in_progress"), [])
         self.stop("ddd")
+        append(self.transcript, [assistant("m8", 20)])
         first = self.submit()
         self.assertEqual(len(first), 2)
         self.assertIn("usage-feed: gatherer finished at 900 output tokens", first[1])
         append(self.transcript, [assistant("m9", 10)])
-        self.assertEqual(len(self.submit()), 1)
+        self.assertEqual(len(self.submit()), 1)  # the turn line moved on; nothing else to say
 
     def test_a_synchronous_return_before_its_stop_entry_reads_the_transcript(self):
         self.agent("eee", "gatherer", [("e1", 1000, ())])
         self.assertIn("finished at 1,000 output tokens", self.returned("eee", "gatherer")[0])
         self.assertEqual(self.state()["counted"], ["eee"])
         self.stop("eee")
-        self.assertEqual(len(self.submit()), 1)  # never listed again
+        append(self.transcript, [assistant("m7", 30)])
+        self.assertEqual(len(self.submit()), 1)  # the turn line only: never listed again
 
     def test_a_workflow_agent_one_level_deeper_is_found(self):
         self.agent("fff", "gatherer", [("f1", 200, ())], workflow="wf_1")
@@ -430,6 +464,7 @@ class SubagentReturnTests(Fixture):
             name = "a%d" % index
             self.agent(name, "gatherer", [("m" + name, 100, ())])
             self.stop(name)
+        append(self.transcript, [assistant("m1", 25)])
         lines = self.submit()
         self.assertEqual(len(lines), 1 + 5 + 1)
         self.assertEqual(lines[-1], "… and 2 more")
@@ -460,6 +495,7 @@ class WidthTests(Fixture):
 
     def test_the_turn_line_carries_it_too(self):
         self.running(7)
+        append(self.transcript, [assistant("m1", 30)])
         lines = self.submit()
         self.assertTrue(lines[0].startswith("usage-feed: last turn"))
         self.assertEqual(lines[1], "usage-feed: 7 subagents running against a posture width of 6")
@@ -712,8 +748,10 @@ class SafetyTests(Fixture):
         self.assertEqual(self.stop("nowhere"), [])
         self.assertEqual([(r["t"], r["output"], r["tool_calls"]) for r in self.journal()],
                          [("stop", None, None)])
-        self.assertEqual(self.submit()[1], "usage-feed: unknown finished, spend unknown")
-        self.assertTrue(self.submit()[0].endswith("1 subagent (partial)"), self.submit()[0])
+        append(self.transcript, [assistant("m1", 60)])
+        lines = self.submit()
+        self.assertEqual(lines[1], "usage-feed: unknown finished, spend unknown")
+        self.assertTrue(lines[0].endswith("1 subagent (partial)"), lines[0])
 
     def test_a_malformed_state_file_starts_over_rather_than_failing(self):
         append(self.transcript, [assistant("m1", 400)])

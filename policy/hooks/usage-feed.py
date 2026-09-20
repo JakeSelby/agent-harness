@@ -172,7 +172,7 @@ def new_state():
             "previous_turn": {"output": 0, "tool_calls": 0},
             "subagents": {"output": 0, "tool_calls": 0, "count": 0, "unknown": 0},
             "journal_offset": 0, "running": {}, "pending": [], "counted": [],
-            "open": [], "pruned": 0}
+            "open": [], "pruned": 0, "said_turn": None}
 
 
 def load_state(path):
@@ -665,9 +665,19 @@ def width_line(running, width):
 
 
 def turn_line(state):
-    """The turn and the session so far. Subagent spend is the session's bill, so it is in both."""
+    """The turn and the session so far, or None when it would say nothing new.
+
+    A session's first prompt has no turn behind it, and a background agent's completion arrives
+    as a prompt of its own — several in a row, all reporting the turn before them. Repeating a
+    line the orchestrator has already read costs context and teaches it to skip the feed, so the
+    figures last printed are remembered and an unchanged turn is silence.
+    """
     last = state["turn"] if (state["turn"]["output"] or state["turn"]["tool_calls"]) \
         else state["previous_turn"]
+    figures = [last["output"], last["tool_calls"]]
+    if not any(figures) or state.get("said_turn") == figures:
+        return None
+    state["said_turn"] = figures
     totals = state["subagents"]
     text = (PREFIX + "last turn " + plural(last["output"], "output token") + ", "
             + plural(last["tool_calls"], "tool call") + " · session "
@@ -815,7 +825,8 @@ def on_prompt(payload, env):
         if state.get("timed_out"):
             save_state(state_file, state)
             return None
-        lines = [turn_line(state)] if mode == "every-turn" else []
+        turn = turn_line(state) if mode == "every-turn" else None
+        lines = [turn] if turn else []
         note = width_line(running_now(state), width)
         if note:
             lines.append(note)

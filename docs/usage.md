@@ -64,7 +64,10 @@ still running: the `usage-feed` hook injects one or two lines of context so the 
 sees what it is spending before it delegates again.
 
 - On **`UserPromptSubmit`**, one line with the last turn's output tokens and tool calls and the
-  session's own, followed by one line per subagent that has finished since the previous prompt.
+  session's own — but only when there is a turn behind it and its figures are not the ones
+  already printed, because a background agent's completion arrives as a prompt of its own and
+  several in a row otherwise repeat one turn — followed by one line per subagent that has
+  finished since the previous prompt.
   That second part is how a background spawn is reported at all: its `PostToolUse` fires at
   launch, before the agent has spent anything. At most five agents are listed, then `… and n more`.
 - On **`PostToolUse`** for a synchronous `Agent` return, one line for that subagent, on the spot.
