@@ -13,15 +13,44 @@ the branch, model ids and token counts.
 
 ## What is recorded
 
-`session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`, `output`, `cache_read`,
-`cache_write`, `subagents`, `turns`. The source is the transcript Claude Code already writes
-under `~/.claude/projects/`. The worker streams it and sums the four token fields over
-assistant messages **once per message id**: one API response is written as several transcript
-entries that each repeat the same `usage` object, so counting per line inflates every total.
-`subagents` counts `Agent` tool calls.
+Every row names its `kind`: `session`, `subagent` or `worker`. A row written before the field
+existed is read as a session, which is all there was to record, and `--rescan` upgrades it.
+
+**`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
+`output`, `cache_read`, `cache_write`, `subagents`, `turns`. The source is the transcript
+Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
+token fields over assistant messages **once per message id, at that id's largest figure**: one
+API response is written as several transcript entries, so counting per line inflates every
+total — but those entries do not repeat one `usage` object. The early ones carry a partial
+streaming `output_tokens` and the last carries the response's true figure, so taking the first
+undercounts it. The field-wise maximum is the final figure, and a reordered or truncated tail
+cannot lower it. `subagents` counts `Agent` tool calls. The token totals **include the
+session's subagents**, because their tokens are the session's bill — counted once over one map
+of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
+the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
+a transcript carrying both would otherwise pay for every delegated token twice.
+
+**`kind: "subagent"`** — one row per `agent-<id>.jsonl` anywhere under `<session>/subagents/`,
+the tree Claude Code writes beside the session's own file. The walk is recursive because a
+Workflow-tool agent lives a level deeper, at `subagents/workflows/wf_<id>/`, and its `workflow`
+field names that directory. `agent_id`, `agent_type` and `spawn_depth` come from the sibling
+`.meta.json`, and an agent written without one is recorded as `agent_type: "unknown"` rather
+than dropped. Then `model`, `effort`, the four token fields, `tool_calls` and `rerouted`. These
+rows carry the same tokens a second time, attributed, which is why no grouping sums both them
+and their session.
+
+**`kind: "worker"`** — one row per completed `harness role run` worker, with the role name as
+`agent_type`. A worker is an isolated CLI session; its runtime reports what the run cost in the
+envelope or event stream the adapter already reads, and `workers.py` writes those totals into
+its `status.json`. A runtime that reports none leaves the fields unknown rather than zero.
+Neither runtime reports a worker's tool-call count, so `tool_calls` is unknown for workers. A
+run that timed out or failed is not recorded: its total compares to nothing.
+
+No row holds prompt text, command text or a brief: counts only.
 
 `SessionEnd` hooks share a 1.5-second budget, so the hook spawns a detached worker and returns
-at once. Records are upserted by `session_id`, so re-reading a transcript never duplicates one.
+at once. Rows are upserted by `(session_id, runtime, kind, agent_id)`, so re-reading a
+transcript never duplicates one, and a subagent transcript is only ever read from its session.
 
 ## Reading it
 
@@ -29,8 +58,17 @@ at once. Records are upserted by `session_id`, so re-reading a transcript never 
 bin/harness usage                      # last 30 days, grouped by day
 bin/harness usage --days 7 --by repo
 bin/harness usage --by model           # a session using two models groups under both, joined
+bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output and tool calls
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
+
+`--by role` reads the subagent and worker rows. Spend per delegated task is a distribution, not
+a mean, so it prints three points on the curve; `unmeasured` counts the runs whose runtime
+reported no tool-call figure, which are named there rather than averaged in as a zero.
+
+The token groupings — `day`, `repo`, `model` — sum session and worker rows and never a
+subagent's. A subagent's tokens are already inside its session's total; a role-run worker has
+no session row at all, so leaving it out would hide its spend in every report there is.
 
 A session that crashes or is killed never fires `SessionEnd` and so is never recorded live;
 `--rescan` walks every transcript touched inside `--days` and upserts it, which is how you fill

@@ -207,6 +207,15 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
                 record["artifact"] = str(workspace / ".agent-harness/plans" / artifact)
             reconcile.atomic_text(run_dir / "result.md", content)
             record["result_path"] = str(run_dir / "result.md")
+            # What the run cost, as its own runtime reported it, so `usage --by role` counts a
+            # worker beside a subagent. An adapter that reports nothing leaves the key absent
+            # rather than a zero, which a report would read as a measured run that spent none.
+            try:
+                counts = getattr(native, "usage", lambda *_: {})(work, run_dir)
+            except Exception:
+                counts = {}
+            if isinstance(counts, dict) and counts:
+                record["usage"] = counts
         record["status"] = "completed"
     except subprocess.TimeoutExpired:
         record.update(status="timed-out", error="native worker exceeded its timeout")

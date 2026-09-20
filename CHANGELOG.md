@@ -13,6 +13,13 @@ All notable changes to this project are documented here. The format follows
   order. A missing catalog reports *unverified*, not a pass.
 - `tiers.<runtime>.<class>` in the configuration remaps a capability class for every role that
   names it, without a harness release.
+- The usage log records one row per subagent and one per `harness role run` worker beside the
+  session row, each naming its `kind`, agent type, model, effort, token counts, tool calls and
+  spawn depth. Rows are upserted by `(session_id, runtime, kind, agent_id)` and hold counts
+  only: no prompt text and no command text.
+- `harness usage --by role` reports, per agent type, the number of runs and the p50, p75 and p90
+  of output tokens and of tool calls over the window — the distribution a per-role budget has to
+  be set against. A run whose runtime reported no counts is named, never averaged in as a zero.
 
 ### Changed
 
@@ -34,6 +41,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A session whose transcript carried both a subagent's sidechain lines and that subagent's own
+  file counted every delegated token twice. The session's totals are now taken over one map of
+  message ids that both reads fill, so a message recorded in two places is one message. Agents
+  nested under `subagents/workflows/wf_<id>/`, which the Workflow tool writes and a flat walk
+  missed entirely, are counted too and name their workflow.
+- Output tokens were undercounted, by a factor of several on a long response. The log took each
+  message id's usage from the first transcript record carrying it, and the early records of one
+  streamed response carry a partial `output_tokens` — 7,126 against the response's real 40,868
+  on a measured subagent transcript. Each message id now counts at the largest figure it ever
+  reported, so a reordered or truncated tail cannot lower it either. `harness usage --rescan`
+  corrects the recorded history.
+- Every session total was short by whatever its delegation cost. A subagent's tokens live in its
+  own transcript, which the log never read, so a session that fanned out reported only the
+  orchestrator's own spend. Session totals now include their subagents'; `harness usage --rescan`
+  backfills the history, and the token groupings sum session rows alone so nothing is counted
+  twice.
 - A managed link that reaches its file through an alias of the checkout, such as `claude/stances`
   for `primitives/stances`, is no longer reported as redirected. `harness uninstall` and the
   retirement of a removed link treated the same link as the user's and left it behind; they now
