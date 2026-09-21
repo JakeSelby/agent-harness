@@ -5,7 +5,7 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 8,
-    "story": 141,
+    "story": 142,
     "task": 1,
     "bug": 38,
     "chore": 28,
@@ -2857,6 +2857,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C027.md",
       "parent_bmad_id": "AH-E004",
       "parent_github_number": 189,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S141",
+      "github_number": 377,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/377",
+      "title": "Jev: Hand-label seed fixtures for stop claims and the ask band",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S141.md",
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
       "lifecycle": "active",
       "provenance": "authored"
     }
