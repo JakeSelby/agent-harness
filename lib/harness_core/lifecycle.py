@@ -1,5 +1,6 @@
 """Normalize lifecycle events and compose shared policies before native encoding."""
 import contextlib
+import difflib
 import importlib.util
 import io
 import json
@@ -18,6 +19,19 @@ BASE_EVENTS = ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd"
 # declares the gap rather than registering an event that runtime does not raise.
 FEED_EVENTS = ("UserPromptSubmit", "SubagentStart", "SubagentStop")
 EVENTS = {"claude-code": BASE_EVENTS + FEED_EVENTS, "codex": BASE_EVENTS}
+ROLE_NAME = re.compile(r"[a-z][a-z0-9-]*")
+# A brief may declare the role it belongs to. The line stands alone so the declaration cannot be
+# produced by prose that happens to mention a role, and it travels with the text: a brief pasted
+# into an unnamed spawn still carries it, which is the whole point.
+ROLE_MARKER = re.compile(r"^[ \t]*harness-role:[ \t]*([a-z][a-z0-9-]*)[ \t]*$", re.M)
+# What a session remembers about a spawn it refused, and how a later spawn is matched against it.
+# Bounded on both axes: 32 entries of 2,000 normalised characters is far past any real fan-out,
+# and a session record is not a place to accumulate transcript.
+DENIED_KEY = "denied_spawns"
+DENIED_MAX = 32
+FINGERPRINT_MAX = 2000
+PREFIX_MATCH = 400
+SIMILARITY = 0.85
 
 
 def load(name):
@@ -66,6 +80,117 @@ def invoke(name, event):
 def selected(name, fallback):
     """One dimension's variant, resolved by the same file the policy hooks load."""
     return load("posture").selected(name, fallback)
+
+
+def constrained_role(name):
+    """The contract of `name` when it is a shared role an isolated worker must run, else None."""
+    if not (isinstance(name, str) and ROLE_NAME.fullmatch(name)):
+        return None
+    if not (ROOT / "primitives/roles" / (name + ".md")).is_file():
+        return None
+    from . import catalog
+    try:
+        fields, _ = catalog.role_contract(ROOT, name)
+    except ValueError:
+        return None
+    return fields if fields["authority"] in ("read-only", "artifact-write") else None
+
+
+def role_instruction(runtime, name, fields):
+    """The one sentence that says how this role is actually run. Every refusal ends with it."""
+    from . import catalog
+    # The role's class picks the model; the session's is the fallback, never the default.
+    mapped = fields is not None and "model" in catalog.role_binding(ROOT, runtime, fields)
+    return ("Use harness role run " + name + " --runtime " + runtime
+            + ("" if mapped else " --model <session-model>")
+            + " --workspace <repo> --prompt-file <brief-file>. "
+            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement.")
+
+
+def role_deny(runtime, name, fields):
+    return {"hookSpecificOutput": {"permissionDecision": "deny",
+            "permissionDecisionReason": "This constrained harness role requires an isolated worker. "
+            + role_instruction(runtime, name, fields)}}
+
+
+def marker_role(prompt):
+    """`(name, fields)` for a brief that declares its role on a `harness-role:` line, else None.
+
+    A marker naming something that is not a constrained shared role says nothing: the guard is a
+    declaration the harness can verify, not a word the model can use to refuse arbitrary work.
+    """
+    if not isinstance(prompt, str):
+        return None
+    for name in ROLE_MARKER.findall(prompt):
+        fields = constrained_role(name)
+        if fields is not None:
+            return name, fields
+    return None
+
+
+def fingerprint(prompt):
+    """A brief reduced to what a re-spawn cannot vary: whitespace, case and length all removed."""
+    return " ".join(prompt.split()).casefold()[:FINGERPRINT_MAX] if isinstance(prompt, str) else ""
+
+
+def same_work(left, right):
+    """Whether two fingerprints are the same brief. Equality, containment, then similarity.
+
+    Containment is tested only on a prefix long enough to be evidence; a short brief that happens
+    to appear inside a longer unrelated one is a false refusal, and a refusal nobody can explain
+    is worse than the evasion it prevents.
+    """
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    for a, b in ((left, right), (right, left)):
+        if len(a) >= PREFIX_MATCH and a[:PREFIX_MATCH] in b:
+            return True
+    return difflib.SequenceMatcher(None, left, right).ratio() >= SIMILARITY
+
+
+def denied_spawns(session_id):
+    """What this session has already refused as a constrained-role spawn; `[]` for anything else.
+
+    State a hook cannot read is state that does not exist. The guard then behaves exactly as it
+    did before it was written, because a spawn hook that raises is worse than one that forgets.
+    """
+    try:
+        record = load("posture").read_session_record(session_id)
+        entries = (record or {}).get(DENIED_KEY)
+        return [e for e in entries if isinstance(e, dict) and isinstance(e.get("prompt"), str)] \
+            if isinstance(entries, list) else []
+    except Exception:
+        return []
+
+
+def remember_denial(session_id, name, prompt):
+    """Add one refusal to the session's memory, newest last. Best effort, never raises."""
+    text = fingerprint(prompt)
+    if not text:
+        return False
+    try:
+        posture = load("posture")
+        record = posture.read_session_record(session_id) or {}
+        entries = [e for e in denied_spawns(session_id) if e.get("prompt") != text]
+        entries.append({"role": name, "prompt": text})
+        return bool(posture.write_session_record(session_id, dict(record, **{DENIED_KEY: entries[-DENIED_MAX:]})))
+    except Exception:
+        return False
+
+
+def evasion_deny(runtime, session_id, prompt):
+    """The refusal a re-spawn of already-refused work gets, or None when this is not that."""
+    text = fingerprint(prompt)
+    for entry in reversed(denied_spawns(session_id)):
+        if same_work(text, entry["prompt"]):
+            name = entry.get("role") if isinstance(entry.get("role"), str) else ""
+            return {"hookSpecificOutput": {"permissionDecision": "deny",
+                    "permissionDecisionReason": "This work was refused as a native " + name
+                    + " spawn in this session; dropping or changing the role name does not change that. "
+                    + role_instruction(runtime, name, constrained_role(name))}}
+    return None
 
 
 def encode_pre(runtime, original, normalized, results):
@@ -156,20 +281,26 @@ def dispatch(runtime, payload):
             results.append(invoke("filter-output", event))
         elif tool == "Agent":
             delegation = selected("delegation", "tiered")
-            role_name = event["tool_input"].get("subagent_type")
-            if isinstance(role_name, str) and re.fullmatch(r"[a-z][a-z0-9-]*", role_name):
-                source = ROOT / "primitives/roles" / (role_name + ".md")
-                if source.is_file():
-                    from . import catalog
-                    fields, _ = catalog.role_contract(ROOT, role_name)
-                    if fields["authority"] in ("read-only", "artifact-write"):
-                        # The role's class picks the model; the session's is the fallback, never the default.
-                        mapped = "model" in catalog.role_binding(ROOT, runtime, fields)
-                        results.append({"hookSpecificOutput": {"permissionDecision": "deny",
-                            "permissionDecisionReason": "This constrained harness role requires an isolated worker. Use harness role run "
-                            + role_name + " --runtime " + runtime + ("" if mapped else " --model <session-model>")
-                            + " --workspace <repo> --prompt-file <brief-file>. "
-                            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement."}})
+            inputs = event["tool_input"]
+            role_name, prompt = inputs.get("subagent_type"), inputs.get("prompt")
+            fields = constrained_role(role_name)
+            if fields is not None:
+                results.append(role_deny(runtime, role_name, fields))
+            # Refusing the named spawn only moves the work: the same brief comes back with the role
+            # name dropped, and nothing sees it. So the refusal is remembered for the session, and a
+            # brief that declares its own role is refused however it is spawned. Neither guard runs
+            # where the stance already denies every spawn.
+            if delegation != "off":
+                if fields is not None:
+                    remember_denial(event.get("session_id"), role_name, prompt)
+                else:
+                    marked = marker_role(prompt)
+                    if marked is not None:
+                        results.append(role_deny(runtime, marked[0], marked[1]))
+                    else:
+                        evaded = evasion_deny(runtime, event.get("session_id"), prompt)
+                        if evaded is not None:
+                            results.append(evaded)
             if delegation == "off":
                 results.append({"hookSpecificOutput": {"permissionDecision": "deny",
                     "permissionDecisionReason": "Delegation is off; perform the work inline or change the selected stance."}})
