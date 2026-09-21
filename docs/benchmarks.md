@@ -1,8 +1,8 @@
 # Cost benchmarks
 
 What the harness costs you, measured against Claude Code with no harness at all. The static figure
-below exists today. The live replay that compares whole tasks is tracked separately and is not
-published yet, so nothing here claims a saving.
+below exists today. The live replay that compares whole tasks has a runner and no published
+result yet, so nothing here claims a saving.
 
 ## Static context figure
 
@@ -29,6 +29,40 @@ of every dimension, the five largest files, and what that many tokens cost per m
   `reason`. The entry stops matching as soon as the figure moves again.
 - **The line cap in `harness lint` is separate and unchanged.** The cap bounds the worst case in
   lines; this tracks the default selection in tokens and dollars, version by version.
+
+## Live replay
+
+`scripts/cost_bench.py replay` runs the pinned tasks in `benchmarks/tasks.json` headlessly, once
+against a signed-in, otherwise empty Claude Code profile and once against the installed harness, and
+scores each run with a check the agent never sees. It calls a model and spends real usage, so it is
+run by hand on a release candidate and never in CI.
+
+```sh
+python3 scripts/cost_bench.py replay --verify-tasks              # prove every check; calls no model
+python3 scripts/cost_bench.py replay --model <id> --dry-run      # print the schedule
+python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 arms x 2 reps
+```
+
+- **The arms differ by environment only.** Both get one command line: the same `--model`,
+  `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network
+  access off. The bare arm adds `CLAUDE_CONFIG_DIR`, pointing at the empty profile.
+- **Every run starts in a throwaway snapshot outside the home directory**, launched with a scrubbed
+  environment. A folder under the home directory inherits the user's instruction files through the
+  parent-folder walk, which would put the harness into the bare arm. The snapshot holds one commit,
+  so the change that solved a task is not reachable from it, and it is removed after scoring.
+- **Cost is the CLI's own `total_cost_usd`**, a list-price equivalent and not money charged under a
+  plan sign-in. Run order changes it, because a later run finds its prefix already cached, so each
+  row also carries a cache-normalised cost that reprices every thread's first-turn cache reads as
+  cache writes. It is empty when the CLI output does not carry per-turn usage.
+- **An errored run is an error, never a failure.** It sits outside both cost per passed task and
+  the pass count, and is counted beside them. The per-run cap is soft, so the runner also stops
+  before any launch that could take reported spend past `--spend-cap`.
+- **`benchmarks/history.jsonl` holds one row per harness version per run day**, stored as a ratio to
+  bare on the same day and model; `benchmarks/history.md` is rendered from it. Compare ratios across
+  days, never dollars. The publishable threshold is fixed in the script: the harness costs at most
+  85% of bare per passed task while passing no fewer than bare minus one, mean of reps.
+- **What is faked:** single-shot prompts stand in for interactive sessions, two of the four tasks
+  are synthetic, and only the installed harness can be run; older tags are refused.
 
 ## Limits
 
