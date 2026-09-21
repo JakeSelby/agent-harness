@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-09-21
+
 ### Changed
 
 - The `builder` role's report closes two gaps a downstream soak found. A hand-edited fixture,
