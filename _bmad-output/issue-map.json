@@ -7,7 +7,7 @@
     "epic": 8,
     "story": 143,
     "task": 1,
-    "bug": 39,
+    "bug": 40,
     "chore": 28,
     "spike": 7,
     "decision": 3
@@ -1635,7 +1635,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B009.md",
       "parent_bmad_id": "AH-E004",
       "parent_github_number": 189,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2740,7 +2740,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B036.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2816,8 +2816,8 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S140.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2829,8 +2829,8 @@
       "type": "spike",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-SP005.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2842,8 +2842,8 @@
       "type": "spike",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-SP006.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2857,7 +2857,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C027.md",
       "parent_bmad_id": "AH-E004",
       "parent_github_number": 189,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2883,7 +2883,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S142.md",
       "parent_bmad_id": "AH-E004",
       "parent_github_number": 189,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2896,6 +2896,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B038.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B039",
+      "github_number": 388,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/388",
+      "title": "Live parent drift is reported in the direction that destroys the newer parent",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B039.md",
+      "parent_bmad_id": "AH-E004",
+      "parent_github_number": 189,
       "lifecycle": "active",
       "provenance": "authored"
     }
