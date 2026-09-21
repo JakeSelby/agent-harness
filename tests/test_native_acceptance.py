@@ -9,6 +9,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import subprocess
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -157,6 +159,47 @@ class FeedSpendTests(unittest.TestCase):
             outcome = MODULE.probe(CLIENT, "cost-posture", "cheapest", False)
         self.assertEqual(outcome["result"], "failed")
         self.assertIn("spend unknown", outcome["observation"])
+
+
+class KeychainTests(unittest.TestCase):
+    """A disposable home on macOS carries its own default keychain, so no store raises a dialog."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+
+    def completed(self, code, stderr=""):
+        return subprocess.CompletedProcess([], code, stdout="", stderr=stderr)
+
+    def test_other_hosts_run_nothing(self):
+        with patch.object(MODULE, "run", side_effect=AssertionError("a process ran")):
+            self.assertIsNone(MODULE.keychain(self.home, host="Linux"))
+        self.assertFalse((self.home / "Library").exists())
+
+    def test_macos_creates_the_keychain_inside_the_disposable_home(self):
+        with patch.object(MODULE, "run", return_value=self.completed(0)) as ran:
+            path = MODULE.keychain(self.home, host="Darwin")
+        self.assertEqual(path, self.home / "Library" / "Keychains" / "login.keychain-db")
+        self.assertTrue(path.parent.is_dir())
+        create = ran.call_args_list[0]
+        self.assertEqual(create.args[0][:2], ["security", "create-keychain"])
+        self.assertEqual(create.args[0][-1], path)
+        for call in ran.call_args_list:
+            self.assertEqual(call.kwargs["env"]["HOME"], str(self.home))
+
+    def test_a_home_without_a_keychain_refuses_a_client_turn(self):
+        failed = self.completed(1, "security: could not create")
+        with patch.object(MODULE.platform, "system", return_value="Darwin"), \
+                patch.object(MODULE, "run", return_value=failed) as ran:
+            home = MODULE.Home("claude", "kc", "haiku")
+            self.addCleanup(home.discard)
+            launches = len(ran.call_args_list)
+            with self.assertRaises(MODULE.Unverified) as caught:
+                home.session("hello")
+        self.assertIn("could not create", str(caught.exception))
+        self.assertEqual(len(ran.call_args_list), launches)
+        self.assertEqual(home.launched, 0)
 
 
 class RedactionTests(unittest.TestCase):
