@@ -16,7 +16,9 @@ configuration and hook decisions are implemented and tested. Native qualificatio
 refreshed for the four required Claude Code and Codex CLI targets listed below.
 
 <!-- harness:compatibility:start -->
-**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
+
+**Unqualified:** `claude-code-vscode-macos`, `codex-vscode-macos`, `codex-desktop-macos`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->
