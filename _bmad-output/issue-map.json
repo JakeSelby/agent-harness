@@ -5,7 +5,7 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 8,
-    "story": 143,
+    "story": 144,
     "task": 1,
     "bug": 40,
     "chore": 28,
@@ -2909,6 +2909,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B039.md",
       "parent_bmad_id": "AH-E004",
       "parent_github_number": 189,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S143",
+      "github_number": 401,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/401",
+      "title": "Land the documentation-link check and the credential probe from the smoke tier",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S143.md",
+      "parent_bmad_id": "AH-S124",
+      "parent_github_number": 334,
       "lifecycle": "active",
       "provenance": "authored"
     }

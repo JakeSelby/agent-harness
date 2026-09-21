@@ -13,7 +13,7 @@ All notable changes to this project are documented here. The format follows
   probe names the variable a client would authenticate with or fails immediately with the reason,
   instead of the 300-second hang a session-credentials-only home used to produce. Both are additive
   and neither writes to `compatibility/evidence/` or appears in a catalog record, because a green
-  deterministic check is not native qualification (#334).
+  deterministic check is not native qualification (#401).
 - `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
   sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
 

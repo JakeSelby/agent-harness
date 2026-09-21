@@ -116,6 +116,16 @@ class EntryPointTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "credentials: ANTHROPIC_API_KEY")
 
+    def test_only_a_known_variable_name_is_ever_printed(self):
+        for name in credentials.REPORTABLE_VARS:
+            self.assertIn(name, ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY",
+                                 "AWS_PROFILE", "GOOGLE_APPLICATION_CREDENTIALS"))
+        with patch.object(credentials, "reachable", return_value="SOME_OTHER_VALUE"):
+            code, out, err = self.run_main({"ANTHROPIC_API_KEY": PRESENT})
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("is not a reportable variable", err)
+
     def test_the_probe_is_additive_and_records_no_qualification(self):
         before = sorted(p.name for p in (REPO / "compatibility" / "evidence").iterdir())
         self.run_main({})

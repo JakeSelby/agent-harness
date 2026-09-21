@@ -24,6 +24,9 @@ FILE_POINTER_VARS = ("AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE",
                      "GOOGLE_APPLICATION_CREDENTIALS")
 # An interactive login, which stays in the home that performed it and never reaches a disposable one.
 SESSION_LOGIN_FILES = (Path(".claude") / ".credentials.json", Path(".codex") / "auth.json")
+# Every name `reachable` can return. `main` prints the member of this tuple rather than the returned
+# string, so no expression derived from the environment reaches standard output even by accident.
+REPORTABLE_VARS = API_KEY_VARS + ("AWS_PROFILE", "GOOGLE_APPLICATION_CREDENTIALS")
 
 
 class Unreachable(Exception):
@@ -67,11 +70,16 @@ def reachable(env, home=None):
 def main():
     """Report the credential a probe run would use. Exit 1 with the reason when there is none."""
     try:
-        print("credentials: %s" % reachable(dict(os.environ)))
+        found = reachable(dict(os.environ))
     except Unreachable as error:
         print("credentials: unreachable: %s" % error, file=sys.stderr)
         return 1
-    return 0
+    for name in REPORTABLE_VARS:
+        if name == found:
+            print("credentials: %s" % name)
+            return 0
+    print("credentials: unreachable: %r is not a reportable variable" % found, file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
