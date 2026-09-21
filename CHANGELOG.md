@@ -17,13 +17,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness uninstall` now removes the empty directories the sync created for its own files —
+  `~/.claude/rules/harness-stances` and each `~/.agents/skills/harness-*` — instead of leaving
+  them behind. A directory that still holds anything is kept untouched.
+- A stale `harness task save --revision` prints one line on stderr naming the remedy and exits 1,
+  where it raised an uncaught `ValueError` and printed a traceback carrying the checkout path.
+  The guard itself is unchanged: a save against a revision that is no longer current is refused.
+- `harness doctor` reports a client that is `not on PATH` rather than `not installed`, and says so
+  explicitly when Codex credentials are present with no `codex` the shell can reach.
 - A permitted Codex tool call no longer reports `hook: PreToolUse Failed`. The PreToolUse envelope
   carried `permissionDecision: "allow"` on every non-gated call; a client that lists `allow` as
   unsupported discards the whole hook output, so every allowed call showed a failure and a real one
   was indistinguishable. Codex now hears nothing where its own default already allows, and `allow`
   is sent only with an `updatedInput` rewrite, which that runtime applies under no other decision.
   Denials, the ask-to-deny narrowing and Claude Code's envelope are unchanged.
-
 - An isolated role worker now follows the selected cost variant. `harness role run` bound a role
   from its `tier:` alone, so under `frugal` a `gatherer` worker ran on the role's own class while
   the same sync in the same home rendered that role one class lower — and the constrained roles

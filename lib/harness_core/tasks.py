@@ -76,7 +76,8 @@ def save(root, payload, runtime, revision=0):
     with reconcile.lock(directory):
         current = read(root)
         if current["revision"] != revision:
-            raise ValueError("task revision changed; read current task before updating")
+            raise ValueError("task revision changed since --revision "
+                             + str(revision) + "; read the current task, then save against its revision")
         record = dict(payload, schema_version=1, revision=revision + 1, runtime=runtime,
                       repository=str(root), branch=git(root, "branch", "--show-current"),
                       head=git(root, "rev-parse", "HEAD"), fingerprint=fingerprint(root))
