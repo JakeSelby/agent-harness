@@ -12,6 +12,10 @@ client already uses on this machine (see docs/qualification-runbook.md) and noth
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --dry-plan
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --cases installation \
         --model haiku --out /tmp/native.json
+    python3 scripts/native_acceptance.py --client claude-code-cli-macos --from-progress
+
+Each case is appended to a durable log as it finishes, so a killed round costs the case it was
+running and not the round; `--from-progress` rebuilds a record from what survived.
 """
 import argparse
 import json
@@ -436,6 +440,66 @@ def probe(client, name, model, keep):
         home.discard()
 
 
+HEADER_KEYS = ("kind", "client", "harness_version", "runtime_version", "client_version",
+               "platform", "source_commit")
+
+
+def progress_path(client, out):
+    """Where finished cases are appended, outside the checkout a clean run requires."""
+    if out:
+        return Path(str(out) + ".partial.jsonl")
+    return Path(tempfile.gettempdir()) / ("harness-native-%s-%s.partial.jsonl" % (client, VERSION))
+
+
+def append_case(path, header, item):
+    """Record one finished case durably, before the next case is started.
+
+    A killed round then costs the case it was running rather than the whole round: the lines
+    already on disk rebuild a partial record, which the evidence schema accepts because it unions
+    cases across records and blocks any linked failure regardless.
+    """
+    if path is None:
+        return
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(str(path), "a") as handle:
+        handle.write(json.dumps(dict(header, **item), sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def progress_lines(path, header=None):
+    """Every finished case on disk, ignoring a line torn by the kill or from another round."""
+    items = []
+    if path is None or not Path(path).exists():
+        return items
+    for raw in Path(path).read_text(errors="replace").splitlines():
+        try:
+            item = json.loads(raw)
+        except ValueError:
+            continue  # A half-written final line is dropped, never guessed at.
+        if not isinstance(item, dict) or not item.get("case"):
+            continue
+        if header and any(item.get(key) != header[key] for key in HEADER_KEYS):
+            continue  # Evidence for another commit or client is a different claim.
+        items.append(item)
+    return items
+
+
+def build_record(items):
+    """Union per-case lines into one evidence record; the latest line for a case wins."""
+    if not items:
+        raise SystemExit("no finished acceptance case to build a record from")
+    data = {key: items[-1].get(key) for key in HEADER_KEYS}
+    cases, observations = {}, {}
+    for item in items:
+        cases[item["case"]] = item.get("result")
+        if item.get("observation"):
+            observations[item["case"]] = item["observation"]
+    data["cases"] = cases
+    data["observations"] = [observations[case] for case in cases if case in observations]
+    return data
+
+
 def selected(names):
     required = catalog()["required_cases"]
     if names in (None, "all"):
@@ -456,15 +520,12 @@ def plan(client, names, model):
     return "\n".join(lines)
 
 
-def record(client, names, model, keep, runner=probe):
+def record(client, names, model, keep, runner=probe, progress=None):
     spec = CLIENTS[client]
     if git("status", "--porcelain"):
         raise SystemExit("the checkout must be clean: native evidence names a source commit")
-    results = [runner(client, name, model, keep) if name in CASES
-               else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED}
-               for name in names]
     version = client_version(spec["command"])
-    return {
+    header = {
         "kind": "native",
         "client": client,
         "harness_version": VERSION,
@@ -472,9 +533,15 @@ def record(client, names, model, keep, runner=probe):
         "client_version": version,
         "platform": spec["platform"],
         "source_commit": git("rev-parse", "HEAD"),
-        "observations": [item["observation"] for item in results if item["observation"]],
-        "cases": {item["case"]: item["result"] for item in results},
     }
+    results = []
+    for name in names:
+        item = (runner(client, name, model, keep) if name in CASES
+                else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
+        append_case(progress, header, item)
+        results.append(item)
+    return build_record(progress_lines(progress, header)
+                        or [dict(header, **item) for item in results])
 
 
 def main(argv=None):
@@ -488,12 +555,20 @@ def main(argv=None):
                         help="print what would run, without running any client")
     parser.add_argument("--keep-home", action="store_true",
                         help="keep each disposable home for debugging")
+    parser.add_argument("--progress", type=Path,
+                        help="durable per-case log appended as each case finishes")
+    parser.add_argument("--from-progress", action="store_true",
+                        help="build the record from the durable log alone, running no client")
     args = parser.parse_args(argv)
     names = selected(args.cases)
     if args.dry_plan:
         print(plan(args.client, names, args.model))
         return 0
-    data = record(args.client, names, args.model, args.keep_home)
+    progress = args.progress or progress_path(args.client, args.out)
+    if args.from_progress:
+        data = build_record(progress_lines(progress))
+    else:
+        data = record(args.client, names, args.model, args.keep_home, progress=progress)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.write_text(rendered)
