@@ -586,6 +586,38 @@ def reserve(manifest, repo, issue_number, kind, parent_number):
     return item
 
 
+def create_issue(manifest, repo, title, body, kind, parent_number, milestone):
+    """File an issue already typed, then reserve its ID, so new work never starts unmapped."""
+    errors = audit_manifest(manifest)
+    if errors:
+        raise RuntimeError("\n".join(errors))
+    if parent_number is not None and not any(
+        item["github_number"] == parent_number for item in manifest["items"]
+    ):
+        raise RuntimeError("parent issue #{} does not have a BMad ID".format(parent_number))
+    fields = {"title": title, "body": body, "labels": ["type::{}".format(kind)]}
+    if milestone is not None:
+        fields["milestone"] = milestone
+    created = gh_json(
+        ["api", "--method", "POST", "repos/{}/issues".format(repo), "--input", "-"],
+        input_data=fields,
+    )
+    number = created.get("number") if isinstance(created, dict) else None
+    if type(number) is not int:
+        raise RuntimeError("GitHub did not return the new issue's number; check whether it was filed")
+    try:
+        # GitHub drops labels silently when the token cannot write them.
+        if fields["labels"][0] not in {label["name"] for label in created.get("labels", [])}:
+            raise RuntimeError("GitHub did not apply {}".format(fields["labels"][0]))
+        return reserve(manifest, repo, number, kind, parent_number)
+    except (RuntimeError, OSError, KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            "issue #{} was filed but not reserved; fix the cause and run reserve --issue {}: {!r}".format(
+                number, number, error
+            )
+        ) from error
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -603,6 +635,12 @@ def main(argv=None):
     reserve_parser.add_argument("--issue", type=int, required=True)
     reserve_parser.add_argument("--kind", choices=KINDS, required=True)
     reserve_parser.add_argument("--parent", type=int)
+    new_parser = subparsers.add_parser("new")
+    new_parser.add_argument("--title", required=True)
+    new_parser.add_argument("--kind", choices=KINDS, required=True)
+    new_parser.add_argument("--body-file", required=True, help="Markdown file holding the issue body")
+    new_parser.add_argument("--parent", type=int)
+    new_parser.add_argument("--milestone", type=int, help="milestone number, not its title")
     args = parser.parse_args(argv)
     if args.command == "bootstrap":
         if MAP_PATH.exists():
@@ -631,6 +669,13 @@ def main(argv=None):
         remaining = planned_actions(manifest, fetch_issues(manifest["repository"]))
         print("apply: {} remaining action(s)".format(len(remaining)))
         return 1 if remaining else 0
+    if args.command == "new":
+        body = Path(args.body_file).read_text(encoding="utf-8")
+        item = create_issue(
+            manifest, manifest["repository"], args.title, body, args.kind, args.parent, args.milestone
+        )
+        print("filed #{} and reserved {}".format(item["github_number"], item["bmad_id"]))
+        return 0
     item = reserve(manifest, manifest["repository"], args.issue, args.kind, args.parent)
     print("reserved {} for issue #{}".format(item["bmad_id"], item["github_number"]))
     return 0

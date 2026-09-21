@@ -471,5 +471,85 @@ class ReserveTests(unittest.TestCase):
                 sync.ROOT = old_root
 
 
+
+class NewIssueTests(unittest.TestCase):
+    def setUp(self):
+        self.manifest = sync.build_manifest([issue(1, "Deliver the program")], "owner/repo")
+
+    def test_new_files_a_typed_issue_then_reserves_it(self):
+        with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
+            sync, "gh_json", return_value={"number": 2, "labels": [{"name": "type::bug"}]}
+        ) as gh, mock.patch.object(sync, "reserve", return_value={"bmad_id": "AH-B001"}) as reserve:
+            item = sync.create_issue(self.manifest, "owner/repo", "A defect", "Body", "bug", 1, 7)
+        self.assertEqual(item["bmad_id"], "AH-B001")
+        self.assertEqual(gh.call_args.args[0], ["api", "--method", "POST", "repos/owner/repo/issues", "--input", "-"])
+        self.assertEqual(
+            gh.call_args.kwargs["input_data"],
+            {"title": "A defect", "body": "Body", "labels": ["type::bug"], "milestone": 7},
+        )
+        reserve.assert_called_once_with(self.manifest, "owner/repo", 2, "bug", 1)
+
+    def test_new_files_nothing_when_the_map_or_parent_is_invalid(self):
+        with mock.patch.object(sync, "audit_manifest", return_value=["broken mapping"]), mock.patch.object(
+            sync, "gh_json"
+        ) as gh:
+            with self.assertRaisesRegex(RuntimeError, "broken mapping"):
+                sync.create_issue(self.manifest, "owner/repo", "Title", "Body", "story", None, None)
+        with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(sync, "gh_json") as gh2:
+            with self.assertRaisesRegex(RuntimeError, "parent issue #99 does not have a BMad ID"):
+                sync.create_issue(self.manifest, "owner/repo", "Title", "Body", "story", 99, None)
+        gh.assert_not_called()
+        gh2.assert_not_called()
+
+    def test_failed_creation_reserves_nothing(self):
+        with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
+            sync, "gh_json", side_effect=RuntimeError("HTTP 403")
+        ), mock.patch.object(sync, "reserve") as reserve:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                sync.create_issue(self.manifest, "owner/repo", "Title", "Body", "story", None, None)
+        reserve.assert_not_called()
+
+    def test_any_failure_after_filing_names_the_filed_issue(self):
+        created = {"number": 2, "labels": [{"name": "type::story"}]}
+        for failure in (RuntimeError("target artifact already exists"), KeyError("story"), OSError("disk full")):
+            with self.subTest(failure=failure), mock.patch.object(
+                sync, "audit_manifest", return_value=[]
+            ), mock.patch.object(sync, "gh_json", return_value=created), mock.patch.object(
+                sync, "reserve", side_effect=failure
+            ):
+                with self.assertRaisesRegex(RuntimeError, r"issue #2 was filed but not reserved.*reserve --issue 2"):
+                    sync.create_issue(self.manifest, "owner/repo", "Title", "Body", "story", None, None)
+
+    def test_a_dropped_type_label_is_reported_and_reserves_nothing(self):
+        with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
+            sync, "gh_json", return_value={"number": 2, "labels": []}
+        ), mock.patch.object(sync, "reserve") as reserve:
+            with self.assertRaisesRegex(RuntimeError, r"issue #2 was filed.*did not apply type::story"):
+                sync.create_issue(self.manifest, "owner/repo", "Title", "Body", "story", None, None)
+        reserve.assert_not_called()
+
+    def test_an_empty_github_response_is_reported(self):
+        for created in (None, {}, {"number": "2"}):
+            with self.subTest(created=created), mock.patch.object(
+                sync, "audit_manifest", return_value=[]
+            ), mock.patch.object(sync, "gh_json", return_value=created), mock.patch.object(sync, "reserve") as reserve:
+                with self.assertRaisesRegex(RuntimeError, "did not return the new issue's number"):
+                    sync.create_issue(self.manifest, "owner/repo", "Title", "Body", "story", None, None)
+            reserve.assert_not_called()
+
+    def test_cli_reads_the_body_from_a_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            body = Path(temp) / "body.md"
+            body.write_text("## Problem\n", encoding="utf-8")
+            with mock.patch.object(sync, "load_manifest", return_value=self.manifest), mock.patch.object(
+                sync, "create_issue", return_value={"github_number": 2, "bmad_id": "AH-S002"}
+            ) as create, redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(
+                    sync.main(["new", "--title", "T", "--kind", "story", "--body-file", str(body), "--parent", "1"]), 0
+                )
+        create.assert_called_once_with(self.manifest, "owner/repo", "T", "## Problem\n", "story", 1, None)
+        self.assertIn("filed #2 and reserved AH-S002", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

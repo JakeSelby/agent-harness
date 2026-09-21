@@ -65,11 +65,17 @@ exact `type::*` label and primary parent. It never changes a title, state or com
 issue types are [organization-managed](https://docs.github.com/issues/tracking-your-work-with-issues/using-issues/managing-issue-types-in-an-organization)
 and cannot be assigned in this personal-account repository, so the manifest records `labels-only`
 projection explicitly rather than reporting permanent false drift.
-For new community issues, reserve an ID during maintainer triage before implementation ownership:
+File maintainer work already mapped, from the worktree that will deliver it, and reserve an ID
+for a community issue during triage before implementation ownership:
 
 ```sh
+python3 scripts/bmad_issue_sync.py new --title TITLE --kind story --body-file BODY.md --parent PARENT_NUMBER
 python3 scripts/bmad_issue_sync.py reserve --issue N --kind story --parent PARENT_NUMBER
 ```
+
+Both write the map and a new artifact in the current checkout; commit them in the pull request that
+delivers the issue. The required `issue-ownership` check refuses a pull request whose delivery
+issue is absent from the map, and `apply` adds the Planning block once the artifact is on `main`.
 
 IDs are never reused and never encode hierarchy. Reparent the metadata rather than renaming the ID.
 Completed historical issues are marked `reconstructed`; the record never claims those artifacts

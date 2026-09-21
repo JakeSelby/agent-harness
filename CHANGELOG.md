@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
+  issue map, and `scripts/bmad_issue_sync.py new` files an issue and reserves its ID in one step (#378).
 - Plan mode now investigates at the permission posture you selected instead of below it. Under
   `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
   mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
