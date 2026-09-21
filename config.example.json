@@ -30,6 +30,9 @@
   "claude": {
     "manage": true
   },
+  "telemetry": {
+    "export": "off"
+  },
   "primitive_roots": [],
   "integrations": {
     "architecture-viewer": {
