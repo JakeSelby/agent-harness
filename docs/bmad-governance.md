@@ -18,6 +18,11 @@ The repository instructions remain authoritative when they are stricter.
 - The exact `type::*` label is the repository's authoritative GitHub type projection. Native issue
   types are organization-managed and unavailable for issues in this personal-account repository;
   native sub-issue relationships remain the hierarchy projection.
+- File maintainer work with `python3 scripts/bmad_issue_sync.py new --title T --kind KIND --body-file F
+  [--parent N] [--milestone M]` from the implementation worktree: it labels the issue and reserves
+  its ID in one step. Refuse to start or continue implementation for an issue that is absent from
+  `_bmad-output/issue-map.json`; reserve it first. The required `issue-ownership` check fails a PR
+  whose delivery issue is unmapped, so the reservation ships in that PR or before it.
 - Community issues can enter without BMad metadata. During maintainer triage, reserve an ID with
   `python3 scripts/bmad_issue_sync.py reserve --issue N --kind KIND [--parent N]`; merge its artifact,
   then run `plan` and `apply` before implementation ownership begins.
