@@ -8,6 +8,7 @@ from pathlib import Path
 STATES = {"qualified", "unqualified", "planned", "unsupported"}
 SOURCE_PATHS = ("VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates",
                 "config.example.json")
+FREEZE_STATES = {"open", "frozen"}
 
 
 def qualification_source(data):
@@ -30,6 +31,67 @@ def source_drift(root, data):
     unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", target, "HEAD", "--",
                                 *SOURCE_PATHS], capture_output=True)
     return bool(ancestry.returncode or unchanged.returncode)
+
+
+def git_output(root, *args):
+    """Run a read-only git command in `root`, refusing to guess when it fails."""
+    done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    if done.returncode:
+        detail = (done.stderr.strip().splitlines() or [""])[0]
+        raise ValueError("git " + args[0] + " failed: " + detail)
+    return done.stdout
+
+
+def freeze_record(root):
+    """Read the release-branch freeze record; a missing file means no branch is frozen.
+
+    A qualification round runs on the `release/vX.Y.Z` branch cut at this commit, so merges
+    into `main` cannot invalidate the round's evidence. See docs/releasing.md.
+    """
+    path = root / "compatibility" / "freeze.json"
+    if not path.is_file():
+        return {"schema_version": 1, "state": "open"}
+    data = json.loads(path.read_text())
+    if data.get("schema_version") != 1:
+        raise ValueError("unsupported freeze schema")
+    if data.get("state") not in FREEZE_STATES:
+        raise ValueError("freeze state must be one of: " + ", ".join(sorted(FREEZE_STATES)))
+    if data["state"] == "frozen":
+        if not isinstance(data.get("branch"), str) or not data["branch"].strip():
+            raise ValueError("a frozen release branch requires its branch name")
+        commit = data.get("commit")
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
+            raise ValueError("a frozen release branch requires a full commit identity")
+    return data
+
+
+def freeze_drift(root, data, ref="origin/main"):
+    """Report runtime source drift between the frozen commit and `ref`.
+
+    This is the check a release handoff otherwise records by hand; an empty `paths` means the
+    round's evidence still describes `ref` as well as it describes the frozen commit.
+    """
+    result = {"state": data.get("state", "open"), "branch": data.get("branch"),
+              "commit": data.get("commit"), "ref": ref, "paths": [], "stat": ""}
+    if result["state"] != "frozen":
+        return result
+    numstat = git_output(root, "diff", "--numstat", "--no-renames", result["commit"], ref,
+                         "--", *SOURCE_PATHS)
+    result["paths"] = sorted({line.split("\t")[-1] for line in numstat.splitlines() if line.strip()})
+    result["stat"] = git_output(root, "diff", "--stat", "--no-renames", result["commit"], ref,
+                                "--", *SOURCE_PATHS).strip()
+    return result
+
+
+def merge_refusal(root, data, ref):
+    """Refuse a merge into a frozen release branch that changes the qualified runtime source."""
+    if data.get("state") != "frozen":
+        return []
+    result = freeze_drift(root, data, ref)
+    if not result["paths"]:
+        return []
+    return [data["branch"] + " is frozen at " + data["commit"][:12] + "; " + ref
+            + " changes qualified runtime source: " + ", ".join(result["paths"])]
 
 
 def catalog(root):
