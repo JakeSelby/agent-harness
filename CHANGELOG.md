@@ -148,6 +148,16 @@ All notable changes to this project are documented here. The format follows
   when the estimate grows more than 5% over it without an entry in `benchmarks/allow.json`. No model
   is called. Reading and limits: `docs/benchmarks.md`.
 
+- An exported ledger row carries `harness.usd` and `harness.price_as_of`, so a dashboard reads
+  dollars instead of re-implementing the price table in its own query language. The figure is a
+  list-price API equivalent fixed at export time, computed by the code `harness usage` prices
+  with: the rates, the id normalisation and the session/subagent join moved to
+  `policy/hooks/pricing.py`, which the CLI and the standalone export hook each load rather than
+  either one holding a second copy. A session row's figure already includes its subagents,
+  exactly as the report totals them. An unpriced row carries neither attribute — never a zero —
+  and a missing price file or a malformed `prices` override costs an export its dollars and
+  nothing else.
+
 ### Changed
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
@@ -168,6 +178,10 @@ All notable changes to this project are documented here. The format follows
   check in your own data rather than an expectation.
 
 ### Fixed
+
+- Each stance reaches a backend once, as `harness.<dimension>`. The exported body no longer
+  carries the `stances` map, which a backend that parses a JSON body flattened into a second
+  dotted copy of every stance beside the attributes; every other field still travels in the body.
 
 - A client launched under a substituted `HOME` no longer raises the macOS "A keychain cannot be
   found" dialog. The acceptance runner already gave its disposable homes a keychain, but two other
