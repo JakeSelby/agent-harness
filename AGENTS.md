@@ -55,6 +55,31 @@ worktree.
 - Nothing personal, nothing project-specific, nothing copyleft. The lint enforces the first;
   review enforces the rest.
 
+## A release is not done at the tag
+
+A release has seven surfaces, and each one goes stale on its own. Work them in this order and
+report each as done, skipped or unverified — never infer one from another. The procedure, the
+commands and the rollback are in `docs/releasing.md`; this list exists so none is forgotten.
+
+1. **Source and evidence** — every fix merged; native qualification and lifecycle records for the
+   frozen commit in `compatibility/evidence/`, the catalog `qualified` with digests and limitations.
+2. **Release metadata** — catalog `released` and pinned, the changelog's Unreleased entries folded
+   into the version section, status prose in `README.md`, `docs/compatibility.md` and
+   `docs/releasing.md`.
+3. **Tag and GitHub release** — `scripts/release_preflight.py` clean in a fresh clone, then the
+   annotated `v<version>` tag; confirm the release workflow ran and the release is published.
+4. **Reference site** — a separate repository that vendors this one by tag. Repin
+   `vendor/agent-harness`, run its CI commands and `release_preflight.py --reference-repo`, merge,
+   and confirm the deploy job ran and the live `/manifest.json` names the version and commit.
+5. **Personal-site card** — another repository; its card names the version and links the release
+   tag in both placements. Build, check both pages, deploy through its guarded script.
+6. **GitHub About** — description, topics and homepage must equal `product.json`. Compare them
+   every release even when nothing changed, and say so.
+7. **Development resumes** — the first runtime-source change after a release makes the catalog
+   report drift by design; the next version needs a candidate opened before it can be qualified.
+
+Steps 4 and 5 deploy to production, so each needs its own explicit approval.
+
 ## Layout
 
 - `primitives/` — the shared authoring authority. `policy/` — shared lifecycle policy.
