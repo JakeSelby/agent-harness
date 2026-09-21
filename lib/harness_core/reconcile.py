@@ -42,9 +42,13 @@ def lock(directory):
 
 
 def update_toml(text, wanted):
+    """Apply owned top-level keys; a `None` value means the harness no longer wants that key."""
     document = tomlkit.parse(text)
     for key, value in wanted.items():
-        document[key] = value
+        if value is None:
+            document.pop(key, None)
+        else:
+            document[key] = value
     return tomlkit.dumps(document)
 
 
@@ -132,6 +136,18 @@ class Store:
             old = record["keys"].get(key)
             if old and current != old["applied"] and ("pending_from" not in old or current != old["pending_from"]):
                 self.conflicts.append(str(path) + ": owned key changed: " + key)
+                continue
+            if value is None:
+                # A key the harness wrote and no longer wants — a renamed setting, say. Only one
+                # it owns: a key of the same name the user set themselves has no record here and
+                # is left exactly as it is.
+                if old is None:
+                    continue
+                if old["prior"]["present"]:
+                    document[key] = old["prior"]["value"]
+                elif key in document:
+                    del document[key]
+                del record["keys"][key]
                 continue
             prior = old["prior"] if old else {"present": key in document, "value": current}
             record["keys"][key] = {"prior": prior, "applied": value, "pending_from": current}
