@@ -26,6 +26,29 @@ All notable changes to this project are documented here. The format follows
   or feature count leaves its range, a feature line runs past 170 characters, any string carries an
   em dash, or the README and the data disagree.
 
+- Every usage row names the `harness_version` that wrote it, read from the same `VERSION` file
+  `harness --version` prints, so a change in spend can be read against a release. A rescanned
+  row carries `null` rather than today's version, and a role-run worker's row carries the
+  version stamped into its `status.json` when the run started.
+
+- A session row records the `effort` that covered the most output tokens and an `effort_source`
+  naming where it was read: `transcript` for Claude Code, which writes `effort` on every
+  assistant record, and `turn_context` for Codex. Effort changes mid-session — 14 of 112 Claude
+  Code transcripts and 4 of 44 Codex rollouts on one machine — so the row weighs it by output
+  rather than taking the first value seen, and records `null` when the transcript names none.
+
+- A session row carries per-day slices in `days`: four token figures and a turn count per UTC
+  date, cut from the same deduplicated map the row's totals are summed over and dropped whole
+  if they do not add up to it. `harness usage --by day` sums the slices when a row has them and
+  falls back to its end date when it does not, and `--days` then windows on the slice date, so
+  a session that ran for a fortnight contributes only its in-window days instead of landing on
+  the day it ended. Five such sessions were 68% of all output tokens on the machine measured.
+
+- `harness usage --by stance --stance <dimension>` groups tokens by that dimension's variant.
+  Rows with no recorded stance, and rows a rescan stamped, are counted under `(unknown)` rather
+  than dropped. `--rules --by stance` keeps the hit report unchanged, and `--by stance` with
+  neither is refused with a usage error rather than guessed at.
+
 ### Changed
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
@@ -34,6 +57,10 @@ All notable changes to this project are documented here. The format follows
   fresh home, the description and the six capability groups, one linked line per feature, plus the
   "On the way" list. Release status and the generated compatibility block now follow the install
   section, so a first-time reader meets what the harness does before which clients are qualified.
+
+- `harness usage --by role` marks a role with fewer than 30 runs `n<30` in a new `sample`
+  column. A p90 over eight runs is the second-largest of eight, and the budget re-seeding
+  procedure in `docs/usage.md` now says not to re-seed from a marked row.
 
 ### Fixed
 
@@ -75,15 +102,18 @@ All notable changes to this project are documented here. The format follows
   writes the parent's `session_meta` further down its own file; only the first one is read now,
   which is what 36 of those 307 turned on. `harness usage --rescan` migrates the misclassified
   rows, deleting the stale keys and copying the ledger to `usage.jsonl.bak` first.
+
 - The rescan reads `~/.codex/archived_sessions/` as well as `~/.codex/sessions/`. Codex moves a
   rollout there unchanged, and 96 of the 131 top-level rollouts on that machine lived only in the
   archive, so most Codex sessions never reached the ledger at all. Codex capture is rescan-driven:
   whether the runtime's `SessionEnd` payload names the rollout file is not established, so the
   hook now accepts `rollout_path` and `session_path` beside `transcript_path` and `docs/usage.md`
   says the rescan is the path known to work.
+
 - A Codex session whose snapshot carries `total_tokens` alone — 85 of 107 top-level Codex Desktop
   rollouts — is recorded as `partial` with a `total` and unknown typed fields, rather than summed
   as a session that spent nothing.
+
 - `harness usage` sums Codex subagent rows and still skips Claude Code ones: a Codex thread's
   total counts that thread alone. Four of the 21 measurable parent threads report fewer tokens
   than their own children sum to, which a total including them could not do. `--by model` also

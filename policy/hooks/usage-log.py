@@ -13,6 +13,11 @@ A registry that will not import costs the record its `rules` key and nothing els
 
 Codex is read from its rollout files instead, by `scan_codex`, and the two runtimes disagree
 about what a parent's tokens mean: see `codex_totals` and `cmd_usage` in `bin/harness`.
+
+Every row names the `harness_version` that wrote it, a session row names the `effort` that
+covered most of its output, and a session row carries per-day slices in `days` so a session
+that ran for a fortnight is not charged to the day it ended. See `harness_version`, `dominant`
+and `daily`.
 """
 import importlib.util
 import json
@@ -70,6 +75,35 @@ def stances(env=None):
 DEFAULT_STANCES = getattr(sibling("posture", required=False), "DEFAULT_STANCES", {})
 
 
+def harness_version():
+    """The version `harness --version` prints, read from the same `VERSION` file at the root.
+
+    The hook runs as a standalone script, so it walks up from its own real path — through the
+    `claude/hooks -> ../policy/hooks` symlink and through `~/.claude/hooks/harness` — to the
+    checkout that holds both a `VERSION` file and `bin/harness`, and never imports the CLI.
+    A copy of this hook running outside a checkout records no version rather than a guess.
+    """
+    here = Path(os.path.realpath(__file__)).parent
+    for parent in [here] + list(here.parents):
+        marker = parent / "VERSION"
+        if marker.is_file() and (parent / "bin" / "harness").exists():
+            try:
+                return marker.read_text(encoding="utf-8").strip() or None
+            except OSError:
+                return None
+    return None
+
+
+def stamped_version(rescan):
+    """The version to stamp on a row: none at all when the row is a backfill.
+
+    A rescan reads a transcript written by whatever version was installed at the time, which is
+    unknowable from the file, so the row carries `null` beside its `stances_source: "rescan"`.
+    Stamping the current version would make every past session look like today's release.
+    """
+    return None if rescan else harness_version()
+
+
 def usage_path():
     return Path.home() / ".local" / "state" / "agent-harness" / "usage.jsonl"
 
@@ -105,7 +139,7 @@ def _result_text(content, tool_name):
     return text[:MAX_RESULT_TEXT]
 
 
-def record_usage(per_message, key, usage):
+def record_usage(per_message, key, usage, day=""):
     """Keep the largest figure a message id ever reported for each field.
 
     One API response is written as several records. The early ones carry a partial streaming
@@ -113,8 +147,15 @@ def record_usage(per_message, key, usage):
     response badly — on a real subagent transcript, 7,126 output tokens against 40,868. The
     field-wise maximum keeps the final figure without trusting the file's order, which a
     reordered or truncated tail would otherwise lower.
+
+    `day` is that record's UTC date, kept on the slot so the per-day slices are cut from the
+    same deduplicated map the totals are summed over and cannot disagree with them. The first
+    date a message id is seen under is the one that holds: a response written across midnight
+    is one message and belongs to one day.
     """
-    slot = per_message.setdefault(key, {name: 0 for name, _ in FIELDS})
+    slot = per_message.setdefault(key, dict([(name, 0) for name, _ in FIELDS] + [("day", "")]))
+    if day and not slot.get("day"):
+        slot["day"] = day
     for name, field in FIELDS:
         try:
             value = int(usage.get(field) or 0)
@@ -127,6 +168,64 @@ def record_usage(per_message, key, usage):
 def summed(per_message):
     """The four token totals over the messages, each counted once at its largest figure."""
     return {name: sum(slot[name] for slot in per_message.values()) for name, _ in FIELDS}
+
+
+def empty_slice():
+    return dict([(name, 0) for name, _ in FIELDS] + [("turns", 0)])
+
+
+def daily(per_message, turns_by_day, fallback=""):
+    """The `days` map: four token totals and a turn count per UTC date.
+
+    Cut from the same message-id map the row's totals are summed over, so for Claude Code a
+    day's slice **includes that day's subagent tokens** exactly as the session total does —
+    the session row has one meaning, and a slice that excluded them would not add up to it.
+    A message whose record carried no timestamp falls to `fallback`, the session's end date,
+    rather than being left out of every slice; with no fallback either there are no slices,
+    because a partial one would read as a day that cost less than it did.
+    """
+    days = {}
+    for slot in per_message.values():
+        day = slot.get("day") or fallback
+        if not day:
+            return {}
+        row = days.setdefault(day, empty_slice())
+        for name, _ in FIELDS:
+            row[name] += slot.get(name) or 0
+    for day, turns in turns_by_day.items():
+        key = day or fallback
+        if key:
+            days.setdefault(key, empty_slice())["turns"] += turns
+    return days
+
+
+def slices_agree(days, totals):
+    """Whether the slices add up to the row's own totals, field by field.
+
+    Checked before the map is written, never after: a `days` map that disagrees with the row it
+    sits on would be read as the truth about a date and silently double or lose a day's spend.
+    A row whose slices do not agree carries none and falls back to its end date in the report.
+    """
+    if not days:
+        return False
+    for name, _ in FIELDS:
+        if sum(day.get(name) or 0 for day in days.values()) != (totals.get(name) or 0):
+            return False
+    return True
+
+
+def dominant(weights):
+    """The key covering the most output tokens, or "" when nothing was weighed.
+
+    Effort changes mid-session in both runtimes — 14 of 112 Claude Code transcripts and 4 of 44
+    Codex rollouts measured on one machine — so a row records the value that covered the most
+    output rather than the first or the last, and `effort_source` names where it was read.
+    Ties break on the name so two reads of one transcript agree.
+    """
+    weights = dict((key, value) for key, value in weights.items() if key)
+    if not weights:
+        return ""
+    return max(sorted(weights), key=lambda key: weights[key])
 
 
 def reported_model(counts):
@@ -149,7 +248,7 @@ def note_model(counts, name, order):
     counts[name] = (hits + 1, order)
 
 
-def _agent_row(path, shared=None, budget=None, max_bytes=None):
+def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
     """One `kind: "subagent"` row from one `agent-<id>.jsonl`, or None when it holds no turn.
 
     The sibling `agent-<id>.meta.json` names the agent type and the spawn depth; the transcript
@@ -238,9 +337,9 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None):
             key = mid if mid else ("line", str(path), anonymous)
             if not mid:
                 anonymous += 1
-            record_usage(per_message, key, usage)
+            record_usage(per_message, key, usage, stamp[:10])
             if shared is not None:
-                record_usage(shared, key, usage)
+                record_usage(shared, key, usage, stamp[:10])
             if mid and mid in seen:
                 continue
             seen.add(mid)
@@ -250,7 +349,8 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None):
         # the caller records that as spend unknown rather than as zero.
         return None
     workflow = path.parent.name if path.parent.name.startswith("wf_") else None
-    row = {"kind": "subagent", "runtime": "claude-code", "session_id": "", "repo": "",
+    row = {"kind": "subagent", "runtime": "claude-code", "harness_version": version,
+           "session_id": "", "repo": "",
            "agent_id": path.stem[len("agent-"):],
            # A Workflow-tool agent may have no meta file at all; unnamed is a fact about the
            # record, and "unknown" says so where an empty string would read as a missing field.
@@ -299,7 +399,7 @@ def mark_reroutes(agents, requested):
             row["rerouted"] = asked != ran and not (asked in UNNAMED_TYPES and ran in UNNAMED_TYPES)
 
 
-def agent_rows(transcript, session_id="", shared=None):
+def agent_rows(transcript, session_id="", shared=None, version=None):
     """Every subagent row belonging to one session transcript, by path.
 
     Claude Code writes each subagent to `<session>/subagents/agent-<id>.jsonl` beside the
@@ -315,7 +415,7 @@ def agent_rows(transcript, session_id="", shared=None):
     except OSError:
         return rows
     for file in files:
-        row = _agent_row(file, shared)
+        row = _agent_row(file, shared, version=version)
         if row:
             row["session_id"] = session_id or path.stem
             rows.append(row)
@@ -325,7 +425,7 @@ def agent_rows(transcript, session_id="", shared=None):
 def scan_all(transcript, session_id="", cwd="", prior=None, rescan=False):
     """Every row one transcript yields: the session first, then one row per subagent."""
     shared = {}
-    agents = agent_rows(transcript, session_id, shared)
+    agents = agent_rows(transcript, session_id, shared, version=stamped_version(rescan))
     record = scan(transcript, session_id, cwd, prior, rescan, agents=agents, shared=shared)
     if record is None:
         return []
@@ -356,6 +456,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     models, agent_calls, seen, requested = [], set(), set(), {}
     started = ended = branch = ""
     turns = 0
+    turns_by_day, efforts = {}, {}
     events, tool_names, blocks_seen = [], {}, set()
     turn, pending_final = 0, None
     try:
@@ -368,7 +469,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         if '"session_meta"' in first:
             return scan_codex(transcript, session_id, cwd, prior, rescan)
         if agents is None:
-            agents = agent_rows(transcript, session_id, per_message)
+            agents = agent_rows(transcript, session_id, per_message, version=stamped_version(rescan))
         for line in handle:
             try:
                 entry = json.loads(line)
@@ -452,15 +553,24 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             # per line, and at that id's largest figure rather than its first: the early lines
             # of one response carry a partial streaming count.
             if mid:
-                record_usage(per_message, mid, message.get("usage") or {})
+                record_usage(per_message, mid, message.get("usage") or {}, stamp[:10])
             else:
                 anonymous += 1
                 record_usage(per_message, ("line", "session", anonymous),
-                             message.get("usage") or {})
+                             message.get("usage") or {}, stamp[:10])
+            # Claude Code writes the effort in force on every assistant record, as `effort` and
+            # again as `perTurnEffort`; a sidechain line carries the subagent's, not this
+            # session's, so only the session's own records are weighed.
+            if mid and not sidechain:
+                chosen = entry.get("effort") or entry.get("perTurnEffort")
+                if isinstance(chosen, str) and chosen.strip():
+                    efforts.setdefault(mid, chosen.strip())
             if mid and mid in seen:
                 continue
             seen.add(mid)
             turns += 1
+            # Counted exactly where `turns` is, so the slices' turn counts add up to the row's.
+            turns_by_day[stamp[:10]] = turns_by_day.get(stamp[:10], 0) + 1
             if model and model not in models:
                 models.append(model)
     if pending_final is not None:
@@ -474,6 +584,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         "kind": "session",
         "runtime": "claude-code",
         "runtime_version": None,
+        "harness_version": stamped_version(rescan),
         "session_id": session_id,
         "repo": os.path.basename(top or str(cwd).rstrip("/")),
         "branch": (git(cwd, "rev-parse", "--abbrev-ref", "HEAD") if top else "") or branch,
@@ -488,6 +599,14 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         record[name] = totals[name]
     record["subagents"] = max(len(agents), len(agent_calls))
     record["turns"] = turns
+    weights = {}
+    for mid, chosen in efforts.items():
+        weights[chosen] = weights.get(chosen, 0) + ((per_message.get(mid) or {}).get("output") or 0)
+    record["effort"] = dominant(weights) or None
+    record["effort_source"] = "transcript" if record["effort"] else None
+    days = daily(per_message, turns_by_day, (ended or started)[:10])
+    if slices_agree(days, totals):
+        record["days"] = days
     # A live SessionEnd write knows the stances the session actually ran under. A rescan does
     # not — the environment it reads is this minute's — so it keeps whatever the record already
     # carries, and stamps a record that has none as a guess, which the report then excludes.
@@ -586,6 +705,31 @@ def codex_totals(record, totals):
     record.update(values)
 
 
+def codex_days(raw_days, turns_by_day, record):
+    """A Codex row's `days` map, from the deltas between its cumulative snapshots.
+
+    A row whose typed fields are unknown — the Codex Desktop snapshot carrying `total_tokens`
+    alone — gets no slices at all: there is nothing to slice, and a map of zeros would read as
+    days that cost nothing. `input` is made net of the cached part per day, exactly as
+    `codex_totals` makes the row's own.
+    """
+    if any(not isinstance(record.get(name), int) for name, _ in FIELDS):
+        return {}
+    days = {}
+    for day, raw in raw_days.items():
+        if not day:
+            continue
+        slice_ = empty_slice()
+        for name, _ in FIELDS:
+            slice_[name] = raw.get(name) or 0
+        slice_["input"] -= slice_["cache_read"]
+        days[day] = slice_
+    for day, turns in turns_by_day.items():
+        if day:
+            days.setdefault(day, empty_slice())["turns"] += turns
+    return days
+
+
 def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
     """One row from one Codex rollout: a session, or a subagent thread when it was spawned.
 
@@ -598,6 +742,10 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
     turn = 0
     tool_names = {}
     malformed = 0
+    # Codex writes a cumulative snapshot rather than a per-turn figure, so a day's spend and an
+    # effort's are the differences between consecutive snapshots, attributed to the date of the
+    # snapshot that closed them and to the effort in force when it was written.
+    weights, raw_days, turns_by_day, last = {}, {}, {}, dict((name, 0) for name, _ in CODEX_FIELDS)
     with open(transcript, encoding="utf-8", errors="replace") as stream:
         for line in stream:
             try:
@@ -623,14 +771,26 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
                 cwd = cwd or meta.get("cwd", "")
             elif item.get("type") == "turn_context":
                 turn += 1
+                turns_by_day[timestamp[:10]] = turns_by_day.get(timestamp[:10], 0) + 1
                 if payload.get("model") and payload["model"] not in models:
                     models.append(payload["model"])
-                if not effort and isinstance(payload.get("effort"), str):
+                # The effort in force from here on: Codex records it per turn and it changes
+                # mid-session, `ultra` and `max` among the values seen.
+                if isinstance(payload.get("effort"), str) and payload["effort"].strip():
                     effort = payload["effort"].strip()
             elif item.get("type") == "event_msg" and payload.get("type") == "token_count":
                 value = (payload.get("info") or {}).get("total_token_usage")
                 if isinstance(value, dict):
                     totals = value  # Cumulative snapshot; summing snapshots double counts usage.
+                    slice_ = raw_days.setdefault(timestamp[:10], empty_slice())
+                    for name, field in CODEX_FIELDS:
+                        now = value.get(field)
+                        if not isinstance(now, int):
+                            continue
+                        slice_[name] += now - last[name]
+                        if name == "output":
+                            weights[effort] = weights.get(effort, 0) + (now - last[name])
+                        last[name] = now
             elif item.get("type") == "response_item":
                 kind = payload.get("type")
                 call_id = payload.get("call_id", "")
@@ -666,6 +826,7 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
         row = {
             "kind": "subagent", "runtime": "codex",
             "runtime_version": meta.get("cli_version"),
+            "harness_version": stamped_version(rescan),
             # `session_id` is the thread that spawned this one, which at depth 1 is the session
             # and deeper is another subagent; `spawn_depth` is what says which.
             "session_id": parent, "agent_id": session_id,
@@ -675,7 +836,7 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
             "agent_type": spawn.get("agent_role") or spawn.get("agent_nickname")
                           or meta.get("agent_nickname") or "unknown",
             "model": models[-1] if models else "",
-            "effort": effort,
+            "effort": dominant(weights) or effort,
             "tool_calls": sum(1 for e in events if e["kind"] == "tool_use"),
             "spawn_depth": spawn.get("depth"), "workflow": None,
             # Codex records no parent-side tool use id on the child, so there is nothing to
@@ -687,7 +848,8 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
         codex_totals(row, totals)
         return row
     record = {"kind": "session", "runtime": "codex",
-              "runtime_version": meta.get("cli_version"), "session_id": session_id,
+              "runtime_version": meta.get("cli_version"),
+              "harness_version": stamped_version(rescan), "session_id": session_id,
               "repo": Path(cwd).name, "branch": git(cwd, "rev-parse", "--abbrev-ref", "HEAD") if cwd else "",
               "models": models, "started": started, "ended": ended, "turns": turn,
               "subagents": sum(e.get("name") == "Agent" and e["kind"] == "tool_use" for e in events),
@@ -696,6 +858,12 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
     if rescan and not (prior or {}).get("stances"):
         record["stances_source"] = "rescan"
     codex_totals(record, totals)
+    chosen = dominant(weights) or effort
+    record["effort"] = chosen or None
+    record["effort_source"] = "turn_context" if chosen else None
+    days = codex_days(raw_days, turns_by_day, record)
+    if slices_agree(days, record):
+        record["days"] = days
     errors = []
     try:
         module = detectors()
@@ -835,6 +1003,9 @@ def worker_rows(cutoff=0.0):
         ended = stamp(record.get("finished_at") or record.get("started_at")) or stamp(mtime)
         usage = record.get("usage") if isinstance(record.get("usage"), dict) else {}
         row = {"kind": "worker", "runtime": record.get("runtime") or "claude-code",
+               # Stamped by `workers.py` when the run started, so a sweep months later still
+               # names the version that ran it rather than the version reading the file.
+               "harness_version": record.get("harness_version"),
                "session_id": record["id"], "agent_id": record["id"],
                "agent_type": record["role"], "repo": os.path.basename(str(record.get("workspace") or "").rstrip("/")),
                "model": record.get("model") or "", "effort": record.get("effort") or "",
