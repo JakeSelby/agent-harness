@@ -32,20 +32,32 @@ and state the migration review or exact versioned migration action.
 4. Tag the verified commit with the matching immutable `v<version>` tag and push that tag.
    The release workflow repeats qualification and source gates before publishing. Never move an
    existing tag to repair a failed release; fix the source and use a new version.
+5. The workflow's `advance-stable` job, which cannot fail the run, fast-forwards the `stable`
+   branch to the tag's commit, so `stable` is always the latest release while `main` is the trunk.
+   Nothing else pushes to `stable`, and it never moves backward. Confirm it, and repair it from a
+   checkout that has the tag if it is stale:
+
+   ```sh
+   python3 scripts/advance_stable.py --check
+   python3 scripts/advance_stable.py
+   ```
+
+   GitHub refuses a workflow token that moves a branch across a change to `.github/workflows/`,
+   so a release that edits a workflow can need the second command run by hand.
 
 ## Reference and personal site
 
-5. In the reference-site checkout, pin `vendor/agent-harness` to that exact tag, commit the gitlink,
+6. In the reference-site checkout, pin `vendor/agent-harness` to that exact tag, commit the gitlink,
    and run its CI commands: `npm ci`, `npm test`, `npm run build`, `node scripts/smoke.mjs`.
    The manifest must identify both version and source commit. From the harness checkout run
    `python3 scripts/release_preflight.py --reference-repo <reference-checkout>`.
-6. Merge the reference update with its PR and deploy through its existing main-branch workflow.
+7. Merge the reference update with its PR and deploy through its existing main-branch workflow.
    A skipped deployment job is not a deployment. Record the workflow run and distribution identity.
-7. Merge the personal-site card change; run `npm ci`, `npm run build` and its complete-site artifact
+8. Merge the personal-site card change; run `npm ci`, `npm run build` and its complete-site artifact
    checks on HEAD. Inspect the infrastructure diff before its guarded deployment script, avoiding
    unrelated infrastructure changes. The shared card links to reference compatibility facts and
    does not maintain its own inventory count or version claim.
-8. Set GitHub About description and topics from `product.json`, keeping the reference homepage URL.
+9. Set GitHub About description and topics from `product.json`, keeping the reference homepage URL.
    Verify production HTML, SEO/social metadata, compatibility statuses, search results, deep links,
    install instructions, the exact release manifest and both personal-site card placements.
    Record HTTP statuses and rendered inspection results; mark any unavailable check unverified.
@@ -54,7 +66,8 @@ and state the migration review or exact versioned migration action.
 
 Keep the previous harness tag, both site commits, reference gitlink and deployed artifact identity
 before publishing. A regression gets a revert PR and a new harness release; do not retarget the
-old tag. Restore the reference site's previous immutable pin and deploy its rebuilt artifact;
+old tag, and leave `stable` where it is until that release advances it. Restore the reference
+site's previous immutable pin and deploy its rebuilt artifact;
 restore the personal site's previous card commit through its normal pipeline. Reconcile local
 configuration through its ownership journal, preserving conflicts and adopted backups. Verify
 live pages and release identity again. Infrastructure rollback is separate and must not be inferred
@@ -62,11 +75,10 @@ from a static-content rollback.
 
 ## Release status
 
-The 0.11.1 candidate requires fresh native qualification for Claude Code CLI and Codex CLI on
-macOS and Linux; until each carries evidence for this source, the preflight blocks publication.
-The VS Code surfaces and Codex Desktop are unqualified previews. The architecture-viewer
+The 0.11.1 release qualifies Claude Code CLI and Codex CLI on macOS and Linux. The VS Code
+surfaces and Codex Desktop are unqualified previews. The architecture-viewer
 integration is also a preview for a separately installed implementation, with no bundled viewer
-or distribution-clearance claim. The release is complete only when the exact merged commit
-carries the immutable `v0.11.1` tag and the release workflow publishes it. Reference and
+or distribution-clearance claim. The release is identified by the exact commit carrying the
+immutable `v0.11.1` tag. Reference and
 personal-site deployment status remains independently verifiable; never infer a deployment from
 a source merge or bypass the release preflight.

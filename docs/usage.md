@@ -270,7 +270,7 @@ still drive the detectors, so hit counts do backfill.
 | --- | --- | --- |
 | `transcript-hygiene/whole-file-cat` | transcript-hygiene | a lone `cat <one path>`: no pipe, no filter, no heredoc, no redirect |
 | `transcript-hygiene/unfiltered-find` | transcript-hygiene | `find <dir>` with no filtering predicate and nothing consuming its output |
-| `transcript-hygiene/brief-without-cap` | transcript-hygiene | an `Agent` brief with no word cap, for an agent whose definition carries none |
+| `transcript-hygiene/model-wrote-no-cap` | transcript-hygiene | an `Agent` brief the model wrote with no word cap, for an agent whose definition carries none |
 | `delegation/executed-from-summary` | delegation | a Bash command whose first appearance in the session was inside an `Agent` return |
 | `verification/no-verify` | verification | a commit or push that walks past the repository's own hooks |
 | `secrets/secret-in-write` | secrets | a secret-shaped string written to a file or into a heredoc body |
@@ -288,6 +288,16 @@ still drive the detectors, so hit counts do backfill.
 
 A rule with nothing a transcript can decide opts out by name in `OPT_OUT`, with the reason;
 `harness lint` fails on a rule file that has neither a detector nor an opt-out.
+
+Every detector reads a tool call as the model wrote it. A transcript records the model's
+`tool_use` input, while a `PreToolUse` hook's `updatedInput` is written to a separate
+`attachment` line the scan does not read, so no detector can see what a hook delivered.
+`transcript-hygiene/model-wrote-no-cap` is named for that: it counts briefs `brief-guard` went
+on to cap, and a hit is the orchestrator's omission and not an uncapped brief reaching a
+subagent. It was called `transcript-hygiene/brief-without-cap`, which read as the second thing;
+`rule-detectors.RENAMED` maps the old id to the new one. The ledger file is never rewritten for a
+rename — `--rules` folds that map as it reads, in all three groupings — so a record written under
+the old id reports under the new one and the series does not split.
 
 ### Reading the report
 
