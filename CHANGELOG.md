@@ -8,12 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Plan mode now investigates at the permission posture you selected instead of below it. Under
+  `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
+  mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
+  0 or 1 — and asks about grade 2, because a push or a mutating API call is execution rather than
+  planning. Grade 3, the confirm marker, `manual`, `inherit` and Codex are all unchanged, and a
+  stricter autonomy stance still wins. A new config key, `plan_allow_tools`, lists tool-name globs
+  (such as `mcp__notes__read_*`) approved in plan mode under the same posture gate; it is empty
+  by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
+  inferred.
 - `product.json` now holds the landing copy as validated data: a `hero` of title, subtitle and proof
   line, six `capabilities` groups of a pitch and three to six features each with a repository
   relative `doc` path, and an `on_the_way` list of at most five items, each naming an issue, a
-  client the compatibility catalog calls `planned`, or a document. `headline` and
-  `github_description` now lead with the hero title, so the page, the README and the GitHub About
-  description share one source. `tests/test_release.py` fails when a `doc` path is missing, a group
+  client the compatibility catalog calls `planned`, or a document. The hero title is the existing
+  `headline`, which `github_description` already leads with, so the page, the README and the GitHub
+  About description share one source. `tests/test_release.py` fails when a `doc` path is missing, a group
   or feature count leaves its range, a feature line runs past 170 characters, any string carries an
   em dash, or the README and the data disagree.
 
@@ -21,8 +30,21 @@ All notable changes to this project are documented here. The format follows
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
   release instead of the development trunk.
-- The README carries the six capability groups between the badges and the install block, one linked
-  line per feature, plus the "On the way" list.
+- The README's first screen is the headline, a terminal capture of `harness sync --dry-run` on a
+  fresh home, the description and the six capability groups, one linked line per feature, plus the
+  "On the way" list. Release status and the generated compatibility block now follow the install
+  section, so a first-time reader meets what the harness does before which clients are qualified.
+
+### Fixed
+
+- A client launched under a substituted `HOME` no longer raises the macOS "A keychain cannot be
+  found" dialog. The acceptance runner already gave its disposable homes a keychain, but two other
+  launches did not: every role worker runs its client in a private home that had none, and
+  `harness doctor` ran `claude doctor` in whatever `HOME` it was given, including a throwaway one
+  an agent built to test a config. A role worker's home now carries its own throwaway keychain, and
+  a worker whose keychain cannot be created fails instead of launching; `harness doctor` skips the
+  client's doctor, and says so, when `HOME` has no default keychain. `harness keychain <home>` is the
+  same guard for a home you build by hand. Other hosts are unchanged.
 
 ## [0.11.1] — 2026-09-21
 
