@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `stable` branch that always points at the latest release. The release workflow fast-forwards
+  it to the tag's commit after publishing, `scripts/advance_stable.py --check` verifies it, and the
+  branch never moves backward. `main` stays the trunk.
+
 ## [0.11.1] — 2026-09-21
 
 ### Changed
