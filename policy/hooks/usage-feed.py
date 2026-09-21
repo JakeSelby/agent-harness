@@ -8,7 +8,7 @@ and says how many agents are running when that is past the posture's width. `Use
 reports the turn and every subagent that finished since the previous prompt — which is how a
 background spawn, whose `PostToolUse` fires at launch with no totals, is reported at all.
 
-Five facts shape the whole file:
+Six facts shape the whole file:
 
 - **A tool response's token figure describes only the subagent's last response.** Measured on a
   live return: `tool_response.usage.output_tokens` said 3,143 against 10,575 actually spent over
@@ -28,6 +28,11 @@ Five facts shape the whole file:
   with null totals when the sum failed and `partial` when a budget cut it short. An agent whose
   stop went missing would otherwise count as running for the rest of the session and the width
   line would fire falsely forever; a start with no stop also decays after three hours.
+- **A synchronous return can arrive before the subagent's last response is on disk.** Measured
+  live: the feed said 143 output tokens where a later scan of the same transcript said 278. So
+  the return waits a bounded moment for the response to finish being written, says `(so far)`
+  when it never does, and the stop the journal brings later raises the session totals without
+  the agent being announced a second time.
 - **Reads are bounded everywhere.** The parent transcript is read from a saved offset, trusted
   only while the inode and the hash of the first record still match, and from 8 MiB before the
   end on a cold start. The journal is read from its own saved offset, so a long session's totals
@@ -72,6 +77,12 @@ READ_BUDGET = 3.0
 # What one subagent's transcript may cost a hook that has ten seconds for everything.
 AGENT_BUDGET = 4.0
 AGENT_BYTES = 8 * 1024 * 1024
+# How long a synchronous return may wait for the subagent's last response to finish being
+# written, and how often it looks. Both are well inside the hook's timeout, and the wait is over
+# a 256 KB tail rather than the transcript.
+SETTLE_BUDGET = 1.0
+SETTLE_STEP = 0.15
+SETTLE_TAIL = 256 * 1024
 LOCK_WAIT = 2.0
 # A start with no stop this old is not running; something ended it without saying so.
 RUNNING_TTL = 3 * 3600
@@ -172,7 +183,7 @@ def new_state():
             "previous_turn": {"output": 0, "tool_calls": 0},
             "subagents": {"output": 0, "tool_calls": 0, "count": 0, "unknown": 0},
             "journal_offset": 0, "running": {}, "pending": [], "counted": [],
-            "open": [], "pruned": 0, "said_turn": None}
+            "figures": {}, "open": [], "pruned": 0, "said_turn": None}
 
 
 def load_state(path):
@@ -196,6 +207,12 @@ def load_state(path):
             state[key] = 0
     if not isinstance(state.get("running"), dict):
         state["running"] = {}
+    figures = state.get("figures")
+    state["figures"] = figures if isinstance(figures, dict) else {}
+    for agent, pair in list(state["figures"].items()):
+        if not (isinstance(pair, list) and len(pair) == 2
+                and all(isinstance(v, int) and not isinstance(v, bool) for v in pair)):
+            del state["figures"][agent]
     for key in ("pending", "counted", "open"):
         if not isinstance(state.get(key), list):
             state[key] = []
@@ -428,7 +445,8 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
             # about the transcript; what the journal recorded is still true and stays.
             seen = state.get("inode") is not None
             kept = {key: state[key] for key in
-                    ("journal_offset", "running", "pending", "counted", "subagents", "pruned")}
+                    ("journal_offset", "running", "pending", "counted", "figures", "subagents",
+                     "pruned")}
             state = dict(new_state(), **kept)
             state["inode"], state["head"] = inode, head
             state["offset"] = max(0, size - COLD_TAIL)
@@ -512,6 +530,66 @@ def agent_totals(path):
             "agent_type": agent_name(row.get("agent_type")), "partial": bool(row.get("partial"))}
 
 
+def tail_settled(path, max_bytes=SETTLE_TAIL):
+    """Whether a subagent's transcript ends on a response that has finished being written.
+
+    Claude Code writes one API response as several records repeating its message id. The early
+    ones carry `stop_reason: null` and a partial streaming `output_tokens`; the record that ends
+    the response carries a reason. Counted over 1,418 message ids in real subagent transcripts,
+    the record carrying a reason held that id's largest figure every single time, and the files
+    whose last record carried none were runs that had been interrupted — so a reason on the last
+    record is the response being complete, and its absence is a response still arriving.
+
+    A record with no `stop_reason` key at all came from a writer whose streaming this cannot
+    judge, and is taken as it stands rather than waited on. Only the tail is read, so asking
+    costs the same on a large transcript as on a small one.
+    """
+    try:
+        with open(str(path), "rb") as handle:
+            size = os.fstat(handle.fileno()).st_size
+            if size > max_bytes:
+                handle.seek(size - max_bytes)
+                handle.readline()
+            lines = handle.read().splitlines()
+    except OSError:
+        return True
+    for raw in reversed(lines):
+        try:
+            entry = json.loads(raw.decode("utf-8", "replace"))
+        except ValueError:
+            continue  # A line still being written is not a line.
+        if not isinstance(entry, dict) or entry.get("type") != "assistant":
+            continue
+        message = entry.get("message")
+        message = message if isinstance(message, dict) else {}
+        if "stop_reason" not in message:
+            return True
+        return bool(message.get("stop_reason"))
+    return True
+
+
+def settled_totals(path, budget=SETTLE_BUDGET, step=SETTLE_STEP, clock=None, sleep=None):
+    """`agent_totals` with `settled`, after a bounded wait for the last response to land.
+
+    Only the cheap tail is polled while waiting; the transcript is summed once, afterwards, so
+    the whole wait costs one read and at most `budget` seconds however many times it looked. A
+    figure that stops moving is not taken as the end of the response — a partial streaming count
+    can repeat — so the response ending is the only thing that stops the wait early, and a wait
+    that runs out leaves the caller a figure to mark `(so far)`.
+    """
+    clock = time.monotonic if clock is None else clock
+    sleep = time.sleep if sleep is None else sleep
+    settled = tail_settled(path)
+    deadline = clock() + budget
+    while not settled and clock() + step <= deadline:
+        sleep(step)
+        settled = tail_settled(path)
+    totals = agent_totals(path)
+    if totals is not None:
+        totals["settled"] = settled
+    return totals
+
+
 def agent_name(value, fallback="unknown"):
     """An agent type fit to inject and to journal. Free text becomes `other`, never itself."""
     if value is None or value == "":
@@ -561,12 +639,24 @@ def ingest(state, journal_file):
                 continue
             state["running"].pop(agent_id, None)
             if agent_id in state["counted"]:
+                reconcile(state, record)
                 continue
             state["counted"].append(agent_id)
             count(state, record)
             state["pending"].append(record)
     state["journal_offset"] = position
     return state
+
+
+def figures_of(record):
+    """`[output, tool_calls]` as whole numbers, whatever the record put there."""
+    out = []
+    for key in ("output", "tool_calls"):
+        try:
+            out.append(int(record.get(key) or 0))
+        except (TypeError, ValueError):
+            out.append(0)
+    return out
 
 
 def count(state, record):
@@ -576,8 +666,35 @@ def count(state, record):
     if record.get("output") is None and record.get("tool_calls") is None:
         totals["unknown"] += 1
         return
-    totals["output"] += int(record.get("output") or 0)
-    totals["tool_calls"] += int(record.get("tool_calls") or 0)
+    figures = figures_of(record)
+    totals["output"] += figures[0]
+    totals["tool_calls"] += figures[1]
+    agent_id = record.get("id")
+    if isinstance(agent_id, str):
+        state["figures"][agent_id] = figures
+        for stale in list(state["figures"])[:max(0, len(state["figures"]) - MAX_COUNTED)]:
+            del state["figures"][stale]
+
+
+def reconcile(state, record):
+    """Raise the totals when a later, settled figure for an already-reported agent is larger.
+
+    A synchronous return is reported at the moment it lands, which may be before the subagent's
+    last response was fully written. The journal's stop, computed later, is the settled figure:
+    saying the agent's line again would cost the orchestrator context for a number it already
+    has, so only the difference is added, and the session total is therefore never below the sum
+    of the final figures.
+    """
+    agent_id = record.get("id")
+    before = state["figures"].get(agent_id)
+    if not isinstance(before, list) or len(before) != 2:
+        return
+    settled = figures_of(record)
+    for index, key in enumerate(("output", "tool_calls")):
+        value = settled[index]
+        if value > before[index]:
+            state["subagents"][key] += value - before[index]
+            before[index] = value
 
 
 def running_now(state, now=None):
@@ -624,12 +741,14 @@ def budgets(row):
     return out[0], out[1]
 
 
-def agent_line(agent_type, output, calls, row, nudges, partial=False):
+def agent_line(agent_type, output, calls, row, nudges, partial=False, provisional=False):
     """`(line, ratio)` for one finished subagent; ratio is None when there is nothing to compare.
 
     Null counts are what a sum that could not be computed leaves behind, and the line says so:
     an agent reported at zero would read as an agent that did nothing. A row that budgets one
     half of the unit names that half, because `n / None` would read as a figure to act on.
+    `provisional` is the figure of a response still being written: `(so far)`, never a number
+    presented as exact. `(partial)` subsumes it — a sum that was cut short is the larger caveat.
     """
     if output is None and calls is None:
         return PREFIX + agent_type + " finished, spend unknown", None
@@ -637,6 +756,8 @@ def agent_line(agent_type, output, calls, row, nudges, partial=False):
             + " and " + plural(calls or 0, "tool call"))
     if partial:
         text += " (partial)"
+    elif provisional:
+        text += " (so far)"
     budget_out, budget_calls = budgets(row)
     ratios, halves = [], []
     if budget_out:
@@ -709,7 +830,7 @@ def row_for(table, agent_type):
 def stop_line(table, nudges, record):
     return agent_line(agent_name(record.get("type")), record.get("output"),
                       record.get("tool_calls"), row_for(table, record.get("type")), nudges,
-                      bool(record.get("partial")))
+                      bool(record.get("partial")), bool(record.get("so_far")))
 
 
 # --------------------------------------------------------------------------- the events
@@ -772,11 +893,12 @@ def on_agent_return(payload, env):
     if synchronous:
         # Before the lock, always: this is the one slow thing either main-thread event does,
         # and a prompt waiting behind it would run out its wait and lose its line.
-        totals = agent_totals(agent_transcript(payload.get("transcript_path"),
-                                               payload.get("session_id"), agent_id))
+        totals = settled_totals(agent_transcript(payload.get("transcript_path"),
+                                                 payload.get("session_id"), agent_id))
         if totals is not None:
             fresh = {"id": agent_id, "output": totals["output"], "partial": totals["partial"],
                      "tool_calls": totals["tool_calls"],
+                     "so_far": not totals.get("settled", True),
                      "type": agent_name(response.get("agentType"), totals["agent_type"])}
     with Lock(lock_file) as held:
         if not held:

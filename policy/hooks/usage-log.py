@@ -126,12 +126,37 @@ def summed(per_message):
     return {name: sum(slot[name] for slot in per_message.values()) for name, _ in FIELDS}
 
 
+def reported_model(counts):
+    """The model a transcript's assistant records name most often; the later one on a tie.
+
+    A record is one vote, so a response written as several records weighs as much as it cost to
+    write. The tie-break is the last model seen, because a session that changed model mid-run
+    ran most recently on the later one.
+    """
+    if not counts:
+        return ""
+    return max(counts.items(), key=lambda item: item[1])[0]
+
+
+def note_model(counts, name, order):
+    """One assistant record's model against the tally: `{name: (hits, last seen)}`."""
+    if not isinstance(name, str) or not name:
+        return
+    hits = counts.get(name, (0, 0))[0]
+    counts[name] = (hits + 1, order)
+
+
 def _agent_row(path, shared=None, budget=None, max_bytes=None):
     """One `kind: "subagent"` row from one `agent-<id>.jsonl`, or None when it holds no turn.
 
-    The sibling `agent-<id>.meta.json` names the agent type, the model and the spawn depth;
-    the transcript carries the tokens, the tool calls and, on some records, the effort. Counts
-    only: no prompt text and no command text reaches the record.
+    The sibling `agent-<id>.meta.json` names the agent type and the spawn depth; the transcript
+    carries the tokens, the tool calls, the model and, on some records, the effort. Counts only:
+    no prompt text and no command text reaches the record.
+
+    The model is the transcript's, not the meta file's: a routed spawn's meta carries the alias
+    the spawn hook asked for while a directly spawned agent's carries the full id, and
+    one model under two names splits `usage --by model` in half. The alias is the fallback for
+    an agent that recorded no model at all.
 
     `shared` is the session's message-id map. The row keeps its own total, but the session's
     total is taken over that shared map, so a message id written both here and as a sidechain
@@ -150,9 +175,9 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None):
         meta = {}
     if not isinstance(meta, dict):
         meta = {}
-    seen, tools = set(), set()
-    calls = turns = 0
-    model = effort = started = ended = ""
+    seen, tools, models = set(), set(), {}
+    calls = turns = records = 0
+    effort = started = ended = ""
     try:
         handle = path.open("rb")
     except OSError:
@@ -192,6 +217,8 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None):
             if not isinstance(message, dict):
                 continue
             mid = message.get("id")
+            records += 1
+            note_model(models, message.get("model"), records)
             for index, block in enumerate(message.get("content") or []):
                 # The same block-repetition the session scan guards against: one API response
                 # is written as several lines that repeat its blocks.
@@ -215,7 +242,6 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None):
                 continue
             seen.add(mid)
             turns += 1
-            model = model or message.get("model") or ""
     if not turns:
         # Nothing readable, whether the file held no turn or the budget stopped before one:
         # the caller records that as spend unknown rather than as zero.
@@ -226,7 +252,8 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None):
            # A Workflow-tool agent may have no meta file at all; unnamed is a fact about the
            # record, and "unknown" says so where an empty string would read as a missing field.
            "agent_type": meta.get("agentType") or "unknown",
-           "model": meta.get("model") or model, "effort": effort or meta.get("effort") or "",
+           "model": reported_model(models) or meta.get("model") or "",
+           "effort": effort or meta.get("effort") or "",
            "tool_calls": calls, "spawn_depth": meta.get("spawnDepth"), "workflow": workflow,
            # `mark_reroutes` fills these from the parent's record of the call, joined on this id.
            "tool_use_id": meta.get("toolUseId") or "",
