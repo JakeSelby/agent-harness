@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Plan mode now investigates at the permission posture you selected instead of below it. Under
+  `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
+  mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
+  0 or 1 — and asks about grade 2, because a push or a mutating API call is execution rather than
+  planning. Grade 3, the confirm marker, `manual`, `inherit` and Codex are all unchanged, and a
+  stricter autonomy stance still wins. A new config key, `plan_allow_tools`, lists tool-name globs
+  (such as `mcp__notes__read_*`) approved in plan mode under the same posture gate; it is empty
+  by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
+  inferred.
+
 ### Changed
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
