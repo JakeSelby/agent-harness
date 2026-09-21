@@ -169,8 +169,7 @@ class CommandContentTests(unittest.TestCase):
     def test_land_cleans_up_only_through_the_reversible_commands(self):
         """The refusals are the safety check; a forced form would delete unreviewed work."""
         body = split(COMMANDS / "land.md")[1]
-        self.assertIn("harness worktree remove", body)
-        self.assertIn("git branch -d <branch>", body)
+        self.assertIn("harness worktree remove <name> --merged", body)
         self.assertIn("harness worktree audit", body)
         self.assertIn("Never force a removal", body)
         self.assertIn("Never `git branch -D`", body)
