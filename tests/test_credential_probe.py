@@ -124,7 +124,8 @@ class EntryPointTests(unittest.TestCase):
             code, out, err = self.run_main({"ANTHROPIC_API_KEY": PRESENT})
         self.assertEqual(code, 1)
         self.assertEqual(out, "")
-        self.assertIn("is not a reportable variable", err)
+        self.assertIn("not a reportable variable", err)
+        self.assertNotIn("SOME_OTHER_VALUE", err)
 
     def test_the_probe_is_additive_and_records_no_qualification(self):
         before = sorted(p.name for p in (REPO / "compatibility" / "evidence").iterdir())
