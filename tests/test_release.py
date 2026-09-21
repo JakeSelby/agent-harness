@@ -1,6 +1,7 @@
 """Release publication depends on qualification and immutable source identity."""
 import importlib.util
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,3 +50,74 @@ class ReleaseTests(unittest.TestCase):
                 path.write_text(json.dumps(value))
                 with self.subTest(value=value), patch.object(module.compatibility, "catalog", return_value={"clients": []}), self.assertRaises(ValueError):
                     module.notes(root)
+
+
+class StableBranchTests(unittest.TestCase):
+    def setUp(self):
+        self.module = load("advance_stable")
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.remote, self.work = Path(temp.name) / "remote.git", Path(temp.name) / "work"
+        subprocess.run(["git", "init", "--quiet", "--bare", str(self.remote)], check=True)
+        subprocess.run(["git", "init", "--quiet", "-b", "main", str(self.work)], check=True)
+        self.git("remote", "add", "origin", str(self.remote))
+        (self.work / "VERSION").write_text("1.0.0\n")
+        self.first, self.second = self.release("v1.0.0"), self.release("v1.0.1")
+        patcher = patch.object(self.module, "ROOT", self.work); patcher.start(); self.addCleanup(patcher.stop)
+
+    def git(self, *args):
+        return subprocess.check_output(["git", "-C", str(self.work), "-c", "user.name=t", "-c", "user.email=t",
+                                        *args], text=True, stderr=subprocess.DEVNULL).strip()
+
+    def release(self, tag):
+        self.git("commit", "--quiet", "--allow-empty", "-m", tag)
+        self.git("tag", "-a", tag, "-m", tag)
+        self.git("push", "--quiet", "origin", "main", tag)
+        return self.git("rev-parse", "HEAD")
+
+    def stable(self):
+        return subprocess.check_output(["git", "--git-dir", str(self.remote), "rev-parse", "refs/heads/stable"],
+                                       text=True).strip()
+
+    def test_first_release_creates_stable_and_the_next_fast_forwards_it(self):
+        self.assertEqual(self.module.main(["v1.0.0"]), 0)
+        self.assertEqual(self.stable(), self.first)
+        self.assertEqual(self.module.main(["v1.0.1"]), 0)
+        self.assertEqual(self.stable(), self.second)
+        self.assertEqual(self.module.plan(self.work, "v1.0.1"), ("current", self.second))
+
+    def test_stable_never_moves_backward_to_an_older_tag(self):
+        self.module.main(["v1.0.1"])
+        self.assertEqual(self.module.main(["v1.0.0"]), 1)
+        self.assertEqual(self.stable(), self.second)
+
+    def test_a_checkout_that_lacks_the_stable_tip_still_refuses_cleanly(self):
+        self.module.main(["v1.0.1"])
+        old = self.work.parent / "old"
+        subprocess.run(["git", "clone", "--quiet", "--single-branch", "--branch", "v1.0.0", self.remote.as_uri(),
+                        str(old)], check=True, stderr=subprocess.DEVNULL)
+        with patch.object(self.module, "ROOT", old):
+            self.assertEqual(self.module.plan(old, "v1.0.0"), ("refuse", self.first))
+
+    def test_a_rejected_push_is_reported_not_raised(self):
+        (self.remote / "hooks" / "pre-receive").write_text("#!/bin/sh\nexit 1\n")
+        (self.remote / "hooks" / "pre-receive").chmod(0o755)
+        self.assertEqual(self.module.main(["v1.0.0"]), 1)
+        self.assertEqual(self.module.remote_head(self.work, "origin"), None)
+
+    def test_check_reports_a_stale_branch_without_pushing(self):
+        self.module.main(["v1.0.0"])
+        self.assertEqual(self.module.main(["v1.0.1", "--check"]), 1)
+        self.assertEqual(self.stable(), self.first)
+        self.assertEqual(self.module.main(["v1.0.0", "--check"]), 0)
+
+    def test_the_tag_defaults_to_the_checkout_version(self):
+        self.assertEqual(self.module.main([]), 0)
+        self.assertEqual(self.stable(), self.first)
+
+    def test_release_workflow_advances_stable_only_after_publishing(self):
+        text = (REPO / ".github/workflows/release.yml").read_text()
+        self.assertIn("\npermissions:\n  contents: write\n", text)
+        job = text[text.index("\n  advance-stable:\n"):].splitlines()
+        self.assertIn("    needs: qualified-release", job)
+        self.assertIn("    continue-on-error: true", job)
+        self.assertIn('        run: python3 scripts/advance_stable.py "$GITHUB_REF_NAME"', job)
