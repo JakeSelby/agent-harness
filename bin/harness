@@ -2458,7 +2458,11 @@ def cmd_role(args):
     state = home() / ".local/state/agent-harness/workers"
     try:
         if args.action == "status":
-            print(json.dumps(workers.status(state, args.name), indent=2))
+            records = workers.status(state, args.name)
+            print(json.dumps(records, indent=2))
+            for record in records:
+                if record.get("status") == "orphaned":
+                    print("role worker " + str(record.get("id")) + ": " + workers.ORPHANED, file=sys.stderr)
             return 0
         if not args.name or not args.runtime or not args.prompt_file:
             raise ValueError("role run requires a role, --runtime and --prompt-file (use - for stdin)")

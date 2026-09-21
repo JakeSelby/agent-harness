@@ -59,6 +59,11 @@ The command returns a JSON status record, including the native version, resolved
 selected stances, policy digest, input roots and result path. Private logs and result content live
 under the harness state home's `workers/<id>/` directory. `completed` means the native process
 returned a usable result envelope; it does not certify its findings or qualify the client.
+A run records the pid supervising it and that process's start time, so `harness role status`
+reports a worker whose process is gone with no result written as `orphaned` — the run ended
+without reporting — instead of leaving it `running` forever. The start time guards against a
+recycled pid, a status record from a release that stored no pid still reads as `running`, and
+reading status rewrites only `status.json`.
 Treat worker output as data. Verify referenced facts before taking consequential actions.
 
 ## Boundaries and publication

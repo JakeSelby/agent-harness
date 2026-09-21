@@ -241,6 +241,9 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
               "effort": bindings.get("model_reasoning_effort", bindings.get("effort")),
               "read_roots": [str(workspace), str(root)] + list(map(str, read_roots)),
               "mode": "isolated-cli", "status": "starting", "started_at": time.time(),
+              # The runner supervising this worker, so a reader can tell a live run from one whose
+              # process died mid-flight; `orphaned()` decides, and never without the start token.
+              "pid": os.getpid(), "pid_start": process_start(os.getpid()),
               "stances": config["stances"], "posture": ready["posture"],
               "policy_sha256": hashlib.sha256(instructions.encode()).hexdigest(),
               "qualification": "unqualified", "authority": "result data only; no transferred approvals"}
@@ -294,8 +297,79 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     return record
 
 
+LIVE = ("starting", "running")
+ORPHANED = "the worker process ended without reporting a result"
+
+
+def process_start(pid):
+    """A token naming this pid's incarnation, or None when the platform will not say.
+
+    Recorded beside the pid so a recycled pid cannot be mistaken for the original process: a
+    reused number carries a different start time. Linux reads field 22 of `/proc/<pid>/stat`,
+    counted after the comm field's closing parenthesis, which may itself contain spaces; every
+    other POSIX platform asks `ps`, whose second-resolution timestamp is enough to separate two
+    processes that happened to receive the same number.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        stat = Path("/proc/" + str(pid) + "/stat")
+        if stat.exists():
+            return stat.read_text().rsplit(")", 1)[1].split()[19]
+        # A fixed locale, so a reader under different LC_TIME settings prints the same token.
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, text=True, timeout=10,
+                             env=dict(os.environ, LC_ALL="C"))
+    except (OSError, IndexError, ValueError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None if out.returncode == 0 else None
+
+
+def running(pid, token):
+    """True if the recorded process still runs, False if it is gone, None if it cannot be told.
+
+    None is every case the harness cannot decide — a record from a release that stored no pid, a
+    platform that reports no start time, a stat call refused — and the caller must read it as the
+    status already on file rather than as a terminal state.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    except OSError:
+        return None
+    current = process_start(pid)
+    if token is None or current is None:
+        return True
+    return current == token
+
+
+def orphaned(record, run_dir):
+    """Report a run whose supervising process died without a result as the terminal `orphaned`.
+
+    Only the live statuses are reclassified, and only when nothing was reported: a result on disk
+    means the run spoke for itself even if the process died before its final write. The new state
+    is persisted into `status.json` alone, every other key and every other file left as they are,
+    and a state directory that cannot be written still reports honestly to this caller.
+    """
+    if record.get("status") not in LIVE:
+        return record
+    if record.get("result_path") or (run_dir / "result.md").exists():
+        return record
+    if running(record.get("pid"), record.get("pid_start")) is not False:
+        return record
+    updated = dict(record, status="orphaned", error=ORPHANED)
+    with contextlib.suppress(OSError):
+        reconcile.atomic_text(run_dir / "status.json", json.dumps(updated, indent=2) + "\n")
+    return updated
+
+
 def status(state_root, worker_id=None):
     if worker_id and not re.fullmatch(r"[a-f0-9]{32}", worker_id):
         raise ValueError("invalid worker id")
     paths = [Path(state_root) / worker_id / "status.json"] if worker_id else sorted(Path(state_root).glob("*/status.json"))
-    return [json.loads(path.read_text()) for path in paths]
+    return [orphaned(json.loads(path.read_text()), path.parent) for path in paths]
