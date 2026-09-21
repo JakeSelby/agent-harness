@@ -2116,13 +2116,42 @@ RULE_PROMOTE_SHARE = 0.30
 RULE_MIN_SESSIONS = 20
 
 
+def renamed_ids() -> Dict[str, str]:
+    """Old detector id → the id that replaced it, from the registry's own `RENAMED` map."""
+    module = load_detectors()
+    mapping = getattr(module, "RENAMED", {}) or {}
+    return {k: v for k, v in mapping.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def folded_rules(row: Dict[str, Any], renamed: Dict[str, str]) -> Dict[str, int]:
+    """One record's hits, with a renamed detector counted under its successor.
+
+    A rename would otherwise split one measurement across two lines, and the older half would
+    look like a detector that stopped firing. The ledger file is never rewritten for it: the
+    fold is done on every read, so a record keeps the id it was written under.
+    """
+    out: Dict[str, int] = {}
+    for did, n in (row.get("rules") or {}).items():
+        if not isinstance(did, str):
+            continue
+        try:
+            count = int(n or 0)
+        except (TypeError, ValueError):
+            count = 0
+        key = renamed.get(did, did)
+        out[key] = out.get(key, 0) + count
+    return out
+
+
 def rule_ids(rows: List[Dict[str, Any]]) -> List[str]:
     """Every detector id to report on: the registry's, so a rule with no hit is still a line,
-    plus any id a record carries that the registry no longer defines."""
+    plus any id a record carries that the registry no longer defines — under its current name
+    when the registry says it was renamed."""
     module = load_detectors()
+    renamed = renamed_ids()
     ids = set(getattr(module, "DETECTORS", {}) or {})
     for row in rows:
-        ids.update(k for k in (row.get("rules") or {}) if isinstance(k, str))
+        ids.update(renamed.get(k, k) for k in (row.get("rules") or {}) if isinstance(k, str))
     return sorted(ids)
 
 
@@ -2132,6 +2161,9 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     Only a record that carries a `rules` map is evidence. One written before the detectors
     existed, or one whose registry would not import, is absent from every count and from the
     denominator: counting it as a session with no hit would turn a gap into a clean bill.
+
+    Every grouping counts `folded_rules`, not the raw map, so a detector that was renamed is one
+    line and one series in all three: by rule, by repo and by stance.
     """
     measured = [r for r in rows if isinstance(r.get("rules"), dict) and not r.get("rules_errors")]
     legacy = sum(1 for r in rows if not isinstance(r.get("rules"), dict) and not r.get("rules_error"))
@@ -2142,15 +2174,17 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     if not measured:
         say(f"no measured sessions in the last {days} day(s)")
         return 0
+    renamed = renamed_ids()
+    counted = [(r, folded_rules(r, renamed)) for r in measured]
 
     if by == "rule":
-        total = len(measured)
+        total = len(counted)
         head = f"{'detector':<38}{'hits':>7}{'sessions':>10}{'of':>6}{'share':>8}  note"
         say(head)
         say("-" * len(head))
         for did in rule_ids(measured):
-            hits = sum(int(r["rules"].get(did) or 0) for r in measured)
-            seen = sum(1 for r in measured if int(r["rules"].get(did) or 0) > 0)
+            hits = sum(hits_of.get(did, 0) for _, hits_of in counted)
+            seen = sum(1 for _, hits_of in counted if hits_of.get(did, 0) > 0)
             share = seen / total if total else 0.0
             note = ""
             if total >= RULE_MIN_SESSIONS:
@@ -2164,13 +2198,13 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
         guessed = [r for r in measured if r.get("stances_source") == "rescan"]
         if guessed:
             say(f"{len(guessed)} rescanned session(s) excluded: stance not known at the time")
-        measured = [r for r in measured if r.get("stances_source") != "rescan"]
-        if not measured:
+        counted = [(r, h) for r, h in counted if r.get("stances_source") != "rescan"]
+        if not counted:
             say(f"no sessions with a known stance in the last {days} day(s)")
             return 0
 
     groups: Dict[str, List[Any]] = {}
-    for row in measured:
+    for row, hits_of in counted:
         if by == "stance":
             stances = row.get("stances") if isinstance(row.get("stances"), dict) else {}
             keys = [f"{k}={v}" for k, v in sorted(stances.items())] or ["(no stances)"]
@@ -2179,8 +2213,8 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
         for key in keys:
             acc = groups.setdefault(key, [0, {}])
             acc[0] += 1
-            for did, n in row["rules"].items():
-                acc[1][did] = acc[1].get(did, 0) + int(n or 0)
+            for did, n in hits_of.items():
+                acc[1][did] = acc[1].get(did, 0) + n
     head = f"{by:<42}{'sessions':>9}{'hits':>7}  top detectors"
     say(head)
     say("-" * len(head))
