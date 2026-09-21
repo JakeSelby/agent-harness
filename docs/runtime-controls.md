@@ -37,7 +37,11 @@ Routing of spawns that name no agent definition turns itself off in a workspace 
 would put that repository's instructions on every unnamed spawn; the spawn runs as written and the
 hook says so.
 Before downgrading to a release that only links these definitions, either select `balanced` with
-no role bindings and sync once, which restores the links, or run `harness uninstall`.
+no role bindings and sync once, which restores the links, or run `harness uninstall`. Syncing a
+home back with the older release is not enough on its own: role files the older release does not
+ship stay in `~/.claude/agents` and `~/.codex/agents`, and its `harness diff` reports no drift,
+because code that never knew those roles cannot miss them. `harness uninstall` before the
+downgrade is the remedy; it removes what the newer release wrote.
 
 Routing is session-scoped for the same reason that effort is sync-scoped: what a native agent is
 comes from files read at a moment, not from a live lookup. Claude Code loads its agent registry
