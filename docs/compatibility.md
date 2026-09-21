@@ -35,6 +35,8 @@ separately: selecting the same underlying provider does not prove equivalent Cur
 
 ## Qualification procedure
 
+The [qualification runbook](qualification-runbook.md) covers the mechanics of a run: the
+acceptance runner's invocation, its disposable homes and the credentials it passes through.
 Start with an isolated test user/configuration home and a disposable repository. Record exact
 runtime and client versions, operating system, source commit, date, configuration, commands,
 and observed results. Never commit credentials, full private transcripts or personal settings.

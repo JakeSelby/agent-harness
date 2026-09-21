@@ -247,6 +247,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Three defects in the native acceptance runner, recorded during 0.11.0 qualification and none of
+  them in the harness runtime. `orchestrator_text()` now reads a session's transcript whether or not
+  a subagent directory was written, so a session that spawned none no longer returns an empty string
+  and lets a `cost-posture` assertion pass vacuously. The runner's cited qualification runbook is
+  written rather than a dead link. The three AWS session variables — the key id, the secret key and
+  the session token — now reach the client, so a container holding only session credentials can
+  authenticate. The bypass classification a `permission-controls` driver needs — telling a model's
+  own refusal apart from a policy block by reading the recorded denials and the permission mode —
+  is added and tested, but no such driver exists in the runner, so nothing calls it yet (#309).
 - `harness worktree remove` finishes the cleanup after a squash merge. The quality gate has to run
   before a push and writes `__pycache__`, which used to leave the worktree unremovable and reported
   as dirty by `harness worktree audit`; removal no longer counts the regenerable caches it knows
