@@ -19,9 +19,8 @@ PLAN = """# Fixture plan
 - Outcome: a verified fixture.
 
 ## System design
-```mermaid
-flowchart LR
-  A --> B
+```text
+A ──▶ *B
 ```
 
 ## Steps

@@ -19,6 +19,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The Review Card's diagram is a plain-text drawing in a `text` fence. The `plan-authoring` skill,
+  its template and example, and the `planner` role defaulted to a mermaid `flowchart`, which the
+  plan-mode pane and the chat sidebar show as raw source — so the card's one diagram was unreadable
+  where the card is reviewed. New or changed nodes carry a `*`; mermaid stays for the addendum and
+  for docs read on GitHub.
 - The `delegation: off` stance said a hook asks before any spawn, where the lifecycle denies the
   spawn outright and never reaches that hook. The stance now says a spawn under it is denied and
   that changing the selected stance is the way to delegate, and it no longer names a hook — the
