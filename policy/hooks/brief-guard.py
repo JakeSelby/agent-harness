@@ -3,17 +3,23 @@
 """PreToolUse on `Agent`: append a return bound, and the posture's soft budget, to a brief
 that states neither.
 
-`delegation.md` says to bound the brief, and `transcript-hygiene/brief-without-cap` measures
+`delegation.md` says to bound the brief, and `transcript-hygiene/model-wrote-no-cap` measures
 that it is not: 536 hits across 30 percent of sessions. Asking the orchestrator to write the
 cap does not work, so the hook writes it instead.
+
+That detector counts briefs as the model wrote them, and goes on counting them after this hook
+caps them: a transcript records the model's `tool_use` input, not the `updatedInput` this hook
+returns (#324). Its number says whether the orchestrator still needs the hook, and is not
+evidence that an uncapped brief reached a subagent.
 
 Adapted from unclebob/swarm-forge, whose handoff helper fills the commit SHA from the sender's
 HEAD while the constitution says "do not type a SHA". The agent cannot get a field wrong that
 it never writes.
 
 What counts as a bound, and which agents are exempt, come from `rule-detectors.py` rather than
-a second copy here. If the hook and the detector disagreed, the hook would append text the
-detector still counts as missing and the number would never move.
+a second copy here, so the hook adds a cap to exactly the briefs the detector counts. A second
+copy would drift, and the two would then disagree about which briefs the orchestrator bounded —
+the hook appending to a brief that already states a cap, or leaving one the detector counts.
 
 The budget is the same argument for spend. A subagent cannot see the cost variant that priced
 it, so the row's expected output tokens and tool calls are stated in the brief, once, in the

@@ -46,6 +46,28 @@ All notable changes to this project are documented here. The format follows
   client's doctor, and says so, when `HOME` has no default keychain. `harness keychain <home>` is the
   same guard for a home you build by hand. Other hosts are unchanged.
 
+- The `gatherer` role no longer declares web tools its only execution path cannot give it. The
+  role listed `WebFetch` and `WebSearch`, the spawn guard refuses a native `gatherer` in favour of
+  `harness role run gatherer`, and that isolated worker is launched with `Read`, `Grep` and `Glob`
+  under a read-only sandbox with hosted search disabled — so a web dimension of `/research` had
+  nowhere to run. The confinement stays: a worker that can both read a workspace and fetch can
+  carry what it read back out, and a fetched page is untrusted input inside a confined process.
+  Instead the declaration now matches the launch, the role says it is offline and that online
+  evidence arrives as files granted with `--read-dir`, the refusal that points at `harness role
+  run` adds where a web dimension goes instead, and `/research` routes by where the evidence
+  lives — files and repositories to the isolated worker, the live web to an in-session band
+  worker. A test asserts the command line a `gatherer` worker is actually launched with.
+
+- `transcript-hygiene/brief-without-cap` is now `transcript-hygiene/model-wrote-no-cap`, because
+  that is what it always measured. A transcript records an `Agent` call as the model wrote it,
+  and a `PreToolUse` hook's `updatedInput` is written to a separate `attachment` line the scan
+  never reads — so `brief-guard` capping a brief could not move the number, and the rate was
+  unchanged before, during and after the hook shipped. The detector's behaviour is unchanged and
+  the rename makes `promote?` on it mean something: the orchestrator writes no bounds and the hook
+  is carrying the rule. `rule-detectors.RENAMED` names the successor and `usage --rules` folds it
+  as it reads — by rule, by repo and by stance — so a row written under the old id reports under
+  the new one, with no rewrite of the ledger file and no split in the series.
+
 ## [0.11.1] — 2026-09-21
 
 ### Added
