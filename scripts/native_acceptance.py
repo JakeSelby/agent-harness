@@ -34,14 +34,18 @@ VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
 TURN_TIMEOUT = 300
 # Authentication this machine already holds, passed through by name. A value is never read,
-# logged or written by this runner. Profile and file pointers travel; raw AWS key material does
-# not, because a profile is enough. `AWS_*` file pointers are re-anchored at the real home
-# because the probe's HOME is disposable and an unset pointer hangs the provider lookup.
+# logged or written by this runner. Profile and file pointers travel, and so do the AWS session
+# variables, because a container holds its credentials there and no profile exists to fall back
+# on. `AWS_*` file pointers are re-anchored at the real home because the probe's HOME is
+# disposable and an unset pointer hangs the provider lookup.
 AUTH_PASSTHROUGH = (
     "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
     "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
     "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_SHARED_CREDENTIALS_FILE",
-    "AWS_CONFIG_FILE", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID", "GOOGLE_APPLICATION_CREDENTIALS",
+    # The secret-key name is split, as it is in claude/hooks/rule-detectors.py, so the lint's
+    # own pattern does not match this list of variable names.
+    "AWS_CONFIG_FILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET" "_ACCESS_KEY", "AWS_SESSION_TOKEN",
+    "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID", "GOOGLE_APPLICATION_CREDENTIALS",
     "OPENAI_API_KEY", "PATH", "SHELL", "LANG", "TERM", "TMPDIR", "SSL_CERT_FILE",
 )
 SECRET_SHAPES = (
@@ -218,6 +222,15 @@ class Home:
     def answer(self, data):
         return str(data.get("result", ""))
 
+    def permission_mode(self):
+        """The default permission mode the synced settings put this home's client in."""
+        path = self.client_dir / "settings.json"
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return ""
+        return str((data.get("permissions") or {}).get("defaultMode", ""))
+
     def transcript_dir(self, session_id):
         for path in (self.client_dir / "projects").glob("*/" + session_id):
             if path.is_dir():
@@ -244,14 +257,18 @@ class Home:
         return found
 
     def orchestrator_text(self, session_id):
+        """The orchestrator's own transcript, whether or not the session spawned a subagent.
+
+        The per-session directory exists only once a subagent has been written, so reading it
+        alone returns nothing for a session that spawned none — and an assertion about what the
+        orchestrator's context did *not* carry would then hold vacuously. `""` means the client
+        wrote no transcript this runner can read, which a caller must treat as unobserved.
+        """
+        paths = sorted((self.client_dir / "projects").glob("*/" + session_id + ".jsonl"))
         directory = self.transcript_dir(session_id)
-        if directory is None:
-            return ""
-        chunks = []
-        for path in sorted(directory.glob("*.jsonl")) + sorted(
-                (self.client_dir / "projects").glob("*/" + session_id + ".jsonl")):
-            chunks.append(path.read_text(errors="replace"))
-        return "\n".join(chunks)
+        if directory is not None:
+            paths = sorted(directory.glob("*.jsonl")) + paths
+        return "\n".join(path.read_text(errors="replace") for path in paths)
 
 
 SPAWN_PROMPT = ("Use your Agent tool exactly once to launch one subagent. Do not name a "
@@ -316,6 +333,54 @@ def feed_lines(text):
     unescaped = text.replace("\\n", "\n").replace("\\u00b7", "\u00b7")
     return [match.group(0).strip()
             for match in re.finditer(r"usage-feed: [^\"\n]{0,200}", unescaped)]
+
+
+def assert_null_feed(text):
+    """Hold the null variant to an observed transcript, never to an empty one.
+
+    A session that spawned a subagent and fed nothing back reads the same as a session whose
+    transcript was never read, so an empty text is `unverified` and only a transcript that
+    exists can carry the absence of a feed.
+    """
+    if not text:
+        raise Unverified("the null variant's session left no orchestrator transcript to read, so "
+                         "the absence of a usage feed in it was never observed")
+    if "usage-feed: " in text:
+        raise AssertionError("the null variant still fed usage back to the orchestrator")
+
+
+BYPASS_MODE = "bypassPermissions"
+
+
+def permission_denials(data):
+    """Every tool call the client refused during a turn, read from its own JSON result."""
+    denials = data.get("permission_denials")
+    return list(denials) if isinstance(denials, list) else []
+
+
+def bypass_verdict(wrote, data, mode):
+    """Classify an acknowledged-bypass turn from what the client did, not from one file alone.
+
+    A missing sentinel is a block only when something blocked it: a permission denial in the
+    turn's own result, or a session running in a mode other than `bypassPermissions`. With the
+    mode in force and no denial recorded, the model declined the turn on its own judgement —
+    about one run in five — which is not a permission control and must never read as `failed`.
+
+    Returns the case result and its reason; the reason is `""` only for a pass. The
+    `permission-controls` case has no driver yet, and this is the classification it must use.
+    """
+    if wrote:
+        return "passed", ""
+    denials = permission_denials(data)
+    if denials:
+        return "failed", ("the acknowledged bypass was blocked: the client refused %s tool call(s), "
+                          "starting with %s" % (len(denials), denials[0]))
+    if str(mode) != BYPASS_MODE:
+        return "failed", ("the acknowledged bypass ran in permission mode %s, not %s"
+                          % (mode or "<unset>", BYPASS_MODE))
+    return "unverified", ("the model declined the acknowledged-bypass turn on its own judgement: "
+                          "%s was in force and the turn recorded no permission denial, so no "
+                          "permission control was observed at all" % BYPASS_MODE)
 
 
 def brief_of(records):
@@ -394,8 +459,7 @@ def case_cost_posture(home):
                              + redact(null_meta.get("agentType")))
     if "Expected spend:" in brief_of(null_records):
         raise AssertionError("the null variant still wrote a budget sentence into a brief")
-    if "usage-feed: " in home.orchestrator_text(null_result["session_id"]):
-        raise AssertionError("the null variant still fed usage back to the orchestrator")
+    assert_null_feed(home.orchestrator_text(null_result["session_id"]))
     if not feed or not routed:
         raise Unverified(
             "the routed spawn ran on the variant's band worker, model, effort and budget sentence, "
