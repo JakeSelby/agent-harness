@@ -92,6 +92,15 @@ It supplies shared instructions explicitly; ambient user/project customization i
 Managed native policies still apply. The worker has no shell, write, external-connector or
 delegation tools. If its brief needs a diff or online evidence, the caller supplies those as files.
 
+No isolated worker reaches the network, whatever its role declares: the Codex adapter disables
+hosted search under a read-only sandbox and the Claude adapter grants `Read`, `Grep` and `Glob`
+only. A worker that can both read a workspace and fetch is a worker that can carry what it read
+back out, and a fetched page is untrusted input arriving inside a confined process. `gatherer` is
+the role this is felt in, so its definition and `/research` say it: a file or repository dimension
+runs here, a dimension that needs the live web goes to an in-session band worker, which is subject
+to the session's own permission prompts and search budget. The refusal that routes a native
+`gatherer` spawn to `harness role run` says the same thing in one sentence.
+
 Both adapters enforce a narrower execution surface than the ordinary interactive client.
 Native configuration restrictions take precedence; unsupported flags or required settings fail
 the run. These boundaries do not promise confidentiality against the native model provider.

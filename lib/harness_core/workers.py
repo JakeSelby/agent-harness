@@ -12,7 +12,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from . import catalog, reconcile
+from . import catalog, keychain, reconcile
 
 LIMIT = 1024 * 1024
 RUNTIMES = {"codex": "codex", "claude-code": "claude"}
@@ -130,6 +130,10 @@ def environment(original, work):
     env.update(HOME=str(work / "home"), XDG_CONFIG_HOME=str(work / "home/.config"),
                XDG_STATE_HOME=str(work / "home/.local/state"), XDG_CACHE_HOME=str(work / "home/.cache"))
     Path(env["HOME"]).mkdir(mode=0o700)
+    try:
+        keychain.provision(env["HOME"])
+    except OSError as exc:
+        raise ValueError(str(exc))
     return env
 
 
