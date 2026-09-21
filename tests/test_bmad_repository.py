@@ -2,6 +2,7 @@
 """Tests for the repository's own BMad publication boundary."""
 
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -22,13 +23,27 @@ WORKFLOWS = {
 }
 
 
+def team_workflows(directory: Path) -> set:
+    """Workflow stems in a custom directory, ignoring personal `*.user.toml` overrides."""
+    return {path.stem for path in directory.glob("bmad-*.toml") if not path.name.endswith(".user.toml")}
+
+
 class BMadRepositoryTests(unittest.TestCase):
     def test_every_team_workflow_loads_the_single_governance_source(self):
-        actual = {path.stem for path in CUSTOM.glob("bmad-*.toml")}
-        self.assertEqual(actual, WORKFLOWS)
+        self.assertEqual(team_workflows(CUSTOM), WORKFLOWS)
         for name in WORKFLOWS:
             text = (CUSTOM / f"{name}.toml").read_text(encoding="utf-8")
             self.assertEqual(text.count("docs/bmad-governance.md"), 1)
+
+    def test_personal_overrides_do_not_join_the_team_workflow_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for name in WORKFLOWS:
+                (directory / f"{name}.toml").write_text("", encoding="utf-8")
+            (directory / "bmad-build.user.toml").write_text("", encoding="utf-8")
+            self.assertEqual(team_workflows(directory), WORKFLOWS)
+            (directory / "bmad-extra.toml").write_text("", encoding="utf-8")
+            self.assertEqual(team_workflows(directory), WORKFLOWS | {"bmad-extra"})
 
     def test_team_config_keeps_public_artifacts_inside_the_repository(self):
         text = (CUSTOM / "config.toml").read_text(encoding="utf-8")
