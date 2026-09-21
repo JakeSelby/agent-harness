@@ -90,7 +90,13 @@ an issue a maintainer has accepted — filed by a maintainer, or carrying a mile
 label — has no BMad ID. A community issue still waiting for triage is a notice, not a finding, and
 so is an unmapped issue closed as not planned or as a duplicate.
 
-`refresh` copies GitHub's title and state into the manifest and its generated artifacts. It checks
+The manifest owns the primary parent and `apply` projects it, so `audit --live` never tells you to
+apply a parent GitHub already records: it reports a mapped parent the manifest lacks as `run
+refresh`, an unmapped one as `run reserve for it first`, and a parent that differs on both sides as
+a conflict for you to settle.
+
+`refresh` copies GitHub's title and state into the manifest and its generated artifacts, and adopts
+a mapped parent the manifest records as none. It checks
 every drifted artifact before writing any of them and refuses the whole run when one carries
 amendments; it never touches GitHub, and it leaves an issue GitHub no longer returns for the audit
 to report as missing.

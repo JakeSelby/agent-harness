@@ -12,6 +12,7 @@ Bounded: after MAX_BLOCKS consecutive blocks the turn is released, so a gate tha
 pass cannot trap a session. A timeout releases the turn as unverified; unexpected errors block. Neither records success.
 """
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -26,6 +27,42 @@ TAIL_LINES = 30
 GATE_FILES = ("AGENTS.md", "CLAUDE.md")
 STATE = Path.home() / ".local" / "state" / "agent-harness" / "stop-gate"
 TRUSTED = Path.home() / ".config" / "agent-harness" / "trusted.txt"
+
+
+_LOG = []
+
+
+def decisions():
+    """The sibling decision log, or None. A log that will not load costs nothing but its rows."""
+    if not _LOG:
+        module = None
+        try:
+            path = Path(__file__).resolve().parent / "decisions.py"
+            spec = importlib.util.spec_from_file_location("harness_decisions", str(path))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception:
+            module = None
+        _LOG.append(module)
+    return _LOG[0]
+
+
+def log_gate(payload, root, commands, answer, outcome):
+    """Record what this Stop event was answered with, and how the gate turned out.
+
+    Both records are written here because both facts are known here: the hook runs the gate
+    itself, so the outcome does not wait for a later event. The judged input is the repository's
+    own gate block — the text this hook decided to run — and not the turn's final message: a
+    Stop payload carries no assistant text, and reading the tail of a transcript to find some
+    would put model prose in a file whose whole point is that it holds neither prose nor output.
+    """
+    module = decisions()
+    if module is None:
+        return
+    text = str(root) + "\n" + "\n".join(commands)
+    identity = module.record("stop-gate", answer, text, payload if isinstance(payload, dict) else {})
+    if identity and outcome is not None:
+        module.observe(identity, outcome, "stop-gate", (payload or {}).get("session_id") or "")
 
 
 def git(root, *args):
@@ -222,12 +259,14 @@ def main():
         sys.stderr.write("stop-gate: folder not trusted in Claude Code and not listed by "
                          "`harness trust`; gate skipped. Run `harness trust .` in this folder to "
                          "let it run the repository's own checks.\n")
+        log_gate(payload, root, commands, "skipped", "untrusted")
         return
 
     current = tree_hash(root)
     path = state_path(root)
     state = read_state(path)
     if state.get("green_hash") == current:
+        log_gate(payload, root, commands, "skipped", "passed")
         return
 
     session = payload.get("session_id") or ""
@@ -235,12 +274,15 @@ def main():
         failure = run_gate(root, commands)
     except subprocess.TimeoutExpired:
         release(path, state, session, f"gate ran past {BUDGET_SECONDS}s; letting the turn end")
+        log_gate(payload, root, commands, "released", "timeout")
         return
     if failure is None:
         if tree_hash(root) != current:
             release(path, state, session, "working tree changed during the gate; result unverified")
+            log_gate(payload, root, commands, "released", "unverified")
             return
         write_state(path, {"green_hash": current, "status": "passed", "blocks": 0, "session_id": session})
+        log_gate(payload, root, commands, "released", "passed")
         return
 
     try:
@@ -250,8 +292,10 @@ def main():
     blocks += 1
     if blocks >= MAX_BLOCKS:
         release(path, state, session, f"released after {MAX_BLOCKS} blocks; gate still red")
+        log_gate(payload, root, commands, "released", "failed")
         return
     write_state(path, {"green_hash": None, "status": "failed", "blocks": blocks, "session_id": session})
+    log_gate(payload, root, commands, "blocked", "failed")
     cmd, code, output = failure
     print(json.dumps({"decision": "block", "reason": reason(gate_file(root), cmd, code, output)}))
 
