@@ -79,15 +79,18 @@ cannot, the plan is not yet understood well enough to write.
 
 ## The diagram
 
-Mermaid renders in most editor previews, on GitHub, and in artifacts. Use it.
+The card is reviewed in a plan-mode pane and a chat sidebar, and both show a mermaid fence as
+raw source. The card's diagram is therefore plain text, which renders everywhere.
 
-- **Default `flowchart LR`** for components and data flow. Cap 12 nodes. If it needs more, the
-  diagram is at the wrong altitude — draw the subsystem being changed, not the whole world.
-- **`sequenceDiagram`** only when ordering across processes is the actual subject.
-- **ASCII in a fenced block** when the shape is a straight pipeline. It always renders.
-- Label edges with what moves, not with verbs: `api -->|encrypted episode| web`.
-- Mark the delta so the reader sees what is new:
-  `classDef new stroke-width:3px,stroke-dasharray:0` then `class bake,shadow new`.
+- **A box-and-arrow drawing in a `text` fence** — `├─▶`, `└─▶`, `──▶`, a dotted `┄┄▶` for a
+  weak or polled link. Cap 12 nodes. If it needs more, the diagram is at the wrong altitude —
+  draw the subsystem being changed, not the whole world.
+- Keep every line under 80 columns; a wrapped line breaks the drawing.
+- Label edges with what moves, not with verbs: `api ── encrypted episode ──▶ web`.
+- Mark the delta so the reader sees what is new: prefix each new or changed node with `*`, and
+  name the marker in the caption.
+- **Mermaid belongs below the `---`,** and in docs that are read on GitHub — a
+  `sequenceDiagram` when ordering across processes is the actual subject. Never on the card.
 - Mandatory when the change crosses more than one component. Omit only for single-file edits.
 
 ## Steps
@@ -158,7 +161,7 @@ reviewer replies to. Three shapes, and nothing improvised.
 4. **A workspace-relative markdown link** to the plan file, with a note on how to preview it.
 5. **The closing line**, exactly: *Reply **build** to proceed, or keep refining.*
 
-Deliberately excluded: the diagram (mermaid rarely renders in a chat sidebar), the steps, the
+Deliberately excluded: the diagram (the file holds it), the steps, the
 risks, the addendum. Those are what the file is for. Do not summarize them either.
 
 **Revision round, after feedback.** Much shorter — the reviewer already knows the plan:

@@ -32,9 +32,15 @@ is editing another worktree of this repository right now.
   repository's own placement convention.
 - **Put new tests in a new file** whenever the obvious shared one may also be edited alongside
   you. A new file merges; a shared file conflicts.
+- **A generated file is never hand-edited silently.** For every fixture, golden file or pinned
+  value you edit, the report names the generator or the command that printed the value;
+  "hand-typed, copied from run X" is an acceptable answer, silence is not. Where a generator
+  exists in the repository, regenerate rather than hand-edit.
 - **Run the gate the repository names**: the fenced `## Gate` block of its `AGENTS.md` when there
   is one, otherwise the commands CI runs. Run the formatter before the gate, not after. Fix what
   your change broke, including a pre-existing failure in a file you touched.
+- **Exit codes come from the command, not the pipe.** Capture the test command's own status —
+  `PIPESTATUS`, `pipestatus`, or no pipe at all — and report that.
 - **Report rather than widen.** A step that has become unsafe, one that was never in the plan, or
   a blast radius that has grown is a line in your return, not a decision you take alone.
 
@@ -54,7 +60,8 @@ uncommitted and return the commit as a pending action, per `delegation.md`.
 1. Worktree path, branch name, commit SHA.
 2. Files added or changed, one line each.
 3. The gate tail as the runner printed it, showing its `Ran N tests` and `OK` lines.
-4. Deviations from the brief, one line each, with why.
-5. Checks: each one run with its answer, and each pending action you are handing back.
+4. Every fixture, golden file or pinned value you edited, with what produced each.
+5. Deviations from the brief, one line each, with why.
+6. Checks: each one run with its answer, and each pending action you are handing back.
 
 No process narration, no restatement of the issue, no account of what you are about to do.

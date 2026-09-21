@@ -18,8 +18,42 @@ All notable changes to this project are documented here. The format follows
   by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
   inferred.
 
+### Changed
+
+- The README's install command clones the `stable` branch, so a new install starts from the latest
+  release instead of the development trunk.
+
+## [0.11.1] — 2026-09-21
+
+### Added
+
+- A `stable` branch that always points at the latest release. The release workflow fast-forwards
+  it to the tag's commit after publishing, `scripts/advance_stable.py --check` verifies it, and the
+  branch never moves backward. `main` stays the trunk.
+
+### Changed
+
+- The `builder` role's report closes two gaps a downstream soak found. A hand-edited fixture,
+  golden file or pinned value must now name the generator or the command that produced it —
+  "hand-typed, copied from run X" answers it, silence does not — and where a generator exists the
+  builder regenerates instead of hand-editing. The gate's result is read from the test command's
+  own exit status, captured with `PIPESTATUS`, `pipestatus` or no pipe, rather than from whatever
+  `tail` returned. The fixed report gains one item for the edited fixtures and what produced them.
+- Qualify the Claude Code and Codex CLIs on macOS and Linux for this source with version-pinned
+  native evidence across all eleven acceptance cases, and record the limitations those runs
+  established in the compatibility catalog.
+
 ### Fixed
 
+- The Review Card's diagram is a plain-text drawing in a `text` fence. The `plan-authoring` skill,
+  its template and example, and the `planner` role defaulted to a mermaid `flowchart`, which the
+  plan-mode pane and the chat sidebar show as raw source — so the card's one diagram was unreadable
+  where the card is reviewed. New or changed nodes carry a `*`; mermaid stays for the addendum and
+  for docs read on GitHub.
+- The `delegation: off` stance said a hook asks before any spawn, where the lifecycle denies the
+  spawn outright and never reaches that hook. The stance now says a spawn under it is denied and
+  that changing the selected stance is the way to delegate, and it no longer names a hook — the
+  name it used, `tier-spawns`, was not the file doing the refusing either.
 - The spawn guard no longer refuses a constrained role only by the name a spawn chose. Refusing a
   native `reviewer` spawn moved the work rather than stopping it: the client re-issued the same
   brief as an unnamed subagent and it ran unconfined. A refusal is now remembered for the session,

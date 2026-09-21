@@ -11,7 +11,7 @@ Agent Harness keeps shared instructions, skills, roles, workflows and personal p
 place, then projects them into the native formats each runtime understands. You do not have to
 maintain one working agreement for Claude Code and another for Codex.
 
-**Release status:** `0.11.0` is the current stable release. Its shared engine, adapters,
+**Release status:** `0.11.1` is the current stable release. Its shared engine, adapters,
 configuration and hook decisions are qualified on the four required Claude Code and Codex CLI
 targets listed below.
 
@@ -55,11 +55,12 @@ You need `git`, Python 3.9+, and your own account for every runtime you enable. 
 integration targets. Native Windows is unsupported; WSL2 is unqualified. The harness does not
 provide model access.
 
-Clone the repository, explicitly select the runtimes and editor surface you want managed, then
-preview every change:
+Clone the `stable` branch, explicitly select the runtimes and editor surface you want managed, then
+preview every change. `stable` is always the latest release and a `git pull` on it moves you to the
+next one; `main`, which this page shows, is the development trunk and can be ahead of any release:
 
 ```sh
-git clone https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
+git clone --branch stable https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
 cd ~/repos/agent-harness
 
 bin/harness config set claude.manage true

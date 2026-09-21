@@ -157,8 +157,8 @@ def main():
         return
     variant = stance()
     if variant == "off":
-        # `tier-agent-spawns` already asks before any spawn here; two hooks answering one
-        # event is worse than one.
+        # The lifecycle already denies every spawn here; a second hook adding a brief to an
+        # event that is refused anyway is noise.
         return
     module = detectors()
     prompt = tool_input.get("prompt")
