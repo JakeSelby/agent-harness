@@ -76,6 +76,30 @@ Agent count correlates **−0.021** with quality. Information-transfer coverage 
 A vague brief to a frontier model beats a sharp brief to a cheap one far less often than the
 reverse.
 
+## Checks travel with the work
+
+A check that lives outside the model — a governance or trust call hosted by an MCP server, an
+approval gate, a licence or secret scan — binds the delegated path exactly as it binds the
+supervised one. A subagent's tool list is usually narrower than its spawner's, so a check the
+spawner runs by habit is silently skipped the moment the action moves into a subagent.
+
+- **Name the checks in the brief.** Every check the spawner would have to run before an action the
+  brief asks for — commit, push, send, deploy — is listed with the action it guards.
+- **The subagent makes the call itself when it holds the tool**, and obeys the answer as the
+  spawner would: a clear go proceeds, anything else stops.
+- **When it cannot make the call, or the answer is not a clear go, it does not act.** It finishes
+  the work that needs no check, leaves the guarded action undone, and returns it as a pending
+  action: the exact command, the check it could not run, and why.
+- **Each level repeats this.** The spawner makes the call if it can and then performs or re-dispatches
+  the action; if it cannot, it passes the pending action to its own spawner. Only the top session
+  prompts the user, so the user sees one question, from the session they are talking to.
+- **Pre-clearing is the same chain run early.** A spawner that can run the check before dispatch
+  may do so, and says in the brief which action was cleared, at what level, and for which branch
+  or target. A clearance covers that action only; anything wider goes back up.
+- **An unreachable check is reported, never assumed passed.** Where the check's own policy says a
+  failed server must not block work, the level that holds that policy applies it — not a subagent
+  that never had the tool.
+
 ## The axes that decide tier
 
 Ranked by evidential strength.
