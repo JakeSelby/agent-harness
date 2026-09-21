@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The spawn guard no longer refuses a constrained role only by the name a spawn chose. Refusing a
+  native `reviewer` spawn moved the work rather than stopping it: the client re-issued the same
+  brief as an unnamed subagent and it ran unconfined. A refusal is now remembered for the session,
+  and a later spawn that names no constrained role but carries the same brief — normalised, or a
+  near-identical rewording — is refused with the same `harness role run` instruction and told that
+  dropping the role name changed nothing. Independently, a brief whose own first line reads
+  `harness-role: <role>` may only run as that role's isolated worker, whatever `subagent_type` the
+  spawn names or omits. The BMad review layers now carry that line. Session state that cannot be
+  read or written leaves the guard exactly as it was, and `delegation: off` is untouched.
+
 ## [0.11.0] — 2026-09-21
 
 ### Added

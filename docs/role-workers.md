@@ -5,6 +5,18 @@ under `primitives/roles/`, selected stances and runtime model bindings. They do 
 native subagent threads. Native role projections remain discoverable, but the lifecycle adapter
 rejects direct native launches of constrained harness roles when its hooks are active.
 
+That rejection does not depend on the name a spawn chose. When the guard refuses a spawn that
+named a constrained role, it remembers the role and a normalised fingerprint of the brief in the
+session's record (the newest 32); a later spawn in the same session that names no constrained role
+but carries the same brief — identical, containing its first 400 normalised characters, or 85
+percent similar — is refused too, and told that dropping the role name changed nothing. Separately,
+a brief may declare its own role with a line of the exact form `harness-role: <role>`, standing
+alone, naming a role under `primitives/roles/` with read-only or artifact-write authority. A spawn
+whose prompt carries such a line is refused whatever `subagent_type` it names or omits, and
+`harness role run` accepts the line in a `--prompt-file` unchanged. A marker naming anything else
+is ignored. Both guards are best effort: session state that cannot be read or written means no new
+refusal, never a failed hook, and `delegation: off` keeps its own single refusal.
+
 ## Run and inspect
 
 Write a bounded brief naming the input files, required result shape and allowed scope, then run:
