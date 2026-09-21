@@ -87,9 +87,26 @@ All notable changes to this project are documented here. The format follows
   Rows with no recorded stance, and rows a rescan stamped, are counted under `(unknown)` rather
   than dropped. `--rules --by stance` keeps the hit report unchanged, and `--by stance` with
   neither is refused with a usage error rather than guessed at.
+- [docs/telemetry.md](docs/telemetry.md) ends with a reference recipe for one backend that was
+  set up and measured end to end — the ClickStack all-in-one image — as a worked example of "any
+  OTLP/HTTP endpoint" rather than a requirement: the run command with its three persistent
+  volumes, the two manual steps before a single record is accepted (create the first user, then
+  send the ingestion key as a bare `authorization` header), the 30-day TTL every table ships
+  with and the `ALTER TABLE … MODIFY TTL` that raises it, and why Codex cannot reach a backend
+  that needs a header. It contains no command that creates an account, stores a password or
+  removes a container or a volume, and it names the licence of every part of the image.
+- A dashboard definition ships beside it as
+  [docs/telemetry/clickstack-dashboard-native-cost.json](docs/telemetry/clickstack-dashboard-native-cost.json):
+  ten tiles of this repository's own SQL over the standard OpenTelemetry tables, reading the
+  native Claude Code cost and token metrics down to agent, model, effort and stance variant. The
+  instance-specific connection id is a placeholder, with the one-line lookup beside it.
 
 ### Changed
 
+- The fan-out warning in [docs/usage.md](docs/usage.md) now carries what was measured against
+  it. Across 137 sessions on one machine the cache hit rate was 97.0%, 97.2%, 97.3% and 97.1%
+  at 0, 1–6, 7–50 and 51-or-more subagents, so the falling hit rate it describes is a thing to
+  check in your own data rather than an expectation.
 - `harness usage --by role` marks a role with fewer than 30 runs `n<30` in a new `sample`
   column. A p90 over eight runs is the second-largest of eight, and the budget re-seeding
   procedure in `docs/usage.md` now says not to re-seed from a marked row.
