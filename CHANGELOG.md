@@ -98,6 +98,14 @@ All notable changes to this project are documented here. The format follows
 
 - `harness doctor` names the export mode, the endpoint's scheme and host, and the names — never
   the values — of the headers it resolved.
+- A `/land` workflow picks up where `/build` stops. It verifies the required checks — and the
+  issue-ownership check where a repository runs one — on the head that will actually merge,
+  squash-merges with the remote branch deleted, fast-forwards the shared checkout, removes the
+  managed worktree, deletes the local branch with `git branch -d`, audits for stale checkouts,
+  then reads the repository's own release rule and either says no release is due or posts a
+  release card for approval. It never forces a removal, never uses `git branch -D`, and stops on
+  dirty or unmerged state with the reason; merging stays approval-gated and it never tags or
+  deploys. Projections for both runtimes are generated from the shared source as usual.
 
 ### Changed
 
