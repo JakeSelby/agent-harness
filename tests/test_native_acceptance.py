@@ -74,7 +74,9 @@ class RecordTests(unittest.TestCase):
                                         "kind", "observations", "platform", "runtime_version",
                                         "source_commit"])
         catalog = MODULE.catalog()
-        data["source_commit"] = MODULE.run(["git", "-C", str(REPO), "rev-parse", "HEAD"]).stdout.strip()
+        # A released catalog accepts evidence for its pinned qualification source, not for HEAD.
+        source = compatibility.qualification_source(catalog)
+        data["source_commit"] = MODULE.run(["git", "-C", str(REPO), "rev-parse", source]).stdout.strip()
         data["runtime_version"] = data["client_version"] = "2.0.0"
         rendered = json.dumps(data).encode()
         client = {"id": CLIENT, "runtime_version": "2.0.0", "client_version": "2.0.0",
