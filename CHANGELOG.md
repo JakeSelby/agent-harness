@@ -23,6 +23,17 @@ All notable changes to this project are documented here. The format follows
 - The README's install command clones the `stable` branch, so a new install starts from the latest
   release instead of the development trunk.
 
+### Fixed
+
+- A client launched under a substituted `HOME` no longer raises the macOS "A keychain cannot be
+  found" dialog. The acceptance runner already gave its disposable homes a keychain, but two other
+  launches did not: every role worker runs its client in a private home that had none, and
+  `harness doctor` ran `claude doctor` in whatever `HOME` it was given, including a throwaway one
+  an agent built to test a config. A role worker's home now carries its own throwaway keychain, and
+  a worker whose keychain cannot be created fails instead of launching; `harness doctor` skips the
+  client's doctor, and says so, when `HOME` has no default keychain. `harness keychain <home>` is the
+  same guard for a home you build by hand. Other hosts are unchanged.
+
 ## [0.11.1] — 2026-09-21
 
 ### Added
