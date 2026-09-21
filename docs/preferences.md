@@ -148,6 +148,32 @@ select it on a machine that touches regulated or customer data, and never carry 
 organisation's fork of this harness: leave `inherit` and let the organisation's managed settings
 decide. `auto` is the right choice for a supervised but low-friction setup.
 
+### What plan mode may do at that posture
+
+Plan mode exists to force a plan, its questions and a wait before anything is built. It is not a
+reason to investigate at a lower authority than you selected for every other mode, and natively it
+is: the allow rules and the read-only hook cover the commands the grammar can prove, so a script
+run, a `python3 -c`, a redirect into a scratch file or a test run still prompts.
+
+So under `bypass` or `auto`, in Claude Code, while `permission_mode` is `plan`, the PreToolUse
+coordinator answers what the native flow would prompt on:
+
+- Graded 0 or 1 — proved read-only, or writing only to this machine — is approved as investigation.
+- Graded 2 — a push, a release, an API call that mutates, anything a colleague would see — is
+  asked about, because that is execution rather than planning. Graded 3 is unchanged.
+- `manual` and `inherit` keep today's behaviour, and Codex is untouched: its client rejects an
+  `allow` decision outright.
+- The autonomy stance still wins where it is stricter. `confirm-writes` or `ask` asks about the
+  same grades in plan mode that it asks about everywhere else.
+
+**`plan_allow_tools`** is a list of tool-name globs (`fnmatch` syntax, for example
+`"mcp__notes__read_*"`) approved in plan mode under the same posture gate. It is empty by
+default and nothing is inferred: a PreToolUse payload says nothing about whether an MCP tool
+reads or writes, so only you can say which of them are research. Entries that are not non-empty
+strings are ignored, and a glob never reopens a tool the coordinator already governs — `Bash`
+keeps its grades, `Agent` its delegation guard, `WebFetch` its own plan-mode hook. Set it with
+`harness config set plan_allow_tools '["mcp__notes__read_*"]'`.
+
 ## The reasoning behind each stance
 
 Stance files carry the preference and its operative bullets only, because they count against the

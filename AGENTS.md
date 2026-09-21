@@ -67,7 +67,8 @@ commands and the rollback are in `docs/releasing.md`; this list exists so none i
    into the version section, status prose in `README.md`, `docs/compatibility.md` and
    `docs/releasing.md`.
 3. **Tag and GitHub release** — `scripts/release_preflight.py` clean in a fresh clone, then the
-   annotated `v<version>` tag; confirm the release workflow ran and the release is published.
+   annotated `v<version>` tag; confirm the release workflow ran, the release is published and
+   `scripts/advance_stable.py --check` finds `stable` at the tag.
 4. **Reference site** — a separate repository that vendors this one by tag. Repin
    `vendor/agent-harness`, run its CI commands and `release_preflight.py --reference-repo`, merge,
    and confirm the deploy job ran and the live `/manifest.json` names the version and commit.

@@ -306,6 +306,64 @@ def dominant(weights):
     return max(sorted(weights), key=lambda key: weights[key])
 
 
+def empty_slice():
+    return dict([(name, 0) for name, _ in FIELDS] + [("turns", 0)])
+
+
+def daily(per_message, turns_by_day, fallback=""):
+    """The `days` map: four token totals and a turn count per UTC date.
+
+    Cut from the same message-id map the row's totals are summed over, so for Claude Code a
+    day's slice **includes that day's subagent tokens** exactly as the session total does —
+    the session row has one meaning, and a slice that excluded them would not add up to it.
+    A message whose record carried no timestamp falls to `fallback`, the session's end date,
+    rather than being left out of every slice; with no fallback either there are no slices,
+    because a partial one would read as a day that cost less than it did.
+    """
+    days = {}
+    for slot in per_message.values():
+        day = slot.get("day") or fallback
+        if not day:
+            return {}
+        row = days.setdefault(day, empty_slice())
+        for name, _ in FIELDS:
+            row[name] += slot.get(name) or 0
+    for day, turns in turns_by_day.items():
+        key = day or fallback
+        if key:
+            days.setdefault(key, empty_slice())["turns"] += turns
+    return days
+
+
+def slices_agree(days, totals):
+    """Whether the slices add up to the row's own totals, field by field.
+
+    Checked before the map is written, never after: a `days` map that disagrees with the row it
+    sits on would be read as the truth about a date and silently double or lose a day's spend.
+    A row whose slices do not agree carries none and falls back to its end date in the report.
+    """
+    if not days:
+        return False
+    for name, _ in FIELDS:
+        if sum(day.get(name) or 0 for day in days.values()) != (totals.get(name) or 0):
+            return False
+    return True
+
+
+def dominant(weights):
+    """The key covering the most output tokens, or "" when nothing was weighed.
+
+    Effort changes mid-session in both runtimes — 14 of 112 Claude Code transcripts and 4 of 44
+    Codex rollouts measured on one machine — so a row records the value that covered the most
+    output rather than the first or the last, and `effort_source` names where it was read.
+    Ties break on the name so two reads of one transcript agree.
+    """
+    weights = dict((key, value) for key, value in weights.items() if key)
+    if not weights:
+        return ""
+    return max(sorted(weights), key=lambda key: weights[key])
+
+
 def reported_model(counts):
     """The model a transcript's assistant records name most often; the later one on a tie.
 
