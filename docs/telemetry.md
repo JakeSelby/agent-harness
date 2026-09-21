@@ -37,6 +37,24 @@ What is recorded, and where it comes from, is [usage.md](usage.md).
 `harness doctor` prints one line for this: the mode, the endpoint's scheme and host, and the
 **names** of the headers it resolved.
 
+## The decision log switch
+
+One more key lives in the same block and sends nothing anywhere:
+
+```json
+{ "telemetry": { "decisions": false } }
+```
+
+`decisions` governs `~/.local/state/agent-harness/decisions.jsonl`, the local record of what
+each hook decided and how it turned out — [usage.md](usage.md#the-decision-log) describes the
+rows and the report. It defaults to **on**, like the usage ledger beside it, because a label
+is only worth having from the day the hook starts writing it; set it to `false` and no row, no
+file and no directory is written. It is no part of `export`: decision rows are never sent to an
+endpoint, whatever `export` is set to, and turning export on does not turn this on or off.
+
+Unlike a ledger row, a decision row holds the text the hook judged — a command, or the head of
+a brief — capped at 2 KiB, which is the one reason to turn it off on a shared machine.
+
 ## Credentials
 
 Headers are read from the named environment variable or the named file and from nowhere else. A

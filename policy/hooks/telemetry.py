@@ -43,7 +43,8 @@ SEVERITY_NUMBER = 9  # INFO, per the OTLP logs data model.
 
 # `native` is validated here and used by `harness sync`, never by this exporter: runtime
 # pass-through writes a runtime's own telemetry settings and sends nothing itself.
-KNOWN_KEYS = ("export", "endpoint", "headers_env", "headers_file", "labels", "native")
+KNOWN_KEYS = ("export", "endpoint", "headers_env", "headers_file", "labels", "native",
+              "decisions")
 DEFAULT_ENDPOINT = "http://localhost:4318"
 
 
@@ -107,8 +108,15 @@ def settings(cfg=None, path=None):
     native = block.get("native", False)
     if not isinstance(native, bool):
         raise ValueError("telemetry.native must be true or false; got " + repr(native))
+    # The local decision log, which never leaves the machine and is no part of `export`: see
+    # `decisions.py`. Validated here because it is a `telemetry` key and an unknown key in that
+    # block stops a sync; the exporter itself never reads it.
+    decisions = block.get("decisions", True)
+    if not isinstance(decisions, bool):
+        raise ValueError("telemetry.decisions must be true or false; got " + repr(decisions))
     return {"export": mode, "endpoint": endpoint.rstrip("/"), "headers_env": headers_env,
-            "headers_file": headers_file, "labels": dict(labels), "native": native}
+            "headers_file": headers_file, "labels": dict(labels), "native": native,
+            "decisions": decisions}
 
 
 def parse_headers(text):
