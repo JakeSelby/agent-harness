@@ -23,6 +23,9 @@ and state the migration review or exact versioned migration action.
    python3 scripts/release_notes.py
    ```
 
+   Refresh the static context figure for the new version with
+   `python3 scripts/cost_bench.py static --write` and commit it; see [benchmarks](benchmarks.md).
+
    Before freezing the candidate, run `python3 scripts/lifecycle_acceptance.py` under every Python
    and reference operating system named by the candidate record. The runner uses disposable homes,
    verifies the immutable v0.9.0 archive pin, and covers clean install, repeated sync, upgrade,

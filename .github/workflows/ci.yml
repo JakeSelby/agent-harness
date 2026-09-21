@@ -28,6 +28,8 @@ jobs:
           fetch-depth: 0
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
+      - name: Static context figure has not grown unexplained
+        run: python3 scripts/cost_bench.py static --check
       - name: Audit BMad issue mapping
         run: python3 scripts/bmad_issue_sync.py audit
       - name: Sync dry run against the example config

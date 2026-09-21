@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "harness_version": "0.11.1",
+  "chars_per_token": 4.0,
+  "always_loaded": {
+    "files": 21,
+    "lines": 343,
+    "chars": 20673,
+    "est_tokens": 5168
+  },
+  "listings": {
+    "files": 32,
+    "lines": 32,
+    "chars": 9154,
+    "est_tokens": 2288
+  },
+  "total": {
+    "files": 53,
+    "lines": 375,
+    "chars": 29827,
+    "est_tokens": 7457
+  },
+  "worst_case_est_tokens": 7516,
+  "largest": [
+    {
+      "path": "claude/output-styles/scannable.md",
+      "lines": 131,
+      "chars": 6061
+    },
+    {
+      "path": "claude/rules/working-style.md",
+      "lines": 19,
+      "chars": 1562
+    },
+    {
+      "path": "claude/rules/transcript-hygiene.md",
+      "lines": 13,
+      "chars": 972
+    },
+    {
+      "path": "claude/rules/delegation.md",
+      "lines": 12,
+      "chars": 907
+    },
+    {
+      "path": "claude/rules/secrets.md",
+      "lines": 13,
+      "chars": 887
+    }
+  ],
+  "usd": {
+    "claude-fable-5": {
+      "session_start": 0.093213,
+      "later_turn": 0.007457
+    },
+    "claude-fable-5-1": {
+      "session_start": 0.093213,
+      "later_turn": 0.001864
+    },
+    "claude-haiku-4-5": {
+      "session_start": 0.009321,
+      "later_turn": 0.000746
+    },
+    "claude-opus-4-6": {
+      "session_start": 0.046606,
+      "later_turn": 0.003729
+    },
+    "claude-opus-4-8": {
+      "session_start": 0.046606,
+      "later_turn": 0.003729
+    },
+    "claude-opus-5": {
+      "session_start": 0.046606,
+      "later_turn": 0.003729
+    },
+    "claude-sonnet-5": {
+      "session_start": 0.018642,
+      "later_turn": 0.001491
+    }
+  }
+}
