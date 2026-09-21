@@ -196,3 +196,148 @@ GROUP BY row_key
 The same shape works anywhere: group by `harness.row_key`, keep the record with the greatest
 observed time. Because a replay carries the row as it stands in the ledger **now**, the newest
 copy is also the corrected one when a `--rescan` has since improved it.
+
+## Reference recipe: ClickStack
+
+`endpoint` takes **any** OTLP/HTTP endpoint. This is one backend that was set up and measured
+end to end, written down so the first person to point the exporter somewhere real does not have
+to rediscover the setup steps. It is an example, not a requirement and not an endorsement:
+anything that speaks OTLP/HTTP works, and nothing in the harness names a vendor.
+
+ClickStack is the ClickHouse observability stack — a HyperDX UI over ClickHouse, fed by an
+OpenTelemetry Collector. The all-in-one image runs the three of them in one container, which is
+why it suits a laptop.
+
+### Run it
+
+```bash
+docker run -d --name clickstack -p 8080:8080 -p 4317:4317 -p 4318:4318 -v clickstack-db:/data/db -v clickstack-ch:/var/lib/clickhouse -v clickstack-chlogs:/var/log/clickhouse-server clickhouse/clickstack-all-in-one
+```
+
+8080 is the UI and the HTTP API, 4317 is OTLP/gRPC and 4318 is OTLP/HTTP — the port the
+`endpoint` above points at. The three volumes are the whole of the state: `/data/db` is the
+MongoDB that holds the user, the team and the ingestion key, and the other two are ClickHouse's
+data and logs. **The volumes are what persists**, not the container: after a `docker restart`,
+and again after the container was removed and a fresh one run on the same three volumes, the
+data was intact and the same ingestion key was still accepted, because the account and the key
+live in `/data/db`. Without them a recreated container starts empty and the key is regenerated.
+Measured idle on one laptop: about 795 MiB resident, about 1.5 GiB shortly after ingest.
+
+This recipe deliberately contains no command that creates an account, writes down a password, or
+removes a container or a volume. The first is a browser step, the second belongs in a file only
+you can read, and the third is destructive and yours to type.
+
+### Two manual steps before any data is accepted
+
+**First, create the first user** in the UI at `http://localhost:8080`. The OTLP receivers on
+4317 and 4318 stay closed until that account exists, because the collector is waiting on its
+configuration from the app. Until then an exporter sees a connection that refuses to talk, and
+nothing in the harness's error record will explain why.
+
+**Second, send the team's ingestion key** — shown in the UI under the team settings — as a bare
+`authorization` header on every request. It is the key on its own, with no `Bearer` prefix.
+Without it the receiver answers:
+
+```text
+401 missing or empty authorization header: Authorization
+```
+
+So `headers_file` is not optional for this backend. One mode-600 file outside every repository
+serves both directions of the integration: the ledger exporter reads it as `headers_file`, and
+with `"native": true` the `otelHeadersHelper` script reads the same file for Claude Code.
+
+```bash
+printf 'authorization=%s\n' '<ingestion-key>' > ~/.config/agent-harness/otlp-headers
+```
+
+Create the file at mode 600 first, as under [Credentials](#credentials); the shell redirect above
+does not change an existing file's mode.
+
+**Codex cannot use this backend through `sync`.** `[otel]` takes header values only as literals
+in `config.toml`, so there is no way to give Codex the key without writing it into a
+configuration file — see [Native pass-through](#native-pass-through), which states that gap and
+what it costs. Claude Code's native export is unaffected, and so is the ledger exporter.
+
+Native Claude Code export also carries `user.email`, the account and organization ids and the
+session id on every datapoint. On a container bound to localhost that is your own machine
+talking to itself; read the warning under [Native pass-through](#native-pass-through) before
+pointing the same configuration at anything hosted.
+
+### Retention is 30 days by default
+
+Every OpenTelemetry table the collector creates ships with its own 30-day TTL. Ten tables
+carried one on the image measured: the logs and traces tables, the five metrics tables, the two
+`*_kv_rollup_15m` rollups and `hyperdx_sessions`. This is the ledger-as-record argument made
+concrete: the backend forgets, and `harness usage export --since <date>` puts the window back.
+
+List what is actually there, with the TTL each table carries, rather than trusting a list in a
+document:
+
+```sql
+SELECT name, engine FROM system.tables WHERE database = 'default' AND create_table_query LIKE '%TTL%' ORDER BY name
+```
+
+Then raise each one you care about. The TTL expression names that table's own time column — the
+log and trace tables use `Timestamp`, the metric tables use `TimeUnix` — so copy the expression
+out of the table's own `create_table_query` and change only the interval:
+
+```sql
+ALTER TABLE default.otel_logs MODIFY TTL toDateTime(Timestamp) + toIntervalDay(365)
+```
+
+A `MODIFY TTL` on a table that already holds data schedules a materialization; it does not
+resurrect parts that have already expired.
+
+### The dashboard
+
+[`telemetry/clickstack-dashboard-native-cost.json`](telemetry/clickstack-dashboard-native-cost.json)
+is ten tiles of raw SQL over `otel_metrics_sum`, reading the native Claude Code cost and token
+metrics: spend, sessions, the subagent share of spend, cache hit rate, spend over time by model
+and by harness version, spend by agent × model × effort, spend by cost variant and delegation
+stance, tokens by type, and the most expensive sessions. The SQL is this repository's own, over
+the standard OpenTelemetry tables; no dashboard, query or documentation is copied from the
+upstream project.
+
+The HTTP API answers under `/api/api/v2/` on the **UI** port, not the OTLP port — the doubled
+`api` is not a typo. Send `/api/v2/...` instead and the proxy strips one `/api`, leaving the
+backend to answer `404 Cannot GET /v2/dashboards`.
+
+**The API key and the ingestion key are two different secrets.** The ingestion key is sent as a
+bare `authorization` header to the OTLP ports; the HTTP API takes a *personal API key*, created
+separately in the UI, as `Authorization: Bearer <key>` on the UI port. Neither works in the
+other's place. Keep the API key in its own mode-600 file outside every repository and read it
+inside the header argument rather than exporting it into the environment.
+
+Each tile carries a `connectionId`, which is instance-specific and ships as the placeholder
+`REPLACE_WITH_CONNECTION_ID`. Look yours up:
+
+```bash
+curl -s http://localhost:8080/api/api/v2/connections -H "Authorization: Bearer $(cat ~/.config/agent-harness/clickstack-api-key)"
+```
+
+Substitute it, keeping the original file intact:
+
+```bash
+sed 's/REPLACE_WITH_CONNECTION_ID/<connection-id>/g' docs/telemetry/clickstack-dashboard-native-cost.json > "$HOME/clickstack-dashboard.json"
+```
+
+Dry-run it before creating anything; a good definition comes back as
+`{"valid": true, "errors": [], "normalized": …}`:
+
+```bash
+curl -s -X POST http://localhost:8080/api/api/v2/dashboards/validate -H "Authorization: Bearer $(cat ~/.config/agent-harness/clickstack-api-key)" -H 'content-type: application/json' --data-binary "@$HOME/clickstack-dashboard.json"
+```
+
+Then create it:
+
+```bash
+curl -s -X POST http://localhost:8080/api/api/v2/dashboards -H "Authorization: Bearer $(cat ~/.config/agent-harness/clickstack-api-key)" -H 'content-type: application/json' --data-binary "@$HOME/clickstack-dashboard.json"
+```
+
+### Licences, and what this repository ships
+
+The HyperDX app is MIT. ClickHouse and the OpenTelemetry Collector are Apache-2.0. The all-in-one
+image also contains MongoDB, which is under the SSPL — a licence this project would not ship
+under, and does not need to, because you download the image from its publisher. This repository
+distributes none of it, vendors none of it, and copies none of its dashboards or documentation.
+Read the image's own terms before running it anywhere but your own machine.

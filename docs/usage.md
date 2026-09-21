@@ -363,7 +363,10 @@ cache rather than paid at base input rate. `claude/skills/delegation-tiering/SKI
 caching in Gate 0: it is an orchestrator lever, not a subagent one, because a subagent starts a
 fresh prefix sharing no cache with its parent and parallel fan-outs with identical prefixes each
 pay full price. So a repo whose hit rate falls as its `subagents` count rises is paying for
-delegation twice; check the return caps before you reach for a different tier.
+delegation twice; check the return caps before you reach for a different tier. That fall did not
+show up in the only corpus it has been measured against: across 137 sessions on one machine the
+hit rate was 97.0% at zero subagents, 97.2% at 1–6, 97.3% at 7–50 and 97.1% at 51 or more — so
+treat the sentence above as a thing to check in your own data rather than as an expectation.
 
 ## Rule telemetry
 
