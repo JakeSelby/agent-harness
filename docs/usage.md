@@ -92,6 +92,16 @@ not be made at all, it says `spend unknown` rather than reporting the agent at z
 the stop is recorded, because an agent whose stop went missing would count as running for the
 rest of the session. A start whose stop never arrives is forgotten after three hours.
 
+The sum is made when the agent is **reported**, not when it stops. A `SubagentStop` fires the
+instant the agent ends, which can be before one of its responses has been flushed to its
+transcript, and it waits for nothing because a prompt may be queued behind it — so a stop with no
+figure in it, or one read out of a response still being written, is journalled as not yet summed
+and is summed again on the line that names it, before the lock is taken and inside one wall-clock
+budget shared by every agent that event reports. Agents that budget does not reach keep their
+place and are summed at the next event. `spend unknown` therefore means a transcript that is not
+there; a transcript that is there and still holds no response says `spend not yet recorded`, and
+the figure it gains later reaches the session totals without the agent being named twice.
+
 A synchronous return can also arrive before the agent's last response is on disk: one API
 response is written as several records, the early ones carrying a partial streaming count and
 the last one a `stop_reason`. So the return polls the transcript's tail for up to a second,

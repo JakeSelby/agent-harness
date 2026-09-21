@@ -17,6 +17,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The usage feed reports a finished subagent's actual spend instead of `spend unknown`. A
+  `SubagentStop` summed the agent's transcript the instant it fired, and at that instant the
+  transcript can hold only the `user` and `attachment` records the parent wrote into it — so the
+  stop was journalled with null totals and the reporter printed them, while replaying the same
+  payload a moment later yielded 297. A stop that carries no figure, or one read out of a
+  response still being written, is now summed again on the line that names it: before the lock,
+  with the bounded settle wait, inside one wall-clock budget shared by every agent that event
+  reports. `spend unknown` now means a transcript that is not there; a transcript that is there
+  and holds no response yet says `spend not yet recorded`, and the figure it gains later raises
+  the session totals without the agent being named a second time.
 - The usage feed's line for a synchronous subagent return no longer stops short of that agent's
   last response. Claude Code writes one API response as several records, and the return could
   fire between a partial streaming count and the record that ends the response — 143 output

@@ -786,8 +786,15 @@ class SafetyTests(Fixture):
         for name in (".json", ".events.jsonl", ".lock"):
             path = self.feed_dir() / (self.SESSION + name)
             self.assertEqual(os.stat(str(path)).st_mode & 0o777, 0o600, msg=name)
-        self.assertEqual(sorted(self.journal()[0]),
-                         ["at", "id", "output", "partial", "t", "tool_calls", "type"])
+        record = self.journal()[0]
+        self.assertEqual(sorted(record),
+                         ["at", "id", "output", "partial", "path", "summed", "t", "tool_calls",
+                          "type"])
+        # The path is how a report-time sum finds the transcript again. It is written with the
+        # home prefix redacted, so no account name reaches a file the journal keeps for a
+        # fortnight, and it names this agent's own transcript and nothing else.
+        self.assertEqual(record["path"], "~/.claude/projects/a-repo/s-1/subagents/agent-aaa.jsonl")
+        self.assertNotIn(str(self.home), json.dumps(record))
 
     def test_stale_feed_files_are_pruned_once_a_day_at_most(self):
         module = load_feed()
