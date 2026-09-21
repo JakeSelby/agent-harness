@@ -11,9 +11,9 @@ Agent Harness keeps shared instructions, skills, roles, workflows and personal p
 place, then projects them into the native formats each runtime understands. You do not have to
 maintain one working agreement for Claude Code and another for Codex.
 
-**Release status:** `0.11.0` is a release candidate. The shared engine, adapters, generated
-configuration and hook decisions are implemented and tested. Native qualification is being
-refreshed for the four required Claude Code and Codex CLI targets listed below.
+**Release status:** `0.11.0` is the current stable release. Its shared engine, adapters,
+configuration and hook decisions are qualified on the four required Claude Code and Codex CLI
+targets listed below.
 
 <!-- harness:compatibility:start -->
 **Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.

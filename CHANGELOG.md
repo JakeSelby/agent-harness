@@ -6,100 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed
-
-- Native qualification now requires an eleventh case, `cost-posture`, so a client cannot be
-  qualified without the cost posture layer having run natively: the roles a variant moves and only
-  those, an unnamed spawn routed to the default band worker at its row's model and effort, the
-  budget sentence in its brief, the feed and `harness usage` rows against that budget, a session
-  that predates the workers left alone, and the priced-nothing variant doing none of it. Evidence
-  is scoped to the harness version it records, so 0.9.0 and 0.10.0 records stay valid history.
-
-### Fixed
-
-- A role worker whose runner died now reports as `orphaned` instead of `running` forever. The
-  status record kept nothing that could tell a live run from an abandoned one, so a killed session
-  left `status: running` with no result and no error, and `harness role status` could not separate
-  it from work in flight. A run now records the pid supervising it and that process's start time,
-  and status reports a worker whose process is gone with no result written as the terminal
-  `orphaned`, writing that state back into `status.json` alone. The start time guards a recycled
-  pid; a record from a release that stored no pid, or a platform that will not report a start
-  time, still reads as `running`.
-- `harness uninstall` now removes the empty directories the sync created for its own files —
-  `~/.claude/rules/harness-stances` and each `~/.agents/skills/harness-*` — instead of leaving
-  them behind. A directory that still holds anything is kept untouched.
-- A stale `harness task save --revision` prints one line on stderr naming the remedy and exits 1,
-  where it raised an uncaught `ValueError` and printed a traceback carrying the checkout path.
-  The guard itself is unchanged: a save against a revision that is no longer current is refused.
-- `harness doctor` reports a client that is `not on PATH` rather than `not installed`, and says so
-  explicitly when Codex credentials are present with no `codex` the shell can reach.
-- A permitted Codex tool call no longer reports `hook: PreToolUse Failed`. The PreToolUse envelope
-  carried `permissionDecision: "allow"` on every non-gated call; a client that lists `allow` as
-  unsupported discards the whole hook output, so every allowed call showed a failure and a real one
-  was indistinguishable. Codex now hears nothing where its own default already allows, and `allow`
-  is sent only with an `updatedInput` rewrite, which that runtime applies under no other decision.
-  Denials, the ask-to-deny narrowing and Claude Code's envelope are unchanged.
-- An isolated role worker now follows the selected cost variant. `harness role run` bound a role
-  from its `tier:` alone, so under `frugal` a `gatherer` worker ran on the role's own class while
-  the same sync in the same home rendered that role one class lower — and the constrained roles
-  are denied as native spawns, so neither the posture nor the soft budget ever reached the roles
-  that carry measured budgets. A worker now resolves its row through the same function and the
-  same precedence the sync path renders a definition with — role defaults, the variant's row
-  (class only under a tiered `delegation`, never for a `posture: fixed` role), `role_bindings`,
-  then `--model` — on both runtimes and through the whole stance ladder, so a session-scoped
-  `HARNESS_STANCE_COST` reaches it. Its brief ends with the same `Expected spend` sentence a
-  native brief gets, from one function shared with the brief guard, unless the row prices nothing
-  or the brief already states a budget; `status.json` records the variant, the resolved class,
-  where model and effort each came from, and the figures appended. A variant with no row for the
-  role, or a table that will not build, leaves the worker exactly as it was.
-
-- The `auto` permission posture now gives Codex the automatic approval review it promises. Sync
-  wrote `approval_reviewer`, and Codex names the field `approvals_reviewer`: codex-cli
-  0.154.0-alpha.6.2, 0.155.0-alpha.9, 0.155.1 and 0.156.0-alpha.9 all reject the old spelling
-  under `--strict-config` and drop it in silence otherwise, so the posture resolved in the client
-  as review by the user with no warning. Sync now asks the installed client which name it accepts
-  — from its own emitted protocol schema, or a `--strict-config` probe in a throwaway
-  configuration home, neither of which starts a model turn — writes that one, and takes the stale
-  spelling back out. Both spellings are harness-owned, so a key the harness wrote is removed or
-  restored on re-sync and uninstall while a key of the same name that you set yourself is left
-  alone. With no client installed, the name the newest supported version accepts is written; a
-  client that accepts neither gets no reviewer key, a sync notice and a `harness doctor` finding.
-
-- The usage feed reports a finished subagent's actual spend instead of `spend unknown`. A
-  `SubagentStop` summed the agent's transcript the instant it fired, and at that instant the
-  transcript can hold only the `user` and `attachment` records the parent wrote into it — so the
-  stop was journalled with null totals and the reporter printed them, while replaying the same
-  payload a moment later yielded 297. A stop that carries no figure, or one read out of a
-  response still being written, is now summed again on the line that names it: before the lock,
-  with the bounded settle wait, inside one wall-clock budget shared by every agent that event
-  reports. `spend unknown` now means a transcript that is not there; a transcript that is there
-  and holds no response yet says `spend not yet recorded`, and the figure it gains later raises
-  the session totals without the agent being named a second time.
-- The usage feed's line for a synchronous subagent return no longer stops short of that agent's
-  last response. Claude Code writes one API response as several records, and the return could
-  fire between a partial streaming count and the record that ends the response — 143 output
-  tokens reported live for an agent a later scan put at 278. The return now waits a bounded
-  moment (at most a second, over the transcript's tail) for the response to end, says `(so far)`
-  when it never does, and raises the session totals from the settled figure the journal brings
-  afterwards without naming the agent a second time.
-- A usage row names a subagent's model one way. A routed spawn's row carried the alias the spawn
-  hook asked for and a directly spawned agent's the full id its transcript records, so one model
-  appeared under two names. A subagent row now records what its own transcript reports — the most
-  frequent model across its assistant records — and falls back to the requested alias only when
-  it recorded none; `harness usage --rescan` normalises rows already on file. Worker rows still
-  record what the worker reported, which is the only thing that knows.
-- The native acceptance runner no longer raises a macOS keychain dialog on every client turn.
-  macOS resolves the default keychain under `HOME`, a disposable home had none, and a client that
-  stores an item then prompts "A keychain cannot be found" — once per launch across a whole
-  matrix, with a destructive **Reset To Defaults** button. Each disposable home now carries its
-  own throwaway keychain at the default path, so the store succeeds silently and never touches
-  the operator's login keychain; a home whose keychain cannot be created reports the case
-  `unverified` instead of launching a client. Other hosts are unchanged. The test suite raised
-  the same dialog twice a run: two reviewer-key tests called `doctor` in a temporary home without
-  hiding the installed client, so the real `claude doctor` ran there. They now hide it, and a
-  tripwire test fails if a doctor call in a temporary home ever launches it again (#282).
-
-## [0.11.0] — 2026-09-20
+## [0.11.0] — 2026-09-21
 
 ### Added
 
@@ -204,6 +111,15 @@ All notable changes to this project are documented here. The format follows
 - `harness role run`, the constrained-role refusal message and the BMad override templates no
   longer tell the caller to pass the parent session's model; they name it only where the adapter
   maps none. Role effort above `high` is rejected.
+- Native qualification now requires an eleventh case, `cost-posture`, so a client cannot be
+  qualified without the cost posture layer having run natively: the roles a variant moves and only
+  those, an unnamed spawn routed to the default band worker at its row's model and effort, the
+  budget sentence in its brief, the feed and `harness usage` rows against that budget, a session
+  that predates the workers left alone, and the priced-nothing variant doing none of it. Evidence
+  is scoped to the harness version it records, so 0.9.0 and 0.10.0 records stay valid history.
+- Qualify the Claude Code and Codex CLIs on macOS and Linux for this source with version-pinned
+  native evidence across all eleven acceptance cases, and record the limitations those runs
+  established in the compatibility catalog.
 
 ### Fixed
 
@@ -247,6 +163,87 @@ All notable changes to this project are documented here. The format follows
   coordinator only carries rewrites, so the request reached the spawn unchanged.
 - The lifecycle coordinator relays a hook's notice on Claude Code instead of dropping it, so a
   tiered spawn and a session model the ladder does not know are both reported.
+- A role worker whose runner died now reports as `orphaned` instead of `running` forever. The
+  status record kept nothing that could tell a live run from an abandoned one, so a killed session
+  left `status: running` with no result and no error, and `harness role status` could not separate
+  it from work in flight. A run now records the pid supervising it and that process's start time,
+  and status reports a worker whose process is gone with no result written as the terminal
+  `orphaned`, writing that state back into `status.json` alone. The start time guards a recycled
+  pid; a record from a release that stored no pid, or a platform that will not report a start
+  time, still reads as `running`.
+- `harness uninstall` now removes the empty directories the sync created for its own files —
+  `~/.claude/rules/harness-stances` and each `~/.agents/skills/harness-*` — instead of leaving
+  them behind. A directory that still holds anything is kept untouched.
+- A stale `harness task save --revision` prints one line on stderr naming the remedy and exits 1,
+  where it raised an uncaught `ValueError` and printed a traceback carrying the checkout path.
+  The guard itself is unchanged: a save against a revision that is no longer current is refused.
+- `harness doctor` reports a client that is `not on PATH` rather than `not installed`, and says so
+  explicitly when Codex credentials are present with no `codex` the shell can reach.
+- A permitted Codex tool call no longer reports `hook: PreToolUse Failed`. The PreToolUse envelope
+  carried `permissionDecision: "allow"` on every non-gated call; a client that lists `allow` as
+  unsupported discards the whole hook output, so every allowed call showed a failure and a real one
+  was indistinguishable. Codex now hears nothing where its own default already allows, and `allow`
+  is sent only with an `updatedInput` rewrite, which that runtime applies under no other decision.
+  Denials, the ask-to-deny narrowing and Claude Code's envelope are unchanged.
+- An isolated role worker now follows the selected cost variant. `harness role run` bound a role
+  from its `tier:` alone, so under `frugal` a `gatherer` worker ran on the role's own class while
+  the same sync in the same home rendered that role one class lower — and the constrained roles
+  are denied as native spawns, so neither the posture nor the soft budget ever reached the roles
+  that carry measured budgets. A worker now resolves its row through the same function and the
+  same precedence the sync path renders a definition with — role defaults, the variant's row
+  (class only under a tiered `delegation`, never for a `posture: fixed` role), `role_bindings`,
+  then `--model` — on both runtimes and through the whole stance ladder, so a session-scoped
+  `HARNESS_STANCE_COST` reaches it. Its brief ends with the same `Expected spend` sentence a
+  native brief gets, from one function shared with the brief guard, unless the row prices nothing
+  or the brief already states a budget; `status.json` records the variant, the resolved class,
+  where model and effort each came from, and the figures appended. A variant with no row for the
+  role, or a table that will not build, leaves the worker exactly as it was.
+
+- The `auto` permission posture now gives Codex the automatic approval review it promises. Sync
+  wrote `approval_reviewer`, and Codex names the field `approvals_reviewer`: codex-cli
+  0.154.0-alpha.6.2, 0.155.0-alpha.9, 0.155.1 and 0.156.0-alpha.9 all reject the old spelling
+  under `--strict-config` and drop it in silence otherwise, so the posture resolved in the client
+  as review by the user with no warning. Sync now asks the installed client which name it accepts
+  — from its own emitted protocol schema, or a `--strict-config` probe in a throwaway
+  configuration home, neither of which starts a model turn — writes that one, and takes the stale
+  spelling back out. Both spellings are harness-owned, so a key the harness wrote is removed or
+  restored on re-sync and uninstall while a key of the same name that you set yourself is left
+  alone. With no client installed, the name the newest supported version accepts is written; a
+  client that accepts neither gets no reviewer key, a sync notice and a `harness doctor` finding.
+
+- The usage feed reports a finished subagent's actual spend instead of `spend unknown`. A
+  `SubagentStop` summed the agent's transcript the instant it fired, and at that instant the
+  transcript can hold only the `user` and `attachment` records the parent wrote into it — so the
+  stop was journalled with null totals and the reporter printed them, while replaying the same
+  payload a moment later yielded 297. A stop that carries no figure, or one read out of a
+  response still being written, is now summed again on the line that names it: before the lock,
+  with the bounded settle wait, inside one wall-clock budget shared by every agent that event
+  reports. `spend unknown` now means a transcript that is not there; a transcript that is there
+  and holds no response yet says `spend not yet recorded`, and the figure it gains later raises
+  the session totals without the agent being named a second time.
+- The usage feed's line for a synchronous subagent return no longer stops short of that agent's
+  last response. Claude Code writes one API response as several records, and the return could
+  fire between a partial streaming count and the record that ends the response — 143 output
+  tokens reported live for an agent a later scan put at 278. The return now waits a bounded
+  moment (at most a second, over the transcript's tail) for the response to end, says `(so far)`
+  when it never does, and raises the session totals from the settled figure the journal brings
+  afterwards without naming the agent a second time.
+- A usage row names a subagent's model one way. A routed spawn's row carried the alias the spawn
+  hook asked for and a directly spawned agent's the full id its transcript records, so one model
+  appeared under two names. A subagent row now records what its own transcript reports — the most
+  frequent model across its assistant records — and falls back to the requested alias only when
+  it recorded none; `harness usage --rescan` normalises rows already on file. Worker rows still
+  record what the worker reported, which is the only thing that knows.
+- The native acceptance runner no longer raises a macOS keychain dialog on every client turn.
+  macOS resolves the default keychain under `HOME`, a disposable home had none, and a client that
+  stores an item then prompts "A keychain cannot be found" — once per launch across a whole
+  matrix, with a destructive **Reset To Defaults** button. Each disposable home now carries its
+  own throwaway keychain at the default path, so the store succeeds silently and never touches
+  the operator's login keychain; a home whose keychain cannot be created reports the case
+  `unverified` instead of launching a client. Other hosts are unchanged. The test suite raised
+  the same dialog twice a run: two reviewer-key tests called `doctor` in a temporary home without
+  hiding the installed client, so the real `claude doctor` ran there. They now hide it, and a
+  tripwire test fails if a doctor call in a temporary home ever launches it again (#282).
 
 ### Migration
 
