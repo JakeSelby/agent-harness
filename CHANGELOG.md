@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `transcript-hygiene/brief-without-cap` is now `transcript-hygiene/model-wrote-no-cap`, because
+  that is what it always measured. A transcript records an `Agent` call as the model wrote it,
+  and a `PreToolUse` hook's `updatedInput` is written to a separate `attachment` line the scan
+  never reads — so `brief-guard` capping a brief could not move the number, and the rate was
+  unchanged before, during and after the hook shipped. The detector's behaviour is unchanged and
+  the rename makes `promote?` on it mean something: the orchestrator writes no bounds and the hook
+  is carrying the rule. `rule-detectors.RENAMED` names the successor and `usage --rules` folds it
+  as it reads — by rule, by repo and by stance — so a row written under the old id reports under
+  the new one, with no rewrite of the ledger file and no split in the series.
+
 ## [0.11.1] — 2026-09-21
 
 ### Changed
