@@ -24,22 +24,18 @@ Nothing was invented to shorten it. Names are changed; the shape is not.
 
 ## System design
 
-```mermaid
-flowchart LR
-  H1[H1 Structures] --> V{Verify against repos}
-  H2[H2 Water] --> V
-  H3[H3 Vegetation] --> V
-  H4[H4 Settlements] --> V
-  V -->|verified claims| B[Board + decisions.md]
-  V -->|3 items, ~80 min| Q[Review queue]
-  V -.frozen.-> P[(3 prepared submissions)]
-  Q -->|acceptance| B
-  P -.needs.-> PUB{{Designated publisher — unfilled}}
-  classDef gate stroke-width:3px
-  class Q,PUB gate
+```text
+H1 Structures ──┐
+H2 Water ───────┤
+H3 Vegetation ──┼─▶ Verify against repos
+H4 Settlements ─┘     ├── verified claims ──▶ Board + decisions.md
+                      ├── 3 items, ~80 min ─▶ *Review queue
+                      │                          └── acceptance ──▶ Board
+                      └┄┄ frozen ┄┄▶ 3 prepared submissions
+                                       └┄ needs ┄▶ *Publisher — unfilled
 ```
 
-Bold-edged nodes are gates: nothing crosses them without the reviewer.
+`*` marks a gate: nothing crosses it without the reviewer.
 
 ## Steps
 

@@ -27,7 +27,8 @@ altitude. These seven sections, this order, none renamed and none folded into an
 3. `## At a glance` — 7 bullets shaped `- **Label** — value`: Outcome · Approach · Touches ·
    New deps · Not in scope · Exit test · the one open question.
 4. `## System design` — at most 15 lines. One diagram, no prose above it, one caption below.
-   Default a mermaid `flowchart LR`, 12 nodes maximum, with the delta marked by a `classDef`.
+   A plain-text drawing in a `text` fence, never mermaid — the review pane shows that as raw
+   source. 12 nodes maximum, each new or changed node prefixed `*`, the caption naming it.
 5. `## Steps` — at most 8, numbered, two lines each: what happens and where, then the exit test
    led by `*Exit:*`. An exit test is a command, a render or a passing assertion; "implemented"
    is not one. Step 1 is the cheapest thing that could invalidate the rest.

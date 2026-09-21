@@ -15,15 +15,11 @@
 
 ## System design
 
-```mermaid
-flowchart LR
-  a[Source] -->|what moves| b{Transform}
-  b --> c[Sink]
-  classDef new stroke-width:3px
-  class b new
+```text
+Source ── what moves ──▶ *Transform ──▶ Sink
 ```
 
-<One caption line. Bold = new or changed.>
+<One caption line. `*` = new or changed.>
 
 ## Steps
 
