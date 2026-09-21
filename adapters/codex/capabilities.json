@@ -46,7 +46,8 @@
   "limitations": [
     "Native restrictions take precedence. Hook activation requires runtime trust.",
     "Unsupported controls remain visible; custom stance prose does not add enforcement.",
-    "The usage feed is uncovered: this runtime raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back and no such event is registered."
+    "The usage feed is uncovered: this runtime raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back and no such event is registered.",
+    "Band routing is not decided on this runtime, so the decision log records no tier-agent-spawns row here: the spawn hook that reroutes an unnamed spawn to a band worker runs on Claude Code alone. Every other decision point writes on both runtimes, and the Bash ask is labelled from PostToolUse and SessionEnd, which both raise."
   ],
   "role_execution": {
     "constrained": "isolated-cli",

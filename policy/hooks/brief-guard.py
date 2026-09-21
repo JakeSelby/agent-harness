@@ -180,6 +180,11 @@ def main():
         added += budget
     if not added:
         return
+    # What this hook wrote into the brief, against the brief it was given. See `decisions.py`.
+    log = sibling("decisions")
+    if log is not None:
+        log.record("brief-guard", "cap+budget" if notes and budget else ("cap" if notes else "budget"),
+                   prompt, payload)
     updated = dict(tool_input)
     updated["prompt"] = prompt.rstrip() + added
     out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated}}
