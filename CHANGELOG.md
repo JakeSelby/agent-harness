@@ -17,6 +17,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A role worker whose runner died now reports as `orphaned` instead of `running` forever. The
+  status record kept nothing that could tell a live run from an abandoned one, so a killed session
+  left `status: running` with no result and no error, and `harness role status` could not separate
+  it from work in flight. A run now records the pid supervising it and that process's start time,
+  and status reports a worker whose process is gone with no result written as the terminal
+  `orphaned`, writing that state back into `status.json` alone. The start time guards a recycled
+  pid; a record from a release that stored no pid, or a platform that will not report a start
+  time, still reads as `running`.
 - `harness uninstall` now removes the empty directories the sync created for its own files —
   `~/.claude/rules/harness-stances` and each `~/.agents/skills/harness-*` — instead of leaving
   them behind. A directory that still holds anything is kept untouched.
