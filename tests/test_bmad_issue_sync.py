@@ -438,6 +438,76 @@ class LiveAuditTests(unittest.TestCase):
         fetch.assert_not_called()
 
 
+class ParentDriftTests(unittest.TestCase):
+    def setUp(self):
+        self.live = [issue(1, "Deliver the epic"), issue(2, "feat: a child")]
+        self.manifest = sync.build_manifest(self.live, "owner/repo")
+        for item, entry in zip(self.manifest["items"], self.live):
+            entry["body"] = sync.upsert_planning_block(entry["body"], sync.planning_block(item, "owner/repo"))
+            entry["labels"] = [{"name": "type::{}".format(item["type"])}]
+
+    def parent_in_manifest(self, number):
+        parent = next(i for i in self.manifest["items"] if i["github_number"] == number)
+        child = self.manifest["items"][1]
+        child["parent_github_number"], child["parent_bmad_id"] = number, parent["bmad_id"]
+        body = sync.upsert_planning_block(self.live[1]["body"], sync.planning_block(child, "owner/repo"))
+        self.live[1]["body"] = body
+
+    def parent_on_github(self, number):
+        self.live[1]["parent_issue_url"] = "https://api.github.com/repos/owner/repo/issues/{}".format(number)
+
+    def test_a_parent_only_github_records_is_reported_as_refresh_not_apply(self):
+        self.parent_on_github(1)
+        findings, _ = sync.live_findings(self.manifest, self.live)
+        self.assertEqual(findings, ["AH-S002 #2: GitHub records parent #1 and the manifest records none; run refresh"])
+
+    def test_a_parent_only_the_manifest_records_is_still_applied(self):
+        self.parent_in_manifest(1)
+        findings, _ = sync.live_findings(self.manifest, self.live)
+        self.assertEqual(findings, ["#2: projection drift (parent); run apply"])
+
+    def test_a_parent_that_differs_on_both_sides_is_a_conflict_for_a_human(self):
+        self.parent_in_manifest(1)
+        self.parent_on_github(99)
+        findings, _ = sync.live_findings(self.manifest, self.live)
+        self.assertEqual(
+            findings, ["AH-S002 #2: parent conflict, GitHub #99 against manifest #1; decide which is right"]
+        )
+
+    def test_refresh_adopts_a_parent_github_records_and_leaves_the_rest_alone(self):
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(sync, "ROOT", Path(temp)):
+            sync.write_manifest(self.manifest)
+            self.parent_on_github(1)
+            self.assertEqual(sync.refresh(self.manifest, self.live), ["AH-S002"])
+            saved = json.loads((Path(temp) / "_bmad-output" / "issue-map.json").read_text(encoding="utf-8"))
+        child = saved["items"][1]
+        self.assertEqual((child["parent_github_number"], child["parent_bmad_id"]), (1, "AH-S001"))
+        # The parent finding is gone; the body still needs the parent line, which apply owns.
+        self.assertEqual(
+            sync.live_findings(self.manifest, self.live),
+            (["#2: projection drift (planning-block); run apply"], []),
+        )
+
+    def test_refresh_never_overwrites_a_parent_the_manifest_already_records(self):
+        self.parent_in_manifest(1)
+        self.parent_on_github(99)
+        with mock.patch.object(sync, "write_manifest") as write:
+            self.assertEqual(sync.refresh(self.manifest, self.live), [])
+        write.assert_not_called()
+        self.assertEqual(self.manifest["items"][1]["parent_github_number"], 1)
+
+    def test_an_unmapped_parent_is_reported_and_never_adopted(self):
+        self.parent_on_github(99)
+        findings, _ = sync.live_findings(self.manifest, self.live)
+        self.assertEqual(
+            findings, ["AH-S002 #2: GitHub records parent #99, which has no BMad ID; run reserve for it first"]
+        )
+        with mock.patch.object(sync, "write_manifest") as write:
+            self.assertEqual(sync.refresh(self.manifest, self.live), [])
+        write.assert_not_called()
+        self.assertIsNone(self.manifest["items"][1]["parent_github_number"])
+
+
 class RefreshTests(unittest.TestCase):
     def test_refresh_copies_title_and_state_into_manifest_and_artifact(self):
         live = [issue(1, "feat: first")]

@@ -6,6 +6,18 @@ publication until every required client in the compatibility catalog carries nat
 Every release follows the [compatibility policy](compatibility-policy.md); generated notes link it
 and state the migration review or exact versioned migration action.
 
+## When a release is proposed, and what it is numbered
+
+Releases are cut by milestone. Every issue meant for the next release carries the `v<next>`
+milestone, work merges freely, and a release is proposed when that milestone empties or when a
+user-visible unreleased change is seven days old, whichever comes first. A regression fix does not
+wait for either: it releases at once as a patch.
+
+The number follows what changed, not where the entry landed in the changelog. Fixes only is a
+patch. Added or changed user-visible behaviour is a minor. A major is decided by the
+[compatibility policy](compatibility-policy.md), which also defines what counts as a breaking
+change. What the release must carry before it can be tagged is the next section.
+
 ## Source and qualification
 
 1. Complete each native acceptance case in [compatibility](compatibility.md). Keep exact runtime,
@@ -22,6 +34,15 @@ and state the migration review or exact versioned migration action.
    python3 scripts/release_preflight.py
    python3 scripts/release_notes.py
    ```
+
+   The preflight also compares the GitHub About panel with `product.json` and looks up every
+   `on_the_way` entry that names an issue; an entry whose issue has closed blocks the release
+   until it is promoted or removed. Both read GitHub through `gh`, so both run only behind a
+   `gh auth status` probe. Without an authenticated `gh` the preflight prints
+   `release warning: About and On-the-way checks skipped, gh is not authenticated` and does not
+   fail, which is what happens in the tag workflow: its preflight step is passed no token by
+   design, so those two checks are expected to warn there and must be run locally before tagging.
+   A `gh` call that fails after the probe passed is a blocked release, not a skip.
 
    Refresh the static context figure for the new version with
    `python3 scripts/cost_bench.py static --write` and commit it; see [benchmarks](benchmarks.md).
@@ -47,23 +68,75 @@ and state the migration review or exact versioned migration action.
 
    GitHub refuses a workflow token that moves a branch across a change to `.github/workflows/`,
    so a release that edits a workflow can need the second command run by hand.
+6. Close the released milestone and open the next one. This is a hand-run step rather than a
+   workflow job, so that a published release never depends on it. Read the milestone numbers,
+   close the released one, and create the next if it does not exist:
+
+   ```sh
+   gh api repos/{owner}/{repo}/milestones \
+     --jq '.[] | "\(.number) \(.title) open:\(.open_issues)"'
+   gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=closed
+   gh api repos/{owner}/{repo}/milestones -f title=v<next> -f state=open
+   ```
+
+   Move any issue still open on the closed milestone to the new one first, so the closed
+   milestone records what the release actually carried.
+
+## Freeze the qualification branch
+
+Cut `release/v<version>` at the commit the round qualifies and record it in
+`compatibility/freeze.json` as `state: frozen` with that branch and full commit, then run every
+target on that branch so `main` keeps merging without invalidating evidence. `harness freeze`
+prints the drift between the frozen commit and `origin/main` under the runtime source paths —
+`VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`, `config.example.json` —
+and `harness freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
+them, because one such change invalidates every target's evidence and costs the whole round again.
+Return `state` to `open` after the tag. The evidence commit must stay an ancestor of the
+qualification source commit, which `evidence_errors` enforces, so a diverged release branch fails
+closed rather than publishing an unqualified source.
+
+**Fix no defect mid-round.** A round runs all four required targets to completion and collects
+their defects; a fix landed between targets invalidates the targets already observed and forces a
+re-run of each. Land the collected fixes together on `main` afterwards, cut a new freeze commit,
+and re-qualify once.
 
 ## Reference and personal site
 
-6. In the reference-site checkout, pin `vendor/agent-harness` to that exact tag, commit the gitlink,
-   and run its CI commands: `npm ci`, `npm test`, `npm run build`, `node scripts/smoke.mjs`.
-   The manifest must identify both version and source commit. From the harness checkout run
+7. The reference site vendors this repository by tag and repins itself hourly through its own
+   workflow, so a release needs no hand repin. Confirm the repin run, the deploy job that followed
+   it, and that the live `/manifest.json` names both the version and the source commit. A skipped
+   deployment job is not a deployment; record the workflow run and distribution identity. When the
+   repin has to be made by hand, pin `vendor/agent-harness` to that exact tag, commit the gitlink,
+   run the site's CI commands (`npm ci`, `npm test`, `npm run build`, `node scripts/smoke.mjs`),
+   and from the harness checkout run
    `python3 scripts/release_preflight.py --reference-repo <reference-checkout>`.
-7. Merge the reference update with its PR and deploy through its existing main-branch workflow.
-   A skipped deployment job is not a deployment. Record the workflow run and distribution identity.
-8. Merge the personal-site card change; run `npm ci`, `npm run build` and its complete-site artifact
-   checks on HEAD. Inspect the infrastructure diff before its guarded deployment script, avoiding
-   unrelated infrastructure changes. The shared card links to reference compatibility facts and
-   does not maintain its own inventory count or version claim.
-9. Set GitHub About description and topics from `product.json`, keeping the reference homepage URL.
+8. The personal-site card links the latest release rather than naming a version, so a release needs
+   no card change. Confirm both placements still resolve. The shared card links to reference
+   compatibility facts and does not maintain its own inventory count or version claim.
+9. Set GitHub About description, topics and homepage from `product.json` (see below).
    Verify production HTML, SEO/social metadata, compatibility statuses, search results, deep links,
    install instructions, the exact release manifest and both personal-site card placements.
    Record HTTP statuses and rendered inspection results; mark any unavailable check unverified.
+
+## GitHub About
+
+`product.json` is the source of the landing copy, the README grid and the About panel.
+`scripts/sync_about.py` compares its `github_description` and `topics` with
+`gh repo view --json description,repositoryTopics,homepageUrl`, treating topics as a set because
+GitHub returns them in its own order. A `homepage` key in `product.json` is compared too; while
+the file names none, the live homepage URL is left alone.
+
+```sh
+python3 scripts/sync_about.py --check    # names each differing field, exits non-zero on drift
+python3 scripts/sync_about.py --apply    # writes them through `gh repo edit`
+```
+
+Run both locally. `--apply` changes the repository's public metadata, so it needs the owner's
+approval on each run, and it cannot be moved into the release workflow: editing repository
+settings needs administration access, which is not among the permission scopes available to the
+workflow's `GITHUB_TOKEN` ([workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions)).
+The `--check` side of it runs inside `scripts/release_preflight.py`, which warns rather than fails
+when `gh` is unauthenticated.
 
 ## Rollback
 

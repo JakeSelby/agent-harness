@@ -77,6 +77,9 @@ Each linked record must match the catalog's exact runtime version, client versio
 Linked failed or unverified results block qualification even if another record passes the same
 case. When a rerun supersedes a record, remove the old reference from the active claim while
 preserving the historical evidence file. Unknown cases and result values are rejected.
+The runner appends each finished case to a durable log as the case completes, so a killed round
+costs the case it was running rather than the round; rebuild the surviving cases into a record
+with `--from-progress`, and link that partial record as the partial record it is.
 The CLI verifies these records and `harness compatibility --release-check` fails until all
 required clients are qualified. A reviewer must assess the observations; a JSON label alone is
 not empirical evidence.
