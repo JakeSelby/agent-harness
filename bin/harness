@@ -14,7 +14,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness doctor
     harness uninstall
     harness lint    [PATH]
-    harness usage   [--days N] [--by day|repo|model|role|stance] [--stance NAME] [--rescan]
+    harness usage   [--days N] [--by day|repo|model|role|stance|decision] [--stance NAME] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
     harness worktree remove NAME [REPO] [--merged] [--also-clear NAME]
@@ -1560,8 +1560,8 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
         say(f"  restore {home() / '.zprofile'}")
     # The usage feed's per-session files and the session registry are harness state, not the
     # user's: an offset, counts, agent type names and the registry each session started with,
-    # all written by this install. The usage log stays, because it is the measurement history
-    # `harness usage` reports and nobody else writes it.
+    # all written by this install. The usage log and the decision log stay, because they are the
+    # measurement history `harness usage` reports and nobody else writes them.
     for name in ("feed", "sessions"):
         directory = state_dir() / name
         if directory.is_dir():
@@ -2707,6 +2707,44 @@ def stance_key(row: Dict[str, Any], dimension: str) -> str:
     return f"{dimension}={value}" if isinstance(value, str) and value else "(unknown)"
 
 
+def decision_report(days: int) -> int:
+    """`usage --by decision`: what each hook decided, and how often the session said.
+
+    The log is append-only, so an outcome is its own record and the join happens here rather
+    than in the file; `decisions.py` holds both halves. Counts, the outcomes seen per point and
+    the unlabelled share, because the share is the number that says whether a point's labels
+    can be trusted yet — a rate over the two decisions that happened to be labelled is not
+    evidence about the point.
+    """
+    module = load_hook_module("decisions")
+    if module is None:
+        raise SystemExit("this checkout has no claude/hooks/decisions.py; reinstall or re-clone it")
+    path = state_dir() / "decisions.jsonl"
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - max(days, 0) * 86400))
+    rows = [r for r in module.joined(module.read_rows(path)) if (r.get("ts") or "") >= cutoff]
+    if not rows:
+        say(f"no hook decisions recorded in the last {days} day(s); looked in {path}")
+        return 0
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get("point") or "(unnamed)"), []).append(row)
+    head = f"{'decision':<24}{'rows':>7}{'labelled':>10}{'unlabelled':>12}  outcomes"
+    say(head)
+    say("-" * len(head))
+    for point in sorted(groups):
+        group = groups[point]
+        labelled = [r for r in group if r.get("outcome") is not None]
+        counts: Dict[str, int] = {}
+        for row in labelled:
+            key = str(row["outcome"])
+            counts[key] = counts.get(key, 0) + 1
+        share = (len(group) - len(labelled)) / len(group)
+        detail = ", ".join(f"{name} {n} ({n / len(labelled):.0%})"
+                           for name, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+        say(f"{point[:24]:<24}{len(group):>7}{len(labelled):>10}{share:>11.0%}   {detail or '-'}")
+    return 0
+
+
 ROLE_MIN_RUNS = 30
 
 
@@ -2779,6 +2817,9 @@ def cmd_usage(args: argparse.Namespace) -> int:
     rather than charged whole to the day it ended. The `--days` window then applies to the slice
     date: a long session contributes only its in-window days.
 
+    `--by decision` is a different file and a different question — what the hooks decided, not
+    what the session spent — and is `decision_report` above.
+
     Dollars come from `policy/prices.json` through `row_cost`, which prices a session's own
     tokens at the session's model and its subagents' at theirs. A row with an unknown model or
     partial tokens is counted as unpriced in the footer and contributes nothing to the column:
@@ -2788,6 +2829,14 @@ def cmd_usage(args: argparse.Namespace) -> int:
         return cmd_usage_export(args)
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
+    if by == "decision":
+        # A different file and a different question: what the hooks decided, not what the
+        # session spent. Neither `--rules` nor `--stance` says anything about it.
+        if getattr(args, "rules", False) or getattr(args, "stance", None):
+            print("usage --by decision reports hook decisions; --rules and --stance do not apply",
+                  file=sys.stderr)
+            return 2
+        return decision_report(args.days)
     stance = getattr(args, "stance", None)
     # `--by stance` means one of two reports, and which one is said rather than inferred:
     # `--rules` asks for detector hits per variant, `--stance <name>` for tokens grouped by that
@@ -3259,7 +3308,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--dry-run", action="store_true",
                    help="with export, count what would be sent and open no connection")
     p.add_argument("--days", type=int, default=30)
-    p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance"], default="day")
+    p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance", "decision"],
+                   default="day")
     p.add_argument("--stance", choices=STANCE_NAMES,
                    help="with --by stance, the dimension whose variants group the tokens")
     p.add_argument("--rules", action="store_true",

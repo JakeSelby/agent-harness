@@ -90,6 +90,18 @@ def posture_module():
     return _LOADED["posture"]
 
 
+def log_route(payload, tool_input, route):
+    """Record which band an unnamed spawn was routed to. See `decisions.py`; never raises."""
+    if "decisions" not in _LOADED:
+        _LOADED["decisions"] = sibling("decisions")
+    module = _LOADED["decisions"]
+    if module is not None:
+        prompt = tool_input.get("prompt")
+        module.record("tier-agent-spawns", route["worker"],
+                      prompt if isinstance(prompt, str) else "",
+                      payload if isinstance(payload, dict) else {})
+
+
 def notice_once(session, key):
     """Whether to say `key` in this session now; the session record is what remembers it.
 
@@ -373,6 +385,7 @@ def main():
                             + (" · " + notice if notice else ""))
         return
     if route:
+        log_route(payload, tool_input, route)
         updated = dict(tool_input, subagent_type=route["worker"])
         # A request for the top class is not a model this spawn named: it is a request the hook
         # refuses, and refusing it by demoting one rung would let an unnamed spawn beat a band

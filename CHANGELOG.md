@@ -8,14 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Qualification freezes on a release branch instead of on `main`. `compatibility/freeze.json` names
-  the frozen commit and branch, and a new `harness freeze` reports drift between that commit and a
-  given ref over the runtime source paths, exits non-zero on drift, and refuses a merge that would
-  change those paths on the frozen branch. `docs/releasing.md` gains the freeze procedure and the
-  triage rule that a round runs to completion and collects defects rather than fixing one mid-round,
-  because any source-path change invalidates every evidence record for the round (#332).
+- `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
+  sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
+
 - The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
   issue map, and `scripts/bmad_issue_sync.py new` files an issue and reserves its ID in one step (#378).
+
 - `scripts/bmad_issue_sync.py audit --live` compares the committed issue map with GitHub, read-only:
   title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
   `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
@@ -36,6 +34,26 @@ All notable changes to this project are documented here. The format follows
   when one has closed. Both checks sit behind one `gh auth status` probe: without an
   authenticated `gh`, which is the case in the tag workflow, they are skipped with a named
   warning rather than silently, and a `gh` failure after a good probe blocks the release.
+
+- A local, append-only decision log, `~/.local/state/agent-harness/decisions.jsonl`, beside the
+  usage ledger: one record each time a hook makes a judgment, and a second record when the
+  session settles it. `grade-bash` records the permission answer it gave a command and joins
+  `ran` when the command's PostToolUse arrives, or `not_run` when the session ends without one —
+  not "denied", because a refusal, an interrupt and a crash look the same from a hook. `stop-gate`
+  records `blocked`, `released` or `skipped` with the gate's own result; `tier-agent-spawns`
+  records the band an unnamed spawn was routed to, `brief-guard` what it wrote into the brief,
+  and `evasion_deny` a refused re-spawn. A row holds the text the hook judged, capped at 2 KiB,
+  with the hash taken over the uncapped text; it holds no tool output and no assistant prose.
+  Nothing is exported, nothing is model-visible, and a write that fails is counted and swallowed
+  rather than allowed to change a decision. `telemetry.decisions: false` turns it off entirely.
+  Read it with `harness usage --by decision`, which prints counts, the outcomes seen per point
+  and the unlabelled share. Band routing happens on Claude Code alone, so Codex writes no
+  `tier-agent-spawns` row and its capabilities file names the gap.
+
+- Subagent rows in the usage ledger now carry `budget_output_tokens` and `budget_tool_calls`,
+  the soft budget the role they ran as carries, so an overrun is a subtraction on one row rather
+  than a join against whatever the cost table says today. A role nothing prices records `null`,
+  because a zero would say the spawn was budgeted nothing.
 
 - Plan mode now investigates at the permission posture you selected instead of below it. Under
   `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
@@ -186,6 +204,13 @@ All notable changes to this project are documented here. The format follows
   exactly as the report totals them. An unpriced row carries neither attribute — never a zero —
   and a missing price file or a malformed `prices` override costs an export its dollars and
   nothing else.
+
+- Qualification freezes on a release branch instead of on `main`. `compatibility/freeze.json` names
+  the frozen commit and branch, and a new `harness freeze` reports drift between that commit and a
+  given ref over the runtime source paths, exits non-zero on drift, and refuses a merge that would
+  change those paths on the frozen branch. `docs/releasing.md` gains the freeze procedure and the
+  triage rule that a round runs to completion and collects defects rather than fixing one mid-round,
+  because any source-path change invalidates every evidence record for the round (#332).
 
 ### Changed
 
