@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The `builder` role's report closes two gaps a downstream soak found. A hand-edited fixture,
+  golden file or pinned value must now name the generator or the command that produced it —
+  "hand-typed, copied from run X" answers it, silence does not — and where a generator exists the
+  builder regenerates instead of hand-editing. The gate's result is read from the test command's
+  own exit status, captured with `PIPESTATUS`, `pipestatus` or no pipe, rather than from whatever
+  `tail` returned. The fixed report gains one item for the edited fixtures and what produced them.
+
 ### Fixed
 
 - The spawn guard no longer refuses a constrained role only by the name a spawn chose. Refusing a
