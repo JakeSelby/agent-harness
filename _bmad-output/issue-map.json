@@ -5,12 +5,12 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 8,
-    "story": 146,
+    "story": 148,
     "task": 1,
     "bug": 42,
-    "chore": 30,
+    "chore": 31,
     "spike": 7,
-    "decision": 3
+    "decision": 4
   },
   "items": [
     {
@@ -3001,6 +3001,58 @@
       "parent_bmad_id": "AH-S124",
       "parent_github_number": 334,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S146",
+      "github_number": 415,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/415",
+      "title": "Report cache-prefix stability as a first-class figure in the usage ledger and the replay benchmark",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S146.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S147",
+      "github_number": 416,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/416",
+      "title": "Measure whether subagent returns carry a path instead of the payload",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S147.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D003",
+      "github_number": 417,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/417",
+      "title": "Decide whether repeated agent pairs get an amortized return schema, and whether fan-outs get a shared workspace",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D003.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C030",
+      "github_number": 424,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/424",
+      "title": "Reserve BMad IDs for the comms-gap issues filed into v0.12.0",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C030.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     }
   ]
