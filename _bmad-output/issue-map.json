@@ -5,12 +5,12 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 8,
-    "story": 146,
+    "story": 150,
     "task": 1,
-    "bug": 42,
-    "chore": 30,
+    "bug": 50,
+    "chore": 32,
     "spike": 7,
-    "decision": 3
+    "decision": 5
   },
   "items": [
     {
@@ -2948,7 +2948,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C028.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2961,7 +2961,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C029.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2991,6 +2991,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B045",
+      "github_number": 399,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/399",
+      "title": "Replay snapshots lose the git history the gate reads, so both arms pay for a red fixture",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B045.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-S143",
       "github_number": 401,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/401",
@@ -3001,6 +3014,201 @@
       "parent_bmad_id": "AH-S124",
       "parent_github_number": 334,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S146",
+      "github_number": 404,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/404",
+      "title": "Write the permission-controls qualification driver the classification now supports",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S146.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B046",
+      "github_number": 405,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/405",
+      "title": "Let telemetry.native name the runtimes it applies to",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B046.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B047",
+      "github_number": 406,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/406",
+      "title": "harness task save writes an absolute path its own lint rejects",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B047.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B048",
+      "github_number": 407,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/407",
+      "title": "usage prints a partial-totals line above a report that already counts those runs",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B048.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S147",
+      "github_number": 408,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/408",
+      "title": "Write down how Codex and Linux qualification targets are provisioned and where they run",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S147.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D003",
+      "github_number": 409,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/409",
+      "title": "Decide whether the credential probe names the variable it found",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D003.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B042",
+      "github_number": 410,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/410",
+      "title": "reserve allocates an ID without checking what the default branch already holds",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B042.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B043",
+      "github_number": 411,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/411",
+      "title": "issue-ownership does not say which issues it found, so a keyword in prose is invisible",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B043.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B044",
+      "github_number": 412,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/412",
+      "title": "the issue number is keyed github_number in the map and issue in planned actions",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B044.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B049",
+      "github_number": 413,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/413",
+      "title": "harness worktree remove cannot finish a checkout that holds a submodule",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B049.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C031",
+      "github_number": 414,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/414",
+      "title": "Make the landing-copy check required on main",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C031.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S148",
+      "github_number": 415,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/415",
+      "title": "Report cache-prefix stability as a first-class figure in the usage ledger and the replay benchmark",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S148.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S149",
+      "github_number": 416,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/416",
+      "title": "Measure whether subagent returns carry a path instead of the payload",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S149.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D004",
+      "github_number": 417,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/417",
+      "title": "Decide whether repeated agent pairs get an amortized return schema, and whether fan-outs get a shared workspace",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D004.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C030",
+      "github_number": 418,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/418",
+      "title": "Reserve BMad IDs for the traceability-gap issues",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C030.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     }
   ]
