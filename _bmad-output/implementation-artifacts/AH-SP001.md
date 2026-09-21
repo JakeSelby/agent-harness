@@ -1,17 +1,17 @@
 ---
 bmad_id: "AH-SP001"
 type: "spike"
-title: "Jev: Preserve bounded claim/evidence checking as a deferred experiment"
+title: "Jev: Verify stop claims against gate evidence"
 lifecycle: "active"
 provenance: "reconstructed"
 github_issue: 141
 github_issue_url: "https://github.com/JakeSelby/agent-harness/issues/141"
 parent_bmad_id: "AH-E003"
 parent_github_issue: 135
-updated: "2026-09-19"
+updated: "2026-09-21"
 ---
 
-# AH-SP001 — Jev: Preserve bounded claim/evidence checking as a deferred experiment
+# AH-SP001 — Jev: Verify stop claims against gate evidence
 
 This file reconstructs planning metadata from the existing GitHub record. It does not imply that a BMad artifact existed when the original work was performed.
 
