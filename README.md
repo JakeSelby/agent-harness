@@ -7,21 +7,11 @@
 
 ## Define your working preferences once. Apply them to Claude Code and Codex.
 
+![Terminal output of `bin/harness sync --dry-run` on a fresh home: the resolved personal stances, then every link, rendered file and setting the sync would create for Claude Code and Codex, ending in "sync complete". Nothing is written.](docs/assets/sync-dry-run.svg)
+
 Agent Harness keeps shared instructions, skills, roles, workflows and personal preferences in one
 place, then projects them into the native formats each runtime understands. You do not have to
 maintain one working agreement for Claude Code and another for Codex.
-
-**Release status:** `0.11.1` is the current stable release. Its shared engine, adapters,
-configuration and hook decisions are qualified on the four required Claude Code and Codex CLI
-targets listed below.
-
-<!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
-
-**Unqualified:** `claude-code-vscode-macos`, `codex-vscode-macos`, `codex-desktop-macos`.
-
-**Planned:** `cursor`, `grok`.
-<!-- harness:compatibility:end -->
 
 Agent Harness is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
 Code and Codex remain responsible for model access, native permissions and client behavior.
@@ -162,6 +152,20 @@ with that invocation and are not persisted into global projections.
 If the preview reports an existing unmanaged file, stop and read the conflict. The harness does
 not recommend `--adopt` by default. After syncing, start a new client session and accept native hook
 trust if prompted. [Start with the full guide](docs/getting-started.md).
+
+## Release status
+
+**Release status:** `0.11.1` is the current stable release. Its shared engine, adapters,
+configuration and hook decisions are qualified on the four required Claude Code and Codex CLI
+targets listed below.
+
+<!-- harness:compatibility:start -->
+**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
+
+**Unqualified:** `claude-code-vscode-macos`, `codex-vscode-macos`, `codex-desktop-macos`.
+
+**Planned:** `cursor`, `grok`.
+<!-- harness:compatibility:end -->
 
 ## See one switch reach both adapters
 

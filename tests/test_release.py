@@ -1,6 +1,7 @@
 """Release publication depends on qualification and immutable source identity."""
 import importlib.util
 import json
+import re
 import subprocess
 import tempfile
 import unittest
@@ -126,6 +127,21 @@ class ProductCopyTests(unittest.TestCase):
             self.assertIn(group["title"], README, msg=group["title"])
             for feature in group["features"]:
                 self.assertIn(feature["name"], README, msg=feature["name"])
+
+    def test_the_first_screen_sells_before_it_reports_qualification_status(self):
+        install = README.index("git clone --branch stable")
+        self.assertLess(README.index("## What it does for you"), install)
+        self.assertLess(install, README.index("**Release status:**"))
+        self.assertLess(install, README.index("<!-- harness:compatibility:start -->"))
+
+    def test_the_demo_visual_is_committed_and_described(self):
+        match = re.search(r"!\[([^\]]*)\]\((docs/assets/[^)]+\.svg)\)", README)
+        self.assertIsNotNone(match)
+        self.assertGreater(len(match.group(1).strip()), 40, msg="alt text")
+        self.assertLess(README.index(match.group(0)), README.index("## What it does for you"))
+        visual = (REPO / match.group(2)).read_text()
+        self.assertIn("<title", visual)
+        self.assertNotIn("/Users/", visual)
 
 
 class StableBranchTests(unittest.TestCase):
