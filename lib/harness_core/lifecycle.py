@@ -81,10 +81,13 @@ def _encode_pre(runtime, original, normalized, results):
     decisions = [r.get("hookSpecificOutput", {}).get("permissionDecision") for r in results]
     strongest = next((choice for choice in ("deny", "ask", "allow") if choice in decisions), None)
     reasons = [r.get("hookSpecificOutput", {}).get("permissionDecisionReason", "") for r in results]
+    reason = "\n".join(x for x in reasons if x)
     fields = {"hookEventName": "PreToolUse"}
-    if strongest:
+    # A Codex client rejects the whole hook output when it carries an unsupported `allow`, so a
+    # plain approval says nothing and lets that runtime's own default stand.
+    if strongest and not (runtime == "codex" and strongest == "allow"):
         fields["permissionDecision"] = "deny" if runtime == "codex" and strongest == "ask" else strongest
-        fields["permissionDecisionReason"] = "\n".join(x for x in reasons if x)
+        fields["permissionDecisionReason"] = reason
     if strongest in ("deny", "ask"):
         return {"hookSpecificOutput": fields}
     changes = {}
@@ -111,6 +114,8 @@ def _encode_pre(runtime, original, normalized, results):
             fields["updatedInput"] = updated
             if runtime == "codex":
                 fields["permissionDecision"] = "allow"
+                if reason:
+                    fields["permissionDecisionReason"] = reason
     return {"hookSpecificOutput": fields} if len(fields) > 1 else {}
 
 

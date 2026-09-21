@@ -17,6 +17,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A permitted Codex tool call no longer reports `hook: PreToolUse Failed`. The PreToolUse envelope
+  carried `permissionDecision: "allow"` on every non-gated call; a client that lists `allow` as
+  unsupported discards the whole hook output, so every allowed call showed a failure and a real one
+  was indistinguishable. Codex now hears nothing where its own default already allows, and `allow`
+  is sent only with an `updatedInput` rewrite, which that runtime applies under no other decision.
+  Denials, the ask-to-deny narrowing and Claude Code's envelope are unchanged.
+
 - An isolated role worker now follows the selected cost variant. `harness role run` bound a role
   from its `tier:` alone, so under `frugal` a `gatherer` worker ran on the role's own class while
   the same sync in the same home rendered that role one class lower — and the constrained roles
