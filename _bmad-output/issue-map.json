@@ -8,9 +8,9 @@
     "story": 150,
     "task": 1,
     "bug": 50,
-    "chore": 32,
+    "chore": 33,
     "spike": 7,
-    "decision": 5
+    "decision": 7
   },
   "items": [
     {
@@ -3206,6 +3206,45 @@
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C030.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D005",
+      "github_number": 420,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/420",
+      "title": "Decide how map lifecycle stays current without a pull request after every merge",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D005.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D006",
+      "github_number": 421,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/421",
+      "title": "grade-bash refuses a sub-issue delete that bmad_issue_sync apply performs unattended",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D006.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C032",
+      "github_number": 422,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/422",
+      "title": "Reserve BMad IDs for the traceability close-out issues",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C032.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
