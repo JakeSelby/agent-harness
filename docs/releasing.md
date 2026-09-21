@@ -73,10 +73,10 @@ change. What the release must carry before it can be tagged is the next section.
    close the released one, and create the next if it does not exist:
 
    ```sh
-   gh api repos/JakeSelby/agent-harness/milestones \
+   gh api repos/{owner}/{repo}/milestones \
      --jq '.[] | "\(.number) \(.title) open:\(.open_issues)"'
-   gh api -X PATCH repos/JakeSelby/agent-harness/milestones/<number> -f state=closed
-   gh api repos/JakeSelby/agent-harness/milestones -f title=v<next> -f state=open
+   gh api -X PATCH repos/{owner}/{repo}/milestones/<number> -f state=closed
+   gh api repos/{owner}/{repo}/milestones -f title=v<next> -f state=open
    ```
 
    Move any issue still open on the closed milestone to the new one first, so the closed
