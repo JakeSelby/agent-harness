@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The README's install command clones the `stable` branch, so a new install starts from the latest
+  release instead of the development trunk.
 - The README carries the six capability groups between the badges and the install block, one linked
   line per feature, plus the "On the way" list.
 
