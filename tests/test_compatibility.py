@@ -12,16 +12,22 @@ from harness_core import compatibility
 
 
 class CompatibilityTests(unittest.TestCase):
-    def test_current_catalog_is_honest_and_blocks_release(self):
+    def test_current_catalog_is_honest_and_blocks_release_only_for_its_state(self):
         data = compatibility.catalog(REPO)
         required = [row["id"] for row in data["clients"] if row.get("required_for_release")]
         self.assertEqual(required, ["claude-code-cli-macos", "claude-code-cli-linux",
                                     "codex-cli-macos", "codex-cli-linux"])
         self.assertTrue(all(row["status"] in compatibility.STATES for row in data["clients"]))
-        # A candidate carries no evidence for its own source, so every required client is
-        # unqualified until it is re-run natively, and publication stays blocked on exactly that.
-        self.assertEqual(compatibility.release_errors(REPO),
-                         [client + " is unqualified" for client in required])
+        # The expectation follows the catalog's state so it survives a release without an edit.
+        # Released: changed runtime source must block publication and nothing else, leaving the
+        # released evidence intact. Candidate: exactly the required clients still unqualified.
+        if data.get("release_state") == "released":
+            drift = ["current runtime source differs from the released qualification source"]
+            expected = drift if compatibility.source_drift(REPO, data) else []
+        else:
+            expected = [row["id"] + " is unqualified" for row in data["clients"]
+                        if row.get("required_for_release") and row["status"] != "qualified"]
+        self.assertEqual(compatibility.release_errors(REPO), expected)
 
     def test_qualified_claim_without_native_evidence_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
