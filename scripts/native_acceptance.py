@@ -98,6 +98,26 @@ def client_version(command):
     return match.group(0)
 
 
+def keychain(home, host=None):
+    """Give a disposable home its own default keychain on macOS; a no-op elsewhere.
+
+    macOS resolves the default keychain under `HOME`, and a client that stores an item with none
+    there raises a system dialog on every launch. A throwaway keychain at the default path keeps
+    the store silent and away from the operator's login keychain.
+    """
+    if (host or platform.system()) != "Darwin":
+        return None
+    path = home / "Library" / "Keychains" / "login.keychain-db"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, HOME=str(home))
+    created = run(["security", "create-keychain", "-p", "", path], env=env)
+    if created.returncode:
+        raise Unverified("no keychain for the disposable home, so a client turn would raise a "
+                         "system dialog: " + (created.stderr or "").strip()[-200:])
+    run(["security", "set-keychain-settings", path], env=env)  # no lock timeout
+    return path
+
+
 class Home:
     """A disposable configuration home: its own HOME, client config directory and state."""
 
@@ -112,6 +132,11 @@ class Home:
         self.primitives = self.root / "primitives"
         self.launched = 0
         self.last_code = 0
+        self.keychain_error = None
+        try:
+            keychain(self.root)
+        except Unverified as error:
+            self.keychain_error = str(error)
 
     def discard(self):
         if not self.keep:
@@ -169,6 +194,8 @@ class Home:
             args += ["--allowedTools", ",".join(tools)]
         if resume:
             args += ["--resume", resume]
+        if self.keychain_error:
+            raise Unverified(self.keychain_error)
         self.launched += 1
         try:
             result = run(args, cwd=str(self.project), env=self.env(),
