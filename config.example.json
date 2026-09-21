@@ -20,6 +20,7 @@
   },
   "permissions": "inherit",
   "permissions_bypass_acknowledged": false,
+  "plan_allow_tools": [],
   "vscode": {
     "manage": true
   },

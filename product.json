@@ -1,8 +1,244 @@
 {
   "headline": "Your way of working, across AI agents.",
-  "description": "A general-purpose, model-provider-agnostic harness built around you. Define how your agents work through shared rules, skills, roles, workflows, and custom primitives—including personal stances you can switch without rewriting your instructions.",
+  "description": "A general-purpose, model-provider-agnostic harness built around you. Define how your agents work through shared rules, skills, roles, workflows, and custom primitives, including personal stances you can switch without rewriting your instructions.",
   "stances": "Personal stances turn your working preferences into explicit switches. Choose how agents delegate, test, communicate, exercise autonomy, and approach decisions. Select a different stance when the situation changes, or define your own. The harness applies those choices through supported agent runtimes.",
   "github_description": "Your way of working, across AI agents. A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable personal stances.",
+  "hero": {
+    "title": "Your way of working, across AI agents.",
+    "subtitle": "Agent Harness is an open-source layer over the Claude Code and Codex you already run. You write your rules, guardrails and opinions once. It keeps always-loaded context small, cleans up the answers and plans you read, and comes with you when you switch providers.",
+    "proof": "MIT licensed. Works with your existing setup. `harness uninstall` puts everything back."
+  },
+  "capabilities": [
+    {
+      "id": "spend-less",
+      "title": "Spend less without capping your agents",
+      "pitch": "A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things cost and let it pace itself.",
+      "features": [
+        {
+          "name": "Cost postures",
+          "line": "Pick frugal, balanced or max, or write your own. One table sets model, effort and a soft budget per role.",
+          "doc": "primitives/stances/cost"
+        },
+        {
+          "name": "Model tiering",
+          "line": "Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.",
+          "doc": "primitives/stances/delegation"
+        },
+        {
+          "name": "Band workers",
+          "line": "A spawn that names no role gets a right-sized worker instead of your most expensive model.",
+          "doc": "claude/agents/worker-a.md"
+        },
+        {
+          "name": "A budget in every brief",
+          "line": "Each subagent is told its expected tokens and tool calls. Finish if you're close, otherwise return what you have.",
+          "doc": "claude/hooks/brief-guard.py"
+        },
+        {
+          "name": "Live usage feed",
+          "line": "The orchestrator sees what each turn and each subagent cost while the session is still running.",
+          "doc": "docs/usage.md"
+        },
+        {
+          "name": "Lean context",
+          "line": "Always-loaded instructions are capped at 200 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.",
+          "doc": "docs/how-it-works.md"
+        }
+      ]
+    },
+    {
+      "id": "readable-output",
+      "title": "Answers and plans you can actually read",
+      "pitch": "Most agent output is a wall of text. This puts the verdict first and the ask where you can find it.",
+      "features": [
+        {
+          "name": "Voice stances",
+          "line": "Choose answer-card or scannable. Same content, shaped for how you read.",
+          "doc": "primitives/stances/voice"
+        },
+        {
+          "name": "Scannable output style",
+          "line": "Verdict first, action items in one place, and status in plain words: Fixed, Partially fixed, Not fixed, Unverified.",
+          "doc": "claude/output-styles/scannable.md"
+        },
+        {
+          "name": "Review Card plans",
+          "line": "Every plan opens with a one-screen card and stops at a build gate until you say build.",
+          "doc": "primitives/skills/plan-authoring"
+        },
+        {
+          "name": "Bounded subagent returns",
+          "line": "Subagents come back with findings and a word cap, not their whole transcript.",
+          "doc": "primitives/skills/transcript-hygiene"
+        },
+        {
+          "name": "Conciseness rules",
+          "line": "Explain a decision once. Comments say why, not what.",
+          "doc": "primitives/rules/conciseness.md"
+        }
+      ]
+    },
+    {
+      "id": "your-opinions",
+      "title": "Your opinions, as switches",
+      "pitch": "Reasonable developers disagree about testing, autonomy and how much to delegate. So none of that is hardcoded. They're stances, and you flip them.",
+      "features": [
+        {
+          "name": "Stance dimensions and variants",
+          "line": "Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.",
+          "doc": "primitives/stances"
+        },
+        {
+          "name": "User, project, session",
+          "line": "Set a default, override it for one repo, override that for one session.",
+          "doc": "docs/preferences.md"
+        },
+        {
+          "name": "Write your own",
+          "line": "A new stance dimension is a folder of Markdown files. No fork needed.",
+          "doc": "docs/primitive-authoring.md"
+        },
+        {
+          "name": "See one switch end to end",
+          "line": "The demo flips delegation and shows what changes in both runtimes.",
+          "doc": "docs/stance-demo.md"
+        }
+      ]
+    },
+    {
+      "id": "guardrails",
+      "title": "Guardrails that leave room for judgment",
+      "pitch": "Hooks handle the few things that should be deterministic. Everything else stays the agent's call.",
+      "features": [
+        {
+          "name": "Graded shell commands",
+          "line": "Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.",
+          "doc": "claude/hooks/grade-bash.py"
+        },
+        {
+          "name": "Autonomy stances",
+          "line": "Decide how far an agent goes before it checks in.",
+          "doc": "primitives/stances/autonomy"
+        },
+        {
+          "name": "Stop gate",
+          "line": "The turn doesn't end while your repo's own gate is red.",
+          "doc": "claude/hooks/stop-gate.py"
+        },
+        {
+          "name": "Secrets and personal data",
+          "line": "Lint catches tokens, keys and personal strings before they're committed.",
+          "doc": "primitives/rules/secrets.md"
+        },
+        {
+          "name": "Untrusted tool output",
+          "line": "Text that comes back from a tool is data, never instructions.",
+          "doc": "claude/hooks/neutralize-tool-output.py"
+        },
+        {
+          "name": "Sandboxing",
+          "line": "Fence the filesystem and network before you leave a loop unattended.",
+          "doc": "docs/sandboxing.md"
+        }
+      ]
+    },
+    {
+      "id": "every-provider",
+      "title": "One way of working, every provider",
+      "pitch": "I started in Cursor, moved to Claude Code, added Codex, and kept rebuilding the same setup. Now it's defined once and projected into each one.",
+      "features": [
+        {
+          "name": "Shared primitives",
+          "line": "Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.",
+          "doc": "docs/sync-model.md"
+        },
+        {
+          "name": "Same policy on both",
+          "line": "A Claude Code spawn and a Codex spawn resolve to the same delegation policy.",
+          "doc": "docs/runtime-controls.md"
+        },
+        {
+          "name": "Capability classes",
+          "line": "frontier, strong, standard, light. Each adapter maps them to its own models.",
+          "doc": "docs/role-workers.md"
+        },
+        {
+          "name": "Honest compatibility",
+          "line": "The catalog says which clients are qualified and where the gaps are.",
+          "doc": "docs/compatibility.md"
+        },
+        {
+          "name": "Reversible",
+          "line": "Sync has a dry run, diff shows drift, and uninstall restores what it adopted.",
+          "doc": "docs/settings-ownership.md"
+        }
+      ]
+    },
+    {
+      "id": "delivery-loop",
+      "title": "A delivery loop, not just a prompt",
+      "pitch": "Five commands take a piece of work from a question to a reviewed pull request, with fresh eyes at the review step.",
+      "features": [
+        {
+          "name": "The ritual",
+          "line": "/research, /plan, /build, /review, /handoff.",
+          "doc": "primitives/workflows"
+        },
+        {
+          "name": "Named roles",
+          "line": "Builder, planner, reviewer, gatherer, designer and more, each with its own model class and tool limits.",
+          "doc": "claude/agents"
+        },
+        {
+          "name": "Fresh-context review",
+          "line": "Scope is checked against the ask, then quality, by agents that never saw the code being written.",
+          "doc": "claude/agents/reviewer.md"
+        },
+        {
+          "name": "A worktree per agent",
+          "line": "Parallel agents don't step on your checkout or on each other.",
+          "doc": "primitives/skills/worktree-per-agent"
+        },
+        {
+          "name": "Testing and commit stances",
+          "line": "Tests required, Conventional Commits, gated pushes. Or switch them.",
+          "doc": "primitives/stances/testing"
+        },
+        {
+          "name": "Planning in public",
+          "line": "The brief, architecture and stories are in the repo.",
+          "doc": "docs/bmad.md"
+        }
+      ]
+    }
+  ],
+  "on_the_way": [
+    {
+      "title": "Grok and Cursor adapters",
+      "line": "Grok is next.",
+      "catalog": "grok"
+    },
+    {
+      "title": "Fresh-session nudge",
+      "line": "A heads-up when the orchestrator's context has become expensive to keep dragging forward.",
+      "issue": 321
+    },
+    {
+      "title": "Budget nudges mid-run",
+      "line": "Today a subagent learns its budget in the brief. Next it hears about it while it works.",
+      "issue": 322
+    },
+    {
+      "title": "Jev judgment checks",
+      "line": "Small, bounded checks for the calls a deterministic hook can't make.",
+      "issue": 135
+    },
+    {
+      "title": "Architecture viewer, out of preview",
+      "line": "A plan as the front door to a live supervision surface.",
+      "doc": "docs/viewer-integrations.md"
+    }
+  ],
   "topics": [
     "ai-agents",
     "agent-harness",

@@ -15,7 +15,7 @@ harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
 COMMANDS = REPO / "claude" / "commands"
-EXPECTED = ["build.md", "handoff.md", "plan.md", "research.md", "review.md"]
+EXPECTED = ["build.md", "handoff.md", "land.md", "plan.md", "research.md", "review.md"]
 MAX_BODY_LINES = 35
 
 
@@ -159,6 +159,30 @@ class CommandContentTests(unittest.TestCase):
     def test_the_sequence_commands_name_the_skill_they_run(self):
         self.assertIn("plan-authoring", split(COMMANDS / "plan.md")[1])
         self.assertIn("worktree-per-agent", split(COMMANDS / "build.md")[1])
+
+    def test_land_verifies_the_current_head_before_it_merges(self):
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("gh pr merge --squash --delete-branch", body)
+        self.assertIn("current head", body)
+        self.assertIn("issue-ownership", body)
+
+    def test_land_cleans_up_only_through_the_reversible_commands(self):
+        """The refusals are the safety check; a forced form would delete unreviewed work."""
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("harness worktree remove", body)
+        self.assertIn("git branch -d <branch>", body)
+        self.assertIn("harness worktree audit", body)
+        self.assertIn("Never force a removal", body)
+        self.assertIn("Never `git branch -D`", body)
+        self.assertIn("compound command", body)
+        self.assertNotIn("git branch -D <", body)
+
+    def test_land_gates_the_merge_and_defers_the_release_rule_to_the_repository(self):
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("approval-gated", body)
+        self.assertIn("never tags and never deploys", body)
+        self.assertIn("no release due", body)
+        self.assertIn("the repository's own agent instructions", body)
 
     def test_ownership_records_the_commands_directory(self):
         ownership = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())

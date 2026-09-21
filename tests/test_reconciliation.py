@@ -172,7 +172,9 @@ class NativeInstallTests(TempHome):
         self.assertIn("Ada", (self.home / ".codex/AGENTS.md").read_text())
         self.assertEqual(len(list((self.home / ".codex/agents").glob("*.toml"))),
                          len(list((harness.REPO / "primitives/roles").glob("*.md"))))
-        self.assertEqual(len(list((self.home / ".agents/skills").glob("*/SKILL.md"))), 20)
+        self.assertEqual(len(list((self.home / ".agents/skills").glob("*/SKILL.md"))),
+                         len([p for p in (harness.REPO / "primitives/skills").iterdir() if p.is_dir()])
+                         + len(list((harness.REPO / "primitives/workflows").glob("*.md"))))
         self.assertEqual((self.home / ".agents/skills/architecture-viewer").resolve(),
                          (harness.REPO / "primitives/skills/architecture-viewer").resolve())
         self.assertEqual(self.sync(), 0)
