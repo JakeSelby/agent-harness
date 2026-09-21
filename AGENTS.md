@@ -65,7 +65,9 @@ worktree.
   same pull request**: a new feature line, or an `on_the_way` entry promoted into `capabilities`.
   That file is the one source of the landing copy, the README grid and the GitHub About
   description. Planned work worth advertising goes in `on_the_way`, capped at five entries, and
-  each entry names the issue, planned client or document it stands for.
+  each entry names the issue, planned client or document it stands for. The `landing-copy` check
+  fails a pull request that changes `bin/`, `lib/`, `adapters/`, `primitives/` or `policy/` without
+  `product.json`, unless the body carries a `Landing copy:` line saying why none is needed.
 - **Releases are cut by milestone.** Merge freely; propose a release when the milestone empties or
   when a user-visible unreleased change is seven days old. A regression fix releases at once as a
   patch.
