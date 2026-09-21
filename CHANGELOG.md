@@ -10,6 +10,10 @@ All notable changes to this project are documented here. The format follows
 
 - The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
   issue map, and `scripts/bmad_issue_sync.py new` files an issue and reserves its ID in one step (#378).
+- `scripts/bmad_issue_sync.py audit --live` compares the committed issue map with GitHub, read-only:
+  title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
+  `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
+  runs the audit daily and on issue events (#218).
 - Plan mode now investigates at the permission posture you selected instead of below it. Under
   `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
   mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
@@ -180,6 +184,19 @@ All notable changes to this project are documented here. The format follows
   check in your own data rather than an expectation.
 
 ### Fixed
+
+- `harness worktree remove` finishes the cleanup after a squash merge. The quality gate has to run
+  before a push and writes `__pycache__`, which used to leave the worktree unremovable and reported
+  as dirty by `harness worktree audit`; removal no longer counts the regenerable caches it knows
+  (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `node_modules`, `.astro`, plus a
+  top-level directory named with `--also-clear NAME`) as work, git deletes them with the checkout,
+  and audit reports a checkout holding only those as clean. Modified,
+  untracked and other ignored entries still refuse, naming the first few. With `--merged` the
+  local branch is deleted too, but only once `gh` reports a merged pull request whose head commit
+  is the branch tip: after a squash the branch's commits never reach the default branch, so
+  ancestry cannot answer and `git branch -d` refuses work that did land. A missing or failing
+  `gh`, no merged pull request from this repository, a tip the merged head does not match, or the
+  default branch refuses with the reason and deletes nothing. `/land` now hands both steps to one command.
 
 - The documented de-duplication query runs as written. Every exported record now carries
   `harness.exported_at`, the export time as a fixed-width RFC 3339 UTC string, and the example in

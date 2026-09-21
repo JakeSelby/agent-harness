@@ -452,6 +452,105 @@ def planned_actions(manifest, live_issues):
     return actions
 
 
+MAINTAINER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+
+def live_lifecycle(issue):
+    return "active" if issue["state"] == "open" else "completed"
+
+
+def accepted_for_delivery(issue):
+    """A community issue may wait for triage; maintainer-filed or triaged work needs an ID."""
+    if issue.get("state_reason") in {"not_planned", "duplicate"}:
+        return False
+    labels = {label["name"] for label in issue.get("labels", [])}
+    return (
+        issue.get("author_association") in MAINTAINER_ASSOCIATIONS
+        or issue.get("milestone") is not None
+        or any(label.startswith("type::") for label in labels)
+    )
+
+
+def within_grace(issue, grace_days, now):
+    created = issue.get("created_at")
+    if not grace_days or not created:
+        return False
+    opened = dt.datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ")
+    return (now or dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)) - opened < dt.timedelta(days=grace_days)
+
+
+def live_findings(manifest, live_issues, check_lifecycle=True, grace_days=0, now=None):
+    """Compare the manifest with GitHub without changing either; returns (findings, notices)."""
+    live = {issue["number"]: issue for issue in live_issues}
+    mapped = {item["github_number"] for item in manifest["items"]}
+    findings = []
+    notices = []
+    for number in sorted(set(live) - mapped):
+        if accepted_for_delivery(live[number]) and within_grace(live[number], grace_days, now):
+            notices.append("#{}: accepted, no BMad ID yet, inside the grace period".format(number))
+        elif accepted_for_delivery(live[number]):
+            findings.append("#{}: accepted issue has no BMad ID; run reserve".format(number))
+        else:
+            notices.append("#{}: awaiting triage, no BMad ID yet".format(number))
+    for item in manifest["items"]:
+        issue = live.get(item["github_number"])
+        if not issue:
+            continue
+        label = "{} #{}".format(item["bmad_id"], item["github_number"])
+        if issue["title"] != item["title"]:
+            findings.append("{}: title drift; run refresh".format(label))
+        if live_lifecycle(issue) != item["lifecycle"]:
+            message = "{}: GitHub is {} but the manifest says {}; run refresh".format(
+                label, issue["state"], item["lifecycle"]
+            )
+            (findings if check_lifecycle else notices).append(message)
+    for item in manifest["items"]:
+        # One item at a time, so a malformed body is that issue's finding rather than the audit's end.
+        try:
+            actions = planned_actions(dict(manifest, items=[item]), live_issues)
+        except RuntimeError as error:
+            findings.append("#{}: {}".format(item["github_number"], error))
+            continue
+        for action in actions:
+            if action.get("action") == "missing":
+                findings.append("#{}: mapped issue was not found on GitHub".format(action["issue"]))
+            else:
+                findings.append(
+                    "#{}: projection drift ({}); run apply".format(action["issue"], ", ".join(action["changes"]))
+                )
+    return findings, notices
+
+
+def refresh(manifest, live_issues):
+    """Copy GitHub's title and open/closed state into the manifest and its generated artifacts."""
+    live = {issue["number"]: issue for issue in live_issues}
+    strip = lambda value: re.sub(r"(?m)^updated: .*$", "updated:", value)
+    drifted = []
+    amended = []
+    for item in manifest["items"]:
+        issue = live.get(item["github_number"])
+        if not issue:
+            continue
+        if issue["title"] == item["title"] and live_lifecycle(issue) == item["lifecycle"]:
+            continue
+        text = (ROOT / item["artifact_path"]).read_text(encoding="utf-8")
+        if strip(text) != strip(render_artifact(item)):
+            amended.append(item["bmad_id"])
+        drifted.append((item, issue))
+    # Refuse before the first write: a half-applied refresh fails the audit that refresh requires.
+    if amended:
+        raise RuntimeError(
+            "artifact carries amendments; update its title and lifecycle by hand: {}".format(", ".join(amended))
+        )
+    for item, issue in drifted:
+        item["title"] = issue["title"]
+        item["lifecycle"] = live_lifecycle(issue)
+        (ROOT / item["artifact_path"]).write_text(render_artifact(item), encoding="utf-8")
+    if drifted:
+        write_manifest(manifest)
+    return [item["bmad_id"] for item, _ in drifted]
+
+
 def verify_remote_artifacts(manifest):
     repo = manifest["repository"]
     tree = gh_json(["api", "repos/{}/git/trees/main?recursive=1".format(repo)])
@@ -628,7 +727,15 @@ def main(argv=None):
         choices=("labels-only", "native-and-labels"),
         required=True,
     )
-    subparsers.add_parser("audit")
+    audit_parser = subparsers.add_parser("audit")
+    audit_parser.add_argument("--live", action="store_true", help="also compare with GitHub, read-only")
+    audit_parser.add_argument(
+        "--ignore-lifecycle", action="store_true", help="with --live, report open/closed drift without failing"
+    )
+    audit_parser.add_argument(
+        "--grace-days", type=int, default=0, help="with --live, days an accepted issue may wait for its ID"
+    )
+    subparsers.add_parser("refresh")
     subparsers.add_parser("plan")
     subparsers.add_parser("apply")
     reserve_parser = subparsers.add_parser("reserve")
@@ -654,10 +761,26 @@ def main(argv=None):
     manifest = load_manifest()
     if args.command == "audit":
         errors = audit_manifest(manifest)
+        notices = []
+        if args.live and errors:
+            notices.append("live comparison skipped until the local findings below are fixed")
+        if args.live and not errors:
+            errors, notices = live_findings(
+                manifest, fetch_issues(manifest["repository"]), not args.ignore_lifecycle, args.grace_days
+            )
+        for notice in notices:
+            print("notice: {}".format(notice))
         for error in errors:
             print(error)
         print("audit: {} issue(s), {} finding(s)".format(len(manifest["items"]), len(errors)))
         return 1 if errors else 0
+    if args.command == "refresh":
+        errors = audit_manifest(manifest)
+        if errors:
+            raise RuntimeError("\n".join(errors))
+        changed = refresh(manifest, fetch_issues(manifest["repository"]))
+        print("refresh: {} item(s) updated".format(len(changed)))
+        return 0
     if args.command == "plan":
         errors = audit_manifest(manifest)
         if errors:
