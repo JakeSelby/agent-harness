@@ -16,8 +16,14 @@ the branch, model ids and token counts.
 Every row names its `kind`: `session`, `subagent` or `worker`. A row written before the field
 existed is read as a session, which is all there was to record, and `--rescan` upgrades it.
 
+Every row also names the `harness_version` that wrote it, read from the same `VERSION` file
+`harness --version` prints, so a change in spend can be read against a release. **A rescanned
+row carries `null`**: the version that ran a past session is not recoverable from its
+transcript, and stamping today's would make the whole history look like this release.
+
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
-`output`, `cache_read`, `cache_write`, `subagents`, `turns`. The source is the transcript
+`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`, `days`.
+The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
 API response is written as several transcript entries, so counting per line inflates every
@@ -29,6 +35,37 @@ session's subagents**, because their tokens are the session's bill — counted o
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
 a transcript carrying both would otherwise pay for every delegated token twice.
+
+### Session effort
+
+`effort` is the reasoning effort the session mostly ran at, and `effort_source` says where it
+was read: `transcript` for Claude Code, which writes `effort` and `perTurnEffort` on every
+assistant record, and `turn_context` for Codex, which records it per turn and admits values up
+to `ultra`. Effort changes mid-session — 14 of 112 Claude Code transcripts and 4 of 44 Codex
+rollouts measured on one machine — so the row records **the value that covered the most output
+tokens**, not the first or the last. For Claude Code that weight is the session's own messages
+only; a subagent's effort belongs to the spawn, not to the session. For Codex it is the
+difference between consecutive cumulative snapshots. A transcript that records no effort at all
+leaves both fields `null`, which the report then has nothing to group by.
+
+### Per-day slices
+
+`days` maps a UTC date to `input`, `output`, `cache_read`, `cache_write` and `turns` for that
+date. A session that runs for a fortnight ends on one date and spends on fourteen, and
+attributing it whole to its end date is what made five long sessions 68% of all output tokens
+on one machine.
+
+The slices are cut from the same deduplicated message-id map the row's totals are summed over,
+so **a Claude Code day's slice includes that day's subagent tokens**, exactly as the session
+total includes them: the session row means one thing, and a slice that excluded them could not
+add up to it. The first date a message id is seen under is the one that holds, so a response
+written across midnight belongs to one day. Codex has no per-message figure, only cumulative
+snapshots, so a Codex slice is the difference between consecutive ones, attributed to the date
+of the snapshot that closed it; a `total_tokens`-only row gets no slices at all.
+
+The slices are checked against the row's own totals before they are written, field by field. A
+map that does not add up is dropped rather than recorded, so a `days` map on a row is always
+consistent with the row.
 
 **`kind: "subagent"`** — one row per `agent-<id>.jsonl` anywhere under `<session>/subagents/`,
 the tree Claude Code writes beside the session's own file. The walk is recursive because a
@@ -209,14 +246,31 @@ bin/harness usage                      # last 30 days, grouped by day
 bin/harness usage --days 7 --by repo
 bin/harness usage --by model           # a session using two models groups under both, joined
 bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output and tool calls
+bin/harness usage --by stance --stance cost   # tokens per variant of one stance dimension
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
 
 `--by role` reads the subagent and worker rows. Spend per delegated task is a distribution, not
 a mean, so it prints three points on the curve; `unmeasured` counts the runs whose runtime
-reported no tool-call figure, which are named there rather than averaged in as a zero.
+reported no tool-call figure, which are named there rather than averaged in as a zero. A role
+with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
+second-largest of eight, and a budget re-seeded from it is a guess wearing a number.
 
-The token groupings — `day`, `repo`, `model` — sum session and worker rows and never a
+`--by day` reads a row's `days` slices when it carries them and falls back to its end date when
+it does not, so a session that ran for a fortnight is spread over the days it spent on. The
+`--days` window then applies to the **slice** date, and a long session contributes only its
+in-window days. The `runs` column still counts sessions, not session-days: a row is counted
+once, on the day it ended, so a session whose end date is outside the window contributes its
+in-window tokens and no run.
+
+`--by stance --stance <dimension>` groups tokens by that dimension's variant — `cost=balanced`
+against `cost=frugal`. A row with no recorded stance, and a row whose stances a rescan stamped,
+group under `(unknown)` and are **counted there** rather than dropped: leaving them out would
+make a newly stamped variant look like the whole history of the ledger. `--rules --by stance`
+is the hit report below and is unchanged. `--by stance` with neither is refused, since it names
+two different reports and guessing between them would be worse than asking.
+
+The token groupings — `day`, `repo`, `model`, `stance` — sum session and worker rows and never a
 subagent's. A subagent's tokens are already inside its session's total; a role-run worker has
 no session row at all, so leaving it out would hide its spend in every report there is.
 
@@ -229,7 +283,8 @@ those gaps.
 A cost variant's per-role budgets are measured, not guessed, so they go stale as roles change.
 Run `bin/harness usage --rescan --by role` over a window wide enough to hold a few dozen runs,
 read the p75 column for the role — the shipped figures are that point on the curve — and write it
-into your variant's row as `budget_output_tokens` and `budget_tool_calls`.
+into your variant's row as `budget_output_tokens` and `budget_tool_calls`. A role still marked
+`n<30` has not earned a re-seed; widen the window or leave the figure where it is.
 
 ## What the hit rate tells you
 
@@ -261,8 +316,9 @@ share's denominator, and the report says how many there were.
 
 A rescan cannot know the stances a past session ran under, only this minute's. It leaves a
 record's `stances` alone when it has them and otherwise stamps the current ones with
-`"stances_source": "rescan"`, which `--by stance` then excludes by name. The stamped stances
-still drive the detectors, so hit counts do backfill.
+`"stances_source": "rescan"`, which `--rules --by stance` then excludes by name and the token
+report groups under `(unknown)`. The stamped stances still drive the detectors, so hit counts
+do backfill.
 
 ### What each detector looks for
 

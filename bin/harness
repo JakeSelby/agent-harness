@@ -14,7 +14,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness doctor
     harness uninstall
     harness lint    [PATH]
-    harness usage   [--days N] [--by day|repo|model] [--rescan]
+    harness usage   [--days N] [--by day|repo|model|role|stance] [--stance NAME] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
     harness worktree remove NAME [REPO]
@@ -2174,11 +2174,32 @@ def percentile(values: List[int], share: float) -> int:
     return values[min(max(index, 0), len(values) - 1)]
 
 
+def stance_key(row: Dict[str, Any], dimension: str) -> str:
+    """The group a row belongs to under `--by stance --stance <dimension>`.
+
+    A row whose stances were stamped by a rescan is grouped as unknown rather than under a
+    variant it may never have run under — the rescan reads this minute's environment, not the
+    session's. Unknown is a group of its own and is counted: dropping those rows would make a
+    newly stamped variant look like the whole history of the ledger.
+    """
+    if row.get("stances_source") == "rescan":
+        return "(unknown)"
+    stances = row.get("stances") if isinstance(row.get("stances"), dict) else {}
+    value = stances.get(dimension)
+    return f"{dimension}={value}" if isinstance(value, str) and value else "(unknown)"
+
+
+ROLE_MIN_RUNS = 30
+
+
 def role_report(rows: List[Dict[str, Any]], days: int) -> int:
     """Output tokens and tool calls per agent type, over the subagent and worker rows.
 
     Spend per delegated task is a distribution, not a mean: a budget set at the mean is wrong
     for most of the sample, which is why the report prints three points on the curve instead.
+
+    A role with fewer than `ROLE_MIN_RUNS` runs is marked `n<30`, because a p90 over eight runs
+    is the second-largest of eight and a budget re-seeded from it is a guess wearing a number.
     """
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
@@ -2188,7 +2209,7 @@ def role_report(rows: List[Dict[str, Any]], days: int) -> int:
             "run `harness usage --rescan` to backfill them from transcripts")
         return 0
     head = (f"{'role':<30}{'runs':>6}{'out p50':>10}{'out p75':>10}{'out p90':>10}"
-            f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}{'unmeasured':>12}")
+            f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}{'unmeasured':>12}{'sample':>8}")
     say(head)
     say("-" * len(head))
     for key in sorted(groups):
@@ -2200,7 +2221,8 @@ def role_report(rows: List[Dict[str, Any]], days: int) -> int:
         gaps = sum(1 for r in group if not isinstance(r.get("tool_calls"), int))
         cells = [f"{percentile(output, s):>10,}" if output else f"{'-':>10}" for s in (0.5, 0.75, 0.9)]
         cells += [f"{percentile(tools, s):>11,}" if tools else f"{'-':>11}" for s in (0.5, 0.75, 0.9)]
-        say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}")
+        mark = f"n<{ROLE_MIN_RUNS}" if len(group) < ROLE_MIN_RUNS else ""
+        say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}{mark:>8}")
     return 0
 
 
@@ -2219,10 +2241,23 @@ def cmd_usage(args: argparse.Namespace) -> int:
     their own children sum to — 2.0M against 30.6M in the widest case — which a total that
     included them could not do. So a Codex parent plus its children is the session's bill, and
     dropping the children would undercount it.
+
+    `--by day` reads a row's `days` slices when it carries them and falls back to its end date
+    when it does not, so a session that ran for a fortnight is spread over the days it spent on
+    rather than charged whole to the day it ended. The `--days` window then applies to the slice
+    date: a long session contributes only its in-window days.
     """
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
-    rules_mode = getattr(args, "rules", False) or by in ("rule", "stance")
+    stance = getattr(args, "stance", None)
+    # `--by stance` means one of two reports, and which one is said rather than inferred:
+    # `--rules` asks for detector hits per variant, `--stance <name>` for tokens grouped by that
+    # dimension's value. Neither is a report this cannot guess at, so it refuses.
+    rules_mode = getattr(args, "rules", False) or by == "rule"
+    if by == "stance" and not rules_mode and not stance:
+        print("usage --by stance needs --stance <dimension> for tokens, or --rules for hits",
+              file=sys.stderr)
+        return 2
     if rules_mode and by in ("model", "role"):
         # Reporting something else silently would be worse than refusing: a rule hit belongs
         # to a session, and a session's hits cannot be attributed to one of its models, nor to
@@ -2237,6 +2272,8 @@ def cmd_usage(args: argparse.Namespace) -> int:
         out = subprocess.run([sys.executable, str(hook), "--rescan", str(args.days)], capture_output=True, text=True)
         say((out.stdout or out.stderr).strip() or "rescan found no transcripts")
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - max(args.days, 0) * 86400))
+    cutoff_day = cutoff[:10]
+    sliced = by == "day" and not rules_mode
     groups: Dict[str, List[int]] = {}
     kept: List[Dict[str, Any]] = []
     delegated: List[Dict[str, Any]] = []
@@ -2246,11 +2283,18 @@ def cmd_usage(args: argparse.Namespace) -> int:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(row, dict) or (row.get("ended") or "") < cutoff:
+        if not isinstance(row, dict):
+            continue
+        ended = row.get("ended") or ""
+        days_map = row.get("days") if isinstance(row.get("days"), dict) else {}
+        # A session that ran for a fortnight ended on one date and spent on fourteen. Grouped
+        # by day it is read through its slices, so it is kept when any of them is in the window
+        # even though its end date is not; every other grouping still turns on the end date.
+        if ended < cutoff and not (sliced and any(day >= cutoff_day for day in days_map)):
             continue
         # A row written before `kind` existed is a session, which is all there was to record.
         kind = row.get("kind") or "session"
-        if kind != "session":
+        if kind != "session" and ended >= cutoff:
             delegated.append(row)
         # A Claude Code subagent's tokens are already in its session's row; a Codex subagent's
         # are in no row but its own, and a worker's are in no session's because a role-run
@@ -2262,14 +2306,32 @@ def cmd_usage(args: argparse.Namespace) -> int:
             if kind == "session":
                 kept.append(row)
             continue
+        if sliced and days_map:
+            # The run is counted on the day the session ended, once; its tokens are counted on
+            # the days they were spent. So the run column still counts sessions rather than
+            # session-days, and TOTAL runs stays the number of sessions in the window.
+            if ended >= cutoff:
+                groups.setdefault(ended[:10], [0, 0, 0, 0, 0])[0] += 1
+            for date, slice_ in days_map.items():
+                if date < cutoff_day or not isinstance(slice_, dict):
+                    continue
+                acc = groups.setdefault(date, [0, 0, 0, 0, 0])
+                for i, name in enumerate(("input", "output", "cache_read", "cache_write")):
+                    try:
+                        acc[i + 1] += int(slice_.get(name) or 0)
+                    except (TypeError, ValueError):
+                        pass
+            continue
         if by == "repo":
             key = row.get("repo") or "(no repo)"
         elif by == "model":
             # A session names every model it ran on; a subagent or worker row names the one it
             # ran on, so both are read rather than the second falling to "(unknown)".
             key = ("+".join(row.get("models") or []) or row.get("model") or "(unknown)")
+        elif by == "stance":
+            key = stance_key(row, stance)
         else:
-            key = (row.get("ended") or "")[:10]
+            key = ended[:10]
         acc = groups.setdefault(key, [0, 0, 0, 0, 0])
         acc[0] += 1
         for i, name in enumerate(("input", "output", "cache_read", "cache_write")):
@@ -2598,6 +2660,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = sub.add_parser("usage", help="summarize recorded session tokens and cache hit rate")
     p.add_argument("--days", type=int, default=30)
     p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance"], default="day")
+    p.add_argument("--stance", choices=STANCE_NAMES,
+                   help="with --by stance, the dimension whose variants group the tokens")
     p.add_argument("--rules", action="store_true",
                    help="report rule-detector hits instead of tokens (--by rule, repo or stance)")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")

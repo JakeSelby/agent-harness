@@ -216,7 +216,10 @@ class ReportTests(TempHome):
     def test_window_excludes_older_sessions(self):
         path = self.home / ".local/state/agent-harness/usage.jsonl"
         record = json.loads(path.read_text())
-        path.write_text(json.dumps(dict(record, ended="2020-01-01T00:00:00.000Z")) + "\n")
+        # Its slices move with its end date: a session grouped by day is read through them, so
+        # a row left with this week's slices would still be in this week's window.
+        old = {"2020-01-01": dict(list(record["days"].values())[0])}
+        path.write_text(json.dumps(dict(record, ended="2020-01-01T00:00:00.000Z", days=old)) + "\n")
         self.assertIn("no sessions recorded", self.report(days=7))
 
     def test_empty_state_is_not_an_error(self):
