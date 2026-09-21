@@ -9,7 +9,9 @@ remain specific to that adapter.
 The `usage-log` hook runs on `SessionEnd` and keeps one record per session in
 `~/.local/state/agent-harness/usage.jsonl`. It is a local file and nothing else: no network
 call, no service, no account, and nothing beyond the session id, the repository directory name,
-the branch, model ids and token counts.
+the branch, model ids and token counts. Sending those rows to an observability backend is
+opt-in, off by default and described in [telemetry.md](telemetry.md); the ledger stays the
+record and the backend is a copy that `harness usage export --since` can rebuild.
 
 ## What is recorded
 

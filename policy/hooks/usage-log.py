@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: MIT
 """SessionEnd hook: record a session's token usage in ~/.local/state/agent-harness/usage.jsonl.
 
-One local file, nothing over the network. SessionEnd shares a 1.5-second budget, so the hook
+One local file, and nothing over the network unless a `telemetry` block turns export on — see
+`telemetry.py` and docs/telemetry.md. SessionEnd shares a 1.5-second budget, so the hook
 spawns a detached worker and returns; the worker streams the transcript line by line and upserts
 one row for the session, one for each subagent it spawned and one for each recent role-run
 worker. Read it with `harness usage`.
@@ -1057,6 +1058,23 @@ def upsert(record, path=None, drop=()):
     return path
 
 
+def export(records):
+    """Offer rows to a configured OTLP endpoint, after the ledger already holds them.
+
+    Off by default, and silent in every failure mode: the row is on disk, so a collector that
+    is down, slow or misconfigured costs a line in `usage.errors.jsonl` and nothing else.
+    `harness usage export --since` replays what was missed. See `telemetry.py`.
+    """
+    module = sibling("telemetry", required=False)
+    if module is None:
+        return 0, 0
+    try:
+        return module.export_rows(records, version=harness_version() or "",
+                                  errors_path=usage_path().with_suffix(".errors.jsonl"))
+    except Exception:
+        return 0, 0
+
+
 def recorded(path=None):
     """The records already on file, by session id, so a rescan can keep what it cannot know."""
     try:
@@ -1227,6 +1245,7 @@ def main(argv):
         records = scan_all(transcript, session_id, cwd) + worker_rows(time.time() - 30 * 86400)
         if records:
             upsert(records)
+            export(records)
         return 0
     if argv and argv[0] == "--rescan":
         try:

@@ -8,6 +8,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Ledger rows can be exported to any OTLP/HTTP endpoint, off by default. A `telemetry` block in
+  `config.json` turns it on; with it off no network code runs and the hook behaves as before.
+  Each row becomes one OTLP/JSON log record on `POST <endpoint>/v1/logs`, sent from the detached
+  `SessionEnd` worker after the row is already in the ledger: one attempt, a two-second timeout,
+  no retry, and a failure recorded in `usage.errors.jsonl` rather than in the session's exit
+  status. The body is the row; the attributes are its flat scalars plus a stable
+  `harness.row_key`, the harness version and one `harness.<dimension>` per recorded stance.
+- Request headers are read from a named environment variable or a file outside every git work
+  tree that no other user can read; a header value written into `config.json` is refused by
+  name, and no value is ever printed, logged or written to an error record — a failure names
+  the endpoint's scheme and host only.
+- `harness usage export --since <date> [--until] [--dry-run]` replays a window of rows in
+  batches, prints what was sent and what failed, and exits non-zero if any batch failed.
+  Delivery is at-least-once, so [docs/telemetry.md](docs/telemetry.md) gives the
+  de-duplication query on `harness.row_key` and states the model: the ledger is the record, a
+  backend is a rebuildable copy, and replay is the recovery path when a backend's retention
+  expires or it is rebuilt.
+- `harness doctor` names the export mode, the endpoint's scheme and host, and the names — never
+  the values — of the headers it resolved.
+
 - `harness usage` reports dollars. `policy/prices.json` lists USD per million tokens for input,
   output, cache read and cache write per model id, each entry carrying the `as_of` date it was
   read and the provider pricing page it was read from; a model whose price could not be

@@ -837,6 +837,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
     stances = resolve_stances(cfg)
     p = posture(cfg)
+    telemetry_settings(cfg)
     table = cost_table(cfg)
     # Render every role for both runtimes before anything is written: a binding that will not
     # resolve is an error the user sees before a half-synced home directory.
@@ -1268,6 +1269,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if age > PRICE_STALE_DAYS:
             say(f"    over {PRICE_STALE_DAYS} days old. Prices go stale silently and the report "
                 f"keeps printing dollars; re-read each entry's source and update {PRICES_PATH}.")
+    telemetry = telemetry_settings(cfg)
+    module = load_telemetry()
+    if telemetry.get("export") != "otlp" or module is None:
+        say("  telemetry export: off; the usage ledger stays on this machine")
+    else:
+        try:
+            # Header names only. A value is a credential and is never printed, here or anywhere.
+            names = sorted(module.headers(telemetry))
+            detail = "headers " + (", ".join(names) if names else "none configured")
+        except ValueError as exc:
+            detail = f"headers unavailable: {exc}"
+        say(f"  telemetry export: otlp -> {module.endpoint_label(telemetry['endpoint'])}, {detail}")
+        say("    the ledger is the record; replay a window with `harness usage export --since`")
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))
@@ -2178,6 +2192,95 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- telemetry
+
+
+def load_telemetry(root: Path = REPO):
+    """The exporter the usage hook runs, from `root`'s checkout, or None when it has none.
+
+    Loaded from the hook's own file rather than reimplemented here, so the CLI validates a
+    `telemetry` block with the same code that will send the rows.
+    """
+    import importlib.util
+
+    path = root / "claude" / "hooks" / "telemetry.py"
+    if not path.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("harness_telemetry", str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+def telemetry_settings(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """The validated `telemetry` block. A block that cannot be honoured stops the command."""
+    module = load_telemetry()
+    if module is None:
+        return {"export": "off"}
+    try:
+        return module.settings(cfg)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+
+
+def _valid_date(value: str, flag: str) -> str:
+    try:
+        time.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise SystemExit(f"{flag} takes a date as YYYY-MM-DD; got '{value}'")
+    return value
+
+
+def cmd_usage_export(args: argparse.Namespace) -> int:
+    """Replay a window of ledger rows to the configured OTLP endpoint.
+
+    Delivery is at-least-once: a batch that fails is reported and left for the next replay,
+    and a backend de-duplicates on `harness.row_key`. The ledger is the record; the backend is
+    a copy that can be rebuilt from it. See docs/telemetry.md.
+    """
+    module = load_telemetry()
+    if module is None:
+        raise SystemExit("this checkout has no claude/hooks/telemetry.py; nothing can be exported")
+    if not getattr(args, "since", None):
+        raise SystemExit("usage export needs --since YYYY-MM-DD")
+    since = _valid_date(args.since, "--since")
+    until = _valid_date(args.until, "--until") if getattr(args, "until", None) else "9999-12-31"
+    settings = telemetry_settings(load_config())
+    if settings.get("export") != "otlp" and not args.dry_run:
+        raise SystemExit(
+            "telemetry.export is off; set it to \"otlp\" in ~/.config/agent-harness/config.json "
+            "to send rows, or re-run with --dry-run to count what a replay would send")
+    path = state_dir() / "usage.jsonl"
+    rows: List[Dict[str, Any]] = []
+    for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and since <= (row.get("ended") or "")[:10] <= until:
+            rows.append(row)
+    batch_count = sum(1 for _ in module.batches(rows))
+    window = f"{since}..{until if until != '9999-12-31' else 'today'}"
+    if args.dry_run:
+        target = module.endpoint_label(settings.get("endpoint", "")) or "no endpoint configured"
+        state = "" if settings.get("export") == "otlp" else " (export is off)"
+        say(f"{len(rows)} row(s) in {window} would be sent in {batch_count} batch(es) "
+            f"to {target}{state}")
+        return 0
+    sent, failed = module.export_rows(
+        rows, config=settings, version=VERSION,
+        errors_path=state_dir() / "usage.errors.jsonl")
+    say(f"{window}: sent {sent} row(s) in {batch_count} batch(es) to "
+        f"{module.endpoint_label(settings['endpoint'])}, {failed} row(s) failed")
+    if failed:
+        say(f"  failures are recorded in {state_dir() / 'usage.errors.jsonl'}; re-run the same "
+            f"window to retry, and de-duplicate on harness.row_key")
+    return 1 if failed else 0
+
+
 # --------------------------------------------------------------------------- prices
 
 PRICES_PATH = REPO / "policy" / "prices.json"
@@ -2543,6 +2646,8 @@ def cmd_usage(args: argparse.Namespace) -> int:
     partial tokens is counted as unpriced in the footer and contributes nothing to the column:
     it is not free, and a zero would say it was.
     """
+    if getattr(args, "action", None) == "export":
+        return cmd_usage_export(args)
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
     stance = getattr(args, "stance", None)
@@ -2986,6 +3091,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.set_defaults(func=cmd_lint)
 
     p = sub.add_parser("usage", help="summarize recorded session tokens and cache hit rate")
+    p.add_argument("action", nargs="?", choices=["export"],
+                   help="export: replay recorded rows to the configured OTLP endpoint")
+    p.add_argument("--since", help="with export, the first day to replay, as YYYY-MM-DD")
+    p.add_argument("--until", help="with export, the last day to replay, as YYYY-MM-DD")
+    p.add_argument("--dry-run", action="store_true",
+                   help="with export, count what would be sent and open no connection")
     p.add_argument("--days", type=int, default=30)
     p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance"], default="day")
     p.add_argument("--stance", choices=STANCE_NAMES,
