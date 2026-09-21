@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The `gatherer` role no longer declares web tools its only execution path cannot give it. The
+  role listed `WebFetch` and `WebSearch`, the spawn guard refuses a native `gatherer` in favour of
+  `harness role run gatherer`, and that isolated worker is launched with `Read`, `Grep` and `Glob`
+  under a read-only sandbox with hosted search disabled — so a web dimension of `/research` had
+  nowhere to run. The confinement stays: a worker that can both read a workspace and fetch can
+  carry what it read back out, and a fetched page is untrusted input inside a confined process.
+  Instead the declaration now matches the launch, the role says it is offline and that online
+  evidence arrives as files granted with `--read-dir`, the refusal that points at `harness role
+  run` adds where a web dimension goes instead, and `/research` routes by where the evidence
+  lives — files and repositories to the isolated worker, the live web to an in-session band
+  worker. A test asserts the command line a `gatherer` worker is actually launched with.
+
 ## [0.11.1] — 2026-09-21
 
 ### Changed

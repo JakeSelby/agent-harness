@@ -96,6 +96,14 @@ def constrained_role(name):
     return fields if fields["authority"] in ("read-only", "artifact-write") else None
 
 
+# A worker that may both read a workspace and reach the network can carry what it read back out,
+# so the isolated adapters hold every role to Read/Grep/Glob. Only `gatherer` is routinely asked
+# for online evidence, so only its refusal has somewhere else to send that half of the work.
+OFFLINE_NOTE = {"gatherer": "An isolated gatherer is offline — Read, Grep and Glob, no WebFetch or "
+                            "WebSearch — so send a file or repository dimension to the worker and a web "
+                            "dimension to an in-session band worker (worker-a, worker-b or worker-c)."}
+
+
 def role_instruction(runtime, name, fields):
     """The one sentence that says how this role is actually run. Every refusal ends with it."""
     from . import catalog
@@ -104,7 +112,8 @@ def role_instruction(runtime, name, fields):
     return ("Use harness role run " + name + " --runtime " + runtime
             + ("" if mapped else " --model <session-model>")
             + " --workspace <repo> --prompt-file <brief-file>. "
-            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement.")
+            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement."
+            + (" " + OFFLINE_NOTE[name] if name in OFFLINE_NOTE else ""))
 
 
 def role_deny(runtime, name, fields):
