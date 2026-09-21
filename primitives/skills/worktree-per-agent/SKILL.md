@@ -42,9 +42,10 @@ harness worktree remove "$NAME" "$REPO" --merged
 `--merged` deletes the local branch as well, and only once `gh` reports a merged pull request
 whose head commit is the branch tip. A repository that squash-merges leaves the branch's own
 commits out of the default branch, so `git branch -d` refuses work that did land; that proof is
-the check instead. Drop `--merged` to keep the branch. Removal clears regenerable caches such as
-`__pycache__` that a gate run wrote, and still refuses any other modified, untracked or ignored
-entry; `--also-clear <name>` adds a regenerable directory the built-in list misses.
+the check instead. Drop `--merged` to keep the branch. Removal does not count regenerable caches
+such as `__pycache__` that a gate run wrote, and still refuses any other modified, untracked or
+ignored entry; `--also-clear <name>` adds a regenerable top-level directory the built-in list
+misses.
 
 ## Things that bite
 

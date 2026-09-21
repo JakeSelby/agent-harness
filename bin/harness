@@ -1868,8 +1868,9 @@ def cmd_workspace(args: argparse.Namespace) -> int:
 
 WORKTREE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
-#: Ignored directories a quality gate writes and a later run rebuilds. Clearing these is what
-#: lets a finished worktree be removed without a recursive delete typed into a shell.
+#: Ignored directories a quality gate writes and a later run rebuilds, so they do not count as
+#: work when a checkout is judged. `git worktree remove` deletes ignored files with the checkout,
+#: which is why every other ignored entry still refuses.
 REGENERABLE_DIRS = ("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".astro")
 
 
@@ -1939,13 +1940,14 @@ def _registered_worktrees(repo: Path) -> List[Dict[str, str]]:
 def classify_worktree_status(text: str, also_clear: Sequence[str] = ()) -> Tuple[List[str], List[str]]:
     """Split `git status --porcelain --ignored --untracked-files=all` output into two lists.
 
-    Returns the regenerable ignored entries, safe to clear, and everything else, which blocks a
+    Returns the regenerable ignored entries, which do not count, and everything else, which blocks a
     removal: tracked changes, untracked files, and ignored entries that are not caches. An entry
-    is regenerable only when git marks it `!!` and one of its path components is a known cache
-    name or an `--also-clear` name. A path git had to quote is never treated as regenerable, so
-    an unusual name is refused rather than deleted on a guess.
+    is regenerable only when git marks it `!!` and either one of its path components is a known
+    cache name or its first component is an `--also-clear` name: a name the caller typed covers
+    that one top-level directory, not every directory of that name. A path git had to quote is
+    never treated as regenerable, so an unusual name is refused rather than deleted on a guess.
     """
-    clearable = set(REGENERABLE_DIRS) | set(also_clear)
+    known, named = set(REGENERABLE_DIRS), set(also_clear)
     regenerable: List[str] = []
     blocking: List[str] = []
     for line in text.splitlines():
@@ -1953,7 +1955,8 @@ def classify_worktree_status(text: str, also_clear: Sequence[str] = ()) -> Tuple
             continue
         code, path = line[:2], line[3:]
         parts = [part for part in path.split("/") if part]
-        if code == "!!" and not path.startswith('"') and any(part in clearable for part in parts):
+        cache = any(part in known for part in parts) or (bool(parts) and parts[0] in named)
+        if code == "!!" and not path.startswith('"') and cache:
             regenerable.append(path)
         else:
             blocking.append(path)
@@ -1971,7 +1974,8 @@ def merged_head_refusal(repo: Path, branch: str, tip: str) -> Optional[str]:
     if gh is None:
         return "gh is not installed, so the merge cannot be proven"
     out = subprocess.run(
-        [gh, "pr", "list", "--head", branch, "--state", "merged", "--json", "number,headRefOid"],
+        [gh, "pr", "list", "--head", branch, "--state", "merged",
+         "--json", "number,headRefOid,isCrossRepository"],
         cwd=str(repo), check=False, capture_output=True, text=True, timeout=60,
     )
     if out.returncode != 0:
@@ -1981,6 +1985,8 @@ def merged_head_refusal(repo: Path, branch: str, tip: str) -> Optional[str]:
         records = json.loads(out.stdout.strip() or "[]")
     except json.JSONDecodeError:
         return "gh pr list did not return JSON"
+    # `--head` matches a branch name in any fork, and a fork's branch is not this one.
+    records = [record for record in records if not record.get("isCrossRepository")]
     if not records:
         return f"no merged pull request has {branch} as its head branch"
     if any(record.get("headRefOid") == tip for record in records):
@@ -2014,10 +2020,16 @@ def cmd_worktree(args: argparse.Namespace) -> int:
         if dest not in registered:
             say(f"not a registered worktree: {dest}")
             return 1
+        also_clear = getattr(args, "also_clear", None) or []
+        for name in also_clear:
+            if not WORKTREE_NAME.fullmatch(name.lstrip(".")) or name in (".", "..", ".git"):
+                say(f"--also-clear takes one top-level directory name, not {name!r}")
+                return 1
         status = _git(dest, "status", "--porcelain", "--ignored", "--untracked-files=all", capture=True)
         if status.returncode != 0:
+            say(status.stderr.strip() or f"git status failed in {dest}")
             return status.returncode
-        regenerable, blocking = classify_worktree_status(status.stdout, getattr(args, "also_clear", None) or [])
+        _, blocking = classify_worktree_status(status.stdout, also_clear)
         if blocking:
             say(f"refusing to remove worktree with modified, untracked, or ignored files: {dest}")
             for entry in blocking[:5]:
@@ -2033,29 +2045,32 @@ def cmd_worktree(args: argparse.Namespace) -> int:
             if head.returncode != 0 or refs.returncode != 0 or not refs.stdout.strip():
                 say(f"refusing to remove detached worktree whose HEAD is not contained by a ref: {dest}")
                 return 1
-        # The merge proof runs before any deletion, so a refusal leaves the worktree intact.
+        # The merge proof runs before the removal, so a refusal leaves the worktree intact.
         if getattr(args, "merged", False):
             if not branch:
                 say(f"refusing to prove a merge for a detached worktree: {dest}")
                 return 1
+            trunk = _git(repo, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD", capture=True)
+            if branch == trunk.stdout.strip().removeprefix("origin/"):
+                say(f"refusing to delete {branch}: it is the default branch")
+                return 1
             tip = _git(dest, "rev-parse", "HEAD", capture=True)
             if tip.returncode != 0:
+                say(tip.stderr.strip() or f"git rev-parse failed in {dest}")
                 return tip.returncode
             refusal = merged_head_refusal(repo, branch, tip.stdout.strip())
             if refusal:
                 say(f"refusing to delete {branch}: {refusal}")
                 return 1
-        for entry in regenerable:
-            target = dest / entry
-            if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target, ignore_errors=True)
-            else:
-                target.unlink(missing_ok=True)
+        # git deletes the ignored caches with the checkout, or refuses and deletes nothing.
         removed = _git(repo, "worktree", "remove", str(dest))
         if removed.returncode != 0 or not getattr(args, "merged", False):
             return removed.returncode
         # Proven merged above, so the branch is gone from the remote and `-d` would refuse it.
-        return _git(repo, "branch", "-D", branch, capture=True).returncode
+        deleted = _git(repo, "branch", "-D", branch, capture=True)
+        if deleted.returncode != 0:
+            say(f"worktree removed, branch {branch} kept: {deleted.stderr.strip() or 'git branch -D failed'}")
+        return deleted.returncode
 
     dirty = 0
     for record in _registered_worktrees(repo):
@@ -3264,7 +3279,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     remove.add_argument("--merged", action="store_true",
                         help="delete the local branch too, once a merged pull request holds its tip")
     remove.add_argument("--also-clear", action="append", metavar="NAME", default=[],
-                        help="one more regenerable directory name to clear; repeatable")
+                        help="one more top-level ignored directory that does not block removal; repeatable")
     remove.set_defaults(func=cmd_worktree)
 
     p = sub.add_parser("init", help="write the config file by answering questions")

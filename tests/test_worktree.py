@@ -132,7 +132,7 @@ class WorktreeTests(unittest.TestCase):
         regenerable, blocking = harness.classify_worktree_status("!! dist/\n", ["dist"])
         self.assertEqual((regenerable, blocking), (["dist/"], []))
 
-    def test_remove_clears_regenerable_caches(self):
+    def test_remove_does_not_count_regenerable_caches_as_work(self):
         """A gate run writes `__pycache__`; that must not be what keeps a finished worktree alive."""
         self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
         dest = (self.base / "worktrees" / "project" / "task-one").resolve()
@@ -164,6 +164,53 @@ class WorktreeTests(unittest.TestCase):
         self.assertEqual(harness.cmd_worktree(self.args("remove", "task-one")), 1)
         self.assertEqual(harness.cmd_worktree(self.args("remove", "task-one", also_clear=["dist"])), 0)
         self.assertFalse(dest.exists())
+
+    def test_also_clear_names_one_top_level_directory_only(self):
+        regenerable, blocking = harness.classify_worktree_status("!! build/\n!! src/build/\n", ["build"])
+        self.assertEqual((regenerable, blocking), (["build/"], ["src/build/"]))
+
+    def test_also_clear_refuses_a_name_that_is_not_one_directory(self):
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
+        dest = (self.base / "worktrees" / "project" / "task-one").resolve()
+        for name in (".", "..", ".git", "src/build", ""):
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(harness.cmd_worktree(self.args("remove", "task-one", also_clear=[name])), 1)
+            self.assertIn("--also-clear takes one top-level directory name", output.getvalue())
+        self.assertTrue(dest.exists())
+
+    def test_merged_removal_ignores_a_pull_request_from_a_fork(self):
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
+        dest = (self.base / "worktrees" / "project" / "task-one").resolve()
+        record = f'[{{"number": 7, "headRefOid": "{self.tip_of(dest)}", "isCrossRepository": true}}]'
+        self.stub_gh("#!/bin/sh\necho '" + record + "'\n")
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(harness.cmd_worktree(self.args("remove", "task-one", merged=True)), 1)
+        self.assertIn("no merged pull request", output.getvalue())
+        self.assertIn("task-one", self.branches())
+
+    def test_merged_removal_refuses_the_default_branch(self):
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
+        dest = (self.base / "worktrees" / "project" / "task-one").resolve()
+        for ref in (["update-ref", "refs/remotes/origin/task-one", "HEAD"],
+                    ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/task-one"]):
+            subprocess.run(["git", "-C", str(self.repo), *ref], check=True)
+        self.stub_gh(self.merged_pr_stub(self.tip_of(dest)))
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(harness.cmd_worktree(self.args("remove", "task-one", merged=True)), 1)
+        self.assertIn("it is the default branch", output.getvalue())
+        self.assertTrue(dest.exists())
+        self.assertIn("task-one", self.branches())
+
+    def test_merged_removal_refuses_a_detached_worktree(self):
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
+        dest = (self.base / "worktrees" / "project" / "task-one").resolve()
+        subprocess.run(["git", "-C", str(dest), "checkout", "-q", "--detach"], check=True)
+        self.stub_gh(self.merged_pr_stub(self.tip_of(dest)))
+        self.assertEqual(harness.cmd_worktree(self.args("remove", "task-one", merged=True)), 1)
+        self.assertTrue(dest.exists())
 
     def test_merged_removal_deletes_the_branch_after_a_squash(self):
         """The branch tip is no ancestor of main after a squash, so the merged head is the proof."""
@@ -219,8 +266,8 @@ class WorktreeTests(unittest.TestCase):
         self.assertTrue(dest.exists())
         self.assertIn("task-one", self.branches())
 
-    def test_merged_removal_refuses_before_it_clears_a_cache(self):
-        """The proof runs first, so a refused removal leaves the caches and the checkout intact."""
+    def test_merged_refusal_leaves_the_caches_and_the_checkout_intact(self):
+        """The proof runs before the removal, so a refusal deletes nothing."""
         self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
         dest = (self.base / "worktrees" / "project" / "task-one").resolve()
         self.ignore(dest, "__pycache__/")
