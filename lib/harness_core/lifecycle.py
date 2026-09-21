@@ -42,6 +42,23 @@ def load(name):
     return module
 
 
+_DECISIONS = []
+
+
+def decisions():
+    """The decision log, or None when it cannot be loaded. Loaded once per process.
+
+    Every caller treats None as "this decision is not logged" and carries on: the log records
+    what the harness decided and must never be able to change it.
+    """
+    if not _DECISIONS:
+        try:
+            _DECISIONS.append(load("decisions"))
+        except Exception:
+            _DECISIONS.append(None)
+    return _DECISIONS[0]
+
+
 def normalize(payload):
     event = dict(payload)
     name = str(event.get("tool_name", "")).rsplit(".", 1)[-1]
@@ -231,11 +248,55 @@ def evasion_deny(runtime, session_id, prompt):
     for entry in reversed(denied_spawns(session_id)):
         if same_work(text, entry["prompt"]):
             name = entry.get("role") if isinstance(entry.get("role"), str) else ""
+            module = decisions()
+            if module is not None:
+                # The fingerprint, not the brief: it is what the comparison actually ran on,
+                # and a matched refusal is the one judgment here worth a label.
+                module.record("evasion-deny", "deny", text, {"session_id": session_id}, runtime)
             return {"hookSpecificOutput": {"permissionDecision": "deny",
                     "permissionDecisionReason": "This work was refused as a native " + name
                     + " spawn in this session; dropping or changing the role name does not change that. "
                     + role_instruction(runtime, name, constrained_role(name))}}
     return None
+
+
+def log_bash_decision(runtime, event, results):
+    """Record the permission answer the harness gave this command, when it gave one.
+
+    Only `ask` and `deny` are logged. An approval is the harness declining to interrupt, and
+    "it ran" says nothing about whether declining was right; a refusal or a prompt is the
+    judgment a later label can grade. The row is written here rather than in `grade-bash.py`
+    because this is where the answer is composed: the grader's threshold, the permission mode
+    and plan-mode investigation all fold together into one answer, and only one is given.
+    """
+    module = decisions()
+    if module is None:
+        return
+    answers = [r.get("hookSpecificOutput", {}).get("permissionDecision") for r in results]
+    answer = next((choice for choice in ("deny", "ask") if choice in answers), None)
+    if not answer:
+        return
+    command = event["tool_input"]["command"]
+    module.record("grade-bash", answer, command, event, runtime,
+                  key=module.match_key(event, command))
+
+
+def log_bash_outcome(runtime, event):
+    """Join `ran` to the decision this completed command belongs to, when there was one.
+
+    The tool ran, so whatever the harness asked, the user let it through. A command nothing was
+    asked about has no decision in the log and gets no record; a command that was asked about
+    and never came back is closed as `not_run` at SessionEnd, because an outright refusal and
+    an interrupted turn look identical from here.
+    """
+    module = decisions()
+    if module is None:
+        return
+    command = (event.get("tool_input") or {}).get("command")
+    if not isinstance(command, str) or not command:
+        return
+    identity = module.decision_id("grade-bash", module.match_key(event, command))
+    module.observe_if_logged(identity, module.RAN, "grade-bash", event.get("session_id") or "")
 
 
 def encode_pre(runtime, original, normalized, results):
@@ -338,6 +399,7 @@ def dispatch(runtime, payload):
                     "planning. Plan mode widens investigation, not the build. "
                     + grader.reason(grade, verb, target, family, variant)}})
             results.append(invoke("filter-output", event))
+            log_bash_decision(runtime, event, results)
         elif tool == "Agent":
             delegation = selected("delegation", "tiered")
             inputs = event["tool_input"]
@@ -376,6 +438,8 @@ def dispatch(runtime, payload):
         return encode_pre(runtime, payload, event, results)
     if kind == "PostToolUse":
         contexts = []
+        if tool == "Bash":
+            log_bash_outcome(runtime, event)
         if selected("plan-ceremony", "review-card") == "review-card":
             for path in patch_paths(event):
                 result = invoke("validate-plan-card", dict(event, tool_input={"file_path": path},
@@ -400,6 +464,13 @@ def dispatch(runtime, payload):
     if kind == "Stop":
         return invoke("stop-gate", event)
     if kind == "SessionEnd":
+        # Nothing will arrive for this session again, so an ask with no PostToolUse is settled:
+        # the command did not run. Done before the usage worker is spawned, and bounded by the
+        # session's own rows, so the 1.5-second SessionEnd budget pays for one read of a file
+        # that only a permission prompt writes to.
+        log = decisions()
+        if log is not None:
+            log.close_session(event.get("session_id") or "")
         module = load("usage-log")
         old = sys.stdin
         try:

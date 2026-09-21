@@ -84,6 +84,39 @@ def stances(env=None):
 # should not have to know which file holds them.
 DEFAULT_STANCES = getattr(sibling("posture", required=False), "DEFAULT_STANCES", {})
 
+# The keys a subagent row carries its soft budget under, so an overrun is a subtraction on one
+# row rather than a join against the cost table as it stands today. Written as `null` when
+# nothing prices the role: a zero would say the spawn was budgeted nothing.
+BUDGET_KEYS = ("budget_output_tokens", "budget_tool_calls")
+_COST = []
+
+
+def budget_fields(role):
+    """The soft budget a spawn of `role` ran under, as the row's own keys.
+
+    The figures are `posture.py`'s, read from the same table `brief-guard` prices a brief with,
+    once per scan: a rescan of a hundred transcripts must not walk every sidecar a hundred
+    times. The table is today's, which is what the row can know — the brief the spawn was given
+    is not recorded anywhere the scan can read — so a row written after the variant changed
+    names the budget the role carries now. A missing sibling, an unpriced role and a table that
+    will not build are all `null`.
+    """
+    fields = dict((key, None) for key in BUDGET_KEYS)
+    if not _COST:
+        module = sibling("posture", required=False)
+        try:
+            _COST.append((module, module.cost_table() if module else {}))
+        except Exception:
+            _COST.append((None, {}))
+    module, table = _COST[0]
+    if module is None or not role:
+        return fields
+    try:
+        fields.update(module.budget_figures(module.row_for(table, role)))
+    except Exception:
+        return dict((key, None) for key in BUDGET_KEYS)
+    return fields
+
 
 def harness_version():
     """The version `harness --version` prints, read from the same `VERSION` file at the root.
@@ -443,6 +476,7 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
            "turns": turns, "started": started, "ended": ended}
     if partial:
         row["partial"] = True
+    row.update(budget_fields(row["agent_type"]))
     row.update(summed(per_message))
     return row
 

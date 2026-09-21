@@ -12,6 +12,27 @@ All notable changes to this project are documented here. The format follows
   title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
   `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
   runs the audit daily and on issue events (#218).
+
+- A local, append-only decision log, `~/.local/state/agent-harness/decisions.jsonl`, beside the
+  usage ledger: one record each time a hook makes a judgment, and a second record when the
+  session settles it. `grade-bash` records the permission answer it gave a command and joins
+  `ran` when the command's PostToolUse arrives, or `not_run` when the session ends without one —
+  not "denied", because a refusal, an interrupt and a crash look the same from a hook. `stop-gate`
+  records `blocked`, `released` or `skipped` with the gate's own result; `tier-agent-spawns`
+  records the band an unnamed spawn was routed to, `brief-guard` what it wrote into the brief,
+  and `evasion_deny` a refused re-spawn. A row holds the text the hook judged, capped at 2 KiB,
+  with the hash taken over the uncapped text; it holds no tool output and no assistant prose.
+  Nothing is exported, nothing is model-visible, and a write that fails is counted and swallowed
+  rather than allowed to change a decision. `telemetry.decisions: false` turns it off entirely.
+  Read it with `harness usage --by decision`, which prints counts, the outcomes seen per point
+  and the unlabelled share. Band routing happens on Claude Code alone, so Codex writes no
+  `tier-agent-spawns` row and its capabilities file names the gap.
+
+- Subagent rows in the usage ledger now carry `budget_output_tokens` and `budget_tool_calls`,
+  the soft budget the role they ran as carries, so an overrun is a subtraction on one row rather
+  than a join against whatever the cost table says today. A role nothing prices records `null`,
+  because a zero would say the spawn was budgeted nothing.
+
 - Plan mode now investigates at the permission posture you selected instead of below it. Under
   `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
   mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
