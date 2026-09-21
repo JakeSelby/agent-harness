@@ -455,6 +455,20 @@ def planned_actions(manifest, live_issues):
 MAINTAINER_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 
+def live_parent(issue):
+    url = issue.get("parent_issue_url")
+    return int(url.rstrip("/").split("/")[-1]) if url else None
+
+
+def adoptable_parent(item, issue, by_number):
+    """GitHub records a mapped parent the map does not; only that case is safe to adopt."""
+    return (
+        item["parent_github_number"] is None
+        and live_parent(issue) is not None
+        and live_parent(issue) in by_number
+    )
+
+
 def live_lifecycle(issue):
     return "active" if issue["state"] == "open" else "completed"
 
@@ -492,6 +506,7 @@ def live_findings(manifest, live_issues, check_lifecycle=True, grace_days=0, now
             findings.append("#{}: accepted issue has no BMad ID; run reserve".format(number))
         else:
             notices.append("#{}: awaiting triage, no BMad ID yet".format(number))
+    by_number = {item["github_number"]: item for item in manifest["items"]}
     for item in manifest["items"]:
         issue = live.get(item["github_number"])
         if not issue:
@@ -504,6 +519,24 @@ def live_findings(manifest, live_issues, check_lifecycle=True, grace_days=0, now
                 label, issue["state"], item["lifecycle"]
             )
             (findings if check_lifecycle else notices).append(message)
+        if adoptable_parent(item, issue, by_number):
+            findings.append(
+                "{}: GitHub records parent #{} and the manifest records none; run refresh".format(
+                    label, live_parent(issue)
+                )
+            )
+        elif live_parent(issue) is not None and item["parent_github_number"] is None:
+            findings.append(
+                "{}: GitHub records parent #{}, which has no BMad ID; run reserve for it first".format(
+                    label, live_parent(issue)
+                )
+            )
+        elif live_parent(issue) is not None and live_parent(issue) != item["parent_github_number"]:
+            findings.append(
+                "{}: parent conflict, GitHub #{} against manifest #{}; decide which is right".format(
+                    label, live_parent(issue), item["parent_github_number"]
+                )
+            )
     for item in manifest["items"]:
         # One item at a time, so a malformed body is that issue's finding rather than the audit's end.
         try:
@@ -511,12 +544,19 @@ def live_findings(manifest, live_issues, check_lifecycle=True, grace_days=0, now
         except RuntimeError as error:
             findings.append("#{}: {}".format(item["github_number"], error))
             continue
+        issue = live.get(item["github_number"])
         for action in actions:
             if action.get("action") == "missing":
                 findings.append("#{}: mapped issue was not found on GitHub".format(action["issue"]))
-            else:
+                continue
+            changes = [
+                change for change in action["changes"]
+                # A parent only GitHub records is reported above; apply still owns the other direction.
+                if not (change == "parent" and issue is not None and live_parent(issue) is not None)
+            ]
+            if changes:
                 findings.append(
-                    "#{}: projection drift ({}); run apply".format(action["issue"], ", ".join(action["changes"]))
+                    "#{}: projection drift ({}); run apply".format(action["issue"], ", ".join(changes))
                 )
     return findings, notices
 
@@ -524,6 +564,7 @@ def live_findings(manifest, live_issues, check_lifecycle=True, grace_days=0, now
 def refresh(manifest, live_issues):
     """Copy GitHub's title and open/closed state into the manifest and its generated artifacts."""
     live = {issue["number"]: issue for issue in live_issues}
+    by_number = {item["github_number"]: item for item in manifest["items"]}
     strip = lambda value: re.sub(r"(?m)^updated: .*$", "updated:", value)
     drifted = []
     amended = []
@@ -531,7 +572,11 @@ def refresh(manifest, live_issues):
         issue = live.get(item["github_number"])
         if not issue:
             continue
-        if issue["title"] == item["title"] and live_lifecycle(issue) == item["lifecycle"]:
+        if (
+            issue["title"] == item["title"]
+            and live_lifecycle(issue) == item["lifecycle"]
+            and not adoptable_parent(item, issue, by_number)
+        ):
             continue
         text = (ROOT / item["artifact_path"]).read_text(encoding="utf-8")
         if strip(text) != strip(render_artifact(item)):
@@ -545,6 +590,10 @@ def refresh(manifest, live_issues):
     for item, issue in drifted:
         item["title"] = issue["title"]
         item["lifecycle"] = live_lifecycle(issue)
+        parent = by_number[live_parent(issue)] if adoptable_parent(item, issue, by_number) else None
+        if parent:
+            item["parent_github_number"] = parent["github_number"]
+            item["parent_bmad_id"] = parent["bmad_id"]
         (ROOT / item["artifact_path"]).write_text(render_artifact(item), encoding="utf-8")
     if drifted:
         write_manifest(manifest)

@@ -9,14 +9,41 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from harness_core import catalog, compatibility
+import sync_about
+
+GH_SKIPPED = "release warning: About and On-the-way checks skipped, gh is not authenticated"
 
 
 def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
 
 
-def check(root, reference=None):
+def published_surfaces(root, runner):
+    """About drift and `on_the_way` entries whose issue has closed.
+
+    Both read GitHub, so both run only behind a good `gh` probe; once the probe
+    passes, a failing call is a blocked release rather than a skip.
+    """
+    errors = []
+    wanted = sync_about.product(root)
+    fields = sync_about.differences(wanted, sync_about.published(runner))
+    if fields:
+        errors.append("GitHub About does not match product.json: " + ", ".join(fields))
+    entries = json.loads((root / "product.json").read_text()).get("on_the_way", [])
+    for entry in entries:
+        number = entry.get("issue")
+        if number is None:
+            continue
+        state = json.loads(runner(["issue", "view", str(number), "--json", "state"]))["state"]
+        if state.upper() != "OPEN":
+            errors.append('on-the-way entry "{}" names issue #{}, which is {}; '
+                          "promote or remove it".format(entry["title"], number, state.lower()))
+    return errors
+
+
+def check(root, reference=None, runner=sync_about.gh, warn=print):
     errors = compatibility.release_errors(root)
     version = (root / "VERSION").read_text().strip()
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
@@ -37,6 +64,13 @@ def check(root, reference=None):
                 errors.append("built reference manifest does not identify the release")
         except (OSError, ValueError, IndexError, subprocess.CalledProcessError):
             errors.append("release tag or built reference identity is unavailable")
+    if sync_about.authenticated(runner):
+        try:
+            errors.extend(published_surfaces(root, runner))
+        except (sync_about.GhError, ValueError, KeyError) as error:
+            errors.append("About and On-the-way checks could not be read: " + str(error))
+    else:
+        warn(GH_SKIPPED)
     return errors
 
 

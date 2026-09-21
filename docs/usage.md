@@ -81,8 +81,13 @@ token fields and `tool_calls`. `tool_use_id` is
 the parent call this row belongs to, `requested_type` is the agent type that call asked for, and
 `rerouted` is the two disagreeing — the measure of how often a spawn hook moved a spawn. A
 requested type is kept only when it is a name the tool could have resolved; anything else is
-recorded as `"other"`. These rows carry the same tokens a second time, attributed, which is why
-no grouping sums both them and their session.
+recorded as `"other"`. `budget_output_tokens` and `budget_tool_calls` are the **soft budget the
+role carries** — the same figures `brief-guard` writes into a brief — so an overrun is a
+subtraction on one row rather than a join against whatever the cost table says today. They are
+read from the table at the moment the row is written, not from the brief, which no scan can
+see; a role nothing prices, a table that will not build and a Codex subagent all record `null`,
+because a zero would say the spawn was budgeted nothing. These rows carry the same tokens a
+second time, attributed, which is why no grouping sums both them and their session.
 
 **`kind: "worker"`** — one row per completed `harness role run` worker, with the role name as
 `agent_type`. A worker is an isolated CLI session; its runtime reports what the run cost in the
@@ -241,6 +246,60 @@ routed to a band worker — see [runtime controls](runtime-controls.md). It hold
 timestamp, nothing about the work; the files are owner-only in an owner-only directory, swept
 after a fortnight of not being used, and removed by `harness uninstall`.
 
+## The decision log
+
+`~/.local/state/agent-harness/decisions.jsonl`, beside the ledger and written by the same
+hooks, holds **one record per judgment a hook makes** and a second record per judgment the
+session later settled. The ledger says what a run cost; this says what the harness decided and
+whether the decision held. It exists so that replacing a heuristic — with a better pattern, a
+classifier, anything — is measured against labels the harness already produces and used to
+throw away. Nothing here is exported, nothing here is model-visible, and the file never grows
+a context token.
+
+```json
+{"kind": "decision", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
+ "ts": "2026-09-21T19:41:05Z", "input_sha256": "d20c…", "input": "git push --force origin main",
+ "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
+ "harness_version": "0.12.0"}
+{"kind": "outcome", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
+ "ts": "2026-09-21T19:41:22Z", "outcome": "ran", "harness_version": "0.12.0"}
+```
+
+The file is **append-only**: an outcome is its own record, joined to its decision by
+`decision_id` when the report reads it, and no line is ever rewritten. `input` is the text the
+hook judged, capped at 2 KiB; `input_sha256` is over the **uncapped** text, so the cap loses
+evidence and never identity. No tool output and no assistant prose reaches either field.
+
+| point | the judgment | the outcome, when there is one |
+| --- | --- | --- |
+| `grade-bash` | the permission answer, `ask` or `deny` | `ran` when the command's PostToolUse arrives, `not_run` when the session ends without one |
+| `stop-gate` | `blocked`, `released` or `skipped` | the gate's own result: `passed`, `failed`, `timeout`, `unverified`, `untrusted` |
+| `tier-agent-spawns` | the band worker an unnamed spawn was routed to | not labelled yet |
+| `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
+| `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
+
+An approved Bash command is not logged. The harness answers the permission question on a small
+minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a
+prompt or a refusal is the judgment a label can grade. `not_run` is deliberately not called
+"denied": a user who refused, a user who interrupted the turn and a session that crashed all
+look the same from a hook, and naming one of them would put a label in the file that nobody
+measured.
+
+Both runtimes write, for the events both raise. Band routing happens on Claude Code alone, so
+Codex records no `tier-agent-spawns` row; `adapters/codex/capabilities.json` names that gap.
+
+A write that fails is counted and swallowed — a log that can change a permission answer is
+worse than no log — and `telemetry.decisions: false` in `config.json` turns the whole thing off,
+after which no row, no file and no directory is written. See
+[telemetry.md](telemetry.md#the-decision-log-switch).
+
+```sh
+bin/harness usage --by decision        # counts, outcome rates and the unlabelled share per point
+```
+
+The **unlabelled share** is the column to read first: an outcome rate over the two decisions
+that happened to be labelled is not evidence about the point.
+
 ## Reading it
 
 ```sh
@@ -249,6 +308,7 @@ bin/harness usage --days 7 --by repo
 bin/harness usage --by model           # a session using two models groups under both, joined
 bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output, p50/p75 usd
 bin/harness usage --by stance --stance cost   # tokens per variant of one stance dimension
+bin/harness usage --by decision        # hook decisions and their outcomes, above
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
 
