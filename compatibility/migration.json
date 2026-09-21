@@ -1,17 +1,16 @@
 {
   "schema_version": 1,
-  "harness_version": "0.11.0",
-  "summary": "Upgrade from v0.10.0 by reviewing the generated v0.11.0 projection before applying it: sync now renders a native Claude Code agent definition for a role your cost variant or role bindings actually move, registers the three usage-feed hook events and installs the three band workers; the architecture-viewer preview is inert until an external adapter is registered and selected.",
+  "harness_version": "0.11.1",
+  "summary": "Upgrade from v0.11.0 by reviewing the generated v0.11.1 projection before applying it: a patch release with no new files, hook events or roles. The spawn guard now refuses a constrained role's brief however the spawn is named, the builder role reports what produced any fixture it edits, and the `delegation: off` stance says that a spawn is denied; the architecture-viewer preview is inert until an external adapter is registered and selected.",
   "actions": [
-    "Run `harness sync --dry-run` from the v0.11.0 checkout and inspect every proposed write, ownership change and conflict. Each `agent` line names a role whose rendering under your selected `cost` variant and `role_bindings` differs from the shipped projection; only those roles are written as managed files, every other role keeps its managed link, and an install on `balanced` with no role bindings is unchanged.",
-    "Run `harness sync` only after resolving unmanaged-file and adoption conflicts. It registers three further Claude Code hook events in your settings — `UserPromptSubmit`, `SubagentStart` and `SubagentStop`, the usage feed — and leaves your own hooks on those events untouched; Codex raises none of them and declares the feed uncovered.",
-    "Expect three new roles to install as agents: `worker-a`, `worker-b` and `worker-c`. A runtime loads its agent list once at process start, so unnamed subagent spawns are routed to your cost variant's `default_band` worker only in a session started after the sync; start a new session before relying on it.",
-    "Expect new owner-only local state under `~/.local/state/agent-harness/`: `feed/` per-session usage-feed files and `sessions/` session records. Both are pruned automatically and both are removed by `harness uninstall`. `usage.jsonl` gains `subagent` and `worker` rows beside the session rows; run `harness usage --rescan` once over the window you care about to correct history, because earlier output-token totals were undercounted.",
-    "To keep 0.10.0's behaviour without downgrading, select a `cost` variant whose switches set `turn_feed` to `off` and which sets no `default_band` and no budgets anywhere on its `extends` chain: nothing is injected, nothing is written and no unnamed spawn is routed. See docs/primitive-authoring.md for the sidecar contract."
+    "Run `harness sync --dry-run` from the v0.11.1 checkout and inspect every proposed write, ownership change and conflict. Expect the `builder` agent definition and the `delegation` stance text to change and nothing to be added.",
+    "Run `harness sync` only after resolving unmanaged-file and adoption conflicts.",
+    "If you route BMad code review through the harness, run `harness bmad check <framework-root>` and then `harness bmad apply <framework-root>`: each review layer's brief now begins with a `harness-role:` line that the spawn guard enforces, and a framework checkout keeps the old layer text until you apply it.",
+    "Expect a session record under `~/.local/state/agent-harness/sessions/` to gain a bounded `denied_spawns` list once the guard has refused a constrained-role spawn in that session. It is pruned with the record and read by nothing else."
   ],
   "recovery": [
     "Preserve reported conflicts, adopted backups, external viewer adapter descriptors and external viewer installations.",
-    "To restore every agent link before checking out v0.10.0, select the `balanced` cost variant with no `role_bindings` and run `harness sync` once; sync retires each rendered definition it owns and relinks the committed projection. Alternatively run `harness uninstall` first.",
+    "To return to v0.11.0, check out that tag and run `harness sync` once; v0.11.0 ignores the `denied_spawns` key in a session record, and a BMad framework checkout keeps working with or without the marker line.",
     "Use `harness uninstall --dry-run` before uninstalling, and follow docs/runtime-installation.md for rollback and ownership recovery; use docs/bmad.md for task continuation."
   ]
 }

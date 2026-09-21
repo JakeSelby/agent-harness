@@ -1,8 +1,7 @@
 {
   "schema_version": 1,
-  "harness_version": "0.11.0",
-  "release_state": "released",
-  "qualification_source_commit": "5335b7ef85fcc3d9b65c54a6bcca8d2ba2d3310f",
+  "harness_version": "0.11.1",
+  "release_state": "candidate",
   "required_cases": [
     "installation",
     "stance-switch",
@@ -23,16 +22,9 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "macos",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/claude-code-cli-macos-0.11.0.json",
-          "sha256": "b83cac162502cfcd86df7d913fca711a5b2c9bbe34b5f42ed680759e45177ade"
-        }
-      ],
-      "runtime_version": "2.1.273",
-      "client_version": "2.1.273"
+      "evidence": []
     },
     {
       "id": "claude-code-vscode-macos",
@@ -50,16 +42,9 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "linux",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/claude-code-cli-linux-0.11.0.json",
-          "sha256": "4551cc210286379f6b0fd9d531aea41ad30aedb71bae8e6e654b09167e909e81"
-        }
-      ],
-      "runtime_version": "2.1.278",
-      "client_version": "2.1.278"
+      "evidence": []
     },
     {
       "id": "codex-cli-macos",
@@ -67,16 +52,9 @@
       "provider": "openai",
       "client": "cli",
       "platform": "macos",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-cli-macos-0.11.0.json",
-          "sha256": "d34945d1673247d285356a137b2a7af23bee5e6729fff9964d873d36ee1a845e"
-        }
-      ],
-      "runtime_version": "0.154.0-alpha.6.2",
-      "client_version": "0.154.0-alpha.6.2"
+      "evidence": []
     },
     {
       "id": "codex-vscode-macos",
@@ -104,16 +82,9 @@
       "provider": "openai",
       "client": "cli",
       "platform": "linux",
-      "status": "qualified",
+      "status": "unqualified",
       "required_for_release": true,
-      "evidence": [
-        {
-          "path": "compatibility/evidence/codex-cli-linux-0.11.0.json",
-          "sha256": "d4edcdc97610ea636ae6943e21701264ac02a4d38f9113fdd8b327608a980730"
-        }
-      ],
-      "runtime_version": "0.155.1",
-      "client_version": "0.155.1"
+      "evidence": []
     },
     {
       "id": "cursor",
