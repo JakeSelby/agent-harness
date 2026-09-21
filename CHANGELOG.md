@@ -6,7 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Plan mode now investigates at the permission posture you selected instead of below it. Under
+  `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
+  mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
+  0 or 1 — and asks about grade 2, because a push or a mutating API call is execution rather than
+  planning. Grade 3, the confirm marker, `manual`, `inherit` and Codex are all unchanged, and a
+  stricter autonomy stance still wins. A new config key, `plan_allow_tools`, lists tool-name globs
+  (such as `mcp__notes__read_*`) approved in plan mode under the same posture gate; it is empty
+  by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
+  inferred.
+
+### Changed
+
+- The README's install command clones the `stable` branch, so a new install starts from the latest
+  release instead of the development trunk.
+
 ### Fixed
+
+- A client launched under a substituted `HOME` no longer raises the macOS "A keychain cannot be
+  found" dialog. The acceptance runner already gave its disposable homes a keychain, but two other
+  launches did not: every role worker runs its client in a private home that had none, and
+  `harness doctor` ran `claude doctor` in whatever `HOME` it was given, including a throwaway one
+  an agent built to test a config. A role worker's home now carries its own throwaway keychain, and
+  a worker whose keychain cannot be created fails instead of launching; `harness doctor` skips the
+  client's doctor, and says so, when `HOME` has no default keychain. `harness keychain <home>` is the
+  same guard for a home you build by hand. Other hosts are unchanged.
 
 - The `gatherer` role no longer declares web tools its only execution path cannot give it. The
   role listed `WebFetch` and `WebSearch`, the spawn guard refuses a native `gatherer` in favour of
@@ -22,6 +48,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.11.1] — 2026-09-21
 
+### Added
+
+- A `stable` branch that always points at the latest release. The release workflow fast-forwards
+  it to the tag's commit after publishing, `scripts/advance_stable.py --check` verifies it, and the
+  branch never moves backward. `main` stays the trunk.
+
 ### Changed
 
 - The `builder` role's report closes two gaps a downstream soak found. A hand-edited fixture,
@@ -30,6 +62,9 @@ All notable changes to this project are documented here. The format follows
   builder regenerates instead of hand-editing. The gate's result is read from the test command's
   own exit status, captured with `PIPESTATUS`, `pipestatus` or no pipe, rather than from whatever
   `tail` returned. The fixed report gains one item for the edited fixtures and what produced them.
+- Qualify the Claude Code and Codex CLIs on macOS and Linux for this source with version-pinned
+  native evidence across all eleven acceptance cases, and record the limitations those runs
+  established in the compatibility catalog.
 
 ### Fixed
 

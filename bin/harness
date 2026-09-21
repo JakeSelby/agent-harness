@@ -47,7 +47,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client
+from harness_core import codex_client, keychain
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1261,7 +1261,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                           if stale else "set"))
     lines = _diff_lines()
     say("  drift: " + ("none" if not lines else f"{len(lines)} item(s), run `harness diff`"))
-    if shutil.which("claude"):
+    if shutil.which("claude") and keychain.missing():
+        say("  claude doctor: skipped, this HOME has no default keychain and a client launch "
+            "would raise a macOS dialog")
+    elif shutil.which("claude"):
         say("  claude doctor:")
         try:
             out = subprocess.run(["claude", "doctor"], capture_output=True, text=True, timeout=60)
@@ -1910,8 +1913,16 @@ def coerce_config_value(key: str, value: str) -> Any:
         if value != "inherit" and value not in POSTURES:
             raise SystemExit(f"permissions must be inherit, bypass, auto or manual; got '{value}'")
         return value
+    if key == "plan_allow_tools":
+        try:
+            globs = json.loads(value)
+        except ValueError:
+            globs = None
+        if not isinstance(globs, list) or not all(isinstance(item, str) and item.strip() for item in globs):
+            raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
+        return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"permissions, or one of {', '.join(BOOL_KEYS)}")
+                     f"permissions, plan_allow_tools, or one of {', '.join(BOOL_KEYS)}")
 
 
 def config_set(key: str, value: Optional[str]) -> int:
@@ -2060,6 +2071,21 @@ def cmd_init(args: argparse.Namespace) -> int:
     write_json_atomic(path, cfg)
     print(f"\nwrote {path}")
     print("next: bin/harness sync")
+    return 0
+
+
+def cmd_keychain(args: argparse.Namespace) -> int:
+    """Give a home you built by hand its own default keychain, so a client launched there is silent."""
+    home = Path(args.home).expanduser().resolve()
+    if not home.is_dir():
+        raise SystemExit(f"not a directory: {home}")
+    if home == Path.home().resolve():
+        raise SystemExit("that is your own home; this command is for a disposable one")
+    try:
+        created = keychain.provision(home)
+    except OSError as exc:
+        raise SystemExit(f"{exc}\nDo not launch a client under this home.")
+    print(created if created else "nothing to do: a default keychain is present or this host needs none")
     return 0
 
 
@@ -2591,6 +2617,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="report rule-detector hits instead of tokens (--by rule, repo or stance)")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
     p.set_defaults(func=cmd_usage)
+
+    p = sub.add_parser("keychain", help="give a disposable HOME its own default keychain before a client is launched under it (macOS)")
+    p.add_argument("home")
+    p.set_defaults(func=cmd_keychain)
 
     p = sub.add_parser("trust", help="let the stop-gate hook run a repository's `## Gate` block (default: the current repo)")
     p.add_argument("path", nargs="?")

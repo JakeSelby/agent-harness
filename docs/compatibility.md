@@ -9,14 +9,15 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 **Unqualified** means no complete passing evidence, **planned** means no current integration,
 and **unsupported** means a combination explicitly outside the integration contract.
 
-Claude Code and Codex are this release's integration targets. The v0.11.1 candidate floor
-requires their CLIs on macOS and Linux, and that qualification has not yet been re-run against
-this source. The Claude Code and Codex VS Code surfaces and Codex Desktop on macOS remain
+Claude Code and Codex are this release's integration targets. The v0.11.1 stable support floor
+qualifies their CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces and Codex Desktop on macOS remain
 unqualified previews. Do not read successful source generation or deterministic tests as native
 client qualification.
 
 <!-- harness:compatibility:start -->
-**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
+
+**Unqualified:** `claude-code-vscode-macos`, `codex-vscode-macos`, `codex-desktop-macos`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->
@@ -37,6 +38,9 @@ separately: selecting the same underlying provider does not prove equivalent Cur
 Start with an isolated test user/configuration home and a disposable repository. Record exact
 runtime and client versions, operating system, source commit, date, configuration, commands,
 and observed results. Never commit credentials, full private transcripts or personal settings.
+On macOS, run `harness keychain <home>` on any home you build by hand before a client is launched
+under it; a home without a default keychain raises a system dialog, and a home whose keychain
+cannot be created does not launch a client. Never repoint your own default keychain or search list.
 For every target listed in the catalog, verify every `required_cases` entry natively:
 
 1. Install, restart, and inspect effective instructions, discovered skills and registered roles.
