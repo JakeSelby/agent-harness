@@ -30,6 +30,19 @@ All notable changes to this project are documented here. The format follows
   or the brief already states a budget; `status.json` records the variant, the resolved class,
   where model and effort each came from, and the figures appended. A variant with no row for the
   role, or a table that will not build, leaves the worker exactly as it was.
+
+- The `auto` permission posture now gives Codex the automatic approval review it promises. Sync
+  wrote `approval_reviewer`, and Codex names the field `approvals_reviewer`: codex-cli
+  0.154.0-alpha.6.2, 0.155.0-alpha.9, 0.155.1 and 0.156.0-alpha.9 all reject the old spelling
+  under `--strict-config` and drop it in silence otherwise, so the posture resolved in the client
+  as review by the user with no warning. Sync now asks the installed client which name it accepts
+  — from its own emitted protocol schema, or a `--strict-config` probe in a throwaway
+  configuration home, neither of which starts a model turn — writes that one, and takes the stale
+  spelling back out. Both spellings are harness-owned, so a key the harness wrote is removed or
+  restored on re-sync and uninstall while a key of the same name that you set yourself is left
+  alone. With no client installed, the name the newest supported version accepts is written; a
+  client that accepts neither gets no reviewer key, a sync notice and a `harness doctor` finding.
+
 - The usage feed reports a finished subagent's actual spend instead of `spend unknown`. A
   `SubagentStop` summed the agent's transcript the instant it fired, and at that instant the
   transcript can hold only the `user` and `attachment` records the parent wrote into it — so the

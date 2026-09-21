@@ -47,6 +47,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
+from harness_core import codex_client
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -694,15 +695,46 @@ def render_codex_agents(stances: Dict[str, Path], personal: Optional[str]) -> st
     return "\n".join(parts)
 
 
-def update_codex_config(text: str, cfg: Dict[str, Any]) -> str:
-    wanted = {"project_doc_fallback_filenames": ["CLAUDE.md"]}
+def codex_wanted(cfg: Dict[str, Any], reviewer: Optional[codex_client.Reviewer] = None) -> Dict[str, Any]:
+    """The Codex config keys this posture wants, `None` meaning a harness key to take back out.
+
+    Codex renamed the approval-reviewer field, and a spelling the installed client does not know
+    is dropped without a word — so only the name that client accepts is written, and the other
+    one, which an earlier harness may have left behind, is removed. `codex_client` holds the
+    evidence and the probe.
+    """
+    wanted: Dict[str, Any] = {"project_doc_fallback_filenames": ["CLAUDE.md"]}
     p = posture(cfg)
+    chosen, value = None, None
     if p != "inherit":
         approval, sandbox = POSTURES[p]["codex"]
         wanted.update(approval_policy=approval, sandbox_mode=sandbox)
         if p != "bypass":
-            wanted["approval_reviewer"] = "auto_review" if p == "auto" else "user"
-    return reconcile.update_toml(text, wanted)
+            reviewer = reviewer if reviewer is not None else codex_client.detect()
+            chosen, value = reviewer.key, codex_client.REVIEWER_VALUES[p]
+    for key in codex_client.REVIEWER_KEYS:
+        wanted[key] = value if key == chosen else None
+    return wanted
+
+
+def update_codex_config(text: str, cfg: Dict[str, Any],
+                        reviewer: Optional[codex_client.Reviewer] = None) -> str:
+    return reconcile.update_toml(text, codex_wanted(cfg, reviewer))
+
+
+def codex_reviewer_in_config(key: Optional[str]) -> Optional[Any]:
+    """What the live Codex config says about approval review, under the key that client reads.
+
+    A value under the other spelling is worth nothing to it, so it is not looked for here.
+    """
+    path = codex_dir() / "config.toml"
+    if key is None or not path.is_file():
+        return None
+    try:
+        document = reconcile.tomlkit.parse(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return document[key].unwrap() if key in document else None
 
 
 def ensure_gitignore_entries(dry: bool) -> None:
@@ -814,9 +846,11 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         for role in (REPO / "primitives" / "roles").glob("*.md"):
             primitive_catalog.role_projection(REPO, runtime, role,
                 agent_overrides(cfg, table, runtime, role.stem), cfg.get("tiers", {}).get(runtime))
+    reviewer = None
     if cfg.get("codex", {}).get("manage", True):
+        reviewer = codex_client.detect()
         ctoml = codex_dir() / "config.toml"
-        update_codex_config(ctoml.read_text() if ctoml.is_file() else "", cfg)
+        update_codex_config(ctoml.read_text() if ctoml.is_file() else "", cfg, reviewer)
     if cfg.get("claude", {}).get("manage", True):
         read_json(claude_dir() / "settings.json")
     if cfg.get("codex", {}).get("manage", True):
@@ -827,6 +861,12 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         # A sidecar nobody can read renders the shipped table instead; silence would make that
         # look like a deliberate posture.
         say("  notice  cost variant: " + warning)
+    if reviewer is not None and p == "auto" and not reviewer.reliable:
+        # The posture promises Codex reviews its own approval requests. A client that will not
+        # take the setting resolves that as review by the user, so it is said out loud rather
+        # than left to be discovered the next time an approval waits for a human.
+        say("  notice  codex approval review: " + reviewer.detail)
+        say("          `permissions=auto` will ask you to approve; `harness doctor` repeats this")
     stale = placeholder_identity(cfg)
     if stale:
         say(f"  notice  identity {', '.join(stale)} still at the example value; the agent reads this")
@@ -992,8 +1032,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         elif agents.is_file() and not legacy and args.adopt_codex and str(agents) not in store.data["files"]:
             text += "\n---\n<!-- Adopted personal guidance -->\n" + agents.read_text()
         store.generated(agents, text, adopt=args.adopt_codex or legacy)
-        wanted = reconcile.tomlkit.parse(update_codex_config("", cfg)).unwrap()
-        store.toml(codex_dir() / "config.toml", wanted)
+        store.toml(codex_dir() / "config.toml", codex_wanted(cfg, reviewer))
         hook_file = codex_dir() / "hooks.json"
         hook_live = read_json(hook_file) or {}
         hook_template = lifecycle.registration(REPO, "codex")
@@ -1185,6 +1224,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"  codex credentials present (not proof of login): {(codex_dir() / 'auth.json').exists()}")
     say("  constrained roles: use `harness role run`; `harness role status` reports workers, not native qualification")
     cfg = load_config()
+    if cfg.get("codex", {}).get("manage", True):
+        reviewer = codex_client.detect()
+        live = codex_reviewer_in_config(reviewer.key)
+        say(f"  codex approval reviewer: {reviewer.detail}")
+        if posture(cfg) == "auto" and (not reviewer.reliable or live != "auto_review"):
+            say("    `permissions=auto` promises automatic approval review; this client will ask "
+                "you instead. Re-run `harness sync` after updating Codex.")
     for runtime, path in (("claude", claude_dir() / "settings.json"),
                           ("codex", codex_dir() / "hooks.json")):
         if not cfg.get(runtime, {}).get("manage", True):

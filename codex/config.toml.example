@@ -10,4 +10,6 @@ project_doc_fallback_filenames = ["CLAUDE.md"]
 #   auto   -> approval_policy = "on-request",  sandbox_mode = "workspace-write"
 #   manual -> approval_policy = "on-request",   sandbox_mode = "read-only"
 
-# auto uses approval_reviewer = "auto_review"; manual uses "user".
+# auto uses approvals_reviewer = "auto_review"; manual uses "user". The spelling is read from the
+# installed client — Codex rejects the older `approval_reviewer` under `--strict-config` and drops
+# it silently otherwise — and a client that accepts neither gets no reviewer key and a notice.

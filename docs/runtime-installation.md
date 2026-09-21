@@ -19,7 +19,12 @@ Runtime qualification is reported separately.
 The permission choices express intent through different native controls. Codex `manual` uses
 `on-request`, `read-only`, and the user reviewer. `auto` uses `on-request`, `workspace-write`,
 and automatic approval review. `bypass` uses `never` with full access and requires the existing
-explicit acknowledgement. `inherit` preserves native choices. Native requirements and live
+explicit acknowledgement. `inherit` preserves native choices. Codex renamed the reviewer field to
+`approvals_reviewer`, and a client drops a spelling it does not know without a word, so sync asks
+the installed client which name it accepts — from its own protocol schema, or `--strict-config`,
+neither of which starts a model turn — writes that one, and removes the other. A client that
+accepts neither gets no reviewer key, a sync notice and a `harness doctor` finding. Native
+requirements and live
 permission overrides can restrict or supersede defaults; these mappings are not an assertion
 that Claude and Codex permission modes are equivalent.
 

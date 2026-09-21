@@ -35,8 +35,11 @@ changing the template.
 ## Codex (`~/.codex/config.toml`)
 
 - **Owned**: `project_doc_fallback_filenames = ["CLAUDE.md"]`.
-- **Posture**: `approval_policy`, `sandbox_mode`, and `approval_reviewer`. Manual requests
+- **Posture**: `approval_policy`, `sandbox_mode`, and the approval-reviewer key. Manual requests
   user review with a read-only sandbox; auto requests automatic review with workspace writes.
+  Both spellings of that key — `approvals_reviewer`, which current Codex accepts, and the older
+  `approval_reviewer` — are harness-owned: sync writes the one the installed client accepts and
+  removes the other, and uninstall restores whichever it had written.
 - **Generated**: `AGENTS.md`, role TOML and workflow skills, tracked in the ownership journal.
 - **Hooks**: owned event arrays in `hooks.json`; native trust is never fabricated.
 - Model, reasoning effort, notify hooks, MCP servers, plugins and per-project trust are never
