@@ -2207,10 +2207,18 @@ def role_report(rows: List[Dict[str, Any]], days: int) -> int:
 def cmd_usage(args: argparse.Namespace) -> int:
     """Summarize the records the usage-log hook writes. Local file only.
 
-    Every row names its `kind`. A session's totals already include its subagents', so the token
-    groupings sum session and worker rows and never a subagent's; a role-run worker has no
-    session row, so leaving workers out would hide their spend entirely. `--by role` reads the
-    subagent and worker rows, which carry the same tokens a second time, attributed.
+    Every row names its `kind`. A Claude Code session's totals already include its subagents',
+    so the token groupings sum session and worker rows and never a Claude Code subagent's; a
+    role-run worker has no session row, so leaving workers out would hide their spend entirely.
+    `--by role` reads the subagent and worker rows, which for Claude Code carry the same tokens
+    a second time, attributed.
+
+    Codex is the other way round and its subagent rows are summed. A Codex thread's
+    `total_token_usage` counts that thread alone: over the 21 parent threads on one machine
+    that have both a typed total and children with one, four parents report fewer tokens than
+    their own children sum to — 2.0M against 30.6M in the widest case — which a total that
+    included them could not do. So a Codex parent plus its children is the session's bill, and
+    dropping the children would undercount it.
     """
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
@@ -2244,9 +2252,10 @@ def cmd_usage(args: argparse.Namespace) -> int:
         kind = row.get("kind") or "session"
         if kind != "session":
             delegated.append(row)
-        # A subagent's tokens are already in its session's row; a worker's are in no session's,
-        # because a role-run worker has no session. So the totals are sessions plus workers.
-        if by == "role" or kind == "subagent":
+        # A Claude Code subagent's tokens are already in its session's row; a Codex subagent's
+        # are in no row but its own, and a worker's are in no session's because a role-run
+        # worker has no session. So the totals are sessions, workers and Codex subagents.
+        if by == "role" or (kind == "subagent" and row.get("runtime") != "codex"):
             continue
         if rules_mode:
             # Only a session's own conduct was measured by the detectors.
@@ -2256,7 +2265,9 @@ def cmd_usage(args: argparse.Namespace) -> int:
         if by == "repo":
             key = row.get("repo") or "(no repo)"
         elif by == "model":
-            key = "+".join(row.get("models") or []) or "(unknown)"
+            # A session names every model it ran on; a subagent or worker row names the one it
+            # ran on, so both are read rather than the second falling to "(unknown)".
+            key = ("+".join(row.get("models") or []) or row.get("model") or "(unknown)")
         else:
             key = (row.get("ended") or "")[:10]
         acc = groups.setdefault(key, [0, 0, 0, 0, 0])

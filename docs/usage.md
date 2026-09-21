@@ -60,6 +60,40 @@ and `requested_type`, which are a tool call's id and an agent name the tool coul
 at once. Rows are upserted by `(session_id, runtime, kind, agent_id)`, so re-reading a
 transcript never duplicates one, and a subagent transcript is only ever read from its session.
 
+### Codex rollouts
+
+Codex is read from `~/.codex/sessions/` and `~/.codex/archived_sessions/` — `CODEX_HOME`
+moves both — and it writes a subagent to a rollout file of its own rather than beside its
+parent's. The `session_meta` is what tells the two apart: a top-level rollout's
+`payload.source` is a string naming the front end, a spawned thread's is the object
+`{"subagent": {"thread_spawn": {…}}}` carrying the parent thread id, the depth, the agent path
+and a nickname. The row takes `agent_role` as its `agent_type` and falls back to
+`agent_nickname`, which is what the fallback actually does today: Codex leaves the role null
+and names each thread, so `--by role` groups Codex threads by nickname and the groups are
+small. Only the **first** `session_meta` is this rollout's own — a thread that inherited its
+parent's history carries the parent's further down the file.
+
+**A Codex parent's tokens do not include its children's**, which is the opposite of the Claude
+Code rule above, so `harness usage` sums Codex subagent rows and skips Claude Code ones. The
+evidence is the corpus of 438 rollouts this was built from: of the 21 parent threads with both
+a typed total and children with one, four report fewer tokens than their own children sum to,
+2.0M against 30.6M in the widest case. A total that included its children could not be smaller
+than them.
+
+`input_tokens` is reported inclusive of `cached_input_tokens`, `total_tokens` is input plus
+output, and `reasoning_output_tokens` is part of `output_tokens` rather than beside it — no
+exception in the 349 rollouts carrying a typed split. Codex Desktop often writes a snapshot
+with `total_tokens` alone and every typed field zero (85 of 107 top-level Desktop rollouts
+here). That row keeps `total`, is marked `partial`, and leaves the typed fields unknown, so the
+report excludes it rather than reading a real session as free.
+
+Codex capture travels through `harness usage --rescan` rather than through the hook. The
+lifecycle coordinator does register `SessionEnd`, but whether the payload Codex sends names the
+rollout file has not been observed here — no Codex CLI was installed on the machine this was
+measured on, and nothing in the rollouts or `~/.codex/logs_*.sqlite` records a hook payload.
+The hook accepts `rollout_path` and `session_path` beside Claude Code's `transcript_path` on
+that chance; the rescan is the path known to work. Run it after a stretch of Codex work.
+
 ## Usage feed
 
 The usage log is read after the fact. The feed is the same measurement while the session is

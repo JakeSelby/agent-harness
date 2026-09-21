@@ -10,6 +10,9 @@ worker. Read it with `harness usage`.
 The same pass builds the event list `rule-detectors.py` documents, so the rule telemetry costs
 one read of the transcript rather than two: the record gains `rules`, `counts` and `stances`.
 A registry that will not import costs the record its `rules` key and nothing else.
+
+Codex is read from its rollout files instead, by `scan_codex`, and the two runtimes disagree
+about what a parent's tokens mean: see `codex_totals` and `cmd_usage` in `bin/harness`.
 """
 import importlib.util
 import json
@@ -514,9 +517,84 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     return record
 
 
+# Codex names its token fields differently from Claude Code's and reports `input_tokens`
+# inclusive of the cached part, so the mapping lives in one place and `codex_totals` is the only
+# reader of it.
+CODEX_FIELDS = (("input", "input_tokens"), ("output", "output_tokens"),
+                ("cache_read", "cached_input_tokens"),
+                ("cache_write", "cache_write_input_tokens"))
+
+
+def codex_home():
+    return Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+
+
+def codex_spawn(meta):
+    """The `thread_spawn` record of a Codex subagent rollout, or None for a top-level session.
+
+    Codex writes a subagent to a rollout file of its own rather than beside its parent's, so
+    the `session_meta` is the only thing that tells the two apart: a top-level rollout's
+    `payload.source` is a string naming the front end — `"vscode"`, `"cli"`, `"exec"` — while a
+    subagent's is the object `{"subagent": {"thread_spawn": {...}}}`. Measured on one machine,
+    307 of 438 rollouts are subagent threads, every one of them recorded as a session until
+    this test existed.
+
+    The meta's own `parent_thread_id` under `thread_source: "subagent"` is the fallback, so a
+    Codex that moves or renames `source` degrades to a joined row rather than to a false
+    session; the depth it cannot supply is recorded as unknown rather than guessed at 1.
+    """
+    source = meta.get("source")
+    if isinstance(source, dict):
+        spawn = (source.get("subagent") or {}).get("thread_spawn")
+        if isinstance(spawn, dict):
+            return spawn
+    parent = meta.get("parent_thread_id")
+    if isinstance(parent, str) and parent and meta.get("thread_source") == "subagent":
+        return {"parent_thread_id": parent, "depth": None,
+                "agent_nickname": meta.get("agent_nickname"), "agent_role": None}
+    return None
+
+
+def codex_totals(record, totals):
+    """Fill a Codex row's token fields from the last `total_token_usage` snapshot.
+
+    `input_tokens` is inclusive of `cached_input_tokens` and `total_tokens` is input plus
+    output: checked over the 349 rollouts on one machine that carry a typed split, with no
+    exception. `reasoning_output_tokens` is part of `output_tokens` rather than beside it, so
+    it is never added anywhere.
+
+    Codex Desktop often writes a snapshot whose typed fields are all zero and whose
+    `total_tokens` alone is set — 85 of 107 top-level Desktop rollouts here. Reading that as a
+    session that spent nothing would be an error in the direction of free, so the row keeps
+    `total` alone, carries `partial`, and leaves every typed field unknown for the report to
+    exclude from its sums.
+    """
+    if not isinstance(totals, dict):
+        return
+    total = totals.get("total_tokens")
+    record["total"] = total if isinstance(total, int) else None
+    values = {}
+    for name, field in CODEX_FIELDS:
+        value = totals.get(field)
+        values[name] = value if isinstance(value, int) else None
+    if not any(values.values()):
+        if record.get("total"):
+            record["partial"] = True
+        return
+    if isinstance(values["input"], int) and isinstance(values["cache_read"], int):
+        values["input"] = max(0, values["input"] - values["cache_read"])
+    record.update(values)
+
+
 def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
+    """One row from one Codex rollout: a session, or a subagent thread when it was spawned.
+
+    Which of the two it is comes from `codex_spawn` and nothing else. A subagent row is shaped
+    like the Claude Code one `_agent_row` builds, so `usage --by role` reads both without
+    knowing which runtime wrote them.
+    """
     events, models, totals, meta = [], [], None, {}
-    started = ended = ""
+    started = ended = effort = ""
     turn = 0
     tool_names = {}
     malformed = 0
@@ -534,6 +612,12 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
             started = started or timestamp
             ended = timestamp or ended
             if item.get("type") == "session_meta":
+                # The first `session_meta` is this rollout's own. A subagent that inherited its
+                # parent's history carries the parent's meta further down — 36 of 307 here —
+                # and reading that one would hand the child the parent's id and the parent's
+                # string `source`, which is how a subagent was last classified as a session.
+                if meta:
+                    continue
                 meta = payload
                 session_id = session_id or meta.get("id", "")
                 cwd = cwd or meta.get("cwd", "")
@@ -541,6 +625,8 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
                 turn += 1
                 if payload.get("model") and payload["model"] not in models:
                     models.append(payload["model"])
+                if not effort and isinstance(payload.get("effort"), str):
+                    effort = payload["effort"].strip()
             elif item.get("type") == "event_msg" and payload.get("type") == "token_count":
                 value = (payload.get("info") or {}).get("total_token_usage")
                 if isinstance(value, dict):
@@ -572,6 +658,34 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
                                    "final": payload.get("phase") == "final_answer"})
     if not session_id:
         return None
+    spawn = codex_spawn(meta)
+    # A subagent whose parent cannot be named would join to nothing and appear in no report, so
+    # it is kept as the session it was recorded as rather than turned into an invisible row.
+    parent = (spawn or {}).get("parent_thread_id") or meta.get("session_id") or ""
+    if spawn and parent and parent != session_id:
+        row = {
+            "kind": "subagent", "runtime": "codex",
+            "runtime_version": meta.get("cli_version"),
+            # `session_id` is the thread that spawned this one, which at depth 1 is the session
+            # and deeper is another subagent; `spawn_depth` is what says which.
+            "session_id": parent, "agent_id": session_id,
+            "repo": Path(cwd).name,
+            # Codex leaves `agent_role` null and names the thread on every rollout measured
+            # here, so the nickname is the fallback that actually carries the report.
+            "agent_type": spawn.get("agent_role") or spawn.get("agent_nickname")
+                          or meta.get("agent_nickname") or "unknown",
+            "model": models[-1] if models else "",
+            "effort": effort,
+            "tool_calls": sum(1 for e in events if e["kind"] == "tool_use"),
+            "spawn_depth": spawn.get("depth"), "workflow": None,
+            # Codex records no parent-side tool use id on the child, so there is nothing to
+            # join a reroute on; null is that absence, not a measurement of no reroute.
+            "tool_use_id": None, "requested_type": None, "rerouted": False,
+            "turns": turn, "started": started, "ended": ended,
+            "parse_failures": malformed,
+        }
+        codex_totals(row, totals)
+        return row
     record = {"kind": "session", "runtime": "codex",
               "runtime_version": meta.get("cli_version"), "session_id": session_id,
               "repo": Path(cwd).name, "branch": git(cwd, "rev-parse", "--abbrev-ref", "HEAD") if cwd else "",
@@ -581,11 +695,7 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
               "cache_read": None, "cache_write": None, "parse_failures": malformed}
     if rescan and not (prior or {}).get("stances"):
         record["stances_source"] = "rescan"
-    if totals:
-        cached = totals.get("cached_input_tokens")
-        total_input = totals.get("input_tokens")
-        record.update(input=max(0, total_input - cached) if isinstance(total_input, int) and isinstance(cached, int) else None,
-                      output=totals.get("output_tokens"), cache_read=cached)
+    codex_totals(record, totals)
     errors = []
     try:
         module = detectors()
@@ -604,14 +714,19 @@ def row_key(row):
             row.get("kind") or "session", row.get("agent_id") or "")
 
 
-def upsert(record, path=None):
+def upsert(record, path=None, drop=()):
     """Replace the rows these records identify, or append them. Takes one record or many.
 
     A batch keeps the last record for a key, so one locked rewrite is what a whole rescan costs.
+
+    `drop` is the keys to delete outright. A row that changes `kind` changes its key, so an
+    upsert alone would leave the old row beside the new one and the ledger would carry the same
+    thread twice; naming the stale key is how a reclassification migrates rather than doubles.
     """
     records = [record] if isinstance(record, dict) else list(
         {row_key(r): r for r in record}.values())
-    if not records:
+    drop = set(drop)
+    if not records and not drop:
         return Path(path) if path else usage_path()
     path = Path(path) if path else usage_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -630,7 +745,7 @@ def upsert(record, path=None):
         raise RuntimeError("usage lock unavailable; no record was overwritten")
     try:
         rows = []
-        replaced = {row_key(r) for r in records}
+        replaced = {row_key(r) for r in records} | drop
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
@@ -736,21 +851,43 @@ def worker_rows(cutoff=0.0):
     return rows
 
 
+def backup(path):
+    """A copy of the ledger beside it, taken before a rescan rewrites or deletes any row."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    target = path.with_name(path.name + ".bak")
+    try:
+        target.write_bytes(data)
+    except OSError:
+        return None
+    return target
+
+
 def rescan(days=30):
     """Re-read every transcript in the window and rewrite the file once.
 
     A backfill of a month reads hundreds of transcripts. Upserting each one separately would
     take the lock and rewrite the whole file that many times, so the rows are collected and
     written in a single locked pass; `SessionEnd` keeps the one-session path.
+
+    Codex is read from both `sessions/` and `archived_sessions/`, because Codex moves a rollout
+    to the second directory without changing a byte of it: 96 of the 131 top-level rollouts on
+    one machine lived only there, which is most of the capture gap this walk closes.
     """
     cutoff = time.time() - max(days, 0) * 86400
     prior = recorded()
     found, batch = 0, []
-    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-    paths = list(projects_dir().glob("*/*.jsonl")) + list((codex_home / "sessions").rglob("*.jsonl"))
+    codex = codex_home()
+    paths = list(projects_dir().glob("*/*.jsonl"))
+    for folder in ("sessions", "archived_sessions"):
+        paths += list((codex / folder).rglob("*.jsonl"))
     for path in sorted(paths):
-        # A subagent transcript is read from its session, never as one: it carries no session
-        # id of its own, so recording it here would invent a session that never ran.
+        # A Claude Code subagent transcript is read from its session, never as one: it carries
+        # no session id of its own, so recording it here would invent a session that never ran.
+        # A Codex subagent is the opposite — its own rollout, named like any other — so it is
+        # walked here and told apart by `codex_spawn` once its first line has been read.
         if path.name.startswith("agent-") or path.parent.name == "subagents":
             continue
         try:
@@ -773,8 +910,22 @@ def rescan(days=30):
             batch.extend(records)
             found += 1
     batch.extend(worker_rows(cutoff))
-    if batch:
-        upsert(batch)
+    children = {}
+    for row in batch:
+        if row.get("kind") == "subagent" and row.get("runtime") == "codex":
+            children[row["session_id"]] = children.get(row["session_id"], 0) + 1
+    # Codex counts a session's subagents from its own `spawn_agent` calls, which misses a spawn
+    # whose rollout this walk found but whose parent call was compacted away; the larger of the
+    # two is the one supported by a file on disk.
+    for row in batch:
+        if row.get("kind") == "session" and row.get("runtime") == "codex":
+            row["subagents"] = max(row.get("subagents") or 0, children.get(row["session_id"], 0))
+    drop = set((row["agent_id"], "codex", "session", "")
+               for row in batch
+               if row.get("kind") == "subagent" and row.get("runtime") == "codex")
+    if batch or drop:
+        backup(usage_path())
+        upsert(batch, drop=drop)
     return found
 
 
@@ -798,7 +949,13 @@ def main(argv):
         payload = json.load(sys.stdin)
     except Exception:
         return 0
-    transcript = (payload or {}).get("transcript_path") or ""
+    # Claude Code names the file `transcript_path`. Codex's SessionEnd payload has not been
+    # observed here — no Codex CLI is installed on the machine this was measured on — so the
+    # two names it could plausibly use are accepted and the rescan remains the path Codex
+    # capture is actually known to travel. See `docs/usage.md`.
+    payload = payload or {}
+    transcript = (payload.get("transcript_path") or payload.get("rollout_path")
+                  or payload.get("session_path") or "")
     if not transcript:
         return 0
     subprocess.Popen(
