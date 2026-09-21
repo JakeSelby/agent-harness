@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The README's install command clones the `stable` branch, so a new install starts from the latest
+  release instead of the development trunk.
+
 ## [0.11.1] — 2026-09-21
 
 ### Added

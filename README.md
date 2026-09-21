@@ -55,11 +55,12 @@ You need `git`, Python 3.9+, and your own account for every runtime you enable. 
 integration targets. Native Windows is unsupported; WSL2 is unqualified. The harness does not
 provide model access.
 
-Clone the repository, explicitly select the runtimes and editor surface you want managed, then
-preview every change:
+Clone the `stable` branch, explicitly select the runtimes and editor surface you want managed, then
+preview every change. `stable` is always the latest release and a `git pull` on it moves you to the
+next one; `main`, which this page shows, is the development trunk and can be ahead of any release:
 
 ```sh
-git clone https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
+git clone --branch stable https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
 cd ~/repos/agent-harness
 
 bin/harness config set claude.manage true
