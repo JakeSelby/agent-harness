@@ -258,6 +258,24 @@ def await_feed(home, session_id, prefix, seconds=20):
         time.sleep(1)
 
 
+SPEND = re.compile(r"finished at [\d,]+ output tokens? and [\d,]+ tool calls?")
+BUDGET_CLAUSE = "\u00d7 its budget of"
+
+
+def spend_complaint(line):
+    """Why a finished-subagent feed line does not report spend against a budget, or ``""``.
+
+    docs/compatibility.md step 8 asks that the feed report the subagent's spend against that
+    budget. A line with no figures, or figures with nothing to measure them against, does not,
+    and the case that depends on it fails rather than passing on the line's presence.
+    """
+    if not SPEND.search(line):
+        return "the usage feed reported no measured spend for the routed worker: " + line
+    if BUDGET_CLAUSE not in line:
+        return "the usage feed reported spend against no budget: " + line
+    return ""
+
+
 def feed_lines(text):
     """Every usage-feed line the orchestrator's own transcript carries.
 
@@ -353,16 +371,16 @@ def case_cost_posture(home):
             "and the null variant and the pre-existing session did none of it, but the usage feed "
             "line (%s) and the routed usage row (%s) were not both observed"
             % ("seen" if feed else "absent", "seen" if routed else "absent"))
-    measured = "spend unknown" not in feed[0]
+    complaint = spend_complaint(feed[-1])
+    if complaint:
+        raise AssertionError(complaint)
     return ("A non-default cost variant rewrote only the roles it changes (%s of %s) and left the "
             "rest byte-identical; in a new native session an unnamed spawn ran as the variant's "
             "default band worker on its row's model and effort with the budget sentence in its "
-            "brief, the orchestrator's context carried that worker's usage feed line (%s), harness "
-            "usage --rescan --by role recorded the routed row, a session whose record predates the "
-            "workers was not rerouted and its spawn still succeeded, and a null variant did none "
-            "of it."
-            % (len(rewritten), len(after),
-               "with its measured spend" if measured else "reporting spend unknown"))
+            "brief, the orchestrator's context carried \"%s\", harness usage --rescan --by role "
+            "recorded the routed row, a session whose record predates the workers was not rerouted "
+            "and its spawn still succeeded, and a null variant did none of it."
+            % (len(rewritten), len(after), feed[-1]))
 
 
 CASES = {

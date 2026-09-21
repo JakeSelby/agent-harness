@@ -127,6 +127,38 @@ class FailureTests(unittest.TestCase):
         self.assertIn("RuntimeError", outcome["observation"])
 
 
+class FeedSpendTests(unittest.TestCase):
+    """Canned feed lines, so the classification is tested without launching a client."""
+
+    def test_a_measured_line_against_a_budget_satisfies_the_sub_check(self):
+        for line in ("usage-feed: worker-a finished at 282 output tokens and 1 tool call "
+                     "— 0.0× its budget of 10,200 / 21",
+                     "usage-feed: worker-a finished at 12,400 output tokens and 30 tool calls "
+                     "(so far) — 1.2× its budget of 10,200 / 21",
+                     "usage-feed: worker-a finished at 1 output token and 0 tool calls "
+                     "— over budget 2.0× its budget of 1 output token"):
+            self.assertEqual(MODULE.spend_complaint(line), "")
+
+    def test_an_unmeasured_or_unbudgeted_line_fails_the_case_and_is_quoted(self):
+        unknown = "usage-feed: worker-a finished, spend unknown"
+        unbudgeted = "usage-feed: worker-a finished at 282 output tokens and 1 tool call"
+        self.assertIn("no measured spend", MODULE.spend_complaint(unknown))
+        self.assertIn(unknown, MODULE.spend_complaint(unknown))
+        self.assertIn("against no budget", MODULE.spend_complaint(unbudgeted))
+        self.assertIn(unbudgeted, MODULE.spend_complaint(unbudgeted))
+
+    def test_the_case_records_failed_when_the_feed_reports_no_spend(self):
+        def case(home):
+            raise AssertionError(MODULE.spend_complaint("usage-feed: worker-a finished, "
+                                                        "spend unknown"))
+        with patch.dict(MODULE.CASES, {"cost-posture": (case, "canned")}), \
+                patch.object(MODULE.Home, "__init__", fake_home), \
+                patch.object(MODULE.Home, "discard", lambda self: None):
+            outcome = MODULE.probe(CLIENT, "cost-posture", "cheapest", False)
+        self.assertEqual(outcome["result"], "failed")
+        self.assertIn("spend unknown", outcome["observation"])
+
+
 class RedactionTests(unittest.TestCase):
     def test_home_paths_become_a_tilde(self):
         text = MODULE.redact("read /somewhere/tmp/harness-native-x/.claude/settings.json",
