@@ -5,10 +5,10 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 8,
-    "story": 144,
+    "story": 146,
     "task": 1,
-    "bug": 40,
-    "chore": 28,
+    "bug": 42,
+    "chore": 30,
     "spike": 7,
     "decision": 3
   },
@@ -775,8 +775,8 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S048.md",
-      "parent_bmad_id": "AH-S031",
-      "parent_github_number": 98,
+      "parent_bmad_id": "AH-E005",
+      "parent_github_number": 206,
       "lifecycle": "active",
       "provenance": "reconstructed"
     },
@@ -1375,7 +1375,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-E004.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2311,7 +2311,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B029.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2389,7 +2389,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S118.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2480,7 +2480,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S122.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2571,7 +2571,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S129.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2792,7 +2792,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S139.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2900,6 +2900,32 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S144",
+      "github_number": 386,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/386",
+      "title": "Sample allowed commands into the decision log",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S144.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S145",
+      "github_number": 387,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/387",
+      "title": "Record the completion claim on stop-gate decision rows",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S145.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B039",
       "github_number": 388,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/388",
@@ -2909,6 +2935,58 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B039.md",
       "parent_bmad_id": "AH-E004",
       "parent_github_number": 189,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C028",
+      "github_number": 390,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/390",
+      "title": "Add the decision log to the landing copy",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C028.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C029",
+      "github_number": 391,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/391",
+      "title": "Reserve BMad IDs for the issues filed after the #376 backfill",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C029.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B040",
+      "github_number": 392,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/392",
+      "title": "new files an issue the list endpoint does not yet return, so reserve fails",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B040.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B041",
+      "github_number": 394,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/394",
+      "title": "sync installs the Scannable output style whatever the voice stance says",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B041.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2922,7 +3000,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S143.md",
       "parent_bmad_id": "AH-S124",
       "parent_github_number": 334,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     }
   ]
