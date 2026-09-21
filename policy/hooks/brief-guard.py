@@ -16,11 +16,10 @@ a second copy here. If the hook and the detector disagreed, the hook would appen
 detector still counts as missing and the number would never move.
 
 The budget is the same argument for spend. A subagent cannot see the cost variant that priced
-it, so the row's expected output tokens and tool calls are stated in the brief, once, in wording
-fixed here: every number comes from the table and none of the words do. It is soft — the
-sentence says to finish if close and otherwise return — because a hard cap would truncate the
-work rather than the spend. A row with no budgets, a table that will not build, and a brief that
-already prices itself all mean no sentence, which is what keeps a null variant byte-identical.
+it, so the row's expected output tokens and tool calls are stated in the brief, once, in the
+wording `posture.py` fixes for every brief the harness writes, an isolated role worker's included.
+A row with no budgets, a table that will not build, and a brief that already prices itself all
+mean no sentence, which is what keeps a null variant byte-identical.
 
 A spawn that named a role is priced on every runtime. A spawn that named none is priced by the
 band worker it is about to be routed to, so it is priced only where that reroute happens — Claude
@@ -48,9 +47,9 @@ CAP_NOTE = "the brief stated no return bound, so a 400-word cap was added"
 # does on almost every spawn, and an alert on the ordinary case is noise a reader learns to
 # ignore; the cap keeps its notice because a brief that states no bound is the exception.
 #
-# The units a row prices, in the order the sentence states them; a null cell is left out rather
-# than written as "no budget", which would read as permission to spend without limit.
-UNITS = (("budget_output_tokens", "output tokens"), ("budget_tool_calls", "tool calls"))
+# Its wording, and what counts as a brief that already prices itself, are `posture.py`'s
+# `budget_sentence` and `budget_stated`: an isolated role worker's brief carries the same
+# sentence, and two copies of it would drift.
 
 
 def sibling(name):
@@ -116,25 +115,6 @@ def effective_role(payload, tool_input, posture, router, table, variant):
     return route["worker"] if route else None
 
 
-def budget_sentence(row):
-    """The sentence one row's soft budget is stated in, or None when the row prices nothing.
-
-    A half under one unit is left out with the nulls: "about 0 output tokens" would read as an
-    instruction to do nothing, which is a budget nobody wrote.
-    """
-    if not isinstance(row, dict):
-        return None
-    parts = []
-    for key, unit in UNITS:
-        value = row.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
-            parts.append("about {:,} {}".format(value, unit))
-    if not parts:
-        return None
-    return ("\n\nExpected spend: " + " and ".join(parts) + ". Past that, finish if you are "
-            "close; otherwise return what you have and say why.")
-
-
 def budget_for(payload, tool_input, module, variant):
     """The budget sentence this brief is missing, or None. Never raises: a spawn outranks a row.
 
@@ -144,11 +124,10 @@ def budget_for(payload, tool_input, module, variant):
     failure asking where the spawn goes, including an older `posture.py` beside a newer spawn
     hook, whose missing functions would otherwise raise into the coordinator and deny the call.
     """
-    pattern = getattr(module, "BUDGET_RE", None)
-    if pattern is None or pattern.search(tool_input.get("prompt") or ""):
-        return None
     posture, router = sibling("posture"), sibling("tier-agent-spawns")
-    if posture is None or router is None:
+    if posture is None or router is None or not hasattr(posture, "budget_stated"):
+        return None
+    if posture.budget_stated(tool_input.get("prompt"), module):
         return None
     built = []
 
@@ -161,7 +140,7 @@ def budget_for(payload, tool_input, module, variant):
         role = effective_role(payload, tool_input, posture, router, table, variant)
         if not role:
             return None
-        return budget_sentence(posture.row_for(table(), role))
+        return posture.budget_sentence(posture.row_for(table(), role))
     except Exception:
         return None
 

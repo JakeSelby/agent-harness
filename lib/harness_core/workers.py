@@ -28,7 +28,35 @@ def adapter(root, runtime):
     return module
 
 
-def resolve(root, config, runtime, name, model=None):
+def posture_record(root, runtime, fields, table, row, binding, overrides, model):
+    """What the selected cost variant did to this worker, for `status.json`.
+
+    Where each half came from, never how it was worded: a status record carries no prompt text.
+    `"role"` is the role's own contract and the adapter's entry, `"cost-row"` the variant's row
+    for it, `"role-binding"` the user's `role_bindings`, `"cli"` an explicit `--model`.
+    """
+    effort_key = "model_reasoning_effort" if runtime == "codex" else "effort"
+    classed = bool(table.get("class_applies")) and (row or {}).get("class") in catalog.TIER_CLASSES
+    return {"cost_variant": table.get("cost_variant"),
+            "class": row["class"] if classed else fields["tier"],
+            "class_source": "cost-row" if classed else "role",
+            "model_source": ("cli" if model else "role-binding" if "model" in binding
+                             else "cost-row" if classed and "model" in overrides else "role"),
+            "effort_source": ("role-binding" if effort_key in binding
+                              else "cost-row" if effort_key in overrides else "role")}
+
+
+def resolution(root, config, runtime, name, model=None, prompt=None):
+    """Everything a run resolves before it launches: contract, binding, instructions, posture.
+
+    The cost variant reaches a worker through the same function and the same precedence the sync
+    path renders a native definition with — role defaults, then the variant's row, then
+    `role_bindings`, then an explicit `--model` — because the constrained roles are denied as
+    native spawns and only ever run here. The table is built non-strict: a variant with no row
+    for this role, or one that will not build at all, leaves the worker exactly as it was before
+    cost variants had rows. `prompt` is the caller's brief, priced when it states no budget of
+    its own; without one there is nothing to price.
+    """
     if runtime not in RUNTIMES:
         raise ValueError("unsupported worker runtime")
     stances = catalog.resolve_stances(root, config)
@@ -37,7 +65,10 @@ def resolve(root, config, runtime, name, model=None):
     fields, body = catalog.role_contract(root, name)
     if fields["authority"] not in ("read-only", "artifact-write"):
         raise ValueError("workspace-write roles use their normal workflow, not a constrained worker")
-    overrides = config.get("role_bindings", {}).get(runtime, {}).get(name, {})
+    table = catalog.cost_table(root, config)
+    row = catalog.cost_row(root, table, name)
+    binding = config.get("role_bindings", {}).get(runtime, {}).get(name, {})
+    overrides = catalog.cost_overrides(root, config, table, runtime, name)
     bindings = catalog.role_binding(root, runtime, fields, overrides, config.get("tiers", {}).get(runtime))
     chosen = model or bindings.get("model")
     if not isinstance(chosen, str) or not chosen.strip() or chosen == "inherit":
@@ -54,7 +85,37 @@ def resolve(root, config, runtime, name, model=None):
     if fields["authority"] == "artifact-write":
         parts += ["Return only the complete plan Markdown, without a surrounding code fence or chat response. "
                   "Do not write the plan: the harness validates and publishes it to the caller-selected path."]
-    return fields, bindings, "\n\n---\n\n".join(parts)
+    record = posture_record(root, runtime, fields, table, row, binding, overrides, model)
+    sentence = budget(root, row, prompt)
+    if sentence:
+        record["budget"] = posture_figures(root, row)
+    return {"fields": fields, "bindings": bindings, "instructions": "\n\n---\n\n".join(parts),
+            "posture": record, "budget_sentence": sentence}
+
+
+def posture_figures(root, row):
+    """The budget figures the sentence states, as the shared resolver counts them."""
+    module = catalog.posture_module(root)
+    return module.budget_figures(row) if hasattr(module, "budget_figures") else {}
+
+
+def budget(root, row, prompt):
+    """The soft-budget sentence this brief is missing, or None; the same one a native brief gets.
+
+    The wording and the "already priced" test are `policy/hooks/posture.py`'s, loaded by file the
+    way `lifecycle.py` loads a policy, so a role worker's brief and a native spawn's cannot state
+    a spend two different ways. A resolver this checkout does not carry appends nothing.
+    """
+    module = catalog.posture_module(root)
+    if prompt is None or not hasattr(module, "budget_sentence"):
+        return None
+    return None if module.budget_stated(prompt) else module.budget_sentence(row)
+
+
+def resolve(root, config, runtime, name, model=None):
+    """The contract, native binding and shared instructions of one role worker."""
+    ready = resolution(root, config, runtime, name, model)
+    return ready["fields"], ready["bindings"], ready["instructions"]
 
 
 def environment(original, work):
@@ -158,7 +219,10 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     read_roots = [Path(path).resolve(strict=True) for path in read_dirs]
     if any(not path.is_dir() for path in read_roots):
         raise ValueError("--read-dir must name an existing directory")
-    fields, bindings, instructions = resolve(root, config, runtime, name, model)
+    ready = resolution(root, config, runtime, name, model, prompt)
+    fields, bindings, instructions = ready["fields"], ready["bindings"], ready["instructions"]
+    if ready["budget_sentence"]:
+        prompt = prompt.rstrip() + ready["budget_sentence"]
     if bool(artifact) != (fields["authority"] == "artifact-write"):
         raise ValueError("only artifact-write roles require --artifact")
     native = adapter(root, runtime)
@@ -177,7 +241,8 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
               "effort": bindings.get("model_reasoning_effort", bindings.get("effort")),
               "read_roots": [str(workspace), str(root)] + list(map(str, read_roots)),
               "mode": "isolated-cli", "status": "starting", "started_at": time.time(),
-              "stances": config["stances"], "policy_sha256": hashlib.sha256(instructions.encode()).hexdigest(),
+              "stances": config["stances"], "posture": ready["posture"],
+              "policy_sha256": hashlib.sha256(instructions.encode()).hexdigest(),
               "qualification": "unqualified", "authority": "result data only; no transferred approvals"}
     status_path = run_dir / "status.json"
     reconcile.atomic_text(status_path, json.dumps(record, indent=2) + "\n")

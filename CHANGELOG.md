@@ -17,6 +17,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An isolated role worker now follows the selected cost variant. `harness role run` bound a role
+  from its `tier:` alone, so under `frugal` a `gatherer` worker ran on the role's own class while
+  the same sync in the same home rendered that role one class lower — and the constrained roles
+  are denied as native spawns, so neither the posture nor the soft budget ever reached the roles
+  that carry measured budgets. A worker now resolves its row through the same function and the
+  same precedence the sync path renders a definition with — role defaults, the variant's row
+  (class only under a tiered `delegation`, never for a `posture: fixed` role), `role_bindings`,
+  then `--model` — on both runtimes and through the whole stance ladder, so a session-scoped
+  `HARNESS_STANCE_COST` reaches it. Its brief ends with the same `Expected spend` sentence a
+  native brief gets, from one function shared with the brief guard, unless the row prices nothing
+  or the brief already states a budget; `status.json` records the variant, the resolved class,
+  where model and effort each came from, and the figures appended. A variant with no row for the
+  role, or a table that will not build, leaves the worker exactly as it was.
+
 - The `auto` permission posture now gives Codex the automatic approval review it promises. Sync
   wrote `approval_reviewer`, and Codex names the field `approvals_reviewer`: codex-cli
   0.154.0-alpha.6.2, 0.155.0-alpha.9, 0.155.1 and 0.156.0-alpha.9 all reject the old spelling

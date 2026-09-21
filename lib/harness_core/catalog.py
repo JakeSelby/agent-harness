@@ -1,5 +1,6 @@
 """The shared authoring catalog; runtime files are reproducible projections."""
 import hashlib
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -200,6 +201,79 @@ def role_overrides(root, runtime, row=None, class_applies=True, tiers=None, bind
             out[effort_key] = row["effort"]
     out.update(binding or {})
     return out
+
+
+_POSTURE_MODULES = {}
+
+
+def posture_module(root):
+    """The stance and cost resolver the policy hooks run, loaded by file, or None when missing.
+
+    Loading the same file the hooks load is what keeps one answer to "what does this variant
+    say": a sync, a lint and an isolated role worker read the resolver, never a second copy of
+    it. Loaded once per root, because a sync asks it a question per role per runtime.
+    """
+    key = str(root)
+    if key in _POSTURE_MODULES:
+        return _POSTURE_MODULES[key]
+    # One file under two names: `claude/hooks` is a symlink to `policy/hooks`. The second name is
+    # how a tree that carries only the projected side still resolves its own variants.
+    path = next((p for p in (Path(root) / "policy" / "hooks" / "posture.py",
+                             Path(root) / "claude" / "hooks" / "posture.py") if p.is_file()), None)
+    if path is None:
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("harness_posture", str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    _POSTURE_MODULES[key] = module
+    return module
+
+
+def cost_table(root, config):
+    """The configured cost variant's resolved table; never a reason for the work in hand to fail.
+
+    Built from the configuration the caller resolved, so the whole stance ladder it already
+    walked — user file, project file, session variables — reaches the rows. A resolver this
+    checkout does not carry, or a sidecar it cannot use, yields an empty table: everything then
+    resolves exactly as it did before cost variants had rows.
+    """
+    module = posture_module(root)
+    if module is None:
+        return {"rows": {}, "class_applies": False,
+                "warnings": ["no posture resolver in this checkout; rendering without cost rows"]}
+    try:
+        return module.table_for(dict(config.get("stances", {})), config, strict=False, root=root)
+    except Exception as exc:
+        return {"rows": {}, "class_applies": False,
+                "warnings": ["cost table unusable, rendering without cost rows: " + str(exc)]}
+
+
+def cost_row(root, table, role):
+    """The cost row that governs one role, band rows included; the resolver decides which.
+
+    One lookup for every caller, so a band worker is priced from the row the spawn hook reroutes
+    to. A checkout with no resolver falls back to the role's own row.
+    """
+    module = posture_module(root)
+    if module is None or not hasattr(module, "row_for"):
+        return (table.get("rows") or {}).get(role)
+    return module.row_for(table, role)
+
+
+def cost_overrides(root, config, table, runtime, role):
+    """The overrides one role is bound with under `table`, for either runtime.
+
+    The sync path renders a native agent definition with these, and `workers.resolve` binds an
+    isolated worker with them, so a role cannot run on one class as a definition and another as
+    a worker.
+    """
+    return role_overrides(root, runtime, cost_row(root, table, role),
+                          class_applies=bool(table.get("class_applies")),
+                          tiers=config.get("tiers", {}).get(runtime),
+                          binding=config.get("role_bindings", {}).get(runtime, {}).get(role, {}))
 
 
 def role_binding(root, runtime, fields, overrides=None, tiers=None):
