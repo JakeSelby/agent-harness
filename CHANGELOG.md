@@ -142,6 +142,12 @@ All notable changes to this project are documented here. The format follows
   native Claude Code cost and token metrics down to agent, model, effort and stance variant. The
   instance-specific connection id is a placeholder, with the one-line lookup beside it.
 
+- `scripts/cost_bench.py static` measures what the harness adds to every Claude Code session against
+  a bare one: files, lines, characters, an estimated token count and its price per model from
+  `policy/prices.json`. `benchmarks/static.json` holds the figure for the last release and CI fails
+  when the estimate grows more than 5% over it without an entry in `benchmarks/allow.json`. No model
+  is called. Reading and limits: `docs/benchmarks.md`.
+
 ### Changed
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
