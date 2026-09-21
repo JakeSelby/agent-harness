@@ -22,7 +22,12 @@
       "usage-log": {"event": "SessionEnd", "always": true}
     },
     "commands": "every file in claude/commands/, linked into ~/.claude/commands/",
-    "never_touch": ["model", "theme", "viewMode", "effortLevel", "alwaysThinkingEnabled", "skipDangerousModePermissionPrompt", "env", "permissions.deny", "permissions.ask", "autoUpdatesChannel", "remoteControlAtStartup", "agentPushNotifEnabled"]
+    "native_telemetry": {
+      "_comment": "Written only while telemetry.native is true, and owned one variable at a time: every other variable in env is the user's and is never read, changed or removed. A managed key already holding a value the harness did not write is reported and left alone.",
+      "env_keys": ["CLAUDE_CODE_ENABLE_TELEMETRY", "OTEL_METRICS_EXPORTER", "OTEL_LOGS_EXPORTER", "OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_RESOURCE_ATTRIBUTES"],
+      "settings_keys": ["otelHeadersHelper"]
+    },
+    "never_touch": ["model", "theme", "viewMode", "effortLevel", "alwaysThinkingEnabled", "skipDangerousModePermissionPrompt", "env except native_telemetry.env_keys", "otelHeadersHelper unless telemetry.native is true", "permissions.deny", "permissions.ask", "autoUpdatesChannel", "remoteControlAtStartup", "agentPushNotifEnabled"]
   },
   "vscode": {
     "owned_keys": ["claudeCode.focusView", "claudeCode.preferredLocation", "claudeCode.hideOnboarding"],
@@ -30,6 +35,11 @@
   },
   "codex": {
     "owned_keys": ["project_doc_fallback_filenames"],
+    "native_telemetry": {
+      "_comment": "Written only while telemetry.native is true. The [otel] table is reconciled as one key, so keys the user set in it are carried through; exporter and metrics_exporter are the two the harness sets. No header is ever written: Codex takes a literal header map in config.toml and offers no environment or command indirection for it.",
+      "table": "otel",
+      "keys": ["exporter", "metrics_exporter"]
+    },
     "posture_keys": ["approval_policy", "sandbox_mode"],
     "generated_files": ["AGENTS.md"]
   },

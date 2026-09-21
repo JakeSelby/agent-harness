@@ -39,8 +39,8 @@ MAX_BYTES = 1 << 20
 SERVICE_NAME = "agent-harness"
 SEVERITY_NUMBER = 9  # INFO, per the OTLP logs data model.
 
-# `native` is accepted and ignored here: runtime pass-through writes a runtime's own telemetry
-# settings and is not this exporter's business.
+# `native` is validated here and used by `harness sync`, never by this exporter: runtime
+# pass-through writes a runtime's own telemetry settings and sends nothing itself.
 KNOWN_KEYS = ("export", "endpoint", "headers_env", "headers_file", "labels", "native")
 DEFAULT_ENDPOINT = "http://localhost:4318"
 
@@ -102,8 +102,11 @@ def settings(cfg=None, path=None):
     labels = block.get("labels") or {}
     if not isinstance(labels, dict) or any(not isinstance(v, (str, int, float, bool)) for v in labels.values()):
         raise ValueError("telemetry.labels must be an object of scalar values")
+    native = block.get("native", False)
+    if not isinstance(native, bool):
+        raise ValueError("telemetry.native must be true or false; got " + repr(native))
     return {"export": mode, "endpoint": endpoint.rstrip("/"), "headers_env": headers_env,
-            "headers_file": headers_file, "labels": dict(labels)}
+            "headers_file": headers_file, "labels": dict(labels), "native": native}
 
 
 def parse_headers(text):

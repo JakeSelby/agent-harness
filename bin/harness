@@ -495,6 +495,148 @@ def claude_projection(settings: Dict[str, Any], template: Dict[str, Any]) -> Dic
     return proj
 
 
+# ------------------------------------------------------- native telemetry pass-through
+#
+# `telemetry.native` asks each runtime to export its own telemetry to the endpoint the ledger
+# exporter already uses. Nothing here sends anything: it writes the runtime's settings and
+# records what it wrote, so the same key can be updated and taken back out. docs/telemetry.md.
+
+UNMANAGED = object()  # "this caller manages no such key", distinct from "remove the key"
+OTEL_HEADERS_HELPER = "otel-headers.py"
+# Claude Code offers grpc, http/json and http/protobuf against a base URL and appends the signal
+# path itself; protobuf is the one an OTLP/HTTP collector always accepts.
+CLAUDE_OTEL_PROTOCOL = "http/protobuf"
+# Codex takes a full, signal-specific URL per exporter and `binary` for OTLP/protobuf.
+CODEX_OTEL_PROTOCOL = "binary"
+# `OTEL_RESOURCE_ATTRIBUTES` is a comma-separated `key=value` list with no escape the runtimes
+# agree on, so a label carrying a separator or whitespace is left out and named, never mangled.
+OTEL_LABEL_SAFE = re.compile(r"^[A-Za-z0-9_.:/@+-]+$")
+
+
+def native_labels(cfg: Dict[str, Any], telemetry: Dict[str, Any]) -> Tuple[Dict[str, str], List[str]]:
+    """The labels stamped on native telemetry, and the names of any that cannot travel.
+
+    Frozen at sync time: the harness version, one `harness.<dimension>` per resolved stance,
+    and the configured labels. A stance switched without a re-sync mislabels native data until
+    the next one — the ledger row is still right, because it is written per session.
+    """
+    labels = {"harness.version": VERSION}
+    for name, variant in (cfg.get("stances") or {}).items():
+        labels["harness." + str(name)] = str(variant)
+    for key, value in ((telemetry.get("labels") or {})).items():
+        labels[str(key)] = str(value)
+    omitted = sorted(k for k, v in labels.items()
+                     if not OTEL_LABEL_SAFE.match(k) or not OTEL_LABEL_SAFE.match(v))
+    return {k: v for k, v in sorted(labels.items()) if k not in omitted}, omitted
+
+
+def resource_attributes(cfg: Dict[str, Any], telemetry: Dict[str, Any]) -> Tuple[str, List[str]]:
+    labels, omitted = native_labels(cfg, telemetry)
+    return ",".join("{}={}".format(k, v) for k, v in sorted(labels.items())), omitted
+
+
+def claude_native_values(telemetry: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[Dict[Tuple[str, ...], str], List[str]]:
+    """Every Claude settings field the pass-through sets, by path, and the labels left out."""
+    if not telemetry.get("native"):
+        return {}, []
+    attributes, omitted = resource_attributes(cfg, telemetry)
+    values = {("env", "CLAUDE_CODE_ENABLE_TELEMETRY"): "1",
+              ("env", "OTEL_METRICS_EXPORTER"): "otlp",
+              ("env", "OTEL_LOGS_EXPORTER"): "otlp",
+              ("env", "OTEL_EXPORTER_OTLP_PROTOCOL"): CLAUDE_OTEL_PROTOCOL,
+              ("env", "OTEL_EXPORTER_OTLP_ENDPOINT"): telemetry.get("endpoint", ""),
+              ("env", "OTEL_RESOURCE_ATTRIBUTES"): attributes}
+    if telemetry.get("headers_file") or telemetry.get("headers_env"):
+        # The helper reads the configured source at run time, so no header value is ever written
+        # into a settings file. With no source configured the key is not written at all.
+        values[("otelHeadersHelper",)] = str(claude_dir() / "hooks" / "harness" / OTEL_HEADERS_HELPER)
+    return values, omitted
+
+
+def apply_native_claude(merged: Dict[str, Any], live: Dict[str, Any], held: Dict[str, Any],
+                        telemetry: Dict[str, Any], cfg: Dict[str, Any],
+                        ownership: Dict[str, Any]) -> Tuple[List[List[str]], List[str]]:
+    """Fold the runtime's telemetry settings into `merged`; returns its owned paths and notices.
+
+    Ownership is per variable, never the whole `env` map, because the map is the user's: a
+    variable they set is not read, changed or removed, and `held` — the keys `reconcile.Store`
+    already records for this file — is what tells the two apart.
+
+    A managed key that already holds a value the harness never wrote is **left as it is** and
+    reported: adopting it silently would make `sync` the author of something it did not write,
+    and overwriting it would lose a deliberate setting. A key already holding exactly what the
+    harness would write is taken over, since there is nothing to lose. Turning `native` off
+    restores what each key held before the harness first wrote it.
+    """
+    block = ownership.get("claude", {}).get("native_telemetry", {})
+    paths = ([["env", key] for key in block.get("env_keys", [])]
+             + [[key] for key in block.get("settings_keys", [])])
+    values, omitted = claude_native_values(telemetry, cfg)
+    notices = ["telemetry label {} carries a comma, an equals sign or whitespace, which "
+               "OTEL_RESOURCE_ATTRIBUTES cannot; it is left off the native labels and still "
+               "travels with the ledger export".format(name) for name in omitted]
+    kept: List[List[str]] = []
+    for path in paths:
+        record = held.get(json.dumps(path))
+        wanted = values.get(tuple(path))
+        if wanted is None and record is None:
+            continue  # never written by the harness and not wanted now: not ours to touch
+        current = reconcile.lookup(live, path)
+        if wanted is not None and record is None and current["present"] and current["value"] != wanted:
+            notices.append(
+                "{} in {} already holds a value the harness did not write; native telemetry "
+                "left it alone. Remove it to let `sync` manage it.".format(
+                    ".".join(path), claude_dir() / "settings.json"))
+            continue
+        item = ({"present": True, "value": wanted} if wanted is not None
+                else deepcopy(record.get("prior") or {"present": False, "value": None}))
+        if wanted is None and current == item:
+            continue  # already back to what it held before; there is nothing left to take out
+        reconcile.assign(merged, path, item)
+        kept.append(path)
+    return kept, notices
+
+
+def codex_native_otel(telemetry: Dict[str, Any], live: Optional[Dict[str, Any]],
+                      owned: bool) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    """The `[otel]` table `sync` wants, or `None` to take the harness's table back out.
+
+    Both exporters are set explicitly. Codex's `metrics_exporter` defaults to its own first-party
+    sink, and its source keeps an exact-name list of metrics — token usage, turn cost, tool calls
+    and API calls among them — that the sink drops client-side, so setting only `exporter` sends
+    no token metrics anywhere.
+
+    No header is written. `[otel]` takes a literal header map in `config.toml` and offers no
+    environment or command indirection for it, and a credential in a configuration file is what
+    the exporter's own rules refuse; native Codex export therefore needs an endpoint that accepts
+    unauthenticated traffic from this machine, or one the user authenticates some other way.
+    """
+    if not telemetry.get("native"):
+        return None, []
+    base = str(telemetry.get("endpoint", "")).rstrip("/")
+    ours = {"exporter": {"otlp-http": {"endpoint": base + "/v1/logs",
+                                       "protocol": CODEX_OTEL_PROTOCOL}},
+            "metrics_exporter": {"otlp-http": {"endpoint": base + "/v1/metrics",
+                                               "protocol": CODEX_OTEL_PROTOCOL}}}
+    wanted = deepcopy(live) if isinstance(live, dict) else {}
+    clashing = sorted(k for k, v in ours.items()
+                      if not owned and k in wanted and wanted[k] != v)
+    if clashing:
+        return None, ["codex [otel] {} already holds a value the harness did not write; native "
+                      "telemetry left the table alone. Remove the key to let `sync` manage it."
+                      .format(", ".join(clashing))]
+    wanted.update(ours)
+    return wanted, []
+
+
+def codex_otel_in_config(text: str) -> Optional[Dict[str, Any]]:
+    try:
+        document = reconcile.tomlkit.parse(text)
+    except ValueError:
+        return None
+    return document["otel"].unwrap() if "otel" in document else None
+
+
 def merge_vscode_settings(live: Dict[str, Any], owned: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = deepcopy(live) if live else {}
     out.update(owned)
@@ -695,13 +837,17 @@ def render_codex_agents(stances: Dict[str, Path], personal: Optional[str]) -> st
     return "\n".join(parts)
 
 
-def codex_wanted(cfg: Dict[str, Any], reviewer: Optional[codex_client.Reviewer] = None) -> Dict[str, Any]:
+def codex_wanted(cfg: Dict[str, Any], reviewer: Optional[codex_client.Reviewer] = None,
+                 otel: Any = UNMANAGED) -> Dict[str, Any]:
     """The Codex config keys this posture wants, `None` meaning a harness key to take back out.
 
     Codex renamed the approval-reviewer field, and a spelling the installed client does not know
     is dropped without a word — so only the name that client accepts is written, and the other
     one, which an earlier harness may have left behind, is removed. `codex_client` holds the
     evidence and the probe.
+
+    `otel` is the table `codex_native_otel` resolved. Left at `UNMANAGED` the key is not listed
+    at all, so a caller that knows nothing about telemetry cannot remove a user's `[otel]`.
     """
     wanted: Dict[str, Any] = {"project_doc_fallback_filenames": ["CLAUDE.md"]}
     p = posture(cfg)
@@ -714,12 +860,15 @@ def codex_wanted(cfg: Dict[str, Any], reviewer: Optional[codex_client.Reviewer] 
             chosen, value = reviewer.key, codex_client.REVIEWER_VALUES[p]
     for key in codex_client.REVIEWER_KEYS:
         wanted[key] = value if key == chosen else None
+    if otel is not UNMANAGED:
+        wanted["otel"] = otel
     return wanted
 
 
 def update_codex_config(text: str, cfg: Dict[str, Any],
-                        reviewer: Optional[codex_client.Reviewer] = None) -> str:
-    return reconcile.update_toml(text, codex_wanted(cfg, reviewer))
+                        reviewer: Optional[codex_client.Reviewer] = None,
+                        otel: Any = UNMANAGED) -> str:
+    return reconcile.update_toml(text, codex_wanted(cfg, reviewer, otel))
 
 
 def codex_reviewer_in_config(key: Optional[str]) -> Optional[Any]:
@@ -837,7 +986,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
     stances = resolve_stances(cfg)
     p = posture(cfg)
-    telemetry_settings(cfg)
+    telemetry = telemetry_settings(cfg)
     table = cost_table(cfg)
     # Render every role for both runtimes before anything is written: a binding that will not
     # resolve is an error the user sees before a half-synced home directory.
@@ -997,6 +1146,18 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])]
         owned_paths += [["permissions", "allow"], ["permissions", "defaultMode"]]
         owned_paths += [["hooks", event] for event in template.get("hooks", {})]
+        held = store.data["files"].get(str(settings_file), {}).get("keys", {})
+        native_paths, native_notices = apply_native_claude(merged, live, held, telemetry, cfg, ownership)
+        owned_paths += native_paths
+        report.extend(native_notices)
+        if telemetry.get("native"):
+            attributes, _ = resource_attributes(cfg, telemetry)
+            helper = "headers helper" if ("otelHeadersHelper" in merged) else "no headers"
+            say(f"  native  claude-code exports its own telemetry to "
+                f"{telemetry.get('endpoint', '')} ({CLAUDE_OTEL_PROTOCOL}, {helper})")
+            say(f"          labels {attributes}")
+        elif native_paths:
+            say("  native  telemetry.native is off; removing the Claude telemetry settings sync added")
         store.json(settings_file, merged, owned_paths)
         applied["claude"] = claude_projection(merged, template)
         applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template)
@@ -1033,7 +1194,21 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         elif agents.is_file() and not legacy and args.adopt_codex and str(agents) not in store.data["files"]:
             text += "\n---\n<!-- Adopted personal guidance -->\n" + agents.read_text()
         store.generated(agents, text, adopt=args.adopt_codex or legacy)
-        store.toml(codex_dir() / "config.toml", codex_wanted(cfg, reviewer))
+        config_toml = codex_dir() / "config.toml"
+        owned_otel = "otel" in store.data["files"].get(str(config_toml), {}).get("keys", {})
+        otel, otel_notices = codex_native_otel(
+            telemetry, codex_otel_in_config(config_toml.read_text() if config_toml.is_file() else ""),
+            owned_otel)
+        report.extend(otel_notices)
+        if otel is not None:
+            say(f"  native  codex exports logs and metrics to "
+                f"{str(telemetry.get('endpoint', '')).rstrip('/')}/v1/{{logs,metrics}}")
+            say("          no header is written: Codex takes a literal header map, so the "
+                "endpoint must accept this machine unauthenticated or be fronted by the user")
+        elif owned_otel:
+            say("  native  telemetry.native is off; restoring the Codex [otel] table sync replaced")
+        store.toml(config_toml, codex_wanted(cfg, reviewer, otel if (otel is not None or owned_otel)
+                                             else UNMANAGED))
         hook_file = codex_dir() / "hooks.json"
         hook_live = read_json(hook_file) or {}
         hook_template = lifecycle.registration(REPO, "codex")
@@ -1282,6 +1457,27 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             detail = f"headers unavailable: {exc}"
         say(f"  telemetry export: otlp -> {module.endpoint_label(telemetry['endpoint'])}, {detail}")
         say("    the ledger is the record; replay a window with `harness usage export --since`")
+    if not telemetry.get("native"):
+        say("  native telemetry: off; neither runtime is asked to export its own")
+    else:
+        host = module.endpoint_label(telemetry["endpoint"]) if module else telemetry["endpoint"]
+        say(f"  native telemetry: on -> {host}")
+        attributes, omitted = resource_attributes(cfg, telemetry)
+        live = (read_json(claude_dir() / "settings.json") or {}) if cfg.get("claude", {}).get("manage", True) else {}
+        current = (live.get("env") or {}).get("OTEL_RESOURCE_ATTRIBUTES")
+        if current is None:
+            say("    claude-code: not configured in settings.json; run `harness sync`")
+        elif current == attributes:
+            say(f"    claude-code: labels match this version and these stances ({attributes})")
+        else:
+            say("    claude-code: labels are from an earlier sync and mislabel data until the "
+                f"next one; run `harness sync`. Wanted {attributes}")
+        for name in omitted:
+            say(f"    label {name} cannot travel in OTEL_RESOURCE_ATTRIBUTES and is left off")
+        say("    codex: no header is written, because [otel] takes a literal header map; its "
+            "export needs an endpoint that accepts this machine unauthenticated")
+        say("    both runtimes attach their own user and organization identifiers to what they "
+            "send; read docs/telemetry.md before pointing this at a hosted endpoint")
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))

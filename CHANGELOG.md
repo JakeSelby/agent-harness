@@ -17,6 +17,7 @@ All notable changes to this project are documented here. The format follows
   (such as `mcp__notes__read_*`) approved in plan mode under the same posture gate; it is empty
   by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
   inferred.
+
 - `product.json` now holds the landing copy as validated data: a `hero` of title, subtitle and proof
   line, six `capabilities` groups of a pitch and three to six features each with a repository
   relative `doc` path, and an `on_the_way` list of at most five items, each naming an issue, a
@@ -98,6 +99,7 @@ All notable changes to this project are documented here. The format follows
 
 - `harness doctor` names the export mode, the endpoint's scheme and host, and the names — never
   the values — of the headers it resolved.
+
 - A `/land` workflow picks up where `/build` stops. It verifies the required checks — and the
   issue-ownership check where a repository runs one — on the head that will actually merge,
   squash-merges with the remote branch deleted, fast-forwards the shared checkout, removes the
@@ -107,10 +109,29 @@ All notable changes to this project are documented here. The format follows
   dirty or unmerged state with the reason; merging stays approval-gated and it never tags or
   deploys. Projections for both runtimes are generated from the shared source as usual.
 
+- `"native": true` in the `telemetry` block makes `harness sync` turn on each runtime's **own**
+  OpenTelemetry export to the same endpoint, off by default. Claude Code gets the telemetry
+  switch, both OTLP exporters, `http/protobuf`, the endpoint and an `OTEL_RESOURCE_ATTRIBUTES`
+  carrying `harness.version` and one `harness.<dimension>` per resolved stance, plus an
+  `otelHeadersHelper` pointing at a harness-owned script that reads the configured header source
+  at run time — so no header value is written into a settings file. Codex gets `[otel]` with
+  both `exporter` and an explicit `metrics_exporter`, because its default metrics sink drops
+  token, cost, tool and API metrics client-side; it is given no header, since `[otel]` takes a
+  literal header map, and [docs/telemetry.md](docs/telemetry.md) states that gap rather than
+  papering over it.
+
+- Ownership is per variable: a variable you set in `env` is never read, changed or removed, a
+  managed key already holding a value the harness did not write is reported and left alone, and
+  turning the key off restores what each key held before. Labels are frozen at sync time, so a
+  stance switched without a re-sync mislabels native data until the next one — the ledger row
+  stays authoritative. `harness doctor` reports the state, the endpoint's host, whether the
+  labels are current, and that both runtimes attach their own user and organization identifiers.
+
 ### Changed
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
   release instead of the development trunk.
+
 - The README's first screen is the headline, a terminal capture of `harness sync --dry-run` on a
   fresh home, the description and the six capability groups, one linked line per feature, plus the
   "On the way" list. Release status and the generated compatibility block now follow the install
