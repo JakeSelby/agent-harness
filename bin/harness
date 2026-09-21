@@ -17,7 +17,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness usage   [--days N] [--by day|repo|model|role|stance] [--stance NAME] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
-    harness worktree remove NAME [REPO]
+    harness worktree remove NAME [REPO] [--merged] [--also-clear NAME]
     harness workspace create NAME FOLDER... [--no-harness] [--force]
     harness config get KEY | set KEY VALUE
     harness integrations show|register|doctor [architecture-viewer]
@@ -41,7 +41,7 @@ import sys
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
@@ -1868,6 +1868,10 @@ def cmd_workspace(args: argparse.Namespace) -> int:
 
 WORKTREE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
+#: Ignored directories a quality gate writes and a later run rebuilds. Clearing these is what
+#: lets a finished worktree be removed without a recursive delete typed into a shell.
+REGENERABLE_DIRS = ("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".astro")
+
 
 def worktree_root() -> Path:
     """The dedicated root for disposable task checkouts."""
@@ -1932,6 +1936,59 @@ def _registered_worktrees(repo: Path) -> List[Dict[str, str]]:
     return records
 
 
+def classify_worktree_status(text: str, also_clear: Sequence[str] = ()) -> Tuple[List[str], List[str]]:
+    """Split `git status --porcelain --ignored --untracked-files=all` output into two lists.
+
+    Returns the regenerable ignored entries, safe to clear, and everything else, which blocks a
+    removal: tracked changes, untracked files, and ignored entries that are not caches. An entry
+    is regenerable only when git marks it `!!` and one of its path components is a known cache
+    name or an `--also-clear` name. A path git had to quote is never treated as regenerable, so
+    an unusual name is refused rather than deleted on a guess.
+    """
+    clearable = set(REGENERABLE_DIRS) | set(also_clear)
+    regenerable: List[str] = []
+    blocking: List[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        code, path = line[:2], line[3:]
+        parts = [part for part in path.split("/") if part]
+        if code == "!!" and not path.startswith('"') and any(part in clearable for part in parts):
+            regenerable.append(path)
+        else:
+            blocking.append(path)
+    return regenerable, blocking
+
+
+def merged_head_refusal(repo: Path, branch: str, tip: str) -> Optional[str]:
+    """Why `branch` is not proven merged at `tip`, or None when a merged pull request holds it.
+
+    Ancestry is the wrong test here: the repository squash-merges and deletes the remote branch,
+    so the branch's own commits never become ancestors of the default branch. The merged pull
+    request's head commit is the proof instead. Anything short of one match refuses.
+    """
+    gh = shutil.which("gh")
+    if gh is None:
+        return "gh is not installed, so the merge cannot be proven"
+    out = subprocess.run(
+        [gh, "pr", "list", "--head", branch, "--state", "merged", "--json", "number,headRefOid"],
+        cwd=str(repo), check=False, capture_output=True, text=True, timeout=60,
+    )
+    if out.returncode != 0:
+        detail = out.stderr.strip().splitlines()
+        return detail[-1] if detail else "gh pr list failed"
+    try:
+        records = json.loads(out.stdout.strip() or "[]")
+    except json.JSONDecodeError:
+        return "gh pr list did not return JSON"
+    if not records:
+        return f"no merged pull request has {branch} as its head branch"
+    if any(record.get("headRefOid") == tip for record in records):
+        return None
+    heads = ", ".join(f"#{record.get('number')} at {str(record.get('headRefOid'))[:12]}" for record in records)
+    return f"local tip {tip[:12]} is not the merged head ({heads})"
+
+
 def cmd_worktree(args: argparse.Namespace) -> int:
     repo = git_root(args.repo or ".")
     if args.action == "create":
@@ -1960,17 +2017,45 @@ def cmd_worktree(args: argparse.Namespace) -> int:
         status = _git(dest, "status", "--porcelain", "--ignored", "--untracked-files=all", capture=True)
         if status.returncode != 0:
             return status.returncode
-        if status.stdout.strip():
+        regenerable, blocking = classify_worktree_status(status.stdout, getattr(args, "also_clear", None) or [])
+        if blocking:
             say(f"refusing to remove worktree with modified, untracked, or ignored files: {dest}")
+            for entry in blocking[:5]:
+                say(f"  {entry}")
+            if len(blocking) > 5:
+                say(f"  and {len(blocking) - 5} more")
             return 1
-        symbolic = _git(dest, "symbolic-ref", "--quiet", "HEAD", capture=True)
-        if symbolic.returncode != 0:
+        symbolic = _git(dest, "symbolic-ref", "--quiet", "--short", "HEAD", capture=True)
+        branch = symbolic.stdout.strip() if symbolic.returncode == 0 else ""
+        if not branch:
             head = _git(dest, "rev-parse", "HEAD", capture=True)
             refs = _git(repo, "for-each-ref", "--contains", head.stdout.strip(), "--format=%(refname)", capture=True)
             if head.returncode != 0 or refs.returncode != 0 or not refs.stdout.strip():
                 say(f"refusing to remove detached worktree whose HEAD is not contained by a ref: {dest}")
                 return 1
-        return _git(repo, "worktree", "remove", str(dest)).returncode
+        # The merge proof runs before any deletion, so a refusal leaves the worktree intact.
+        if getattr(args, "merged", False):
+            if not branch:
+                say(f"refusing to prove a merge for a detached worktree: {dest}")
+                return 1
+            tip = _git(dest, "rev-parse", "HEAD", capture=True)
+            if tip.returncode != 0:
+                return tip.returncode
+            refusal = merged_head_refusal(repo, branch, tip.stdout.strip())
+            if refusal:
+                say(f"refusing to delete {branch}: {refusal}")
+                return 1
+        for entry in regenerable:
+            target = dest / entry
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target, ignore_errors=True)
+            else:
+                target.unlink(missing_ok=True)
+        removed = _git(repo, "worktree", "remove", str(dest))
+        if removed.returncode != 0 or not getattr(args, "merged", False):
+            return removed.returncode
+        # Proven merged above, so the branch is gone from the remote and `-d` would refuse it.
+        return _git(repo, "branch", "-D", branch, capture=True).returncode
 
     dirty = 0
     for record in _registered_worktrees(repo):
@@ -1983,7 +2068,7 @@ def cmd_worktree(args: argparse.Namespace) -> int:
             say(f"unknown\t{path}")
             dirty += 1
             continue
-        state = "dirty" if status.stdout.strip() else "clean"
+        state = "dirty" if classify_worktree_status(status.stdout)[1] else "clean"
         dirty += state == "dirty"
         branch = record.get("branch", "detached").removeprefix("refs/heads/")
         say(f"{state}\t{branch}\t{path}")
@@ -3176,6 +3261,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     remove = worktree_sub.add_parser("remove", help="remove a clean managed task checkout")
     remove.add_argument("name")
     remove.add_argument("repo", nargs="?")
+    remove.add_argument("--merged", action="store_true",
+                        help="delete the local branch too, once a merged pull request holds its tip")
+    remove.add_argument("--also-clear", action="append", metavar="NAME", default=[],
+                        help="one more regenerable directory name to clear; repeatable")
     remove.set_defaults(func=cmd_worktree)
 
     p = sub.add_parser("init", help="write the config file by answering questions")
