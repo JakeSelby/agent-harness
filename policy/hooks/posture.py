@@ -23,6 +23,7 @@ the base variant's table and a warning, never a guessed default.
 Import-cheap on purpose: no work at import, JSON reads only, because the dispatcher loads
 this on every tool call.
 """
+import importlib.util
 import json
 import os
 import time
@@ -71,6 +72,8 @@ SWITCH_VALUES = {
     "turn_feed": ("off", "thresholds", "every-turn"),
 }
 BUDGET_KEYS = ("budget_output_tokens", "budget_tool_calls")
+# The unit each budgeted key is stated in, in the order the sentence states them.
+BUDGET_UNITS = dict(zip(BUDGET_KEYS, ("output tokens", "tool calls")))
 # Ceilings that only rule out a number no machine could mean. A budget is soft, so the cap is
 # about arithmetic that stays finite, not about an opinion on how much is too much.
 MAX_MULTIPLIER = 100
@@ -656,6 +659,61 @@ def row_for(table, role):
         if name == role:
             return rows.get(band)
     return None
+
+
+def _sibling(name):
+    """A module beside this file, or None. Resolving a posture must never raise on an import."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "harness_" + name.replace("-", "_"), str(Path(__file__).resolve().parent / (name + ".py")))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+def budget_figures(row):
+    """The halves of one row's soft budget worth stating, keyed as the row keys them.
+
+    A null half is left out rather than written as "no budget", which would read as permission to
+    spend without limit, and a half under one unit goes with it: "about 0 output tokens" would
+    read as an instruction to do nothing, which is a budget nobody wrote.
+    """
+    if not isinstance(row, dict):
+        return {}
+    return {key: row[key] for key in BUDGET_KEYS
+            if isinstance(row.get(key), int) and not isinstance(row[key], bool) and row[key] >= 1}
+
+
+def budget_sentence(row):
+    """The sentence one row's soft budget is stated in, or None when the row prices nothing.
+
+    The one wording for every brief the harness writes: a native spawn's, appended by
+    `brief-guard`, and an isolated role worker's, appended by `harness role run`. An agent cannot
+    see the cost variant that priced it, so the row's figures are stated in the brief — every
+    number from the table and none of the words. It is soft, because a hard cap would truncate
+    the work rather than the spend.
+    """
+    parts = ["about {:,} {}".format(value, BUDGET_UNITS[key])
+             for key, value in budget_figures(row).items()]
+    if not parts:
+        return None
+    return ("\n\nExpected spend: " + " and ".join(parts) + ". Past that, finish if you are "
+            "close; otherwise return what you have and say why.")
+
+
+def budget_stated(text, detectors=None):
+    """True when this brief already prices itself, or when nothing here can tell.
+
+    What counts as a stated budget belongs to `rule-detectors.py` and not to a second copy per
+    caller: a sentence the detector still reads as missing would be appended forever and the
+    number would never move. A registry that will not load, or one without the pattern, is
+    "cannot tell", which appends nothing.
+    """
+    module = _sibling("rule-detectors") if detectors is None else detectors
+    pattern = getattr(module, "BUDGET_RE", None)
+    return pattern is None or bool(pattern.search(text or ""))
 
 
 def tier_models(runtime="claude-code", root=None):
