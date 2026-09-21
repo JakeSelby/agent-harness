@@ -3160,6 +3160,29 @@ def cmd_compatibility(args):
     return 0
 
 
+def cmd_freeze(args):
+    """Print the drift check a release handoff otherwise records by hand."""
+    try:
+        data = compatibility.freeze_record(REPO)
+        result = compatibility.freeze_drift(REPO, data, args.against)
+        refusals = compatibility.merge_refusal(REPO, data, args.merge_check) if args.merge_check else []
+    except (OSError, ValueError) as exc:
+        print("freeze: " + str(exc), file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(dict(result, merge_check=args.merge_check, refusals=refusals), indent=2))
+    elif result["state"] != "frozen":
+        say("No release branch is frozen; qualify on a release branch cut at the freeze commit.")
+    else:
+        say(result["branch"] + " is frozen at " + result["commit"][:12] + "; compared with " + result["ref"])
+        say(result["stat"] or "  no runtime source change; this round's evidence still describes " + result["ref"])
+    for refusal in refusals:
+        print("freeze: merge refused: " + refusal, file=sys.stderr)
+    if refusals:
+        return 1
+    return 1 if result["paths"] else 0
+
+
 def cmd_task(args):
     root = tasks.repository(Path(args.path or Path.cwd()))
     if args.action == "save":
@@ -3370,6 +3393,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--json", action="store_true")
     p.add_argument("--release-check", action="store_true", help="fail unless every release target has native evidence")
     p.set_defaults(func=cmd_compatibility)
+
+    p = sub.add_parser("freeze", help="show runtime source drift from the frozen release commit")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--against", default="origin/main", help="revision to compare the frozen commit with")
+    p.add_argument("--merge-check", metavar="REF",
+                   help="fail when merging REF into the frozen branch would change the qualified source")
+    p.set_defaults(func=cmd_freeze)
 
     p = sub.add_parser("task", help="save or inspect a shared task continuation contract")
     p.add_argument("action", choices=["save", "show"])

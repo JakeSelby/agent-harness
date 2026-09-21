@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Qualification evidence is written per case as the case finishes, so a round killed part-way costs
+  one case rather than the whole round. `scripts/native_acceptance.py` appends each finished case to
+  a durable log outside the checkout, `--progress` names that log and `--from-progress` rebuilds a
+  record from it without launching a client. The evidence schema already unions cases across several
+  records per client and already rejects a linked `failed` or `unverified`, so a partial record stays
+  a valid input and neither behaviour changes (#339).
+
 - The landing copy now names the decision log: the `Live usage feed` feature in `product.json` and
   the matching README line say that a decision log on this machine records what a hook decided and
   what settled it, and that only `harness usage` reads it. A new `landing-copy` check enforces the
@@ -16,8 +23,10 @@ All notable changes to this project are documented here. The format follows
   no copy change is needed. A docs-only, tests-only or CI-only pull request never fires it (#390).
 - `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
   sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
+
 - The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
   issue map, and `scripts/bmad_issue_sync.py new` files an issue and reserves its ID in one step (#378).
+
 - `scripts/bmad_issue_sync.py audit --live` compares the committed issue map with GitHub, read-only:
   title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
   `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
@@ -209,6 +218,20 @@ All notable changes to this project are documented here. The format follows
   and a missing price file or a malformed `prices` override costs an export its dollars and
   nothing else.
 
+- Qualification freezes on a release branch instead of on `main`. `compatibility/freeze.json` names
+  the frozen commit and branch, and a new `harness freeze` reports drift between that commit and a
+  given ref over the runtime source paths, exits non-zero on drift, and refuses a merge that would
+  change those paths on the frozen branch. `docs/releasing.md` gains the freeze procedure and the
+  triage rule that a round runs to completion and collects defects rather than fixing one mid-round,
+  because any source-path change invalidates every evidence record for the round (#332).
+
+- Two deterministic pre-qualification checks that spend no model turns. A documentation-link check
+  resolves every relative path and heading anchor across the repository's Markdown, and a credential
+  probe names the variable a client would authenticate with or fails immediately with the reason,
+  instead of the 300-second hang a session-credentials-only home used to produce. Both are additive
+  and neither writes to `compatibility/evidence/` or appears in a catalog record, because a green
+  deterministic check is not native qualification (#401).
+
 ### Changed
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
@@ -230,6 +253,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Three defects in the native acceptance runner, recorded during 0.11.0 qualification and none of
+  them in the harness runtime. `orchestrator_text()` now reads a session's transcript whether or not
+  a subagent directory was written, so a session that spawned none no longer returns an empty string
+  and lets a `cost-posture` assertion pass vacuously. The runner's cited qualification runbook is
+  written rather than a dead link. The three AWS session variables — the key id, the secret key and
+  the session token — now reach the client, so a container holding only session credentials can
+  authenticate. The bypass classification a `permission-controls` driver needs — telling a model's
+  own refusal apart from a policy block by reading the recorded denials and the permission mode —
+  is added and tested, but no such driver exists in the runner, so nothing calls it yet (#309).
 - `harness worktree remove` finishes the cleanup after a squash merge. The quality gate has to run
   before a push and writes `__pycache__`, which used to leave the worktree unremovable and reported
   as dirty by `harness worktree audit`; removal no longer counts the regenerable caches it knows

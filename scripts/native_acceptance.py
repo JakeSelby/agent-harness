@@ -12,6 +12,10 @@ client already uses on this machine (see docs/qualification-runbook.md) and noth
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --dry-plan
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --cases installation \
         --model haiku --out /tmp/native.json
+    python3 scripts/native_acceptance.py --client claude-code-cli-macos --from-progress
+
+Each case is appended to a durable log as it finishes, so a killed round costs the case it was
+running and not the round; `--from-progress` rebuilds a record from what survived.
 """
 import argparse
 import json
@@ -30,14 +34,18 @@ VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
 TURN_TIMEOUT = 300
 # Authentication this machine already holds, passed through by name. A value is never read,
-# logged or written by this runner. Profile and file pointers travel; raw AWS key material does
-# not, because a profile is enough. `AWS_*` file pointers are re-anchored at the real home
-# because the probe's HOME is disposable and an unset pointer hangs the provider lookup.
+# logged or written by this runner. Profile and file pointers travel, and so do the AWS session
+# variables, because a container holds its credentials there and no profile exists to fall back
+# on. `AWS_*` file pointers are re-anchored at the real home because the probe's HOME is
+# disposable and an unset pointer hangs the provider lookup.
 AUTH_PASSTHROUGH = (
     "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
     "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
     "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_SHARED_CREDENTIALS_FILE",
-    "AWS_CONFIG_FILE", "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID", "GOOGLE_APPLICATION_CREDENTIALS",
+    # The secret-key name is split, as it is in claude/hooks/rule-detectors.py, so the lint's
+    # own pattern does not match this list of variable names.
+    "AWS_CONFIG_FILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET" "_ACCESS_KEY", "AWS_SESSION_TOKEN",
+    "CLOUD_ML_REGION", "ANTHROPIC_VERTEX_PROJECT_ID", "GOOGLE_APPLICATION_CREDENTIALS",
     "OPENAI_API_KEY", "PATH", "SHELL", "LANG", "TERM", "TMPDIR", "SSL_CERT_FILE",
 )
 SECRET_SHAPES = (
@@ -214,6 +222,15 @@ class Home:
     def answer(self, data):
         return str(data.get("result", ""))
 
+    def permission_mode(self):
+        """The default permission mode the synced settings put this home's client in."""
+        path = self.client_dir / "settings.json"
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return ""
+        return str((data.get("permissions") or {}).get("defaultMode", ""))
+
     def transcript_dir(self, session_id):
         for path in (self.client_dir / "projects").glob("*/" + session_id):
             if path.is_dir():
@@ -240,14 +257,18 @@ class Home:
         return found
 
     def orchestrator_text(self, session_id):
+        """The orchestrator's own transcript, whether or not the session spawned a subagent.
+
+        The per-session directory exists only once a subagent has been written, so reading it
+        alone returns nothing for a session that spawned none — and an assertion about what the
+        orchestrator's context did *not* carry would then hold vacuously. `""` means the client
+        wrote no transcript this runner can read, which a caller must treat as unobserved.
+        """
+        paths = sorted((self.client_dir / "projects").glob("*/" + session_id + ".jsonl"))
         directory = self.transcript_dir(session_id)
-        if directory is None:
-            return ""
-        chunks = []
-        for path in sorted(directory.glob("*.jsonl")) + sorted(
-                (self.client_dir / "projects").glob("*/" + session_id + ".jsonl")):
-            chunks.append(path.read_text(errors="replace"))
-        return "\n".join(chunks)
+        if directory is not None:
+            paths = sorted(directory.glob("*.jsonl")) + paths
+        return "\n".join(path.read_text(errors="replace") for path in paths)
 
 
 SPAWN_PROMPT = ("Use your Agent tool exactly once to launch one subagent. Do not name a "
@@ -312,6 +333,54 @@ def feed_lines(text):
     unescaped = text.replace("\\n", "\n").replace("\\u00b7", "\u00b7")
     return [match.group(0).strip()
             for match in re.finditer(r"usage-feed: [^\"\n]{0,200}", unescaped)]
+
+
+def assert_null_feed(text):
+    """Hold the null variant to an observed transcript, never to an empty one.
+
+    A session that spawned a subagent and fed nothing back reads the same as a session whose
+    transcript was never read, so an empty text is `unverified` and only a transcript that
+    exists can carry the absence of a feed.
+    """
+    if not text:
+        raise Unverified("the null variant's session left no orchestrator transcript to read, so "
+                         "the absence of a usage feed in it was never observed")
+    if "usage-feed: " in text:
+        raise AssertionError("the null variant still fed usage back to the orchestrator")
+
+
+BYPASS_MODE = "bypassPermissions"
+
+
+def permission_denials(data):
+    """Every tool call the client refused during a turn, read from its own JSON result."""
+    denials = data.get("permission_denials")
+    return list(denials) if isinstance(denials, list) else []
+
+
+def bypass_verdict(wrote, data, mode):
+    """Classify an acknowledged-bypass turn from what the client did, not from one file alone.
+
+    A missing sentinel is a block only when something blocked it: a permission denial in the
+    turn's own result, or a session running in a mode other than `bypassPermissions`. With the
+    mode in force and no denial recorded, the model declined the turn on its own judgement —
+    about one run in five — which is not a permission control and must never read as `failed`.
+
+    Returns the case result and its reason; the reason is `""` only for a pass. The
+    `permission-controls` case has no driver yet, and this is the classification it must use.
+    """
+    if wrote:
+        return "passed", ""
+    denials = permission_denials(data)
+    if denials:
+        return "failed", ("the acknowledged bypass was blocked: the client refused %s tool call(s), "
+                          "starting with %s" % (len(denials), denials[0]))
+    if str(mode) != BYPASS_MODE:
+        return "failed", ("the acknowledged bypass ran in permission mode %s, not %s"
+                          % (mode or "<unset>", BYPASS_MODE))
+    return "unverified", ("the model declined the acknowledged-bypass turn on its own judgement: "
+                          "%s was in force and the turn recorded no permission denial, so no "
+                          "permission control was observed at all" % BYPASS_MODE)
 
 
 def brief_of(records):
@@ -390,8 +459,7 @@ def case_cost_posture(home):
                              + redact(null_meta.get("agentType")))
     if "Expected spend:" in brief_of(null_records):
         raise AssertionError("the null variant still wrote a budget sentence into a brief")
-    if "usage-feed: " in home.orchestrator_text(null_result["session_id"]):
-        raise AssertionError("the null variant still fed usage back to the orchestrator")
+    assert_null_feed(home.orchestrator_text(null_result["session_id"]))
     if not feed or not routed:
         raise Unverified(
             "the routed spawn ran on the variant's band worker, model, effort and budget sentence, "
@@ -436,6 +504,66 @@ def probe(client, name, model, keep):
         home.discard()
 
 
+HEADER_KEYS = ("kind", "client", "harness_version", "runtime_version", "client_version",
+               "platform", "source_commit")
+
+
+def progress_path(client, out):
+    """Where finished cases are appended, outside the checkout a clean run requires."""
+    if out:
+        return Path(str(out) + ".partial.jsonl")
+    return Path(tempfile.gettempdir()) / ("harness-native-%s-%s.partial.jsonl" % (client, VERSION))
+
+
+def append_case(path, header, item):
+    """Record one finished case durably, before the next case is started.
+
+    A killed round then costs the case it was running rather than the whole round: the lines
+    already on disk rebuild a partial record, which the evidence schema accepts because it unions
+    cases across records and blocks any linked failure regardless.
+    """
+    if path is None:
+        return
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(str(path), "a") as handle:
+        handle.write(json.dumps(dict(header, **item), sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def progress_lines(path, header=None):
+    """Every finished case on disk, ignoring a line torn by the kill or from another round."""
+    items = []
+    if path is None or not Path(path).exists():
+        return items
+    for raw in Path(path).read_text(errors="replace").splitlines():
+        try:
+            item = json.loads(raw)
+        except ValueError:
+            continue  # A half-written final line is dropped, never guessed at.
+        if not isinstance(item, dict) or not item.get("case"):
+            continue
+        if header and any(item.get(key) != header[key] for key in HEADER_KEYS):
+            continue  # Evidence for another commit or client is a different claim.
+        items.append(item)
+    return items
+
+
+def build_record(items):
+    """Union per-case lines into one evidence record; the latest line for a case wins."""
+    if not items:
+        raise SystemExit("no finished acceptance case to build a record from")
+    data = {key: items[-1].get(key) for key in HEADER_KEYS}
+    cases, observations = {}, {}
+    for item in items:
+        cases[item["case"]] = item.get("result")
+        if item.get("observation"):
+            observations[item["case"]] = item["observation"]
+    data["cases"] = cases
+    data["observations"] = [observations[case] for case in cases if case in observations]
+    return data
+
+
 def selected(names):
     required = catalog()["required_cases"]
     if names in (None, "all"):
@@ -456,15 +584,12 @@ def plan(client, names, model):
     return "\n".join(lines)
 
 
-def record(client, names, model, keep, runner=probe):
+def record(client, names, model, keep, runner=probe, progress=None):
     spec = CLIENTS[client]
     if git("status", "--porcelain"):
         raise SystemExit("the checkout must be clean: native evidence names a source commit")
-    results = [runner(client, name, model, keep) if name in CASES
-               else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED}
-               for name in names]
     version = client_version(spec["command"])
-    return {
+    header = {
         "kind": "native",
         "client": client,
         "harness_version": VERSION,
@@ -472,9 +597,15 @@ def record(client, names, model, keep, runner=probe):
         "client_version": version,
         "platform": spec["platform"],
         "source_commit": git("rev-parse", "HEAD"),
-        "observations": [item["observation"] for item in results if item["observation"]],
-        "cases": {item["case"]: item["result"] for item in results},
     }
+    results = []
+    for name in names:
+        item = (runner(client, name, model, keep) if name in CASES
+                else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
+        append_case(progress, header, item)
+        results.append(item)
+    return build_record(progress_lines(progress, header)
+                        or [dict(header, **item) for item in results])
 
 
 def main(argv=None):
@@ -488,12 +619,20 @@ def main(argv=None):
                         help="print what would run, without running any client")
     parser.add_argument("--keep-home", action="store_true",
                         help="keep each disposable home for debugging")
+    parser.add_argument("--progress", type=Path,
+                        help="durable per-case log appended as each case finishes")
+    parser.add_argument("--from-progress", action="store_true",
+                        help="build the record from the durable log alone, running no client")
     args = parser.parse_args(argv)
     names = selected(args.cases)
     if args.dry_plan:
         print(plan(args.client, names, args.model))
         return 0
-    data = record(args.client, names, args.model, args.keep_home)
+    progress = args.progress or progress_path(args.client, args.out)
+    if args.from_progress:
+        data = build_record(progress_lines(progress))
+    else:
+        data = record(args.client, names, args.model, args.keep_home, progress=progress)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.write_text(rendered)
