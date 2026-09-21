@@ -2451,24 +2451,39 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
 # --------------------------------------------------------------------------- telemetry
 
 
-def load_telemetry(root: Path = REPO):
-    """The exporter the usage hook runs, from `root`'s checkout, or None when it has none.
+def load_hook_module(name: str, root: Path = REPO, required: bool = False):
+    """A module from `root`'s hook directory, or None when it has none.
 
-    Loaded from the hook's own file rather than reimplemented here, so the CLI validates a
-    `telemetry` block with the same code that will send the rows.
+    The hooks are standalone scripts: they are reached through `~/.claude/hooks/harness` and
+    nothing above that directory resolves from them. So a module both the CLI and a hook need
+    lives beside the hooks and is loaded from its file here, rather than imported from a library
+    the hook could not reach — and neither side gets its own copy of the behaviour.
     """
     import importlib.util
 
-    path = root / "claude" / "hooks" / "telemetry.py"
+    path = root / "claude" / "hooks" / (name + ".py")
     if not path.is_file():
+        if required:
+            raise SystemExit(f"this checkout has no {path}; reinstall or re-clone it")
         return None
     try:
-        spec = importlib.util.spec_from_file_location("harness_telemetry", str(path))
+        spec = importlib.util.spec_from_file_location("harness_" + name, str(path))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
     except Exception:
+        if required:
+            raise SystemExit(f"{path} could not be loaded; reinstall or re-clone this checkout")
         return None
+
+
+def load_telemetry(root: Path = REPO):
+    """The exporter the usage hook runs, or None when this checkout has none.
+
+    Loaded from the hook's own file rather than reimplemented here, so the CLI validates a
+    `telemetry` block with the same code that will send the rows.
+    """
+    return load_hook_module("telemetry", root)
 
 
 def telemetry_settings(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -2527,7 +2542,7 @@ def cmd_usage_export(args: argparse.Namespace) -> int:
             f"to {target}{state}")
         return 0
     sent, failed = module.export_rows(
-        rows, config=settings, version=VERSION,
+        rows, config=settings, version=VERSION, prices=load_prices(load_config()),
         errors_path=state_dir() / "usage.errors.jsonl")
     say(f"{window}: sent {sent} row(s) in {batch_count} batch(es) to "
         f"{module.endpoint_label(settings['endpoint'])}, {failed} row(s) failed")
@@ -2540,266 +2555,33 @@ def cmd_usage_export(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- prices
 
 PRICES_PATH = REPO / "policy" / "prices.json"
-# The four columns every entry must carry to price anything at all; a rate missing one of them
-# leaves the model unpriced rather than charging the part it knows about.
-RATE_FIELDS = ("input", "output", "cache_read", "cache_write")
-TOKEN_TIERS = ("cache_write_5m", "cache_write_1h")
-# A price read a quarter ago is a guess. `doctor` says so rather than a report quietly drifting.
-PRICE_STALE_DAYS = 90
 
-
-def shipped_prices(path: Optional[Path] = None) -> Dict[str, Any]:
-    """The price file as written, or an empty table when it is missing or unreadable.
-
-    A broken price file costs the report its dollar column and nothing else: `usage` still
-    counts tokens, which is what it did before prices existed.
-    """
-    data = read_json(PRICES_PATH if path is None else path) or {}
-    models = data.get("models")
-    return models if isinstance(models, dict) else {}
+# Every rate, every id spelling and the session/subagent join live in `policy/hooks/pricing.py`
+# and are bound here rather than reimplemented: the exporter runs as a standalone hook and has
+# to reach the same code, so the dollars a report prints and the dollars an exported row carries
+# cannot drift apart. `PRICES_PATH` stays the CLI's own, and every call site below passes it, so
+# this checkout's price file is the one the CLI reads whatever else is installed.
+pricing = load_hook_module("pricing", required=True)
+RATE_FIELDS = pricing.RATE_FIELDS
+TOKEN_TIERS = pricing.TOKEN_TIERS
+PRICE_STALE_DAYS = pricing.PRICE_STALE_DAYS
+shipped_prices = pricing.shipped_prices
+normalise_model = pricing.normalise_model
+usable_rate = pricing.usable_rate
+price_for = pricing.price_for
+row_tokens = pricing.row_tokens
+tokens_cost = pricing.tokens_cost
+breakdown_cost = pricing.breakdown_cost
+row_model = pricing.row_model
+row_cost = pricing.row_cost
+session_children = pricing.session_children
+newest_as_of = pricing.newest_as_of
+price_age_days = pricing.price_age_days
 
 
 def load_prices(cfg: Dict[str, Any], path: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
-    """The shipped table with the user's `prices` block merged over it, field by field.
-
-    Merged per model id rather than wholesale, so an override that names one rate keeps the
-    shipped `as_of` and `source` for the rest of the entry and a new model can be added
-    outright. Ids are normalised on both sides, so `Claude-Opus-5` overrides `claude-opus-5`.
-    """
-    table = dict((normalise_model(key), value) for key, value in shipped_prices(path).items()
-                 if isinstance(value, dict))
-    overrides = cfg.get("prices") if isinstance(cfg.get("prices"), dict) else {}
-    for key, value in overrides.items():
-        if not isinstance(value, dict):
-            continue
-        name = normalise_model(key)
-        merged = dict(table.get(name) or {})
-        merged.update(value)
-        table[name] = merged
-    return table
-
-
-def normalise_model(model: str) -> str:
-    """One spelling of a model id: lower case, no cloud vendor prefix, no context-window suffix.
-
-    A ledger holds the id each runtime reported, and the same model arrives as
-    `claude-haiku-4-5`, `anthropic.claude-haiku-4-5-20251001-v1:0` on Bedrock and
-    `claude-opus-5[1m]` in a long-context session. The suffix is dropped because the provider
-    prices the 1M window at the standard rate; the remainder is matched by prefix, so a dated id
-    still reaches its family.
-    """
-    name = (model or "").strip().lower()
-    name = re.sub(r"\[[^\]]*\]", "", name).split("/")[-1]
-    while True:
-        head, dot, rest = name.partition(".")
-        if not (dot and rest and head.isalpha()):
-            break
-        name = rest
-    return name.strip("-").strip()
-
-
-def usable_rate(entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, float]]:
-    """An entry's four rates as floats, or None when any of them is missing or not a number."""
-    if not isinstance(entry, dict):
-        return None
-    rate: Dict[str, float] = {}
-    for field in RATE_FIELDS + TOKEN_TIERS:
-        value = entry.get(field)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            if field in RATE_FIELDS:
-                return None
-            continue
-        rate[field] = float(value)
-    return rate
-
-
-def price_for(table: Dict[str, Dict[str, Any]], model: str) -> Optional[Dict[str, float]]:
-    """The rate governing one model id: the longest listed prefix of its normalised form."""
-    name = normalise_model(model)
-    if not name:
-        return None
-    best = ""
-    for key in table:
-        if key and name.startswith(key) and len(key) > len(best):
-            best = key
-    return usable_rate(table.get(best)) if best else None
-
-
-def row_tokens(row: Dict[str, Any], rate: Optional[Dict[str, float]] = None) -> Optional[Dict[str, int]]:
-    """A row's four token counts, or None when the row cannot be priced from them.
-
-    A row marked `partial` — a transcript read to a budget, or a Codex snapshot carrying only a
-    total — is unpriced, never priced at what was readable: an understated dollar figure is
-    worse than an absent one, because nothing on the line says it is short.
-
-    An unreported count against a rate of zero is read as zero rather than as unknown, because
-    it cannot change the bill either way. That is what makes a Codex row priceable: its rollout
-    names no cache-write figure at all, and OpenAI charges nothing for one.
-    """
-    if row.get("partial"):
-        return None
-    tokens: Dict[str, int] = {}
-    for name in RATE_FIELDS:
-        value = row.get(name)
-        if value is None and rate is not None and not rate.get(name):
-            value = 0
-        if isinstance(value, bool) or not isinstance(value, int):
-            return None
-        tokens[name] = max(value, 0)
-    for name in TOKEN_TIERS:
-        value = row.get(name)
-        if not isinstance(value, bool) and isinstance(value, int):
-            tokens[name] = max(value, 0)
-    return tokens
-
-
-def tokens_cost(tokens: Dict[str, int], rate: Dict[str, float]) -> float:
-    """USD for one set of token counts at one rate.
-
-    Cache writes are charged tier by tier only when the row's tiers add up to its cache-write
-    total: a row that reports no split, or whose split disagrees with its total, is charged
-    whole at `cache_write`. Checking the sum rather than the keys' presence means a row whose
-    tiers are both zero because the runtime reported none is not read as writes at the 5-minute
-    rate.
-    """
-    total = (tokens["input"] * rate["input"] + tokens["output"] * rate["output"]
-             + tokens["cache_read"] * rate["cache_read"])
-    write = tokens["cache_write"]
-    tiers = dict((name, tokens.get(name) or 0) for name in TOKEN_TIERS)
-    if write and sum(tiers.values()) == write:
-        for name in TOKEN_TIERS:
-            total += tiers[name] * rate.get(name, rate["cache_write"])
-    else:
-        total += write * rate["cache_write"]
-    return total / 1_000_000
-
-
-def breakdown_cost(row: Dict[str, Any], table: Dict[str, Dict[str, Any]]) -> Optional[float]:
-    """USD for a row from its per-model breakdown, or None when the map cannot carry it.
-
-    The largest sessions are the ones that switched models, and their totals alone name several
-    rates and no split between them. `usage-log.py` records the split as `by_model`, checked
-    against the row's own totals before it is written, so this is a sum of parts and not an
-    allocation. Any part that cannot be priced leaves the whole row unpriced.
-
-    A part named for a harness-generated turn — `<synthetic>`, and anything else the transcript
-    brackets — is no model and has no rate. It is skipped when it spent nothing, which is the
-    only case where the real models still account for every token.
-    """
-    parts = row.get("by_model")
-    if not isinstance(parts, dict) or not parts:
-        return None
-    total = 0.0
-    for name, part in parts.items():
-        if not isinstance(name, str) or not isinstance(part, dict):
-            return None
-        if name.startswith("<"):
-            if any(part.get(field) for field in RATE_FIELDS):
-                return None
-            continue
-        rate = price_for(table, name)
-        if rate is None:
-            return None
-        tokens = row_tokens(dict(part, partial=row.get("partial")), rate)
-        if tokens is None:
-            return None
-        total += tokens_cost(tokens, rate)
-    return total
-
-
-def row_model(row: Dict[str, Any], excluded: Optional[set] = None) -> Optional[str]:
-    """The one model a row's tokens were spent on, or None when the row names several.
-
-    A session row names every model it ran on and carries one set of totals, so a session that
-    switched models mid-way cannot be split and is unpriced. Its subagents' models are taken off
-    the list first, since their tokens are being priced separately — unless that would empty it,
-    which is the session that ran the same model its subagent did.
-    """
-    models = [m for m in (row.get("models") or []) if isinstance(m, str) and m]
-    if excluded:
-        models = [m for m in models if normalise_model(m) not in excluded] or models
-    if not models and isinstance(row.get("model"), str) and row["model"]:
-        models = [row["model"]]
-    return models[0] if len(models) == 1 else None
-
-
-def row_cost(row: Dict[str, Any], table: Dict[str, Dict[str, Any]],
-             children: Optional[List[Dict[str, Any]]] = None) -> Optional[float]:
-    """USD for one ledger row, or None when it cannot be priced.
-
-    A row that carries a per-model breakdown is priced from it and from nothing else, which is
-    the only way a session that switched models can be priced at all; see `breakdown_cost`.
-    What follows is for the rows written before that map existed.
-
-    A Claude Code session's totals already include its subagents', which ran on their own models
-    at their own rates — the oracle session priced here spent 85% of its dollars on 1-hour cache
-    writes at the parent's rate and the rest on a subagent's 5-minute writes at another. So the
-    children's tokens come off the parent's totals, each child is priced at its own model, and
-    the two are added. A child that cannot be priced leaves the whole session unpriced, because
-    the remainder alone would read as the session's bill.
-
-    A row whose totals do not cover its children — an old row written before subagent tokens
-    were captured — is priced alone, exactly as its tokens are reported alone. Coverage is
-    decided on the counts, before anything is priced, so an unpriceable child does not turn a
-    parent that never held its tokens into an unpriced row.
-    """
-    if row.get("partial"):
-        return None
-    # A breakdown is the whole bill: for Claude Code it is cut from the same map the totals are
-    # summed over, subagent records included, so nothing is added to it.
-    direct = breakdown_cost(row, table)
-    if direct is not None:
-        return direct
-    joined: Optional[Dict[str, int]] = None
-    child_cost = 0.0
-    excluded: set = set()
-    base = row_tokens(row) if children else None
-    parts = [row_tokens(child) for child in children or []]
-    if base is not None and all(part is not None for part in parts) \
-            and all(base[name] >= sum(part[name] for part in parts) for name in RATE_FIELDS):
-        joined = dict(base)
-        for part in parts:
-            for name in RATE_FIELDS + TOKEN_TIERS:
-                if name in joined and name in part:
-                    joined[name] = max(joined[name] - part[name], 0)
-        for child in children or []:
-            cost = row_cost(child, table)
-            if cost is None:
-                return None
-            child_cost += cost
-        excluded = set(normalise_model(c.get("model") or "") for c in children or [])
-    rate = price_for(table, row_model(row, excluded) or "")
-    if rate is None:
-        return None
-    tokens = joined if joined is not None else row_tokens(row, rate)
-    if tokens is None:
-        return None
-    return tokens_cost(tokens, rate) + child_cost
-
-
-def session_children(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    """Claude Code subagent rows keyed by the session whose totals already hold their tokens."""
-    children: Dict[str, List[Dict[str, Any]]] = {}
-    for row in rows:
-        if row.get("kind") == "subagent" and row.get("runtime") != "codex" and row.get("session_id"):
-            children.setdefault(row["session_id"], []).append(row)
-    return children
-
-
-def newest_as_of(table: Dict[str, Dict[str, Any]]) -> str:
-    """The most recent `as_of` in the table, or "" when no entry carries one."""
-    dates = [e["as_of"] for e in table.values()
-             if isinstance(e, dict) and isinstance(e.get("as_of"), str) and e["as_of"]]
-    return max(dates) if dates else ""
-
-
-def price_age_days(as_of: str, now: Optional[float] = None) -> Optional[int]:
-    """Whole days between an `as_of` date and today, or None when the date will not parse."""
-    try:
-        stamp = time.mktime(time.strptime(as_of, "%Y-%m-%d"))
-    except (ValueError, TypeError):
-        return None
-    return int((time.time() if now is None else now) - stamp) // 86400
+    """The shipped table with the user's `prices` block merged over it. See `pricing.py`."""
+    return pricing.load_prices(cfg, PRICES_PATH if path is None else path)
 
 
 def percentile(values: List[Any], share: float) -> Any:

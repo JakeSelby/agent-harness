@@ -16,6 +16,7 @@ nothing rather than failing the session.
 Nothing here ever logs, prints or records a header value. See docs/telemetry.md.
 """
 import calendar
+import importlib.util
 import json
 import os
 import stat
@@ -174,6 +175,63 @@ def headers(config, env=None):
     return out
 
 
+# ------------------------------------------------------------------ prices
+
+# Loaded once per process: the exporter runs in a detached worker that sends one batch and
+# exits, and re-reading the price file per row would be the most expensive thing it did.
+_PRICING = []
+
+
+def pricing():
+    """The sibling price module, or None when this copy is running away from it.
+
+    Same resolver `usage-log.py` uses for the detectors, and the same consequence: a copy of
+    these files somewhere else exports rows without dollars rather than failing.
+    """
+    if not _PRICING:
+        module = None
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pricing.py")
+            spec = importlib.util.spec_from_file_location("harness_pricing", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception:
+            module = None
+        _PRICING.append(module)
+    return _PRICING[0]
+
+
+def price_table(cfg=None):
+    """The merged price table, or `{}` when pricing cannot be had at all.
+
+    Never raises. A missing price file, a malformed `prices` override or a missing sibling
+    costs an exported row its two dollar attributes and nothing else: the row still travels,
+    with its tokens, exactly as it did before prices were exported.
+    """
+    module = pricing()
+    if module is None:
+        return {}
+    try:
+        return module.load_prices(read_config() if cfg is None else cfg)
+    except Exception:
+        return {}
+
+
+def row_prices(rows, table):
+    """`(usd, as_of)` per row, in order, or `(None, "")` for each when pricing is unavailable.
+
+    Priced over the whole set rather than row by row, because a Claude Code session is priced
+    with its subagent rows in hand — the figure on the session row already includes them.
+    """
+    module = pricing()
+    if module is not None and table:
+        try:
+            return module.priced(rows, table)
+        except Exception:
+            pass
+    return [(None, "")] * len(rows)
+
+
 # ------------------------------------------------------------------ the OTLP/JSON payload
 
 
@@ -213,13 +271,17 @@ def any_value(value):
     return {"stringValue": str(value)}
 
 
-def attributes(row, config=None, version=""):
-    """The row's flat scalars, its stances, its key and the configured labels.
+def attributes(row, config=None, version="", price=None):
+    """The row's flat scalars, its stances, its key, its price and the configured labels.
 
     A nested map — `days`, `by_model`, `rules`, `counts` — travels in the body only: attribute
     sets are flat, and flattening a hundred per-day slices into attribute names would make
     every row a new column in a backend. `stances` is the exception, because a stance is a
-    dimension a report groups by: it flattens to one `harness.<dimension>` each.
+    dimension a report groups by: it flattens to one `harness.<dimension>` each, and only here,
+    which is why `body_row` takes the map back out of the body.
+
+    `price` is the `(usd, as_of)` this row was priced at. An unpriced row carries neither
+    attribute: a zero would say the run was free rather than that nobody knows what it cost.
     """
     out = {}
     for key, value in sorted(row.items()):
@@ -231,6 +293,11 @@ def attributes(row, config=None, version=""):
         if isinstance(variant, (str, int, float, bool)):
             out["harness." + str(dimension)] = variant
     out["harness.row_key"] = row_key(row)
+    usd, as_of = price or (None, "")
+    if usd is not None:
+        out["harness.usd"] = float(usd)
+        if as_of:
+            out["harness.price_as_of"] = str(as_of)
     stamped = row.get("harness_version") or version
     if stamped:
         out["harness.version"] = stamped
@@ -239,26 +306,40 @@ def attributes(row, config=None, version=""):
     return [{"key": k, "value": any_value(v)} for k, v in sorted(out.items())]
 
 
-def log_record(row, config=None, version="", now=None):
+def body_row(row):
+    """The row as it travels in the body: everything the ledger holds but the `stances` map.
+
+    A backend that parses a JSON body flattens a nested map into dotted keys of its own, so a
+    body carrying `stances` lands a second copy of every stance beside the `harness.<dimension>`
+    attributes above. One stance, one attribute: the map comes out here and nothing else does,
+    because no other nested field is also exported as attributes.
+    """
+    return dict((k, v) for k, v in row.items() if k != "stances")
+
+
+def log_record(row, config=None, version="", now=None, price=None):
     now_nanos = int((time.time() if now is None else now) * 1000000000)
     return {
         "timeUnixNano": str(_nanos(row.get("ended")) or now_nanos),
         "observedTimeUnixNano": str(now_nanos),
         "severityNumber": SEVERITY_NUMBER,
         "severityText": "INFO",
-        "body": {"stringValue": json.dumps(row, sort_keys=True)},
-        "attributes": attributes(row, config, version),
+        "body": {"stringValue": json.dumps(body_row(row), sort_keys=True)},
+        "attributes": attributes(row, config, version, price),
     }
 
 
-def payload(rows, config=None, version="", now=None):
+def payload(rows, config=None, version="", now=None, prices=None):
+    """One OTLP request body. `prices` is the `(usd, as_of)` per row, in the order given."""
+    prices = list(prices or []) + [None] * max(len(rows) - len(prices or []), 0)
     resource = [{"key": "service.name", "value": {"stringValue": SERVICE_NAME}}]
     if version:
         resource.append({"key": "service.version", "value": {"stringValue": version}})
     return {"resourceLogs": [{
         "resource": {"attributes": resource},
         "scopeLogs": [{"scope": {"name": SERVICE_NAME},
-                       "logRecords": [log_record(r, config, version, now) for r in rows]}],
+                       "logRecords": [log_record(r, config, version, now, p)
+                                      for r, p in zip(rows, prices)]}],
     }]}
 
 
@@ -291,12 +372,12 @@ def endpoint_label(endpoint):
         return ""
 
 
-def post(rows, config, request_headers, version="", timeout=TIMEOUT, opener=None):
+def post(rows, config, request_headers, version="", timeout=TIMEOUT, opener=None, prices=None):
     """POST one batch. Raises on transport or status failure; the caller records the class."""
     url = config["endpoint"]
     if not url.endswith("/v1/logs"):
         url = url + "/v1/logs"
-    body = json.dumps(payload(rows, config, version)).encode("utf-8")
+    body = json.dumps(payload(rows, config, version, None, prices)).encode("utf-8")
     request = urllib.request.Request(url, data=body, method="POST")
     request.add_header("Content-Type", "application/json")
     for name, value in request_headers.items():
@@ -331,15 +412,23 @@ def record_failure(path, endpoint, error, rows):
 
 
 def export_rows(rows, config=None, env=None, version="", errors_path=None,
-                timeout=TIMEOUT, opener=None, dry_run=False):
+                timeout=TIMEOUT, opener=None, dry_run=False, prices=None):
     """Send rows to the configured endpoint. Returns `(sent, failed)` and never raises.
 
     With export off this opens no socket and reads no credential: the first check is the mode,
     so a machine that has not turned export on behaves exactly as it did before it existed.
+
+    `prices` is the price table to stamp rows with; with none given it is read from the price
+    file and the caller's own `prices` overrides, which is what the hook does. Pricing runs
+    after the mode check and cannot fail the export: an unpriced row still travels.
     """
     rows = [r for r in rows if isinstance(r, dict)]
+    cfg = None
     try:
-        config = settings() if config is None else config
+        if config is None:
+            # One read of the config file for both the endpoint and the `prices` overrides.
+            cfg = read_config()
+            config = settings(cfg)
     except ValueError as exc:
         record_failure(errors_path, "", exc, len(rows))
         return 0, len(rows)
@@ -350,13 +439,20 @@ def export_rows(rows, config=None, env=None, version="", errors_path=None,
     except ValueError as exc:
         record_failure(errors_path, config.get("endpoint", ""), exc, len(rows))
         return 0, len(rows)
+    # By identity, because a batch is a slice of these same row objects and a row has no key
+    # of its own until `row_key` builds one.
+    priced = {}
+    if not dry_run:
+        table = price_table(cfg) if prices is None else prices
+        priced = dict((id(row), price) for row, price in zip(rows, row_prices(rows, table)))
     sent = failed = 0
     for batch in batches(rows):
         if dry_run:
             sent += len(batch)
             continue
         try:
-            sent += post(batch, config, request_headers, version, timeout, opener)
+            sent += post(batch, config, request_headers, version, timeout, opener,
+                         [priced.get(id(row)) for row in batch])
         except Exception as exc:
             failed += len(batch)
             record_failure(errors_path, config.get("endpoint", ""), exc, len(batch))

@@ -70,15 +70,41 @@ that carries its own timestamps.
 - `timeUnixNano` is the row's `ended`, `observedTimeUnixNano` is the moment it was sent. Both are
   decimal **strings**, as the OTLP/JSON mapping requires of a 64-bit integer — so an integer
   attribute travels as `{"intValue": "200"}`, not as a JSON number.
-- The **body** is the whole row as a JSON string, so nothing is lost in translation.
+- The **body** is the row as a JSON string, so nothing is lost in translation — everything the
+  ledger holds except the `stances` map, which travels as attributes instead. A backend that
+  parses a JSON body flattens a nested map into dotted keys of its own, and a body carrying
+  `stances` landed a second copy of every stance beside the attributes below.
 - **Attributes** are the row's flat scalar fields — a null is omitted rather than sent as empty —
-  plus `harness.row_key`, `harness.version`, one `harness.<dimension>` per recorded stance, and
-  any configured labels. A nested map (`days`, `by_model`, `rules`, `counts`) stays in the body:
+  plus `harness.row_key`, `harness.version`, `harness.usd` and `harness.price_as_of` on a priced
+  row, one `harness.<dimension>` per recorded stance, and any configured labels. A stance is
+  exported **once**. A nested map (`days`, `by_model`, `rules`, `counts`) stays in the body:
   attribute sets are flat, and a hundred per-day slices would be a hundred columns.
 - Resource attributes are `service.name=agent-harness` and the harness version.
 
 `harness.row_key` is the row's identity — session id, runtime, kind, agent id — and is stable
 across replays. It is what a reader de-duplicates on.
+
+### The dollar figure
+
+`harness.usd` is a double and `harness.price_as_of` is the newest `as_of` date among the price
+entries that row was priced through. Both come from `policy/prices.json` and your own `prices`
+overrides, through the same code `harness usage` prices with — `policy/hooks/pricing.py`, which
+the CLI and the hook each load rather than either one reimplementing it.
+
+- **A list-price API equivalent, fixed at export time.** It is what the tokens would cost at the
+  published rates on the date stamped beside them — not an invoice, and not what a subscription
+  charged. A replay after a price change re-stamps both attributes at the new rates, so read the
+  newest record per key rather than an average across replays.
+- **An unpriced row carries neither attribute** — never a zero. A row with an unknown model, a
+  session that switched models with no `by_model` breakdown, or a `partial` row is priced by
+  nobody, and a zero would say it was free.
+- **A Claude Code session's figure already includes its subagents**, exactly as `harness usage`
+  reports it: the subagents' tokens are priced at their own models and added to the parent's.
+  Their rows are exported priced too, for per-role reporting, so **never sum a session row and
+  its subagent rows** — filter on `kind` first. A Codex subagent row and a role-run worker row
+  are each priced alone, because no session row holds their tokens.
+- Pricing never costs the export anything: a missing price file or a malformed override leaves
+  the row exported without dollars and changes neither the hook's exit status nor the session's.
 
 ## Where it runs, and what a dead endpoint costs
 
@@ -185,17 +211,26 @@ than counting rows. In a ClickHouse-style schema, where OTLP log attributes land
 
 ```sql
 SELECT
-    LogAttributes['harness.row_key'] AS row_key,
-    argMax(Body, ObservedTimestamp)  AS row
+    LogAttributes['harness.row_key']                    AS row_key,
+    argMax(Body, ObservedTimestamp)                     AS row,
+    argMax(LogAttributes['harness.usd'], ObservedTimestamp) AS usd
 FROM otel_logs
 WHERE ServiceName = 'agent-harness'
   AND Timestamp >= now() - INTERVAL 30 DAY
+  AND NOT (LogAttributes['kind'] = 'subagent' AND LogAttributes['runtime'] != 'codex')
 GROUP BY row_key
 ```
 
 The same shape works anywhere: group by `harness.row_key`, keep the record with the greatest
 observed time. Because a replay carries the row as it stands in the ledger **now**, the newest
-copy is also the corrected one when a `--rescan` has since improved it.
+copy is also the corrected one when a `--rescan` has since improved it — and the newest
+`harness.usd` is the one priced at the rates in force when it was last sent.
+
+The `kind` filter is the other half of not double counting: a Claude Code session's dollars
+already contain its subagents', so a total over every row would bill them twice. A Codex
+subagent is the other way round — its tokens are in no row but its own — which is why the filter
+names the runtime too. This is the rule `harness usage` applies; [usage.md](usage.md) says why.
+Spend by role is the same query kept to the subagent and worker rows instead.
 
 ## Reference recipe: ClickStack
 

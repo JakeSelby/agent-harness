@@ -344,6 +344,10 @@ session and its subagent, whose CLI-reported `total_cost_usd` was $0.60097775, p
 $0.60097775 — a 0.000% deviation, against the 2% the report is held to.
 `tests/test_usage_prices.py` holds that session's token shape as a fixture.
 
+The same figures ride on an exported row as `harness.usd`, computed by the same code — the CLI
+and the export hook both load `policy/hooks/pricing.py` rather than either one holding a second
+copy of the rates. What an exported dollar figure means is in [telemetry.md](telemetry.md).
+
 Prices go stale silently while the report keeps printing dollars, so `harness doctor` names the
 newest `as_of` in the table and warns when it is over 90 days old. Re-read each entry's `source`
 and update the file; that is the whole maintenance cost, and it names a real failure mode.

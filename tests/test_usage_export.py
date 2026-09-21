@@ -153,7 +153,9 @@ class TheRequest(Fixture):
         self.assertEqual(record["timeUnixNano"], SESSION_NANOS)
         self.assertGreater(int(record["observedTimeUnixNano"]), int(SESSION_NANOS))
         self.assertIsInstance(record["observedTimeUnixNano"], str)
-        self.assertEqual(json.loads(record["body"]["stringValue"]), SESSION_ROW)
+        # Everything the ledger holds but the stance map, which travels as attributes alone.
+        self.assertEqual(json.loads(record["body"]["stringValue"]),
+                         dict((k, v) for k, v in SESSION_ROW.items() if k != "stances"))
         values = attrs(record)
         self.assertEqual(values["kind"], {"stringValue": "session"})
         # OTLP/JSON carries a 64-bit integer as a decimal string, never as a JSON number.
