@@ -20,7 +20,7 @@
       "effort": "high"
     },
     "gatherer": {
-      "tools": "Read, Grep, Glob, WebFetch, WebSearch",
+      "tools": "Read, Grep, Glob",
       "effort": "low"
     },
     "log-compressor": {

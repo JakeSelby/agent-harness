@@ -104,7 +104,7 @@ CASES = {
         ([bash("find . -exec cat {} \\;")], 0),
         ([bash("find . > list.txt")], 0),
     ],
-    "transcript-hygiene/brief-without-cap": [
+    "transcript-hygiene/model-wrote-no-cap": [
         ([tool_use("Agent", {"subagent_type": "general-purpose", "prompt": "Summarise the module."})], 1),
         ([tool_use("Agent", {"subagent_type": "general-purpose",
                              "prompt": "Summarise the module, keeping it short."})], 1),
@@ -440,7 +440,7 @@ class MalformedEventTests(unittest.TestCase):
                     hits = rd.run([shape], STANCES, strict=strict)
                     # A brief whose prompt is not text still carries no word cap, which is
                     # a real hit; nothing else may fire on an unreadable event.
-                    self.assertLessEqual(set(hits), {"transcript-hygiene/brief-without-cap"})
+                    self.assertLessEqual(set(hits), {"transcript-hygiene/model-wrote-no-cap"})
 
     def test_the_whole_event_list_may_be_the_wrong_shape(self):
         for events in (None, 7, "not events", {"kind": "tool_use"}):

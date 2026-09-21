@@ -1,6 +1,7 @@
 """Normalize lifecycle events and compose shared policies before native encoding."""
 import contextlib
 import difflib
+import fnmatch
 import importlib.util
 import io
 import json
@@ -82,6 +83,41 @@ def selected(name, fallback):
     return load("posture").selected(name, fallback)
 
 
+def investigating(runtime, event):
+    """Whether this call is plan-mode investigation the selected posture already authorises.
+
+    Plan mode exists to force a plan, questions and a wait before anything is executed. It is not
+    a reason to drop research below the permission posture the user chose for every other mode,
+    so under `bypass` or `auto` the harness answers for the commands native plan mode would
+    otherwise prompt on. Under `manual` and `inherit` it answers nothing new, and Codex is left
+    alone because its client rejects `allow` outright.
+
+    Fails closed: a config that will not open is not a posture anybody selected.
+    """
+    if runtime != "claude-code" or event.get("permission_mode") != "plan":
+        return False
+    try:
+        module = load("posture")
+        return module.permissions() in module.OPEN_POSTURES
+    except Exception:
+        return False
+
+
+def plan_allowed_tool(tool):
+    """Whether `tool` matches a glob the user listed under `plan_allow_tools`.
+
+    Nothing is inferred from the tool name itself: a PreToolUse payload says nothing about
+    whether an MCP tool reads or writes, so the list is empty until the user fills it.
+    """
+    if not isinstance(tool, str) or not tool:
+        return False
+    try:
+        patterns = load("posture").plan_allow_tools()
+    except Exception:
+        return False
+    return any(fnmatch.fnmatchcase(tool, pattern) for pattern in patterns)
+
+
 def constrained_role(name):
     """The contract of `name` when it is a shared role an isolated worker must run, else None."""
     if not (isinstance(name, str) and ROLE_NAME.fullmatch(name)):
@@ -96,6 +132,14 @@ def constrained_role(name):
     return fields if fields["authority"] in ("read-only", "artifact-write") else None
 
 
+# A worker that may both read a workspace and reach the network can carry what it read back out,
+# so the isolated adapters hold every role to Read/Grep/Glob. Only `gatherer` is routinely asked
+# for online evidence, so only its refusal has somewhere else to send that half of the work.
+OFFLINE_NOTE = {"gatherer": "An isolated gatherer is offline — Read, Grep and Glob, no WebFetch or "
+                            "WebSearch — so send a file or repository dimension to the worker and a web "
+                            "dimension to an in-session band worker (worker-a, worker-b or worker-c)."}
+
+
 def role_instruction(runtime, name, fields):
     """The one sentence that says how this role is actually run. Every refusal ends with it."""
     from . import catalog
@@ -104,7 +148,8 @@ def role_instruction(runtime, name, fields):
     return ("Use harness role run " + name + " --runtime " + runtime
             + ("" if mapped else " --model <session-model>")
             + " --workspace <repo> --prompt-file <brief-file>. "
-            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement.")
+            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement."
+            + (" " + OFFLINE_NOTE[name] if name in OFFLINE_NOTE else ""))
 
 
 def role_deny(runtime, name, fields):
@@ -272,12 +317,26 @@ def dispatch(runtime, payload):
             variant = selected("autonomy", "execute")
             command, confirmed = grader.strip_marker(event["tool_input"]["command"])
             grade, verb, target, family = grader.grade_text(command, event.get("cwd", ""))
-            if not confirmed and grade >= grader.THRESHOLDS.get(variant, 1) and grade:
+            asked = bool(grade) and not confirmed and grade >= grader.THRESHOLDS.get(variant, 1)
+            if asked:
                 decision = "deny" if runtime == "codex" or event.get("permission_mode") in grader.DENY_MODES else "ask"
                 results.append({"hookSpecificOutput": {"permissionDecision": decision,
                     "permissionDecisionReason": grader.reason(grade, verb, target, family, variant)}})
+            # Grade 0 is proved read-only, so it is approved in every mode. Grades 1 and 2 are the
+            # ones native plan mode prompts on: a script the grammar cannot read through, a
+            # scratch redirect, a test run. Under an open posture the first is investigation and
+            # the second is not, and the autonomy stance still outranks both when it already asked.
+            plan = investigating(runtime, event)
             if grade == 0:
                 results.append({"hookSpecificOutput": {"permissionDecision": "allow"}})
+            elif plan and not asked and grade == 1:
+                results.append({"hookSpecificOutput": {"permissionDecision": "allow",
+                    "permissionDecisionReason": "Plan-mode investigation, run at the permission posture you selected."}})
+            elif plan and not asked and not confirmed and grade == 2:
+                results.append({"hookSpecificOutput": {"permissionDecision": "ask",
+                    "permissionDecisionReason": "This reaches past the workspace, so it is execution rather than "
+                    "planning. Plan mode widens investigation, not the build. "
+                    + grader.reason(grade, verb, target, family, variant)}})
             results.append(invoke("filter-output", event))
         elif tool == "Agent":
             delegation = selected("delegation", "tiered")
@@ -310,6 +369,10 @@ def dispatch(runtime, payload):
                 results.append(invoke("brief-guard", event))
         elif tool == "WebFetch":
             results.append(invoke("allow-plan-webfetch", event))
+        elif investigating(runtime, event) and plan_allowed_tool(tool):
+            results.append({"hookSpecificOutput": {"permissionDecision": "allow",
+                "permissionDecisionReason": "Plan-mode research tool named by plan_allow_tools, "
+                "run at the permission posture you selected."}})
         return encode_pre(runtime, payload, event, results)
     if kind == "PostToolUse":
         contexts = []
