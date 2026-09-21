@@ -5,7 +5,7 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 8,
-    "story": 145,
+    "story": 146,
     "task": 1,
     "bug": 42,
     "chore": 30,
@@ -2900,26 +2900,26 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-S143",
+      "bmad_id": "AH-S144",
       "github_number": 386,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/386",
       "title": "Sample allowed commands into the decision log",
       "type": "story",
       "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S143.md",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S144.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-S144",
+      "bmad_id": "AH-S145",
       "github_number": 387,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/387",
       "title": "Record the completion claim on stop-gate decision rows",
       "type": "story",
       "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S144.md",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S145.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
@@ -2988,6 +2988,19 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S143",
+      "github_number": 401,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/401",
+      "title": "Land the documentation-link check and the credential probe from the smoke tier",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S143.md",
+      "parent_bmad_id": "AH-S124",
+      "parent_github_number": 334,
+      "lifecycle": "completed",
       "provenance": "authored"
     }
   ]

@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
   record from it without launching a client. The evidence schema already unions cases across several
   records per client and already rejects a linked `failed` or `unverified`, so a partial record stays
   a valid input and neither behaviour changes (#339).
+
 - `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
   sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
 
@@ -217,6 +218,13 @@ All notable changes to this project are documented here. The format follows
   change those paths on the frozen branch. `docs/releasing.md` gains the freeze procedure and the
   triage rule that a round runs to completion and collects defects rather than fixing one mid-round,
   because any source-path change invalidates every evidence record for the round (#332).
+
+- Two deterministic pre-qualification checks that spend no model turns. A documentation-link check
+  resolves every relative path and heading anchor across the repository's Markdown, and a credential
+  probe names the variable a client would authenticate with or fails immediately with the reason,
+  instead of the 300-second hang a session-credentials-only home used to produce. Both are additive
+  and neither writes to `compatibility/evidence/` or appears in a catalog record, because a green
+  deterministic check is not native qualification (#401).
 
 ### Changed
 
