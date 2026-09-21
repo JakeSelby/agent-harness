@@ -16,6 +16,23 @@ All notable changes to this project are documented here. The format follows
   title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
   `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
   runs the audit daily and on issue events (#218).
+
+- Release upkeep is written down and checked. `AGENTS.md` and `docs/releasing.md` now say when a
+  release is proposed (cut by milestone, or when a user-visible unreleased change is seven days
+  old, with a regression fix released at once as a patch), how it is numbered by what changed
+  rather than by changelog section, and the exact `gh api` commands that close the released
+  milestone and open the next. The seven release surfaces now mark the reference site and the
+  personal-site card as verify only, because each repository deploys itself. A new
+  `scripts/sync_about.py` compares the GitHub About panel with `product.json`: `--check` names
+  every differing field and exits non-zero, `--apply` writes them through `gh repo edit`, and
+  topics compare as a set. `--apply` stays a local step needing the owner's approval, because
+  editing repository settings needs administration access and no such scope exists for a
+  workflow's `GITHUB_TOKEN`. `scripts/release_preflight.py` runs that comparison and looks up
+  every `on_the_way` entry that names an issue, blocking the release with "promote or remove"
+  when one has closed. Both checks sit behind one `gh auth status` probe: without an
+  authenticated `gh`, which is the case in the tag workflow, they are skipped with a named
+  warning rather than silently, and a `gh` failure after a good probe blocks the release.
+
 - Plan mode now investigates at the permission posture you selected instead of below it. Under
   `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
   mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
