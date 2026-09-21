@@ -48,6 +48,24 @@ and state the migration review or exact versioned migration action.
    GitHub refuses a workflow token that moves a branch across a change to `.github/workflows/`,
    so a release that edits a workflow can need the second command run by hand.
 
+## Freeze the qualification branch
+
+Cut `release/v<version>` at the commit the round qualifies and record it in
+`compatibility/freeze.json` as `state: frozen` with that branch and full commit, then run every
+target on that branch so `main` keeps merging without invalidating evidence. `harness freeze`
+prints the drift between the frozen commit and `origin/main` under the runtime source paths —
+`VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`, `config.example.json` —
+and `harness freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
+them, because one such change invalidates every target's evidence and costs the whole round again.
+Return `state` to `open` after the tag. The evidence commit must stay an ancestor of the
+qualification source commit, which `evidence_errors` enforces, so a diverged release branch fails
+closed rather than publishing an unqualified source.
+
+**Fix no defect mid-round.** A round runs all four required targets to completion and collects
+their defects; a fix landed between targets invalidates the targets already observed and forces a
+re-run of each. Land the collected fixes together on `main` afterwards, cut a new freeze commit,
+and re-qualify once.
+
 ## Reference and personal site
 
 6. In the reference-site checkout, pin `vendor/agent-harness` to that exact tag, commit the gitlink,
