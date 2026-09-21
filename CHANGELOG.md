@@ -25,6 +25,12 @@ All notable changes to this project are documented here. The format follows
   The guard itself is unchanged: a save against a revision that is no longer current is refused.
 - `harness doctor` reports a client that is `not on PATH` rather than `not installed`, and says so
   explicitly when Codex credentials are present with no `codex` the shell can reach.
+- A permitted Codex tool call no longer reports `hook: PreToolUse Failed`. The PreToolUse envelope
+  carried `permissionDecision: "allow"` on every non-gated call; a client that lists `allow` as
+  unsupported discards the whole hook output, so every allowed call showed a failure and a real one
+  was indistinguishable. Codex now hears nothing where its own default already allows, and `allow`
+  is sent only with an `updatedInput` rewrite, which that runtime applies under no other decision.
+  Denials, the ask-to-deny narrowing and Claude Code's envelope are unchanged.
 - An isolated role worker now follows the selected cost variant. `harness role run` bound a role
   from its `tier:` alone, so under `frugal` a `gatherer` worker ran on the role's own class while
   the same sync in the same home rendered that role one class lower — and the constrained roles
@@ -74,6 +80,16 @@ All notable changes to this project are documented here. The format follows
   frequent model across its assistant records — and falls back to the requested alias only when
   it recorded none; `harness usage --rescan` normalises rows already on file. Worker rows still
   record what the worker reported, which is the only thing that knows.
+- The native acceptance runner no longer raises a macOS keychain dialog on every client turn.
+  macOS resolves the default keychain under `HOME`, a disposable home had none, and a client that
+  stores an item then prompts "A keychain cannot be found" — once per launch across a whole
+  matrix, with a destructive **Reset To Defaults** button. Each disposable home now carries its
+  own throwaway keychain at the default path, so the store succeeds silently and never touches
+  the operator's login keychain; a home whose keychain cannot be created reports the case
+  `unverified` instead of launching a client. Other hosts are unchanged. The test suite raised
+  the same dialog twice a run: two reviewer-key tests called `doctor` in a temporary home without
+  hiding the installed client, so the real `claude doctor` ran there. They now hide it, and a
+  tripwire test fails if a doctor call in a temporary home ever launches it again (#282).
 
 ## [0.11.0] — 2026-09-20
 

@@ -45,11 +45,16 @@ and why, then `Closes #N` for the issue, then the attribution trailer the caller
 verbatim. **Never push, never open a pull request, never edit the changelog unless told to.** The
 caller runs the gate again before pushing, so your report is evidence and not a verdict.
 
+**Checks named in your brief bind the commit.** Run each one you hold the tool for and obey it. When
+you cannot run one and the brief does not say the commit was cleared, leave the work staged and
+uncommitted and return the commit as a pending action, per `delegation.md`.
+
 ## Return this shape, at most 350 words
 
 1. Worktree path, branch name, commit SHA.
 2. Files added or changed, one line each.
 3. The gate tail as the runner printed it, showing its `Ran N tests` and `OK` lines.
 4. Deviations from the brief, one line each, with why.
+5. Checks: each one run with its answer, and each pending action you are handing back.
 
 No process narration, no restatement of the issue, no account of what you are about to do.

@@ -16,6 +16,7 @@ import os
 import stat
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from test_harness import harness, CFG, TempHome
@@ -226,6 +227,20 @@ class OwnershipTests(unittest.TestCase):
 
 
 class SyncTests(TempHome):
+    def doctor(self):
+        """Doctor's report without the installed clients: no test launches a real one, and
+        `claude doctor` under a temporary HOME raises a macOS keychain dialog."""
+        which = harness.shutil.which
+
+        def hidden(name, *args, **kwargs):
+            return None if name == "claude" else which(name, *args, **kwargs)
+
+        with unittest.mock.patch.object(harness, "_version_of", return_value="stub"), \
+                unittest.mock.patch.object(harness.shutil, "which", side_effect=hidden), \
+                loud() as out:
+            harness.cmd_doctor(harness.argparse.Namespace())
+        return out.getvalue()
+
     def sync(self):
         return harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=True,
                                                            adopt_codex=False, print_only=False))
@@ -258,9 +273,7 @@ class SyncTests(TempHome):
         self.assertIn("notice  codex approval review", out.getvalue())
         self.assertNotIn(NEW, self.codex_config())
         self.assertNotIn(OLD, self.codex_config())
-        with loud() as out:
-            harness.cmd_doctor(harness.argparse.Namespace())
-        text = out.getvalue()
+        text = self.doctor()
         self.assertIn("codex approval reviewer", text)
         self.assertIn("promises automatic approval review", text)
 
@@ -270,10 +283,20 @@ class SyncTests(TempHome):
         with loud() as out:
             self.assertEqual(self.sync(), 0)
         self.assertNotIn("codex approval review:", out.getvalue())
-        with loud() as out:
-            harness.cmd_doctor(harness.argparse.Namespace())
-        self.assertIn("codex approval reviewer: codex-cli 0.155.1 accepts " + NEW, out.getvalue())
-        self.assertNotIn("promises automatic approval review", out.getvalue())
+        text = self.doctor()
+        self.assertIn("codex approval reviewer: codex-cli 0.155.1 accepts " + NEW, text)
+        self.assertNotIn("promises automatic approval review", text)
+
+    def test_doctor_in_a_temporary_home_never_launches_the_installed_claude(self):
+        self.configure(permissions="auto")
+        tripwire = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, tripwire, ignore_errors=True)
+        executable = tripwire / "claude"
+        executable.write_text("#!/bin/sh\ntouch '%s'\n" % (tripwire / "launched"), encoding="utf-8")
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+        with unittest.mock.patch.dict(os.environ, {"PATH": str(tripwire) + os.pathsep + os.environ["PATH"]}):
+            self.doctor()
+        self.assertFalse((tripwire / "launched").exists())
 
     def test_unrelated_user_keys_survive_the_rename(self):
         self.configure(permissions="auto")
