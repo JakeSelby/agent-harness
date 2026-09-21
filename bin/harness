@@ -47,7 +47,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client
+from harness_core import codex_client, keychain
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1261,7 +1261,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                           if stale else "set"))
     lines = _diff_lines()
     say("  drift: " + ("none" if not lines else f"{len(lines)} item(s), run `harness diff`"))
-    if shutil.which("claude"):
+    if shutil.which("claude") and keychain.missing():
+        say("  claude doctor: skipped, this HOME has no default keychain and a client launch "
+            "would raise a macOS dialog")
+    elif shutil.which("claude"):
         say("  claude doctor:")
         try:
             out = subprocess.run(["claude", "doctor"], capture_output=True, text=True, timeout=60)
