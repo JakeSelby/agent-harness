@@ -116,7 +116,8 @@ distribution at p50, p75 and p90 — until rerouted spawns have measured each ba
 themselves are a first cut to be re-seeded the same way.
 
 `harness usage` summarises what sessions have actually spent, from a local file with no network
-call — see [usage.md](usage.md). It reports dollars as well as tokens, from `policy/prices.json`.
+call unless you opt into [exporting it](telemetry.md) — see [usage.md](usage.md). It reports
+dollars as well as tokens, from `policy/prices.json`.
 A `prices` block in `config.json` merges over that file per model id, so you can correct a rate
 your account is billed differently at, or add a model the table does not list:
 

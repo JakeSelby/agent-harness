@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: MIT
 """SessionEnd hook: record a session's token usage in ~/.local/state/agent-harness/usage.jsonl.
 
-One local file, nothing over the network. SessionEnd shares a 1.5-second budget, so the hook
+One local file, and nothing over the network unless a `telemetry` block turns export on — see
+`telemetry.py` and docs/telemetry.md. SessionEnd shares a 1.5-second budget, so the hook
 spawns a detached worker and returns; the worker streams the transcript line by line and upserts
 one row for the session, one for each subagent it spawned and one for each recent role-run
 worker. Read it with `harness usage`.
@@ -250,64 +251,6 @@ def models_agree(parts, totals):
         if sum(part.get(name) or 0 for part in parts.values()) != total:
             return False
     return True
-
-
-def daily(per_message, turns_by_day, fallback=""):
-    """The `days` map: four token totals and a turn count per UTC date.
-
-    Cut from the same message-id map the row's totals are summed over, so for Claude Code a
-    day's slice **includes that day's subagent tokens** exactly as the session total does —
-    the session row has one meaning, and a slice that excluded them would not add up to it.
-    A message whose record carried no timestamp falls to `fallback`, the session's end date,
-    rather than being left out of every slice; with no fallback either there are no slices,
-    because a partial one would read as a day that cost less than it did.
-    """
-    days = {}
-    for slot in per_message.values():
-        day = slot.get("day") or fallback
-        if not day:
-            return {}
-        row = days.setdefault(day, empty_slice())
-        for name, _ in FIELDS:
-            row[name] += slot.get(name) or 0
-    for day, turns in turns_by_day.items():
-        key = day or fallback
-        if key:
-            days.setdefault(key, empty_slice())["turns"] += turns
-    return days
-
-
-def slices_agree(days, totals):
-    """Whether the slices add up to the row's own totals, field by field.
-
-    Checked before the map is written, never after: a `days` map that disagrees with the row it
-    sits on would be read as the truth about a date and silently double or lose a day's spend.
-    A row whose slices do not agree carries none and falls back to its end date in the report.
-    """
-    if not days:
-        return False
-    for name, _ in FIELDS:
-        if sum(day.get(name) or 0 for day in days.values()) != (totals.get(name) or 0):
-            return False
-    return True
-
-
-def dominant(weights):
-    """The key covering the most output tokens, or "" when nothing was weighed.
-
-    Effort changes mid-session in both runtimes — 14 of 112 Claude Code transcripts and 4 of 44
-    Codex rollouts measured on one machine — so a row records the value that covered the most
-    output rather than the first or the last, and `effort_source` names where it was read.
-    Ties break on the name so two reads of one transcript agree.
-    """
-    weights = dict((key, value) for key, value in weights.items() if key)
-    if not weights:
-        return ""
-    return max(sorted(weights), key=lambda key: weights[key])
-
-
-def empty_slice():
-    return dict([(name, 0) for name, _ in FIELDS] + [("turns", 0)])
 
 
 def daily(per_message, turns_by_day, fallback=""):
@@ -1115,6 +1058,23 @@ def upsert(record, path=None, drop=()):
     return path
 
 
+def export(records):
+    """Offer rows to a configured OTLP endpoint, after the ledger already holds them.
+
+    Off by default, and silent in every failure mode: the row is on disk, so a collector that
+    is down, slow or misconfigured costs a line in `usage.errors.jsonl` and nothing else.
+    `harness usage export --since` replays what was missed. See `telemetry.py`.
+    """
+    module = sibling("telemetry", required=False)
+    if module is None:
+        return 0, 0
+    try:
+        return module.export_rows(records, version=harness_version() or "",
+                                  errors_path=usage_path().with_suffix(".errors.jsonl"))
+    except Exception:
+        return 0, 0
+
+
 def recorded(path=None):
     """The records already on file, by session id, so a rescan can keep what it cannot know."""
     try:
@@ -1285,6 +1245,7 @@ def main(argv):
         records = scan_all(transcript, session_id, cwd) + worker_rows(time.time() - 30 * 86400)
         if records:
             upsert(records)
+            export(records)
         return 0
     if argv and argv[0] == "--rescan":
         try:
