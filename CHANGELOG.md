@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   records per client and already rejects a linked `failed` or `unverified`, so a partial record stays
   a valid input and neither behaviour changes (#339).
 
+- The landing copy now names the decision log: the `Live usage feed` feature in `product.json` and
+  the matching README line say that a decision log on this machine records what a hook decided and
+  what settled it, and that only `harness usage` reads it. A new `landing-copy` check enforces the
+  rule that produced the gap: a pull request touching `bin/`, `lib/`, `adapters/`, `primitives/` or
+  `policy/` must also change `product.json`, or carry a `Landing copy:` line in its body saying why
+  no copy change is needed. A docs-only, tests-only or CI-only pull request never fires it (#390).
 - `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
   sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
 
