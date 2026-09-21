@@ -1910,8 +1910,16 @@ def coerce_config_value(key: str, value: str) -> Any:
         if value != "inherit" and value not in POSTURES:
             raise SystemExit(f"permissions must be inherit, bypass, auto or manual; got '{value}'")
         return value
+    if key == "plan_allow_tools":
+        try:
+            globs = json.loads(value)
+        except ValueError:
+            globs = None
+        if not isinstance(globs, list) or not all(isinstance(item, str) and item.strip() for item in globs):
+            raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
+        return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"permissions, or one of {', '.join(BOOL_KEYS)}")
+                     f"permissions, plan_allow_tools, or one of {', '.join(BOOL_KEYS)}")
 
 
 def config_set(key: str, value: Optional[str]) -> int:
