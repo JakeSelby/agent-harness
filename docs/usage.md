@@ -245,7 +245,7 @@ after a fortnight of not being used, and removed by `harness uninstall`.
 bin/harness usage                      # last 30 days, grouped by day
 bin/harness usage --days 7 --by repo
 bin/harness usage --by model           # a session using two models groups under both, joined
-bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output and tool calls
+bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output, p50/p75 usd
 bin/harness usage --by stance --stance cost   # tokens per variant of one stance dimension
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
@@ -277,6 +277,74 @@ no session row at all, so leaving it out would hide its spend in every report th
 A session that crashes or is killed never fires `SessionEnd` and so is never recorded live;
 `--rescan` walks every transcript touched inside `--days` and upserts it, which is how you fill
 those gaps.
+
+## What it cost
+
+Tokens mislead as a measure of spend. Cache reads dominate the count and cost a fraction of base
+input, and a change that routes work to a cheaper model can spend more tokens and fewer dollars.
+So every token grouping carries a `usd` column, and `--by role` carries p50 and p75 dollars
+beside its output percentiles.
+
+These figures are list-price API equivalents computed from token counts, not an invoice: a
+subscription plan pays differently, and fast-mode and data-residency multipliers are not
+modelled.
+
+The rates are in [`policy/prices.json`](../policy/prices.json): USD per million tokens for input,
+output, cache read and cache write, per model id, each entry carrying the `as_of` date it was
+read and the provider pricing page it was read from. Nothing in the file is written from memory,
+and a model whose price could not be confirmed from a primary source is absent rather than
+guessed. Override or extend it under `prices` in `config.json` — see
+[preferences.md](preferences.md).
+
+- **Ids resolve by longest prefix** after normalisation, which lower-cases, drops a cloud vendor
+  prefix and drops a context-window suffix. So `claude-haiku-4-5`,
+  `anthropic.claude-haiku-4-5-20251001-v1:0` and `claude-opus-5[1m]` all reach a family entry.
+  Long context is not a separate rate: Anthropic prices the full 1M-token window at the standard
+  rate for Claude 4.6 and later. The cost of prefix matching is that an unlisted variant of a
+  listed family inherits the family's rate even when it is priced differently; list it or
+  override it.
+- **Cache writes are priced by TTL.** Anthropic charges 1.25x base input for a 5-minute write
+  and 2x for a 1-hour one, and Claude Code reports the split under `cache_creation`, so a row
+  records `cache_write_5m` and `cache_write_1h` beside its `cache_write` total and each tier is
+  charged at its own rate. Both keys are additive: a row written before they existed carries
+  neither and is charged whole at the 5-minute rate, which **understates** it wherever the
+  session's writes were 1-hour — which the main thread's are.
+- **Codex is counted once.** `input_tokens` is inclusive of `cached_input_tokens`, so the ledger
+  row already holds the difference and the cached part is charged at the cache rate alone;
+  `reasoning_output_tokens` is inside `output_tokens` rather than beside it, so it is never
+  added again. OpenAI publishes no cache-write rate, so that column prices at zero for a `gpt`
+  entry.
+- **A subagent is priced at its own model.** A Claude Code session's totals already include its
+  subagents', which ran on other models at other rates, so their tokens come off the parent's
+  totals, each is priced at its own model and the two are added. A session whose totals do not
+  cover its children — a row written before subagent capture landed — is priced alone, exactly
+  as its tokens are reported alone.
+- **A session that switched models carries a breakdown.** The largest sessions are the ones
+  that changed model, and their totals alone name several rates with no split between them, so
+  a row records `by_model`: token counts per model id, cut from the same map the totals are
+  summed over for Claude Code and from the snapshot deltas under each `turn_context.model` for
+  Codex, and dropped whole if it does not add up to the row. A row that carries one is priced
+  from it and from nothing else; a multi-model row written before the map existed stays
+  unpriced. A part named for a harness-generated turn — `<synthetic>` — is skipped when it spent
+  nothing and unprices the row when it did not.
+- **Unpriced is not free.** A row with an unknown model, a multi-model row with no breakdown,
+  and a row marked `partial` are all counted in the `unpriced` footer and contribute nothing to
+  the column. An understated dollar figure is worse than an absent one, because nothing on the
+  line says it is short. A role-run worker whose row names a model alias rather than an id —
+  `opus`, `fable` — is unpriced for the same reason.
+- **A day slice holds tokens and no model**, so a multi-day session's cost is allocated across
+  its days by each day's share of its tokens. For a single-day session, which is nearly all of
+  them, the share is one and the allocation is exact; for a long one it is an allocation and not
+  a measurement.
+
+The table was checked against a runtime that reports its own figure: a recorded Claude Code
+session and its subagent, whose CLI-reported `total_cost_usd` was $0.60097775, prices to
+$0.60097775 — a 0.000% deviation, against the 2% the report is held to.
+`tests/test_usage_prices.py` holds that session's token shape as a fixture.
+
+Prices go stale silently while the report keeps printing dollars, so `harness doctor` names the
+newest `as_of` in the table and warns when it is over 90 days old. Re-read each entry's `source`
+and update the file; that is the whole maintenance cost, and it names a real failure mode.
 
 ### Re-seeding budgets
 

@@ -35,6 +35,15 @@ FIELDS = (
     ("cache_write", "cache_creation_input_tokens"),
 )
 
+# A cache write is priced by its time to live — 1.25x base input for five minutes, 2x for an
+# hour — and Claude Code reports the split under `cache_creation` beside the single
+# `cache_creation_input_tokens` total. The row records both tiers so `harness usage` can price
+# each at its own rate. The keys are additive and only written when a tier is non-zero: a row
+# from before this release carries neither and is priced at the 5-minute rate, which understates
+# a 1-hour write. See policy/prices.json.
+CACHE_TIERS = (("cache_write_5m", "ephemeral_5m_input_tokens"),
+               ("cache_write_1h", "ephemeral_1h_input_tokens"))
+
 # A tool result worth keeping the text of: the two the detectors read. 64 KB is far past any
 # brief or fenced block and far short of a transcript's largest result.
 TEXT_KEPT_FOR = ("Bash", "Agent")
@@ -139,7 +148,7 @@ def _result_text(content, tool_name):
     return text[:MAX_RESULT_TEXT]
 
 
-def record_usage(per_message, key, usage, day=""):
+def record_usage(per_message, key, usage, day="", model=""):
     """Keep the largest figure a message id ever reported for each field.
 
     One API response is written as several records. The early ones carry a partial streaming
@@ -152,10 +161,16 @@ def record_usage(per_message, key, usage, day=""):
     same deduplicated map the totals are summed over and cannot disagree with them. The first
     date a message id is seen under is the one that holds: a response written across midnight
     is one message and belongs to one day.
+
+    `model` is kept the same way and for the same reason: the per-model breakdown is cut from
+    this one deduplicated map, so it cannot disagree with the totals summed over it.
     """
-    slot = per_message.setdefault(key, dict([(name, 0) for name, _ in FIELDS] + [("day", "")]))
+    slot = per_message.setdefault(key, dict([(name, 0) for name, _ in FIELDS]
+                                            + [("day", ""), ("model", "")]))
     if day and not slot.get("day"):
         slot["day"] = day
+    if model and not slot.get("model"):
+        slot["model"] = model
     for name, field in FIELDS:
         try:
             value = int(usage.get(field) or 0)
@@ -163,15 +178,78 @@ def record_usage(per_message, key, usage, day=""):
             continue
         if value > slot[name]:
             slot[name] = value
+    tiers = usage.get("cache_creation")
+    if isinstance(tiers, dict):
+        for name, field in CACHE_TIERS:
+            try:
+                value = int(tiers.get(field) or 0)
+            except (TypeError, ValueError):
+                continue
+            if value > slot.get(name, 0):
+                slot[name] = value
 
 
 def summed(per_message):
-    """The four token totals over the messages, each counted once at its largest figure."""
-    return {name: sum(slot[name] for slot in per_message.values()) for name, _ in FIELDS}
+    """The four token totals over the messages, each counted once at its largest figure.
+
+    The cache-write tiers ride along when any message reported one, so a row that can be priced
+    tier by tier says so and one that cannot carries neither key rather than a pair of zeros
+    that would read as writes at the cheaper rate.
+    """
+    totals = {name: sum(slot[name] for slot in per_message.values()) for name, _ in FIELDS}
+    tiers = {name: sum(slot.get(name) or 0 for slot in per_message.values())
+             for name, _ in CACHE_TIERS}
+    if any(tiers.values()):
+        totals.update(tiers)
+    return totals
 
 
 def empty_slice():
     return dict([(name, 0) for name, _ in FIELDS] + [("turns", 0)])
+
+
+# Every token field a per-model part can carry: the four columns and the two cache-write tiers.
+PART_FIELDS = tuple(name for name, _ in FIELDS) + tuple(name for name, _ in CACHE_TIERS)
+
+
+def by_model(per_message):
+    """Token totals per model id, cut from the same map the row's totals are summed over.
+
+    A session that switched models — a compaction on a cheaper one, a subagent on another —
+    holds one set of totals and several rates, so without this map it can only be reported in
+    tokens. A record naming no model at all makes the map unattributable rather than short, so
+    the whole map is dropped: `harness usage` would rather report the row unpriced than price
+    part of it.
+    """
+    out = {}
+    for slot in per_message.values():
+        name = slot.get("model") or ""
+        if not name:
+            return {}
+        part = out.setdefault(name, dict((field, 0) for field, _ in FIELDS))
+        for field in PART_FIELDS:
+            value = slot.get(field) or 0
+            if value:
+                part[field] = part.get(field, 0) + value
+    return out
+
+
+def models_agree(parts, totals):
+    """Whether a per-model breakdown adds up to the row's own totals, field by field.
+
+    The same test `slices_agree` applies to the day slices, for the same reason: a breakdown
+    that disagreed with the row it sits on would price part of a session twice or not at all.
+    A field the runtime never reported is unknown on both sides and is not compared.
+    """
+    if not parts:
+        return False
+    for name, _ in FIELDS:
+        total = totals.get(name)
+        if total is None:
+            continue
+        if sum(part.get(name) or 0 for part in parts.values()) != total:
+            return False
+    return True
 
 
 def daily(per_message, turns_by_day, fallback=""):
@@ -337,9 +415,9 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
             key = mid if mid else ("line", str(path), anonymous)
             if not mid:
                 anonymous += 1
-            record_usage(per_message, key, usage, stamp[:10])
+            record_usage(per_message, key, usage, stamp[:10], message.get("model") or "")
             if shared is not None:
-                record_usage(shared, key, usage, stamp[:10])
+                record_usage(shared, key, usage, stamp[:10], message.get("model") or "")
             if mid and mid in seen:
                 continue
             seen.add(mid)
@@ -553,11 +631,12 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             # per line, and at that id's largest figure rather than its first: the early lines
             # of one response carry a partial streaming count.
             if mid:
-                record_usage(per_message, mid, message.get("usage") or {}, stamp[:10])
+                record_usage(per_message, mid, message.get("usage") or {}, stamp[:10],
+                             model or "")
             else:
                 anonymous += 1
                 record_usage(per_message, ("line", "session", anonymous),
-                             message.get("usage") or {}, stamp[:10])
+                             message.get("usage") or {}, stamp[:10], model or "")
             # Claude Code writes the effort in force on every assistant record, as `effort` and
             # again as `perTurnEffort`; a sidechain line carries the subagent's, not this
             # session's, so only the session's own records are weighed.
@@ -597,6 +676,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     # the same tokens again, attributed, which is why no grouping sums both.
     for name, _ in FIELDS:
         record[name] = totals[name]
+    for name, _ in CACHE_TIERS:
+        if name in totals:
+            record[name] = totals[name]
     record["subagents"] = max(len(agents), len(agent_calls))
     record["turns"] = turns
     weights = {}
@@ -607,6 +689,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     days = daily(per_message, turns_by_day, (ended or started)[:10])
     if slices_agree(days, totals):
         record["days"] = days
+    parts = by_model(per_message)
+    if models_agree(parts, totals):
+        record["by_model"] = parts
     # A live SessionEnd write knows the stances the session actually ran under. A rescan does
     # not — the environment it reads is this minute's — so it keeps whatever the record already
     # carries, and stamps a record that has none as a guess, which the report then excludes.
@@ -730,6 +815,29 @@ def codex_days(raw_days, turns_by_day, record):
     return days
 
 
+def codex_by_model(raw_models, record):
+    """A Codex row's per-model breakdown, from the deltas between its cumulative snapshots.
+
+    `input` is made net of the cached part per model, exactly as `codex_totals` makes the row's
+    own, so a model's part is charged the same way the row is. A field the rollout never
+    reported — `cache_write`, on every Codex rollout measured — is left off the parts as it is
+    left off the row, rather than written as a zero the row does not claim. A row whose typed
+    fields are all unknown gets no breakdown: there is nothing to attribute.
+    """
+    fields = [name for name, _ in FIELDS if isinstance(record.get(name), int)]
+    if not fields:
+        return {}
+    parts = {}
+    for model, raw in raw_models.items():
+        if not model:
+            continue
+        part = dict((name, raw.get(name) or 0) for name in fields)
+        if "input" in part and "cache_read" in part:
+            part["input"] = max(part["input"] - part["cache_read"], 0)
+        parts[model] = part
+    return parts
+
+
 def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
     """One row from one Codex rollout: a session, or a subagent thread when it was spawned.
 
@@ -746,6 +854,9 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
     # effort's are the differences between consecutive snapshots, attributed to the date of the
     # snapshot that closed them and to the effort in force when it was written.
     weights, raw_days, turns_by_day, last = {}, {}, {}, dict((name, 0) for name, _ in CODEX_FIELDS)
+    # The same delta, attributed a second way: to the model `turn_context` last named. Codex
+    # changes model mid-thread, and a thread that did cannot be priced from its totals alone.
+    raw_models, model_now = {}, ""
     with open(transcript, encoding="utf-8", errors="replace") as stream:
         for line in stream:
             try:
@@ -772,8 +883,10 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
             elif item.get("type") == "turn_context":
                 turn += 1
                 turns_by_day[timestamp[:10]] = turns_by_day.get(timestamp[:10], 0) + 1
-                if payload.get("model") and payload["model"] not in models:
-                    models.append(payload["model"])
+                if payload.get("model"):
+                    model_now = payload["model"]
+                    if model_now not in models:
+                        models.append(model_now)
                 # The effort in force from here on: Codex records it per turn and it changes
                 # mid-session, `ultra` and `max` among the values seen.
                 if isinstance(payload.get("effort"), str) and payload["effort"].strip():
@@ -783,11 +896,14 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
                 if isinstance(value, dict):
                     totals = value  # Cumulative snapshot; summing snapshots double counts usage.
                     slice_ = raw_days.setdefault(timestamp[:10], empty_slice())
+                    part = raw_models.setdefault(model_now, empty_slice()) if model_now else None
                     for name, field in CODEX_FIELDS:
                         now = value.get(field)
                         if not isinstance(now, int):
                             continue
                         slice_[name] += now - last[name]
+                        if part is not None:
+                            part[name] += now - last[name]
                         if name == "output":
                             weights[effort] = weights.get(effort, 0) + (now - last[name])
                         last[name] = now
@@ -864,6 +980,9 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
     days = codex_days(raw_days, turns_by_day, record)
     if slices_agree(days, record):
         record["days"] = days
+    parts = codex_by_model(raw_models, record)
+    if models_agree(parts, record):
+        record["by_model"] = parts
     errors = []
     try:
         module = detectors()

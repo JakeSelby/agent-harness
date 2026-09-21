@@ -116,7 +116,16 @@ distribution at p50, p75 and p90 — until rerouted spawns have measured each ba
 themselves are a first cut to be re-seeded the same way.
 
 `harness usage` summarises what sessions have actually spent, from a local file with no network
-call — see [usage.md](usage.md).
+call — see [usage.md](usage.md). It reports dollars as well as tokens, from `policy/prices.json`.
+A `prices` block in `config.json` merges over that file per model id, so you can correct a rate
+your account is billed differently at, or add a model the table does not list:
+
+```json
+{ "prices": { "claude-opus-5": { "input": 4.0 }, "some-local-model": {
+    "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0 } } }
+```
+
+An override that names one rate keeps the rest of the shipped entry; a new model needs all four.
 
 ## Other surfaces
 
