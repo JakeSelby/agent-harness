@@ -158,8 +158,9 @@ class TheStanceAttributes(Fixture):
     def test_a_row_with_no_recorded_stances_exports_none(self):
         values = self.send([SUBAGENT_ROW])[0]
         self.assertEqual([k for k in values if k.startswith("harness.")
-                          and k not in ("harness.row_key", "harness.version",
-                                        "harness.usd", "harness.price_as_of")], [])
+                          and k not in ("harness.row_key", "harness.exported_at",
+                                        "harness.version", "harness.usd",
+                                        "harness.price_as_of")], [])
 
     def test_no_other_attribute_was_dropped_with_the_stance_map(self):
         values = self.send([SESSION_ROW])[0]

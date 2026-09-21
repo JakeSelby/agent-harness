@@ -9,11 +9,13 @@ a printed line or an error record.
 The collector is a stdlib `http.server` on an ephemeral port, so the shapes asserted are the
 bytes a real endpoint would receive. Run: python3 -m unittest discover tests
 """
+import calendar
 import contextlib
 import http.server
 import io
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -458,6 +460,137 @@ class Replay(Fixture):
             self.export(self.home, since="yesterday")
         with self.assertRaises(SystemExit):
             self.export(self.home)
+
+
+class TheExportStamp(Fixture):
+    """`harness.exported_at` is the only thing that tells a record from its replay.
+
+    The OTLP observed time does not survive ingest into the ClickHouse `otel_logs` table the
+    doc's de-duplication example reads, and `Timestamp` is the row's own `ended`, identical
+    across replays. So the stamp travels as an attribute, fixed width so that a backend holding
+    attributes as strings still orders two records for one key correctly.
+    """
+
+    def test_the_stamp_is_a_fixed_width_rfc_3339_utc_string(self):
+        endpoint, seen = self.serve()
+        telemetry.export_rows([SESSION_ROW], config=self.config(endpoint=endpoint),
+                              env={}, version=VERSION, errors_path=self.errors)
+        stamp = attrs(records(seen[0])[0])["harness.exported_at"]["stringValue"]
+        self.assertRegex(stamp, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
+        self.assertEqual(len(stamp), 27)
+        # UTC, and the moment of the export rather than the row's own time.
+        parsed = calendar.timegm(time.strptime(stamp.split(".")[0], "%Y-%m-%dT%H:%M:%S"))
+        self.assertLess(abs(parsed - time.time()), 120)
+        self.assertGreater(parsed * 1000000000, int(SESSION_NANOS))
+
+    def test_a_fixed_width_stamp_sorts_as_a_string_the_way_it_sorts_as_a_time(self):
+        # A backend keeps OTLP attributes in a string map, so the ordering that matters is
+        # lexical: a narrower second, a rolled-over minute and a new year must all compare right.
+        seconds = [1788260400.0, 1788260400.000009, 1788260400.5, 1788260459.9,
+                   1788260460.0, 1798000000.25]
+        stamps = [telemetry.exported_at(s) for s in seconds]
+        self.assertEqual(stamps, sorted(stamps))
+        self.assertEqual(stamps[0], "2026-09-01T11:00:00.000000Z")
+        self.assertEqual(stamps[1], "2026-09-01T11:00:00.000009Z")
+        self.assertEqual(stamps[4], "2026-09-01T11:01:00.000000Z")
+
+    def test_two_exports_of_one_row_differ_in_the_stamp_and_the_observed_time_alone(self):
+        endpoint, seen = self.serve()
+        for _ in range(2):
+            telemetry.export_rows([SESSION_ROW], config=self.config(endpoint=endpoint),
+                                  env={}, version=VERSION, errors_path=self.errors)
+        first, second = records(seen[0])[0], records(seen[1])[0]
+        self.assertEqual(dict((k, v) for k, v in first.items()
+                              if k not in ("observedTimeUnixNano", "attributes")),
+                         dict((k, v) for k, v in second.items()
+                              if k not in ("observedTimeUnixNano", "attributes")))
+        before, after = attrs(first), attrs(second)
+        self.assertEqual(dict((k, v) for k, v in before.items() if k != "harness.exported_at"),
+                         dict((k, v) for k, v in after.items() if k != "harness.exported_at"))
+        self.assertLessEqual(before["harness.exported_at"]["stringValue"],
+                             after["harness.exported_at"]["stringValue"])
+
+    def test_the_stamp_is_the_instant_the_record_says_it_was_observed_at(self):
+        record = telemetry.log_record(SESSION_ROW, now=1788260400.125)
+        self.assertEqual(attrs(record)["harness.exported_at"],
+                         {"stringValue": "2026-09-01T11:00:00.125000Z"})
+        # The same instant the record reports as observed, to the microsecond the string keeps.
+        self.assertAlmostEqual(int(record["observedTimeUnixNano"]) / 1000000000.0,
+                               1788260400.125, places=6)
+
+    def test_a_row_exported_without_a_stamp_still_gets_one(self):
+        # `attributes` is reachable on its own; no record may leave without the key a reader
+        # de-duplicates with.
+        values = dict((a["key"], a["value"]) for a in telemetry.attributes(SUBAGENT_ROW))
+        self.assertRegex(values["harness.exported_at"]["stringValue"],
+                         r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
+
+
+# The `otel_logs` columns of the OpenTelemetry ClickHouse exporter, read off a running backend.
+# There is no `ObservedTimestamp`: the observed time is dropped on ingest, which is the defect
+# the guard below exists to stop coming back.
+OTEL_LOGS_COLUMNS = frozenset((
+    "Timestamp", "TraceId", "SpanId", "TraceFlags", "SeverityText", "SeverityNumber",
+    "ServiceName", "Body", "ResourceSchemaUrl", "ResourceAttributes", "ScopeSchemaUrl",
+    "ScopeName", "ScopeVersion", "ScopeAttributes", "LogAttributes", "EventName"))
+SQL_WORDS = frozenset((
+    "select", "from", "where", "and", "or", "not", "as", "group", "by", "order", "having",
+    "limit", "interval", "second", "minute", "hour", "day", "week", "month", "year", "null",
+    "is", "in", "on", "join", "left", "asc", "desc", "distinct", "case", "when", "then",
+    "else", "end", "otel_logs"))
+
+
+def doc_sql(heading):
+    """The fenced `sql` blocks under one `##` heading of docs/telemetry.md."""
+    text = (REPO / "docs" / "telemetry.md").read_text(encoding="utf-8")
+    section = text.split("\n## " + heading + "\n", 1)[1].split("\n## ", 1)[0]
+    return re.findall(r"```sql\n(.*?)```", section, re.S)
+
+
+def unknown_columns(sql, columns=OTEL_LOGS_COLUMNS):
+    """Bare identifiers in `sql` that are neither a column, a keyword, an alias nor a function.
+
+    Deliberately crude — this is a spelling check against a schema, not a parser. String
+    literals are blanked first, a name followed by `(` is a function, and a name introduced by
+    `AS` is an alias of the query's own making.
+    """
+    text = re.sub(r"'[^']*'", "''", sql)
+    aliases = set(m.lower() for m in re.findall(r"\bAS\s+([A-Za-z_]\w*)", text))
+    found = []
+    for name in re.findall(r"\b([A-Za-z_]\w*)\b(?!\s*\()", text):
+        if name in columns or name.lower() in SQL_WORDS or name.lower() in aliases:
+            continue
+        found.append(name)
+    return sorted(set(found))
+
+
+class TheDeduplicationExample(unittest.TestCase):
+    """The documented query has to run as written against the standard `otel_logs` table."""
+
+    heading = "De-duplicating an at-least-once stream"
+
+    def test_the_example_names_no_column_the_otel_logs_table_does_not_have(self):
+        blocks = doc_sql(self.heading)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(unknown_columns(blocks[0]), [])
+
+    def test_the_guard_bites_on_the_column_that_was_wrong(self):
+        # Prove the check can fail: the query as it read before, and a misspelt real column.
+        self.assertEqual(unknown_columns(
+            "SELECT argMax(Body, ObservedTimestamp) AS row FROM otel_logs"),
+            ["ObservedTimestamp"])
+        self.assertEqual(unknown_columns("SELECT body FROM otel_logs"), ["body"])
+
+    def test_the_example_orders_on_the_export_stamp_and_reads_dollars_as_a_number(self):
+        sql = doc_sql(self.heading)[0]
+        self.assertNotIn("ObservedTimestamp", sql)
+        self.assertEqual(sql.count("argMax("), 2)
+        self.assertIn("LogAttributes['harness.exported_at']", sql)
+        # `LogAttributes` is a Map(String, String), so the dollars are text until they are cast.
+        self.assertIn("toFloat64OrNull(LogAttributes['harness.usd'])", sql)
+        # A session's dollars already hold its Claude Code subagents': never sum both.
+        self.assertIn("LogAttributes['kind'] = 'subagent'", sql)
+        self.assertIn("LogAttributes['runtime'] != 'codex'", sql)
 
 
 if __name__ == "__main__":

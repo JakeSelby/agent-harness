@@ -179,6 +179,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The documented de-duplication query runs as written. Every exported record now carries
+  `harness.exported_at`, the export time as a fixed-width RFC 3339 UTC string, and the example in
+  `docs/telemetry.md` orders on it instead of `ObservedTimestamp` — a column the OpenTelemetry
+  ClickHouse exporter's `otel_logs` table does not have, since the observed time is dropped on
+  ingest and `Timestamp` is the row's own end time, identical across replays. Attributes land in
+  that table as a `Map(String, String)`, so the stamp is fixed width for lexical order to equal
+  time order, and the example casts `harness.usd` with `toFloat64OrNull` before summing it. A
+  test checks the example names no column outside the real schema.
+
 - Each stance reaches a backend once, as `harness.<dimension>`. The exported body no longer
   carries the `stances` map, which a backend that parses a JSON body flattened into a second
   dotted copy of every stance beside the attributes; every other field still travels in the body.

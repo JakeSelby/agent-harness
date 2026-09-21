@@ -5,7 +5,8 @@
 The ledger is the record and a backend is a rebuildable copy of it: every row is written to
 `usage.jsonl` first, and only then offered to an endpoint from the detached worker, where a
 slow or dead collector cannot reach the session. Delivery is at-least-once by design, so a
-reader de-duplicates on `harness.row_key`; `harness usage export --since` replays a window.
+reader de-duplicates on `harness.row_key` and keeps the greatest `harness.exported_at`;
+`harness usage export --since` replays a window.
 
 This module sits beside `usage-log.py` rather than in `lib/harness_core` because the hook is
 also a standalone script: it is reached through `~/.claude/hooks/harness`, which resolves to
@@ -260,6 +261,23 @@ def _nanos(stamp):
         return None
 
 
+def exported_at(now=None):
+    """The export time as a fixed-width RFC 3339 UTC string: `2026-09-21T18:04:05.123456Z`.
+
+    Fixed width, always six fractional digits and always `Z`, because a backend that lands
+    attributes in a string map — ClickHouse's `otel_logs` keeps `LogAttributes` as
+    `Map(String, String)` — compares this lexically, and only a fixed-width form makes lexical
+    order equal time order. It is what tells two records for one `harness.row_key` apart: the
+    OTLP observed time does not survive that ingest.
+    """
+    stamp = time.time() if now is None else float(now)
+    whole = int(stamp // 1)
+    micros = int((stamp - whole) * 1000000)
+    if micros >= 1000000:  # only reachable through float rounding at a second boundary
+        whole, micros = whole + 1, 0
+    return "{}.{:06d}Z".format(time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(whole)), micros)
+
+
 def any_value(value):
     """One OTLP `AnyValue`. Ints travel as decimal strings, which the JSON mapping requires."""
     if isinstance(value, bool):
@@ -271,8 +289,8 @@ def any_value(value):
     return {"stringValue": str(value)}
 
 
-def attributes(row, config=None, version="", price=None):
-    """The row's flat scalars, its stances, its key, its price and the configured labels.
+def attributes(row, config=None, version="", price=None, exported=None):
+    """The row's flat scalars, its stances, its key, its price, its export time and the labels.
 
     A nested map — `days`, `by_model`, `rules`, `counts` — travels in the body only: attribute
     sets are flat, and flattening a hundred per-day slices into attribute names would make
@@ -282,6 +300,9 @@ def attributes(row, config=None, version="", price=None):
 
     `price` is the `(usd, as_of)` this row was priced at. An unpriced row carries neither
     attribute: a zero would say the run was free rather than that nobody knows what it cost.
+
+    `exported` is the `harness.exported_at` stamp; see that function for why every record
+    carries one. Rows in one batch may share a stamp, which is harmless: they are distinct keys.
     """
     out = {}
     for key, value in sorted(row.items()):
@@ -293,6 +314,7 @@ def attributes(row, config=None, version="", price=None):
         if isinstance(variant, (str, int, float, bool)):
             out["harness." + str(dimension)] = variant
     out["harness.row_key"] = row_key(row)
+    out["harness.exported_at"] = exported or exported_at()
     usd, as_of = price or (None, "")
     if usd is not None:
         out["harness.usd"] = float(usd)
@@ -318,14 +340,16 @@ def body_row(row):
 
 
 def log_record(row, config=None, version="", now=None, price=None):
-    now_nanos = int((time.time() if now is None else now) * 1000000000)
+    seconds = time.time() if now is None else now
+    now_nanos = int(seconds * 1000000000)
     return {
         "timeUnixNano": str(_nanos(row.get("ended")) or now_nanos),
         "observedTimeUnixNano": str(now_nanos),
         "severityNumber": SEVERITY_NUMBER,
         "severityText": "INFO",
         "body": {"stringValue": json.dumps(body_row(row), sort_keys=True)},
-        "attributes": attributes(row, config, version, price),
+        # The same instant as the observed time above, in the form that survives ingest.
+        "attributes": attributes(row, config, version, price, exported_at(seconds)),
     }
 
 
