@@ -75,14 +75,19 @@ that carries its own timestamps.
   parses a JSON body flattens a nested map into dotted keys of its own, and a body carrying
   `stances` landed a second copy of every stance beside the attributes below.
 - **Attributes** are the row's flat scalar fields — a null is omitted rather than sent as empty —
-  plus `harness.row_key`, `harness.version`, `harness.usd` and `harness.price_as_of` on a priced
+  plus `harness.row_key`, `harness.exported_at`, `harness.version`, `harness.usd` and
+  `harness.price_as_of` on a priced
   row, one `harness.<dimension>` per recorded stance, and any configured labels. A stance is
   exported **once**. A nested map (`days`, `by_model`, `rules`, `counts`) stays in the body:
   attribute sets are flat, and a hundred per-day slices would be a hundred columns.
 - Resource attributes are `service.name=agent-harness` and the harness version.
 
 `harness.row_key` is the row's identity — session id, runtime, kind, agent id — and is stable
-across replays. It is what a reader de-duplicates on.
+across replays. It is what a reader de-duplicates on. `harness.exported_at` is the moment the
+record was sent, as a fixed-width RFC 3339 UTC string — six fractional digits, always `Z` — so
+that a backend holding attributes as strings still orders two records for one key correctly.
+It is the only difference between a record and its replay, and the rows of one batch may share
+one stamp.
 
 ### The dollar figure
 
@@ -206,14 +211,17 @@ has no escape the runtimes agree on: it is left off the native labels, named in 
 ## De-duplicating an at-least-once stream
 
 A replay re-sends rows the backend may already hold, so read the newest record per key rather
-than counting rows. In a ClickHouse-style schema, where OTLP log attributes land in a
-`LogAttributes` map:
+than counting rows. Order on `harness.exported_at` and on nothing else: the OTLP observed time
+is **dropped on ingest** by the ClickHouse exporter, and `Timestamp` is the row's own `ended`,
+which is identical across replays. In a ClickHouse-style schema, where OTLP log attributes land
+in a `LogAttributes` map:
 
 ```sql
 SELECT
-    LogAttributes['harness.row_key']                    AS row_key,
-    argMax(Body, ObservedTimestamp)                     AS row,
-    argMax(LogAttributes['harness.usd'], ObservedTimestamp) AS usd
+    LogAttributes['harness.row_key']                                  AS row_key,
+    argMax(Body, LogAttributes['harness.exported_at'])                AS row,
+    argMax(toFloat64OrNull(LogAttributes['harness.usd']),
+           LogAttributes['harness.exported_at'])                      AS usd
 FROM otel_logs
 WHERE ServiceName = 'agent-harness'
   AND Timestamp >= now() - INTERVAL 30 DAY
@@ -221,8 +229,13 @@ WHERE ServiceName = 'agent-harness'
 GROUP BY row_key
 ```
 
+`LogAttributes` is a `Map(String, String)`, so every attribute read out of it is text: the
+`argMax` above compares the export stamps lexically, which is exactly why they are fixed width,
+and `harness.usd` needs `toFloat64OrNull` before it can be summed — an unpriced row has no such
+key, and the empty string it yields becomes a null rather than a zero.
+
 The same shape works anywhere: group by `harness.row_key`, keep the record with the greatest
-observed time. Because a replay carries the row as it stands in the ledger **now**, the newest
+export time. Because a replay carries the row as it stands in the ledger **now**, the newest
 copy is also the corrected one when a `--rescan` has since improved it — and the newest
 `harness.usd` is the one priced at the rates in force when it was last sent.
 
