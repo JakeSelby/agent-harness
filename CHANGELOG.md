@@ -16,8 +16,10 @@ All notable changes to this project are documented here. The format follows
   deterministic check is not native qualification (#334).
 - `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
   sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
+
 - The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
   issue map, and `scripts/bmad_issue_sync.py new` files an issue and reserves its ID in one step (#378).
+
 - `scripts/bmad_issue_sync.py audit --live` compares the committed issue map with GitHub, read-only:
   title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
   `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
@@ -208,6 +210,13 @@ All notable changes to this project are documented here. The format follows
   exactly as the report totals them. An unpriced row carries neither attribute — never a zero —
   and a missing price file or a malformed `prices` override costs an export its dollars and
   nothing else.
+
+- Qualification freezes on a release branch instead of on `main`. `compatibility/freeze.json` names
+  the frozen commit and branch, and a new `harness freeze` reports drift between that commit and a
+  given ref over the runtime source paths, exits non-zero on drift, and refuses a merge that would
+  change those paths on the frozen branch. `docs/releasing.md` gains the freeze procedure and the
+  triage rule that a round runs to completion and collects defects rather than fixing one mid-round,
+  because any source-path change invalidates every evidence record for the round (#332).
 
 ### Changed
 
