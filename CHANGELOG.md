@@ -56,6 +56,27 @@ All notable changes to this project are documented here. The format follows
   as it reads — by rule, by repo and by stance — so a row written under the old id reports under
   the new one, with no rewrite of the ledger file and no split in the series.
 
+- A Codex subagent thread is recorded as a `kind: "subagent"` row joined to the thread that
+  spawned it, with its depth, nickname, model, effort and tool-call count, instead of as a
+  session of its own. On the machine this was measured on, 307 of 438 rollouts were subagent
+  threads and every one of them was a session row. A thread that inherited its parent's history
+  writes the parent's `session_meta` further down its own file; only the first one is read now,
+  which is what 36 of those 307 turned on. `harness usage --rescan` migrates the misclassified
+  rows, deleting the stale keys and copying the ledger to `usage.jsonl.bak` first.
+- The rescan reads `~/.codex/archived_sessions/` as well as `~/.codex/sessions/`. Codex moves a
+  rollout there unchanged, and 96 of the 131 top-level rollouts on that machine lived only in the
+  archive, so most Codex sessions never reached the ledger at all. Codex capture is rescan-driven:
+  whether the runtime's `SessionEnd` payload names the rollout file is not established, so the
+  hook now accepts `rollout_path` and `session_path` beside `transcript_path` and `docs/usage.md`
+  says the rescan is the path known to work.
+- A Codex session whose snapshot carries `total_tokens` alone — 85 of 107 top-level Codex Desktop
+  rollouts — is recorded as `partial` with a `total` and unknown typed fields, rather than summed
+  as a session that spent nothing.
+- `harness usage` sums Codex subagent rows and still skips Claude Code ones: a Codex thread's
+  total counts that thread alone. Four of the 21 measurable parent threads report fewer tokens
+  than their own children sum to, which a total including them could not do. `--by model` also
+  reads the single `model` a subagent or worker row names instead of grouping it as unknown.
+
 ## [0.11.1] — 2026-09-21
 
 ### Added
