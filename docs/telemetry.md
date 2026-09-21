@@ -30,7 +30,9 @@ What is recorded, and where it comes from, is [usage.md](usage.md).
 - `endpoint` is the base URL of **any OTLP/HTTP endpoint**; `/v1/logs` is appended. No vendor is
   required and none is named in the code.
 - `labels` are attributes added to every record — the place for an environment or a host name.
-- `native` is reserved for runtime pass-through and does nothing yet.
+- `native` asks each runtime to export **its own** telemetry to the same endpoint. Off by
+  default, and a separate decision from `export`: see [Native pass-through](#native-pass-through)
+  before turning it on, because the runtimes attach identifiers the ledger does not.
 
 `harness doctor` prints one line for this: the mode, the endpoint's scheme and host, and the
 **names** of the headers it resolved.
@@ -98,6 +100,82 @@ Rows are re-sent in batches; the command prints how many were sent and how many 
 exits non-zero if any batch failed. Failures stay in the errors file and the same window can be
 re-run. This is how a backend is backfilled after it is created, rebuilt after it is lost, and
 repaired after an outage — the capability a live runtime telemetry stream does not have.
+
+## Native pass-through
+
+The ledger is one row per session, written after the fact. Each runtime can also export its own
+live telemetry — Claude Code counts tokens by type and reports a dollar figure per API call;
+Codex counts tokens, turn cost, tool calls and API calls. `"native": true` makes `harness sync`
+write that configuration, pointing both runtimes at the same `endpoint`. It is off by default
+and turning it on is a decision to read the two warnings below first.
+
+```json
+{ "telemetry": { "export": "otlp", "endpoint": "http://localhost:4318",
+                 "headers_file": "~/.config/agent-harness/otlp-headers", "native": true } }
+```
+
+**Read this before pointing it at a hosted endpoint.** Both runtimes attach identifiers the
+ledger export never sends. Claude Code puts `user.email`, `user.account_uuid`, `user.account_id`,
+`user.id`, `organization.id` and `session.id` on its datapoints; its own switches trim some of
+them — `OTEL_METRICS_INCLUDE_ACCOUNT_UUID` and `OTEL_METRICS_INCLUDE_SESSION_ID` both default to
+`true`, `OTEL_METRICS_INCLUDE_VERSION`, `OTEL_METRICS_INCLUDE_ENTRYPOINT` and
+`OTEL_METRICS_INCLUDE_REPOSITORY` to `false`. The harness sets none of them, so adding one to
+`env` yourself is yours to keep: `sync` owns the six variables below and no others. Prompt and
+response logging stays at each runtime's default, which is off.
+
+### What `sync` writes
+
+**Claude Code**, in `env` in `~/.claude/settings.json`: `CLAUDE_CODE_ENABLE_TELEMETRY=1`,
+`OTEL_METRICS_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp`,
+`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`, `OTEL_EXPORTER_OTLP_ENDPOINT` set to the base URL,
+and `OTEL_RESOURCE_ATTRIBUTES` carrying `harness.version` and one `harness.<dimension>` per
+resolved stance, plus the configured `labels`. With a header source configured it also sets
+`otelHeadersHelper` to `~/.claude/hooks/harness/otel-headers.py`, which reads the same file or
+variable the exporter reads and prints a JSON object of headers; the runtime re-runs it about
+every 29 minutes. No header value is written into the settings file. A variable reaches the
+helper only if it reached the runtime that spawned it, so `headers_file` is the source that
+works for a desktop-launched client.
+
+**Codex**, in `[otel]` in `~/.codex/config.toml`: `exporter` and `metrics_exporter`, both
+`otlp-http` with `protocol = "binary"` and the signal-specific URLs `<endpoint>/v1/logs` and
+`<endpoint>/v1/metrics`. Both are set on purpose. `metrics_exporter` defaults to Codex's own
+first-party sink, and its source keeps an exact-name list of metrics that sink drops
+client-side — token usage, turn cost, tool calls, API calls — under the comment *"Metrics
+intentionally not sent through Codex's built-in Statsig route. Keep this as an exact-name list
+so custom OTLP exporters still receive them."* Setting only `exporter` therefore sends no token
+metrics anywhere.
+
+**Codex gets no headers and no labels, and this is a real gap.** `[otel]` takes a literal header
+map in `config.toml` and offers no environment or command indirection for it, so writing one
+would put a credential in a configuration file — exactly what the rules above refuse. Native
+Codex export needs an endpoint that accepts unauthenticated traffic from this machine, or one
+fronted by something the user authenticates. There is also no config key for metric labels:
+Codex builds its resource with the SDK's default builder, so `OTEL_RESOURCE_ATTRIBUTES` from the
+process environment is honoured, but `sync` cannot put it there, and a Codex launched from a
+desktop or an editor may inherit no shell environment at all. *Unverified:* both statements come
+from the configuration reference and a source read, not from a run.
+
+### Labels are frozen at sync time
+
+They are computed when `sync` runs, not per session. Switch a stance without re-syncing and the
+native stream is labelled with the old variant until the next `sync` — **the ledger row is still
+right**, because it records the stances the session actually ran under. `harness doctor` says
+whether the written labels match the current version and stances. A label whose name or value
+carries a comma, an equals sign or whitespace cannot travel in `OTEL_RESOURCE_ATTRIBUTES`, which
+has no escape the runtimes agree on: it is left off the native labels, named in the output of
+`sync` and `doctor`, and still sent with the ledger export.
+
+### What ownership means here
+
+`sync` records every key it writes, so it can update it and take it back out.
+
+- **A variable you set is never touched.** Ownership is per variable, not over `env`.
+- **A managed key already holding something the harness did not write is left alone and
+  reported**, in `sync` and in `doctor`. Remove it to let `sync` manage it. A key already holding
+  exactly what the harness would write is taken over, since there is nothing to lose.
+- **`"native": false` puts back what each key held before**, and removes the rest. An empty
+  `"env": {}` can remain where the harness created the map; it is inert.
+- `harness sync --dry-run` prints the pass-through lines only when the key is on.
 
 ## De-duplicating an at-least-once stream
 
