@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The `delegation: off` stance said a hook asks before any spawn, where the lifecycle denies the
+  spawn outright and never reaches that hook. The stance now says a spawn under it is denied and
+  that changing the selected stance is the way to delegate, and it no longer names a hook — the
+  name it used, `tier-spawns`, was not the file doing the refusing either.
 - The spawn guard no longer refuses a constrained role only by the name a spawn chose. Refusing a
   native `reviewer` spawn moved the work rather than stopping it: the client re-issued the same
   brief as an unnamed subagent and it ran unconfined. A refusal is now remembered for the session,
