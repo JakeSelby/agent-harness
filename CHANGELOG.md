@@ -19,6 +19,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.11.1] — 2026-09-21
 
+### Added
+
+- A `stable` branch that always points at the latest release. The release workflow fast-forwards
+  it to the tag's commit after publishing, `scripts/advance_stable.py --check` verifies it, and the
+  branch never moves backward. `main` stays the trunk.
+
 ### Changed
 
 - The `builder` role's report closes two gaps a downstream soak found. A hand-edited fixture,
@@ -27,6 +33,9 @@ All notable changes to this project are documented here. The format follows
   builder regenerates instead of hand-editing. The gate's result is read from the test command's
   own exit status, captured with `PIPESTATUS`, `pipestatus` or no pipe, rather than from whatever
   `tail` returned. The fixed report gains one item for the edited fixtures and what produced them.
+- Qualify the Claude Code and Codex CLIs on macOS and Linux for this source with version-pinned
+  native evidence across all eleven acceptance cases, and record the limitations those runs
+  established in the compatibility catalog.
 
 ### Fixed
 
