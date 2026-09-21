@@ -41,6 +41,33 @@ All notable changes to this project are documented here. The format follows
   than dropped. `--rules --by stance` keeps the hit report unchanged, and `--by stance` with
   neither is refused with a usage error rather than guessed at.
 
+- `harness usage` reports dollars. `policy/prices.json` lists USD per million tokens for input,
+  output, cache read and cache write per model id, each entry carrying the `as_of` date it was
+  read and the provider pricing page it was read from; a model whose price could not be
+  confirmed from a primary source is absent rather than guessed. Ids resolve by longest prefix
+  after normalisation, so a dated, Bedrock-style or `[1m]` id reaches its family. Every token
+  grouping gains a `usd` column and an `unpriced` footer, `--by role` gains p50 and p75 dollars,
+  and a row with an unknown model, two models or partial tokens is unpriced rather than $0. A
+  `prices` block in `config.json` merges over the file per model id. Checked against a recorded
+  Claude Code session whose runtime reported `total_cost_usd = 0.60097775`: the table reproduces
+  it exactly.
+
+- A session row records a per-model token breakdown in `by_model`, checked against its own
+  totals before it is written and dropped whole if it disagrees: cut from the deduplicated
+  message map for Claude Code, and from the snapshot deltas under each `turn_context.model` for
+  Codex. A row that carries one is priced model by model, which is the only way the sessions
+  that switched model — the largest ones — can be priced at all. On a 60-day rescan, unpriced
+  runs went from 26 of 143 to 0, and the share of output tokens that was unpriced from 73.7% to
+  0%.
+
+- A usage row records the cache-write tier split Claude Code reports — `cache_write_5m` and
+  `cache_write_1h` beside the `cache_write` total — because Anthropic prices a 5-minute write at
+  1.25x base input and a 1-hour write at 2x. The keys are additive, so an existing row stays
+  readable and is charged whole at the 5-minute rate.
+
+- `harness doctor` names the newest `as_of` in the price table and warns when it is over 90 days
+  old, since prices go stale silently while the report keeps printing dollars.
+
 ### Changed
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest

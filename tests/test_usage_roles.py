@@ -310,20 +310,22 @@ class RoleReport(Fixture):
 
     def test_percentiles_are_the_nearest_rank_of_each_sample(self):
         # Ten values, so nearest rank puts p50 at the 5th, p75 at the 8th and p90 at the 9th.
+        # The two dollar cells are dashes because `model-a` is in no price table; dollars over
+        # a priced sample are in tests/test_usage_prices.py.
         self.write_rows([self.agent(i, "gatherer", (i + 1) * 100, i + 1) for i in range(10)]
                         + [self.agent(99, "reviewer", 4242, 7)])
         lines = {ln.split()[0]: ln.split() for ln in self.report(by="role").splitlines()[2:]}
         # Both samples are under 30 runs, so both are marked as the small samples they are.
         self.assertEqual(lines["gatherer"][1:],
-                         ["10", "500", "800", "900", "5", "8", "9", "-", "n<30"])
+                         ["10", "500", "800", "900", "-", "-", "5", "8", "9", "-", "n<30"])
         self.assertEqual(lines["reviewer"][1:],
-                         ["1", "4,242", "4,242", "4,242", "7", "7", "7", "-", "n<30"])
+                         ["1", "4,242", "4,242", "4,242", "-", "-", "7", "7", "7", "-", "n<30"])
 
     def test_a_run_whose_runtime_reported_no_counts_is_named_not_averaged_as_zero(self):
         blind = dict(self.agent(3, "gatherer", 400, 4), output=None, tool_calls=None)
         self.write_rows([self.agent(i, "gatherer", 100, 1) for i in range(2)] + [blind])
         row = [ln for ln in self.report(by="role").splitlines() if ln.startswith("gatherer")][0]
-        self.assertEqual(row.split()[1:], ["3", "100", "100", "100", "1", "1", "1", "1", "n<30"])
+        self.assertEqual(row.split()[1:], ["3", "100", "100", "100", "-", "-", "1", "1", "1", "1", "n<30"])
 
     def test_unmeasured_counts_the_runs_missing_a_tool_call_figure(self):
         """It is a count of what the column above it could not be taken over, so a run with
@@ -332,7 +334,7 @@ class RoleReport(Fixture):
                          dict(self.agent(1, "gatherer", 200, 0), tool_calls=None),
                          dict(self.agent(2, "gatherer", 300, 0), tool_calls=None)])
         row = [ln for ln in self.report(by="role").splitlines() if ln.startswith("gatherer")][0]
-        self.assertEqual(row.split()[1:], ["3", "200", "300", "300", "1", "1", "1", "2", "n<30"])
+        self.assertEqual(row.split()[1:], ["3", "200", "300", "300", "-", "-", "1", "1", "1", "2", "n<30"])
 
     def test_a_worker_row_groups_under_its_role_beside_a_subagent(self):
         worker = {"kind": "worker", "runtime": "codex", "session_id": "w1", "agent_id": "w1",
