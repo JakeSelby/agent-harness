@@ -585,8 +585,22 @@ def unfiltered_find(events, ctx):
     return hits
 
 
-def brief_without_cap(events, ctx):
-    """An `Agent` brief with no word cap, for an agent whose definition carries none."""
+def model_wrote_no_cap(events, ctx):
+    """An `Agent` brief the model wrote with no word cap, for an agent whose definition
+    carries none.
+
+    This measures the brief as authored, never as delivered. Claude Code writes the `tool_use`
+    block with the input the model produced; a `PreToolUse` hook's `updatedInput` is recorded
+    separately, on an `attachment` line of type `hook_success`, which the event builder does not
+    read. So every brief `brief-guard` capped is still a hit here, and the count is a measure of
+    orchestrator compliance — the same way `usage-log.mark_reroutes` measures the spawn hook's
+    work from what happened rather than from what the hook announced.
+
+    The id says so since #324: the old `transcript-hygiene/brief-without-cap` read as a count
+    of uncapped briefs reaching a subagent, which, with the hook installed, is a number this
+    module cannot see and is very nearly zero. `promote?` on this detector means the
+    orchestrator does not write bounds and the hook is carrying the rule.
+    """
     hits = []
     for event in events:
         if event.get("kind") != "tool_use" or event.get("name") != "Agent":
@@ -871,7 +885,8 @@ _COMMITS_ATTRIBUTED = ("commits", ("conventional-attributed",))
 _REGISTRY = [
     Detector("transcript-hygiene/whole-file-cat", "transcript-hygiene", "bash", whole_file_cat),
     Detector("transcript-hygiene/unfiltered-find", "transcript-hygiene", "bash", unfiltered_find),
-    Detector("transcript-hygiene/brief-without-cap", "transcript-hygiene", "agent-brief", brief_without_cap),
+    Detector("transcript-hygiene/model-wrote-no-cap", "transcript-hygiene", "agent-brief",
+             model_wrote_no_cap),
     Detector("delegation/executed-from-summary", "delegation", "bash", executed_from_summary),
     Detector("verification/no-verify", "verification", "bash", no_verify),
     Detector("secrets/secret-in-write", "secrets", "write", secret_in_write),
@@ -890,6 +905,11 @@ _REGISTRY = [
 ]
 
 DETECTORS = dict((d.id, d) for d in _REGISTRY)
+
+# A detector that was renamed, old id → new. A ledger row written under the old id is never
+# rewritten; `harness usage --rules` folds this map on every read instead, so one measurement
+# stays one line and one series across the rename. Renaming is still a last resort.
+RENAMED = {"transcript-hygiene/brief-without-cap": "transcript-hygiene/model-wrote-no-cap"}
 
 # Rules with nothing a transcript can decide. The reason is what the lint prints.
 OPT_OUT = {

@@ -8,41 +8,47 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Ledger rows can be exported to any OTLP/HTTP endpoint, off by default. A `telemetry` block in
-  `config.json` turns it on; with it off no network code runs and the hook behaves as before.
-  Each row becomes one OTLP/JSON log record on `POST <endpoint>/v1/logs`, sent from the detached
-  `SessionEnd` worker after the row is already in the ledger: one attempt, a two-second timeout,
-  no retry, and a failure recorded in `usage.errors.jsonl` rather than in the session's exit
-  status. The body is the row; the attributes are its flat scalars plus a stable
-  `harness.row_key`, the harness version and one `harness.<dimension>` per recorded stance.
-- Request headers are read from a named environment variable or a file outside every git work
-  tree that no other user can read; a header value written into `config.json` is refused by
-  name, and no value is ever printed, logged or written to an error record — a failure names
-  the endpoint's scheme and host only.
-- `harness usage export --since <date> [--until] [--dry-run]` replays a window of rows in
-  batches, prints what was sent and what failed, and exits non-zero if any batch failed.
-  Delivery is at-least-once, so [docs/telemetry.md](docs/telemetry.md) gives the
-  de-duplication query on `harness.row_key` and states the model: the ledger is the record, a
-  backend is a rebuildable copy, and replay is the recovery path when a backend's retention
-  expires or it is rebuilt.
-- `harness doctor` names the export mode, the endpoint's scheme and host, and the names — never
-  the values — of the headers it resolved.
-- `"native": true` in the `telemetry` block makes `harness sync` turn on each runtime's **own**
-  OpenTelemetry export to the same endpoint, off by default. Claude Code gets the telemetry
-  switch, both OTLP exporters, `http/protobuf`, the endpoint and an `OTEL_RESOURCE_ATTRIBUTES`
-  carrying `harness.version` and one `harness.<dimension>` per resolved stance, plus an
-  `otelHeadersHelper` pointing at a harness-owned script that reads the configured header source
-  at run time — so no header value is written into a settings file. Codex gets `[otel]` with
-  both `exporter` and an explicit `metrics_exporter`, because its default metrics sink drops
-  token, cost, tool and API metrics client-side; it is given no header, since `[otel]` takes a
-  literal header map, and [docs/telemetry.md](docs/telemetry.md) states that gap rather than
-  papering over it.
-- Ownership is per variable: a variable you set in `env` is never read, changed or removed, a
-  managed key already holding a value the harness did not write is reported and left alone, and
-  turning the key off restores what each key held before. Labels are frozen at sync time, so a
-  stance switched without a re-sync mislabels native data until the next one — the ledger row
-  stays authoritative. `harness doctor` reports the state, the endpoint's host, whether the
-  labels are current, and that both runtimes attach their own user and organization identifiers.
+- Plan mode now investigates at the permission posture you selected instead of below it. Under
+  `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
+  mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
+  0 or 1 — and asks about grade 2, because a push or a mutating API call is execution rather than
+  planning. Grade 3, the confirm marker, `manual`, `inherit` and Codex are all unchanged, and a
+  stricter autonomy stance still wins. A new config key, `plan_allow_tools`, lists tool-name globs
+  (such as `mcp__notes__read_*`) approved in plan mode under the same posture gate; it is empty
+  by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
+  inferred.
+
+- `product.json` now holds the landing copy as validated data: a `hero` of title, subtitle and proof
+  line, six `capabilities` groups of a pitch and three to six features each with a repository
+  relative `doc` path, and an `on_the_way` list of at most five items, each naming an issue, a
+  client the compatibility catalog calls `planned`, or a document. The hero title is the existing
+  `headline`, which `github_description` already leads with, so the page, the README and the GitHub
+  About description share one source. `tests/test_release.py` fails when a `doc` path is missing, a group
+  or feature count leaves its range, a feature line runs past 170 characters, any string carries an
+  em dash, or the README and the data disagree.
+
+- Every usage row names the `harness_version` that wrote it, read from the same `VERSION` file
+  `harness --version` prints, so a change in spend can be read against a release. A rescanned
+  row carries `null` rather than today's version, and a role-run worker's row carries the
+  version stamped into its `status.json` when the run started.
+
+- A session row records the `effort` that covered the most output tokens and an `effort_source`
+  naming where it was read: `transcript` for Claude Code, which writes `effort` on every
+  assistant record, and `turn_context` for Codex. Effort changes mid-session — 14 of 112 Claude
+  Code transcripts and 4 of 44 Codex rollouts on one machine — so the row weighs it by output
+  rather than taking the first value seen, and records `null` when the transcript names none.
+
+- A session row carries per-day slices in `days`: four token figures and a turn count per UTC
+  date, cut from the same deduplicated map the row's totals are summed over and dropped whole
+  if they do not add up to it. `harness usage --by day` sums the slices when a row has them and
+  falls back to its end date when it does not, and `--days` then windows on the slice date, so
+  a session that ran for a fortnight contributes only its in-window days instead of landing on
+  the day it ended. Five such sessions were 68% of all output tokens on the machine measured.
+
+- `harness usage --by stance --stance <dimension>` groups tokens by that dimension's variant.
+  Rows with no recorded stance, and rows a rescan stamped, are counted under `(unknown)` rather
+  than dropped. `--rules --by stance` keeps the hit report unchanged, and `--by stance` with
+  neither is refused with a usage error rather than guessed at.
 
 - `harness usage` reports dollars. `policy/prices.json` lists USD per million tokens for input,
   output, cache read and cache write per model id, each entry carrying the `as_of` date it was
@@ -54,6 +60,7 @@ All notable changes to this project are documented here. The format follows
   `prices` block in `config.json` merges over the file per model id. Checked against a recorded
   Claude Code session whose runtime reported `total_cost_usd = 0.60097775`: the table reproduces
   it exactly.
+
 - A session row records a per-model token breakdown in `by_model`, checked against its own
   totals before it is written and dropped whole if it disagrees: cut from the deduplicated
   message map for Claude Code, and from the snapshot deltas under each `turn_context.model` for
@@ -61,32 +68,65 @@ All notable changes to this project are documented here. The format follows
   that switched model — the largest ones — can be priced at all. On a 60-day rescan, unpriced
   runs went from 26 of 143 to 0, and the share of output tokens that was unpriced from 73.7% to
   0%.
+
 - A usage row records the cache-write tier split Claude Code reports — `cache_write_5m` and
   `cache_write_1h` beside the `cache_write` total — because Anthropic prices a 5-minute write at
   1.25x base input and a 1-hour write at 2x. The keys are additive, so an existing row stays
   readable and is charged whole at the 5-minute rate.
+
 - `harness doctor` names the newest `as_of` in the price table and warns when it is over 90 days
   old, since prices go stale silently while the report keeps printing dollars.
 
-- Every usage row names the `harness_version` that wrote it, read from the same `VERSION` file
-  `harness --version` prints, so a change in spend can be read against a release. A rescanned
-  row carries `null` rather than today's version, and a role-run worker's row carries the
-  version stamped into its `status.json` when the run started.
-- A session row records the `effort` that covered the most output tokens and an `effort_source`
-  naming where it was read: `transcript` for Claude Code, which writes `effort` on every
-  assistant record, and `turn_context` for Codex. Effort changes mid-session — 14 of 112 Claude
-  Code transcripts and 4 of 44 Codex rollouts on one machine — so the row weighs it by output
-  rather than taking the first value seen, and records `null` when the transcript names none.
-- A session row carries per-day slices in `days`: four token figures and a turn count per UTC
-  date, cut from the same deduplicated map the row's totals are summed over and dropped whole
-  if they do not add up to it. `harness usage --by day` sums the slices when a row has them and
-  falls back to its end date when it does not, and `--days` then windows on the slice date, so
-  a session that ran for a fortnight contributes only its in-window days instead of landing on
-  the day it ended. Five such sessions were 68% of all output tokens on the machine measured.
-- `harness usage --by stance --stance <dimension>` groups tokens by that dimension's variant.
-  Rows with no recorded stance, and rows a rescan stamped, are counted under `(unknown)` rather
-  than dropped. `--rules --by stance` keeps the hit report unchanged, and `--by stance` with
-  neither is refused with a usage error rather than guessed at.
+- Ledger rows can be exported to any OTLP/HTTP endpoint, off by default. A `telemetry` block in
+  `config.json` turns it on; with it off no network code runs and the hook behaves as before.
+  Each row becomes one OTLP/JSON log record on `POST <endpoint>/v1/logs`, sent from the detached
+  `SessionEnd` worker after the row is already in the ledger: one attempt, a two-second timeout,
+  no retry, and a failure recorded in `usage.errors.jsonl` rather than in the session's exit
+  status. The body is the row; the attributes are its flat scalars plus a stable
+  `harness.row_key`, the harness version and one `harness.<dimension>` per recorded stance.
+
+- Request headers are read from a named environment variable or a file outside every git work
+  tree that no other user can read; a header value written into `config.json` is refused by
+  name, and no value is ever printed, logged or written to an error record — a failure names
+  the endpoint's scheme and host only.
+
+- `harness usage export --since <date> [--until] [--dry-run]` replays a window of rows in
+  batches, prints what was sent and what failed, and exits non-zero if any batch failed.
+  Delivery is at-least-once, so [docs/telemetry.md](docs/telemetry.md) gives the
+  de-duplication query on `harness.row_key` and states the model: the ledger is the record, a
+  backend is a rebuildable copy, and replay is the recovery path when a backend's retention
+  expires or it is rebuilt.
+
+- `harness doctor` names the export mode, the endpoint's scheme and host, and the names — never
+  the values — of the headers it resolved.
+
+- A `/land` workflow picks up where `/build` stops. It verifies the required checks — and the
+  issue-ownership check where a repository runs one — on the head that will actually merge,
+  squash-merges with the remote branch deleted, fast-forwards the shared checkout, removes the
+  managed worktree, deletes the local branch with `git branch -d`, audits for stale checkouts,
+  then reads the repository's own release rule and either says no release is due or posts a
+  release card for approval. It never forces a removal, never uses `git branch -D`, and stops on
+  dirty or unmerged state with the reason; merging stays approval-gated and it never tags or
+  deploys. Projections for both runtimes are generated from the shared source as usual.
+
+- `"native": true` in the `telemetry` block makes `harness sync` turn on each runtime's **own**
+  OpenTelemetry export to the same endpoint, off by default. Claude Code gets the telemetry
+  switch, both OTLP exporters, `http/protobuf`, the endpoint and an `OTEL_RESOURCE_ATTRIBUTES`
+  carrying `harness.version` and one `harness.<dimension>` per resolved stance, plus an
+  `otelHeadersHelper` pointing at a harness-owned script that reads the configured header source
+  at run time — so no header value is written into a settings file. Codex gets `[otel]` with
+  both `exporter` and an explicit `metrics_exporter`, because its default metrics sink drops
+  token, cost, tool and API metrics client-side; it is given no header, since `[otel]` takes a
+  literal header map, and [docs/telemetry.md](docs/telemetry.md) states that gap rather than
+  papering over it.
+
+- Ownership is per variable: a variable you set in `env` is never read, changed or removed, a
+  managed key already holding a value the harness did not write is reported and left alone, and
+  turning the key off restores what each key held before. Labels are frozen at sync time, so a
+  stance switched without a re-sync mislabels native data until the next one — the ledger row
+  stays authoritative. `harness doctor` reports the state, the endpoint's host, whether the
+  labels are current, and that both runtimes attach their own user and organization identifiers.
+
 - [docs/telemetry.md](docs/telemetry.md) ends with a reference recipe for one backend that was
   set up and measured end to end — the ClickStack all-in-one image — as a worked example of "any
   OTLP/HTTP endpoint" rather than a requirement: the run command with its three persistent
@@ -95,6 +135,7 @@ All notable changes to this project are documented here. The format follows
   with and the `ALTER TABLE … MODIFY TTL` that raises it, and why Codex cannot reach a backend
   that needs a header. It contains no command that creates an account, stores a password or
   removes a container or a volume, and it names the licence of every part of the image.
+
 - A dashboard definition ships beside it as
   [docs/telemetry/clickstack-dashboard-native-cost.json](docs/telemetry/clickstack-dashboard-native-cost.json):
   ten tiles of this repository's own SQL over the standard OpenTelemetry tables, reading the
@@ -103,15 +144,55 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- The fan-out warning in [docs/usage.md](docs/usage.md) now carries what was measured against
-  it. Across 137 sessions on one machine the cache hit rate was 97.0%, 97.2%, 97.3% and 97.1%
-  at 0, 1–6, 7–50 and 51-or-more subagents, so the falling hit rate it describes is a thing to
-  check in your own data rather than an expectation.
+- The README's install command clones the `stable` branch, so a new install starts from the latest
+  release instead of the development trunk.
+
+- The README's first screen is the headline, a terminal capture of `harness sync --dry-run` on a
+  fresh home, the description and the six capability groups, one linked line per feature, plus the
+  "On the way" list. Release status and the generated compatibility block now follow the install
+  section, so a first-time reader meets what the harness does before which clients are qualified.
+
 - `harness usage --by role` marks a role with fewer than 30 runs `n<30` in a new `sample`
   column. A p90 over eight runs is the second-largest of eight, and the budget re-seeding
   procedure in `docs/usage.md` now says not to re-seed from a marked row.
 
+- The fan-out warning in [docs/usage.md](docs/usage.md) now carries what was measured against
+  it. Across 137 sessions on one machine the cache hit rate was 97.0%, 97.2%, 97.3% and 97.1%
+  at 0, 1–6, 7–50 and 51-or-more subagents, so the falling hit rate it describes is a thing to
+  check in your own data rather than an expectation.
+
 ### Fixed
+
+- A client launched under a substituted `HOME` no longer raises the macOS "A keychain cannot be
+  found" dialog. The acceptance runner already gave its disposable homes a keychain, but two other
+  launches did not: every role worker runs its client in a private home that had none, and
+  `harness doctor` ran `claude doctor` in whatever `HOME` it was given, including a throwaway one
+  an agent built to test a config. A role worker's home now carries its own throwaway keychain, and
+  a worker whose keychain cannot be created fails instead of launching; `harness doctor` skips the
+  client's doctor, and says so, when `HOME` has no default keychain. `harness keychain <home>` is the
+  same guard for a home you build by hand. Other hosts are unchanged.
+
+- The `gatherer` role no longer declares web tools its only execution path cannot give it. The
+  role listed `WebFetch` and `WebSearch`, the spawn guard refuses a native `gatherer` in favour of
+  `harness role run gatherer`, and that isolated worker is launched with `Read`, `Grep` and `Glob`
+  under a read-only sandbox with hosted search disabled — so a web dimension of `/research` had
+  nowhere to run. The confinement stays: a worker that can both read a workspace and fetch can
+  carry what it read back out, and a fetched page is untrusted input inside a confined process.
+  Instead the declaration now matches the launch, the role says it is offline and that online
+  evidence arrives as files granted with `--read-dir`, the refusal that points at `harness role
+  run` adds where a web dimension goes instead, and `/research` routes by where the evidence
+  lives — files and repositories to the isolated worker, the live web to an in-session band
+  worker. A test asserts the command line a `gatherer` worker is actually launched with.
+
+- `transcript-hygiene/brief-without-cap` is now `transcript-hygiene/model-wrote-no-cap`, because
+  that is what it always measured. A transcript records an `Agent` call as the model wrote it,
+  and a `PreToolUse` hook's `updatedInput` is written to a separate `attachment` line the scan
+  never reads — so `brief-guard` capping a brief could not move the number, and the rate was
+  unchanged before, during and after the hook shipped. The detector's behaviour is unchanged and
+  the rename makes `promote?` on it mean something: the orchestrator writes no bounds and the hook
+  is carrying the rule. `rule-detectors.RENAMED` names the successor and `usage --rules` folds it
+  as it reads — by rule, by repo and by stance — so a row written under the old id reports under
+  the new one, with no rewrite of the ledger file and no split in the series.
 
 - A Codex subagent thread is recorded as a `kind: "subagent"` row joined to the thread that
   spawned it, with its depth, nickname, model, effort and tool-call count, instead of as a
@@ -120,21 +201,30 @@ All notable changes to this project are documented here. The format follows
   writes the parent's `session_meta` further down its own file; only the first one is read now,
   which is what 36 of those 307 turned on. `harness usage --rescan` migrates the misclassified
   rows, deleting the stale keys and copying the ledger to `usage.jsonl.bak` first.
+
 - The rescan reads `~/.codex/archived_sessions/` as well as `~/.codex/sessions/`. Codex moves a
   rollout there unchanged, and 96 of the 131 top-level rollouts on that machine lived only in the
   archive, so most Codex sessions never reached the ledger at all. Codex capture is rescan-driven:
   whether the runtime's `SessionEnd` payload names the rollout file is not established, so the
   hook now accepts `rollout_path` and `session_path` beside `transcript_path` and `docs/usage.md`
   says the rescan is the path known to work.
+
 - A Codex session whose snapshot carries `total_tokens` alone — 85 of 107 top-level Codex Desktop
   rollouts — is recorded as `partial` with a `total` and unknown typed fields, rather than summed
   as a session that spent nothing.
+
 - `harness usage` sums Codex subagent rows and still skips Claude Code ones: a Codex thread's
   total counts that thread alone. Four of the 21 measurable parent threads report fewer tokens
   than their own children sum to, which a total including them could not do. `--by model` also
   reads the single `model` a subagent or worker row names instead of grouping it as unknown.
 
 ## [0.11.1] — 2026-09-21
+
+### Added
+
+- A `stable` branch that always points at the latest release. The release workflow fast-forwards
+  it to the tag's commit after publishing, `scripts/advance_stable.py --check` verifies it, and the
+  branch never moves backward. `main` stays the trunk.
 
 ### Changed
 
@@ -144,6 +234,9 @@ All notable changes to this project are documented here. The format follows
   builder regenerates instead of hand-editing. The gate's result is read from the test command's
   own exit status, captured with `PIPESTATUS`, `pipestatus` or no pipe, rather than from whatever
   `tail` returned. The fixed report gains one item for the edited fixtures and what produced them.
+- Qualify the Claude Code and Codex CLIs on macOS and Linux for this source with version-pinned
+  native evidence across all eleven acceptance cases, and record the limitations those runs
+  established in the compatibility catalog.
 
 ### Fixed
 
