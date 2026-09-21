@@ -31,6 +31,14 @@ A role's class (`tier:` in its contract) resolves through the adapter's `tiers` 
 for the class requires the caller's actual session model; the worker does not resolve downward
 or silently substitute the CLI default.
 
+The selected cost variant's row for the role is applied first, with the same precedence a synced
+agent definition is rendered with: the role's own class and effort, then the row (whose class
+applies only under a tiered `delegation`, and never to a `posture: fixed` role), then
+`role_bindings.<runtime>.<role>`, then `--model`. The brief the worker receives ends with the
+row's `Expected spend` sentence unless the row prices nothing or the brief already states a
+budget, and `status.json` records the variant, the resolved class and where each of model and
+effort came from.
+
 Two keys in `~/.config/agent-harness/config.json` change the mapping without a harness release.
 `tiers.<runtime>.<class>` remaps a class for every role that names it, which is the one-line fix
 when a provider's lineup turns over; `role_bindings.<runtime>.<role>` sets `model` or effort for

@@ -17,6 +17,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An isolated role worker now follows the selected cost variant. `harness role run` bound a role
+  from its `tier:` alone, so under `frugal` a `gatherer` worker ran on the role's own class while
+  the same sync in the same home rendered that role one class lower — and the constrained roles
+  are denied as native spawns, so neither the posture nor the soft budget ever reached the roles
+  that carry measured budgets. A worker now resolves its row through the same function and the
+  same precedence the sync path renders a definition with — role defaults, the variant's row
+  (class only under a tiered `delegation`, never for a `posture: fixed` role), `role_bindings`,
+  then `--model` — on both runtimes and through the whole stance ladder, so a session-scoped
+  `HARNESS_STANCE_COST` reaches it. Its brief ends with the same `Expected spend` sentence a
+  native brief gets, from one function shared with the brief guard, unless the row prices nothing
+  or the brief already states a budget; `status.json` records the variant, the resolved class,
+  where model and effort each came from, and the figures appended. A variant with no row for the
+  role, or a table that will not build, leaves the worker exactly as it was.
 - The usage feed reports a finished subagent's actual spend instead of `spend unknown`. A
   `SubagentStop` summed the agent's transcript the instant it fired, and at that instant the
   transcript can hold only the `user` and `attachment` records the parent wrote into it — so the

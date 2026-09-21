@@ -112,31 +112,14 @@ SHAPE_PATTERNS = [
 ]
 
 
-_POSTURE_MODULES: Dict[str, Any] = {}
-
-
 def load_posture(root: Path = REPO):
-    """The stance and cost resolver the hooks run, loaded by path, or None when it is missing.
+    """The stance and cost resolver the hooks run, or None when it is missing.
 
-    Loading the same file the hooks load is what keeps one answer to "what does this variant
-    say": lint validates sidecars with the resolver's own schema, never a second copy of it.
-    Loaded once per root, because a sync asks it a question per role per runtime.
+    One loader, in `harness_core.catalog`, so the CLI, the lint and an isolated role worker all
+    hold the same module: lint validates sidecars with the resolver's own schema, never a second
+    copy of it.
     """
-    import importlib.util
-
-    if str(root) in _POSTURE_MODULES:
-        return _POSTURE_MODULES[str(root)]
-    path = root / "claude" / "hooks" / "posture.py"
-    if not path.is_file():
-        return None
-    try:
-        spec = importlib.util.spec_from_file_location("harness_posture", str(path))
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _POSTURE_MODULES[str(root)] = module
-        return module
-    except Exception:
-        return None
+    return primitive_catalog.posture_module(root)
 
 
 def load_detectors(root: Path = REPO):
@@ -363,41 +346,20 @@ def resolve_stances(cfg: Dict[str, Any]) -> Dict[str, Path]:
 def cost_table(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """The configured cost variant's resolved table, never a reason for a sync to fail.
 
-    Built from the user's configuration rather than the environment, because a sync projects
-    user defaults and a session's `HARNESS_STANCE_*` stays in the session. A resolver this
-    checkout does not carry, or a sidecar it cannot use, yields an empty table: the agent
-    definitions then render exactly as they did before cost variants had rows.
+    Built from the loaded configuration rather than the environment directly, because a sync
+    projects user defaults and a session's `HARNESS_STANCE_*` stays in the session.
     """
-    module = load_posture()
-    if module is None:
-        return {"rows": {}, "class_applies": False,
-                "warnings": ["no posture resolver in this checkout; rendering without cost rows"]}
-    try:
-        return module.table_for(dict(cfg.get("stances", {})), cfg, strict=False, root=REPO)
-    except Exception as exc:
-        return {"rows": {}, "class_applies": False,
-                "warnings": ["cost table unusable, rendering without cost rows: " + str(exc)]}
+    return primitive_catalog.cost_table(REPO, cfg)
 
 
 def agent_row(table: Dict[str, Any], role: str) -> Optional[Dict[str, Any]]:
-    """The cost row that governs one role, band rows included; the resolver decides which.
-
-    One lookup for the whole sync path, so a band worker is rendered from the same row the
-    spawn hook reroutes to. A checkout with no resolver falls back to the role's own row.
-    """
-    module = load_posture()
-    if module is None or not hasattr(module, "row_for"):
-        return table.get("rows", {}).get(role)
-    return module.row_for(table, role)
+    """The cost row that governs one role, band rows included; the resolver decides which."""
+    return primitive_catalog.cost_row(REPO, table, role)
 
 
 def agent_overrides(cfg: Dict[str, Any], table: Dict[str, Any], runtime: str, role: str) -> Dict[str, Any]:
     """The overrides one role's native definition is rendered with, for either runtime."""
-    return primitive_catalog.role_overrides(
-        REPO, runtime, agent_row(table, role),
-        class_applies=bool(table.get("class_applies")),
-        tiers=cfg.get("tiers", {}).get(runtime),
-        binding=cfg.get("role_bindings", {}).get(runtime, {}).get(role, {}))
+    return primitive_catalog.cost_overrides(REPO, cfg, table, runtime, role)
 
 
 def _agent_change(table: Dict[str, Any], role: str, content: str) -> str:

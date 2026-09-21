@@ -28,8 +28,10 @@ posture does not move stays a symlink to the committed projection, exactly as be
 moves is rendered into the Claude home, so the class and effort it runs with are written into the
 file on disk rather than decided per session. A
 session-scoped `HARNESS_STANCE_COST`, like any `HARNESS_STANCE_*`, stays in that session and does
-not move them until the next `harness sync`; role-run workers resolve their class and effort per
-run and do follow it. A `role_bindings.<runtime>.<role>` entry still wins over the variant's row.
+not move them until the next `harness sync`; an isolated [role worker](role-workers.md) resolves
+its class, effort and soft budget per run, from the same table and the same precedence, so it
+follows that session selection and a constrained role cannot run one way as a worker and another
+as a definition. A `role_bindings.<runtime>.<role>` entry still wins over the variant's row.
 Routing of spawns that name no agent definition turns itself off in a workspace that ships its own
 `.claude/agents/worker-*.md`, since a project definition outranks the user's and routing to it
 would put that repository's instructions on every unnamed spawn; the spawn runs as written and the
