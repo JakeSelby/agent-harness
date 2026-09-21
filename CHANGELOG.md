@@ -183,6 +183,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness worktree remove` finishes the cleanup after a squash merge. The quality gate has to run
+  before a push and writes `__pycache__`, which used to leave the worktree unremovable and reported
+  as dirty by `harness worktree audit`; removal no longer counts the regenerable caches it knows
+  (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `node_modules`, `.astro`, plus a
+  top-level directory named with `--also-clear NAME`) as work, git deletes them with the checkout,
+  and audit reports a checkout holding only those as clean. Modified,
+  untracked and other ignored entries still refuse, naming the first few. With `--merged` the
+  local branch is deleted too, but only once `gh` reports a merged pull request whose head commit
+  is the branch tip: after a squash the branch's commits never reach the default branch, so
+  ancestry cannot answer and `git branch -d` refuses work that did land. A missing or failing
+  `gh`, no merged pull request from this repository, a tip the merged head does not match, or the
+  default branch refuses with the reason and deletes nothing. `/land` now hands both steps to one command.
+
 - The documented de-duplication query runs as written. Every exported record now carries
   `harness.exported_at`, the export time as a fixed-width RFC 3339 UTC string, and the example in
   `docs/telemetry.md` orders on it instead of `ObservedTimestamp` — a column the OpenTelemetry
