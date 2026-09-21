@@ -17,6 +17,14 @@ All notable changes to this project are documented here. The format follows
   (such as `mcp__notes__read_*`) approved in plan mode under the same posture gate; it is empty
   by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
   inferred.
+- `product.json` now holds the landing copy as validated data: a `hero` of title, subtitle and proof
+  line, six `capabilities` groups of a pitch and three to six features each with a repository
+  relative `doc` path, and an `on_the_way` list of at most five items, each naming an issue, a
+  client the compatibility catalog calls `planned`, or a document. The hero title is the existing
+  `headline`, which `github_description` already leads with, so the page, the README and the GitHub
+  About description share one source. `tests/test_release.py` fails when a `doc` path is missing, a group
+  or feature count leaves its range, a feature line runs past 170 characters, any string carries an
+  em dash, or the README and the data disagree.
 
 - Every usage row names the `harness_version` that wrote it, read from the same `VERSION` file
   `harness --version` prints, so a change in spend can be read against a release. A rescanned
@@ -95,6 +103,10 @@ All notable changes to this project are documented here. The format follows
 
 - The README's install command clones the `stable` branch, so a new install starts from the latest
   release instead of the development trunk.
+- The README's first screen is the headline, a terminal capture of `harness sync --dry-run` on a
+  fresh home, the description and the six capability groups, one linked line per feature, plus the
+  "On the way" list. Release status and the generated compatibility block now follow the install
+  section, so a first-time reader meets what the harness does before which clients are qualified.
 
 - `harness usage --by role` marks a role with fewer than 30 runs `n<30` in a new `sample`
   column. A p90 over eight runs is the second-largest of eight, and the budget re-seeding
