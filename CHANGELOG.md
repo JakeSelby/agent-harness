@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Qualification evidence is written per case as the case finishes, so a round killed part-way costs
+  one case rather than the whole round. `scripts/native_acceptance.py` appends each finished case to
+  a durable log outside the checkout, `--progress` names that log and `--from-progress` rebuilds a
+  record from it without launching a client. The evidence schema already unions cases across several
+  records per client and already rejects a linked `failed` or `unverified`, so a partial record stays
+  a valid input and neither behaviour changes (#339).
 - `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
   sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
 
