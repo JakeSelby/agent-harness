@@ -1,0 +1,24 @@
+{
+    "description": "Your way of working, across AI agents. A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable personal stances.",
+    "homepageUrl": "https://agent-harness.jakeselby.com",
+    "repositoryTopics": [
+        {
+            "name": "agent-harness"
+        },
+        {
+            "name": "ai-agents"
+        },
+        {
+            "name": "claude-code"
+        },
+        {
+            "name": "developer-tools"
+        },
+        {
+            "name": "codex"
+        },
+        {
+            "name": "personal-stances"
+        }
+    ]
+}
