@@ -4,6 +4,9 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
+
+ISSUE_MAP = Path(__file__).resolve().parents[2] / '_bmad-output' / 'issue-map.json'
 
 
 QUERY = """
@@ -48,6 +51,21 @@ def validate(pulls, number, repository):
     return issue['number']
 
 
+def require_mapping(issue, map_path):
+    """The delivery issue must carry a BMad ID in the map this PR would leave on the base branch."""
+    try:
+        items = json.loads(map_path.read_text(encoding='utf-8'))['items']
+        mapped = {entry['github_number']: entry['bmad_id'] for entry in items}
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ValueError('The BMad issue map at {} is missing or malformed: {!r}'.format(map_path, error))
+    item = {'bmad_id': mapped[issue]} if issue in mapped else None
+    if item is None:
+        raise ValueError(
+            'Delivery issue #{0} has no BMad ID. Run python3 scripts/bmad_issue_sync.py reserve '
+            '--issue {0} --kind KIND and commit the result in this PR.'.format(issue))
+    return item['bmad_id']
+
+
 def main():
     repository = os.environ['GITHUB_REPOSITORY']
     owner, name = repository.split('/')
@@ -61,7 +79,8 @@ def main():
             raise ValueError('GitHub returned errors; ownership is unknown.')
         pulls.extend(page['data']['repository']['pullRequests']['nodes'])
     issue = validate(pulls, int(os.environ['PR_NUMBER']), repository)
-    print('Issue ownership verified: #{}'.format(issue))
+    bmad_id = require_mapping(issue, ISSUE_MAP)
+    print('Issue ownership verified: #{} ({})'.format(issue, bmad_id))
 
 
 if __name__ == '__main__':

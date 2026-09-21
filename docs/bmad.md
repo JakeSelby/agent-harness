@@ -65,11 +65,40 @@ exact `type::*` label and primary parent. It never changes a title, state or com
 issue types are [organization-managed](https://docs.github.com/issues/tracking-your-work-with-issues/using-issues/managing-issue-types-in-an-organization)
 and cannot be assigned in this personal-account repository, so the manifest records `labels-only`
 projection explicitly rather than reporting permanent false drift.
-For new community issues, reserve an ID during maintainer triage before implementation ownership:
+File maintainer work already mapped, from the worktree that will deliver it, and reserve an ID
+for a community issue during triage before implementation ownership:
 
 ```sh
+python3 scripts/bmad_issue_sync.py new --title TITLE --kind story --body-file BODY.md --parent PARENT_NUMBER
 python3 scripts/bmad_issue_sync.py reserve --issue N --kind story --parent PARENT_NUMBER
 ```
+
+Both write the map and a new artifact in the current checkout; commit them in the pull request that
+delivers the issue. The required `issue-ownership` check refuses a pull request whose delivery
+issue is absent from the map, and `apply` adds the Planning block once the artifact is on `main`.
+
+### Live verification
+
+```sh
+python3 scripts/bmad_issue_sync.py audit --live
+python3 scripts/bmad_issue_sync.py refresh
+```
+
+`audit --live` is read-only. It fails when a mapped issue's title or open/closed state differs from
+the manifest, when a mapped issue is missing or lacks its Planning block, label or parent, and when
+an issue a maintainer has accepted — filed by a maintainer, or carrying a milestone or a `type::*`
+label — has no BMad ID. A community issue still waiting for triage is a notice, not a finding, and
+so is an unmapped issue closed as not planned or as a duplicate.
+
+`refresh` copies GitHub's title and state into the manifest and its generated artifacts. It checks
+every drifted artifact before writing any of them and refuses the whole run when one carries
+amendments; it never touches GitHub, and it leaves an issue GitHub no longer returns for the audit
+to report as missing.
+
+Run the full live audit before a release and after any triage pass. The `bmad traceability`
+workflow runs it daily, on issue events and when the map changes, with `--ignore-lifecycle` and
+`--grace-days 2`: an issue closes before its map entry can follow it through a pull request, and a
+new issue gets two days to receive its ID. That workflow is not a required check.
 
 IDs are never reused and never encode hierarchy. Reparent the metadata rather than renaming the ID.
 Completed historical issues are marked `reconstructed`; the record never claims those artifacts

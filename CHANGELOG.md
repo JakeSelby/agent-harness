@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
+  issue map, and `scripts/bmad_issue_sync.py new` files an issue and reserves its ID in one step (#378).
+- `scripts/bmad_issue_sync.py audit --live` compares the committed issue map with GitHub, read-only:
+  title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
+  `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
+  runs the audit daily and on issue events (#218).
+
 - Release upkeep is written down and checked. `AGENTS.md` and `docs/releasing.md` now say when a
   release is proposed (cut by milestone, or when a user-visible unreleased change is seven days
   old, with a regression fix released at once as a patch), how it is numbered by what changed
