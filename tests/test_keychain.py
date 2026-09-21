@@ -120,5 +120,37 @@ class DoctorTests(TempHome):
         self.assertNotIn("skipped", text)
 
 
+class CommandTests(TempDir):
+    """`harness keychain HOME` is the same guard for a home built by hand."""
+
+    def run_command(self, home):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = harness.cmd_keychain(harness.argparse.Namespace(home=str(home)))
+        return code, buffer.getvalue()
+
+    def test_it_provisions_the_named_home(self):
+        made = keychain.default_path(self.home)
+        with patch.object(harness.keychain, "provision", return_value=made) as provision:
+            code, text = self.run_command(self.home)
+        provision.assert_called_once_with(self.home.resolve())
+        self.assertEqual((code, text.strip()), (0, str(made)))
+
+    def test_it_refuses_your_own_home(self):
+        with patch.object(harness.Path, "home", return_value=self.home), \
+                patch.object(harness.keychain, "provision", side_effect=AssertionError("ran")):
+            with self.assertRaisesRegex(SystemExit, "your own home"):
+                self.run_command(self.home)
+
+    def test_it_refuses_a_path_that_is_not_a_directory(self):
+        with self.assertRaisesRegex(SystemExit, "not a directory"):
+            self.run_command(self.home / "absent")
+
+    def test_a_keychain_that_cannot_be_created_says_not_to_launch(self):
+        with patch.object(harness.keychain, "provision", side_effect=OSError("could not create")):
+            with self.assertRaisesRegex(SystemExit, "Do not launch a client"):
+                self.run_command(self.home)
+
+
 if __name__ == "__main__":
     unittest.main()

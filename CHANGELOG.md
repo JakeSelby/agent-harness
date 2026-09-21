@@ -31,7 +31,8 @@ All notable changes to this project are documented here. The format follows
   `harness doctor` ran `claude doctor` in whatever `HOME` it was given, including a throwaway one
   an agent built to test a config. A role worker's home now carries its own throwaway keychain, and
   a worker whose keychain cannot be created fails instead of launching; `harness doctor` skips the
-  client's doctor, and says so, when `HOME` has no default keychain. Other hosts are unchanged.
+  client's doctor, and says so, when `HOME` has no default keychain. `harness keychain <home>` is the
+  same guard for a home you build by hand. Other hosts are unchanged.
 
 ## [0.11.1] — 2026-09-21
 
