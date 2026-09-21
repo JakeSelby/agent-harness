@@ -22,9 +22,16 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "compatibility/evidence/claude-code-cli-macos-0.11.0.json",
+          "sha256": "b83cac162502cfcd86df7d913fca711a5b2c9bbe34b5f42ed680759e45177ade"
+        }
+      ],
+      "runtime_version": "2.1.273",
+      "client_version": "2.1.273"
     },
     {
       "id": "claude-code-vscode-macos",
@@ -42,9 +49,16 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "linux",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "compatibility/evidence/claude-code-cli-linux-0.11.0.json",
+          "sha256": "4551cc210286379f6b0fd9d531aea41ad30aedb71bae8e6e654b09167e909e81"
+        }
+      ],
+      "runtime_version": "2.1.278",
+      "client_version": "2.1.278"
     },
     {
       "id": "codex-cli-macos",
@@ -52,9 +66,16 @@
       "provider": "openai",
       "client": "cli",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "compatibility/evidence/codex-cli-macos-0.11.0.json",
+          "sha256": "d34945d1673247d285356a137b2a7af23bee5e6729fff9964d873d36ee1a845e"
+        }
+      ],
+      "runtime_version": "0.154.0-alpha.6.2",
+      "client_version": "0.154.0-alpha.6.2"
     },
     {
       "id": "codex-vscode-macos",
@@ -82,9 +103,16 @@
       "provider": "openai",
       "client": "cli",
       "platform": "linux",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "compatibility/evidence/codex-cli-linux-0.11.0.json",
+          "sha256": "d4edcdc97610ea636ae6943e21701264ac02a4d38f9113fdd8b327608a980730"
+        }
+      ],
+      "runtime_version": "0.155.1",
+      "client_version": "0.155.1"
     },
     {
       "id": "cursor",
@@ -113,6 +141,10 @@
     "Planner publication is mediated by the harness after constrained workers return result data.",
     "The architecture-viewer integration is a preview for a separately installed implementation. A local protocol 1 candidate passed process-level harness acceptance; no viewer is bundled, and native viewer interaction and distribution/license clearance remain unverified.",
     "The usage feed is a Claude Code capability: Codex raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back there and no such event is registered.",
-    "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred."
+    "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred.",
+    "BMad review confinement is requested in the routed layer text rather than enforced at the spawn hook: a client can run a review layer as an unnamed native subagent, unconfined, and still report a result. Observed on Claude Code; a confined run writes isolated-worker state. Tracked in #291.",
+    "On Codex, output-filter rewrites are never applied: a rewrite travels only with an allow, and the filtered commands are not auto-allowed. Tracked in #292.",
+    "Under Codex auto permissions an isolated role worker launched from inside a sandboxed turn has no network access and stalls until its deadline; it completes under an acknowledged bypass. Tracked in #293.",
+    "harness sync links user-level stance selections only; a HARNESS_STANCE_ variable or a project selection changes what harness stances and the hooks resolve, not the linked stance text. Tracked in #276 and #294."
   ]
 }
