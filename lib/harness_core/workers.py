@@ -12,10 +12,18 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from . import catalog, reconcile
+from . import catalog, keychain, reconcile
 
 LIMIT = 1024 * 1024
 RUNTIMES = {"codex": "codex", "claude-code": "claude"}
+
+
+def harness_version(root):
+    """The checkout's version, the one string `harness --version` prints, or None."""
+    try:
+        return (Path(root) / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
 
 
 def adapter(root, runtime):
@@ -130,6 +138,10 @@ def environment(original, work):
     env.update(HOME=str(work / "home"), XDG_CONFIG_HOME=str(work / "home/.config"),
                XDG_STATE_HOME=str(work / "home/.local/state"), XDG_CACHE_HOME=str(work / "home/.cache"))
     Path(env["HOME"]).mkdir(mode=0o700)
+    try:
+        keychain.provision(env["HOME"])
+    except OSError as exc:
+        raise ValueError(str(exc))
     return env
 
 
@@ -237,7 +249,11 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     run_dir = state_root / uuid.uuid4().hex
     run_dir.mkdir(mode=0o700)
     record = {"schema_version": 1, "id": run_dir.name, "role": name, "runtime": runtime,
-              "runtime_version": version, "model": bindings["model"], "workspace": str(workspace),
+              "runtime_version": version,
+              # The harness that launched this run, stamped now: the usage sweep that turns the
+              # status file into a ledger row may run long after this version was replaced.
+              "harness_version": harness_version(root),
+              "model": bindings["model"], "workspace": str(workspace),
               "effort": bindings.get("model_reasoning_effort", bindings.get("effort")),
               "read_roots": [str(workspace), str(root)] + list(map(str, read_roots)),
               "mode": "isolated-cli", "status": "starting", "started_at": time.time(),

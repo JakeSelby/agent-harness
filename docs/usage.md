@@ -9,15 +9,23 @@ remain specific to that adapter.
 The `usage-log` hook runs on `SessionEnd` and keeps one record per session in
 `~/.local/state/agent-harness/usage.jsonl`. It is a local file and nothing else: no network
 call, no service, no account, and nothing beyond the session id, the repository directory name,
-the branch, model ids and token counts.
+the branch, model ids and token counts. Sending those rows to an observability backend is
+opt-in, off by default and described in [telemetry.md](telemetry.md); the ledger stays the
+record and the backend is a copy that `harness usage export --since` can rebuild.
 
 ## What is recorded
 
 Every row names its `kind`: `session`, `subagent` or `worker`. A row written before the field
 existed is read as a session, which is all there was to record, and `--rescan` upgrades it.
 
+Every row also names the `harness_version` that wrote it, read from the same `VERSION` file
+`harness --version` prints, so a change in spend can be read against a release. **A rescanned
+row carries `null`**: the version that ran a past session is not recoverable from its
+transcript, and stamping today's would make the whole history look like this release.
+
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
-`output`, `cache_read`, `cache_write`, `subagents`, `turns`. The source is the transcript
+`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`, `days`.
+The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
 API response is written as several transcript entries, so counting per line inflates every
@@ -29,6 +37,37 @@ session's subagents**, because their tokens are the session's bill — counted o
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
 a transcript carrying both would otherwise pay for every delegated token twice.
+
+### Session effort
+
+`effort` is the reasoning effort the session mostly ran at, and `effort_source` says where it
+was read: `transcript` for Claude Code, which writes `effort` and `perTurnEffort` on every
+assistant record, and `turn_context` for Codex, which records it per turn and admits values up
+to `ultra`. Effort changes mid-session — 14 of 112 Claude Code transcripts and 4 of 44 Codex
+rollouts measured on one machine — so the row records **the value that covered the most output
+tokens**, not the first or the last. For Claude Code that weight is the session's own messages
+only; a subagent's effort belongs to the spawn, not to the session. For Codex it is the
+difference between consecutive cumulative snapshots. A transcript that records no effort at all
+leaves both fields `null`, which the report then has nothing to group by.
+
+### Per-day slices
+
+`days` maps a UTC date to `input`, `output`, `cache_read`, `cache_write` and `turns` for that
+date. A session that runs for a fortnight ends on one date and spends on fourteen, and
+attributing it whole to its end date is what made five long sessions 68% of all output tokens
+on one machine.
+
+The slices are cut from the same deduplicated message-id map the row's totals are summed over,
+so **a Claude Code day's slice includes that day's subagent tokens**, exactly as the session
+total includes them: the session row means one thing, and a slice that excluded them could not
+add up to it. The first date a message id is seen under is the one that holds, so a response
+written across midnight belongs to one day. Codex has no per-message figure, only cumulative
+snapshots, so a Codex slice is the difference between consecutive ones, attributed to the date
+of the snapshot that closed it; a `total_tokens`-only row gets no slices at all.
+
+The slices are checked against the row's own totals before they are written, field by field. A
+map that does not add up is dropped rather than recorded, so a `days` map on a row is always
+consistent with the row.
 
 **`kind: "subagent"`** — one row per `agent-<id>.jsonl` anywhere under `<session>/subagents/`,
 the tree Claude Code writes beside the session's own file. The walk is recursive because a
@@ -59,6 +98,40 @@ and `requested_type`, which are a tool call's id and an agent name the tool coul
 `SessionEnd` hooks share a 1.5-second budget, so the hook spawns a detached worker and returns
 at once. Rows are upserted by `(session_id, runtime, kind, agent_id)`, so re-reading a
 transcript never duplicates one, and a subagent transcript is only ever read from its session.
+
+### Codex rollouts
+
+Codex is read from `~/.codex/sessions/` and `~/.codex/archived_sessions/` — `CODEX_HOME`
+moves both — and it writes a subagent to a rollout file of its own rather than beside its
+parent's. The `session_meta` is what tells the two apart: a top-level rollout's
+`payload.source` is a string naming the front end, a spawned thread's is the object
+`{"subagent": {"thread_spawn": {…}}}` carrying the parent thread id, the depth, the agent path
+and a nickname. The row takes `agent_role` as its `agent_type` and falls back to
+`agent_nickname`, which is what the fallback actually does today: Codex leaves the role null
+and names each thread, so `--by role` groups Codex threads by nickname and the groups are
+small. Only the **first** `session_meta` is this rollout's own — a thread that inherited its
+parent's history carries the parent's further down the file.
+
+**A Codex parent's tokens do not include its children's**, which is the opposite of the Claude
+Code rule above, so `harness usage` sums Codex subagent rows and skips Claude Code ones. The
+evidence is the corpus of 438 rollouts this was built from: of the 21 parent threads with both
+a typed total and children with one, four report fewer tokens than their own children sum to,
+2.0M against 30.6M in the widest case. A total that included its children could not be smaller
+than them.
+
+`input_tokens` is reported inclusive of `cached_input_tokens`, `total_tokens` is input plus
+output, and `reasoning_output_tokens` is part of `output_tokens` rather than beside it — no
+exception in the 349 rollouts carrying a typed split. Codex Desktop often writes a snapshot
+with `total_tokens` alone and every typed field zero (85 of 107 top-level Desktop rollouts
+here). That row keeps `total`, is marked `partial`, and leaves the typed fields unknown, so the
+report excludes it rather than reading a real session as free.
+
+Codex capture travels through `harness usage --rescan` rather than through the hook. The
+lifecycle coordinator does register `SessionEnd`, but whether the payload Codex sends names the
+rollout file has not been observed here — no Codex CLI was installed on the machine this was
+measured on, and nothing in the rollouts or `~/.codex/logs_*.sqlite` records a hook payload.
+The hook accepts `rollout_path` and `session_path` beside Claude Code's `transcript_path` on
+that chance; the rescan is the path known to work. Run it after a stretch of Codex work.
 
 ## Usage feed
 
@@ -174,15 +247,32 @@ after a fortnight of not being used, and removed by `harness uninstall`.
 bin/harness usage                      # last 30 days, grouped by day
 bin/harness usage --days 7 --by repo
 bin/harness usage --by model           # a session using two models groups under both, joined
-bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output and tool calls
+bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output, p50/p75 usd
+bin/harness usage --by stance --stance cost   # tokens per variant of one stance dimension
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
 
 `--by role` reads the subagent and worker rows. Spend per delegated task is a distribution, not
 a mean, so it prints three points on the curve; `unmeasured` counts the runs whose runtime
-reported no tool-call figure, which are named there rather than averaged in as a zero.
+reported no tool-call figure, which are named there rather than averaged in as a zero. A role
+with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
+second-largest of eight, and a budget re-seeded from it is a guess wearing a number.
 
-The token groupings — `day`, `repo`, `model` — sum session and worker rows and never a
+`--by day` reads a row's `days` slices when it carries them and falls back to its end date when
+it does not, so a session that ran for a fortnight is spread over the days it spent on. The
+`--days` window then applies to the **slice** date, and a long session contributes only its
+in-window days. The `runs` column still counts sessions, not session-days: a row is counted
+once, on the day it ended, so a session whose end date is outside the window contributes its
+in-window tokens and no run.
+
+`--by stance --stance <dimension>` groups tokens by that dimension's variant — `cost=balanced`
+against `cost=frugal`. A row with no recorded stance, and a row whose stances a rescan stamped,
+group under `(unknown)` and are **counted there** rather than dropped: leaving them out would
+make a newly stamped variant look like the whole history of the ledger. `--rules --by stance`
+is the hit report below and is unchanged. `--by stance` with neither is refused, since it names
+two different reports and guessing between them would be worse than asking.
+
+The token groupings — `day`, `repo`, `model`, `stance` — sum session and worker rows and never a
 subagent's. A subagent's tokens are already inside its session's total; a role-run worker has
 no session row at all, so leaving it out would hide its spend in every report there is.
 
@@ -190,12 +280,81 @@ A session that crashes or is killed never fires `SessionEnd` and so is never rec
 `--rescan` walks every transcript touched inside `--days` and upserts it, which is how you fill
 those gaps.
 
+## What it cost
+
+Tokens mislead as a measure of spend. Cache reads dominate the count and cost a fraction of base
+input, and a change that routes work to a cheaper model can spend more tokens and fewer dollars.
+So every token grouping carries a `usd` column, and `--by role` carries p50 and p75 dollars
+beside its output percentiles.
+
+These figures are list-price API equivalents computed from token counts, not an invoice: a
+subscription plan pays differently, and fast-mode and data-residency multipliers are not
+modelled.
+
+The rates are in [`policy/prices.json`](../policy/prices.json): USD per million tokens for input,
+output, cache read and cache write, per model id, each entry carrying the `as_of` date it was
+read and the provider pricing page it was read from. Nothing in the file is written from memory,
+and a model whose price could not be confirmed from a primary source is absent rather than
+guessed. Override or extend it under `prices` in `config.json` — see
+[preferences.md](preferences.md).
+
+- **Ids resolve by longest prefix** after normalisation, which lower-cases, drops a cloud vendor
+  prefix and drops a context-window suffix. So `claude-haiku-4-5`,
+  `anthropic.claude-haiku-4-5-20251001-v1:0` and `claude-opus-5[1m]` all reach a family entry.
+  Long context is not a separate rate: Anthropic prices the full 1M-token window at the standard
+  rate for Claude 4.6 and later. The cost of prefix matching is that an unlisted variant of a
+  listed family inherits the family's rate even when it is priced differently; list it or
+  override it.
+- **Cache writes are priced by TTL.** Anthropic charges 1.25x base input for a 5-minute write
+  and 2x for a 1-hour one, and Claude Code reports the split under `cache_creation`, so a row
+  records `cache_write_5m` and `cache_write_1h` beside its `cache_write` total and each tier is
+  charged at its own rate. Both keys are additive: a row written before they existed carries
+  neither and is charged whole at the 5-minute rate, which **understates** it wherever the
+  session's writes were 1-hour — which the main thread's are.
+- **Codex is counted once.** `input_tokens` is inclusive of `cached_input_tokens`, so the ledger
+  row already holds the difference and the cached part is charged at the cache rate alone;
+  `reasoning_output_tokens` is inside `output_tokens` rather than beside it, so it is never
+  added again. OpenAI publishes no cache-write rate, so that column prices at zero for a `gpt`
+  entry.
+- **A subagent is priced at its own model.** A Claude Code session's totals already include its
+  subagents', which ran on other models at other rates, so their tokens come off the parent's
+  totals, each is priced at its own model and the two are added. A session whose totals do not
+  cover its children — a row written before subagent capture landed — is priced alone, exactly
+  as its tokens are reported alone.
+- **A session that switched models carries a breakdown.** The largest sessions are the ones
+  that changed model, and their totals alone name several rates with no split between them, so
+  a row records `by_model`: token counts per model id, cut from the same map the totals are
+  summed over for Claude Code and from the snapshot deltas under each `turn_context.model` for
+  Codex, and dropped whole if it does not add up to the row. A row that carries one is priced
+  from it and from nothing else; a multi-model row written before the map existed stays
+  unpriced. A part named for a harness-generated turn — `<synthetic>` — is skipped when it spent
+  nothing and unprices the row when it did not.
+- **Unpriced is not free.** A row with an unknown model, a multi-model row with no breakdown,
+  and a row marked `partial` are all counted in the `unpriced` footer and contribute nothing to
+  the column. An understated dollar figure is worse than an absent one, because nothing on the
+  line says it is short. A role-run worker whose row names a model alias rather than an id —
+  `opus`, `fable` — is unpriced for the same reason.
+- **A day slice holds tokens and no model**, so a multi-day session's cost is allocated across
+  its days by each day's share of its tokens. For a single-day session, which is nearly all of
+  them, the share is one and the allocation is exact; for a long one it is an allocation and not
+  a measurement.
+
+The table was checked against a runtime that reports its own figure: a recorded Claude Code
+session and its subagent, whose CLI-reported `total_cost_usd` was $0.60097775, prices to
+$0.60097775 — a 0.000% deviation, against the 2% the report is held to.
+`tests/test_usage_prices.py` holds that session's token shape as a fixture.
+
+Prices go stale silently while the report keeps printing dollars, so `harness doctor` names the
+newest `as_of` in the table and warns when it is over 90 days old. Re-read each entry's `source`
+and update the file; that is the whole maintenance cost, and it names a real failure mode.
+
 ### Re-seeding budgets
 
 A cost variant's per-role budgets are measured, not guessed, so they go stale as roles change.
 Run `bin/harness usage --rescan --by role` over a window wide enough to hold a few dozen runs,
 read the p75 column for the role — the shipped figures are that point on the curve — and write it
-into your variant's row as `budget_output_tokens` and `budget_tool_calls`.
+into your variant's row as `budget_output_tokens` and `budget_tool_calls`. A role still marked
+`n<30` has not earned a re-seed; widen the window or leave the figure where it is.
 
 ## What the hit rate tells you
 
@@ -227,8 +386,9 @@ share's denominator, and the report says how many there were.
 
 A rescan cannot know the stances a past session ran under, only this minute's. It leaves a
 record's `stances` alone when it has them and otherwise stamps the current ones with
-`"stances_source": "rescan"`, which `--by stance` then excludes by name. The stamped stances
-still drive the detectors, so hit counts do backfill.
+`"stances_source": "rescan"`, which `--rules --by stance` then excludes by name and the token
+report groups under `(unknown)`. The stamped stances still drive the detectors, so hit counts
+do backfill.
 
 ### What each detector looks for
 
@@ -236,7 +396,7 @@ still drive the detectors, so hit counts do backfill.
 | --- | --- | --- |
 | `transcript-hygiene/whole-file-cat` | transcript-hygiene | a lone `cat <one path>`: no pipe, no filter, no heredoc, no redirect |
 | `transcript-hygiene/unfiltered-find` | transcript-hygiene | `find <dir>` with no filtering predicate and nothing consuming its output |
-| `transcript-hygiene/brief-without-cap` | transcript-hygiene | an `Agent` brief with no word cap, for an agent whose definition carries none |
+| `transcript-hygiene/model-wrote-no-cap` | transcript-hygiene | an `Agent` brief the model wrote with no word cap, for an agent whose definition carries none |
 | `delegation/executed-from-summary` | delegation | a Bash command whose first appearance in the session was inside an `Agent` return |
 | `verification/no-verify` | verification | a commit or push that walks past the repository's own hooks |
 | `secrets/secret-in-write` | secrets | a secret-shaped string written to a file or into a heredoc body |
@@ -254,6 +414,16 @@ still drive the detectors, so hit counts do backfill.
 
 A rule with nothing a transcript can decide opts out by name in `OPT_OUT`, with the reason;
 `harness lint` fails on a rule file that has neither a detector nor an opt-out.
+
+Every detector reads a tool call as the model wrote it. A transcript records the model's
+`tool_use` input, while a `PreToolUse` hook's `updatedInput` is written to a separate
+`attachment` line the scan does not read, so no detector can see what a hook delivered.
+`transcript-hygiene/model-wrote-no-cap` is named for that: it counts briefs `brief-guard` went
+on to cap, and a hit is the orchestrator's omission and not an uncapped brief reaching a
+subagent. It was called `transcript-hygiene/brief-without-cap`, which read as the second thing;
+`rule-detectors.RENAMED` maps the old id to the new one. The ledger file is never rewritten for a
+rename — `--rules` folds that map as it reads, in all three groupings — so a record written under
+the old id reports under the new one and the series does not split.
 
 ### Reading the report
 

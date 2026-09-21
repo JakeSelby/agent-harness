@@ -14,7 +14,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness doctor
     harness uninstall
     harness lint    [PATH]
-    harness usage   [--days N] [--by day|repo|model] [--rescan]
+    harness usage   [--days N] [--by day|repo|model|role|stance] [--stance NAME] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
     harness worktree remove NAME [REPO]
@@ -47,7 +47,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client
+from harness_core import codex_client, keychain
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -837,6 +837,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
     stances = resolve_stances(cfg)
     p = posture(cfg)
+    telemetry_settings(cfg)
     table = cost_table(cfg)
     # Render every role for both runtimes before anything is written: a binding that will not
     # resolve is an error the user sees before a half-synced home directory.
@@ -1256,12 +1257,40 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             say("    Hook startup failures can fail silently; command grading and the stop gate may be unavailable.")
         else:
             say(f"  {runtime} hooks: {count} registered, script paths exist; native trust and activation unverified")
+    table = load_prices(cfg)
+    as_of = newest_as_of(table)
+    age = price_age_days(as_of) if as_of else None
+    if not table:
+        say(f"  prices: none; {PRICES_PATH} is missing or unreadable, `usage` reports tokens only")
+    elif age is None:
+        say(f"  prices: {len(table)} model(s), no readable as_of date; `usage` dollars may be stale")
+    else:
+        say(f"  prices: {len(table)} model(s), newest as_of {as_of} ({age} day(s) ago)")
+        if age > PRICE_STALE_DAYS:
+            say(f"    over {PRICE_STALE_DAYS} days old. Prices go stale silently and the report "
+                f"keeps printing dollars; re-read each entry's source and update {PRICES_PATH}.")
+    telemetry = telemetry_settings(cfg)
+    module = load_telemetry()
+    if telemetry.get("export") != "otlp" or module is None:
+        say("  telemetry export: off; the usage ledger stays on this machine")
+    else:
+        try:
+            # Header names only. A value is a credential and is never printed, here or anywhere.
+            names = sorted(module.headers(telemetry))
+            detail = "headers " + (", ".join(names) if names else "none configured")
+        except ValueError as exc:
+            detail = f"headers unavailable: {exc}"
+        say(f"  telemetry export: otlp -> {module.endpoint_label(telemetry['endpoint'])}, {detail}")
+        say("    the ledger is the record; replay a window with `harness usage export --since`")
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))
     lines = _diff_lines()
     say("  drift: " + ("none" if not lines else f"{len(lines)} item(s), run `harness diff`"))
-    if shutil.which("claude"):
+    if shutil.which("claude") and keychain.missing():
+        say("  claude doctor: skipped, this HOME has no default keychain and a client launch "
+            "would raise a macOS dialog")
+    elif shutil.which("claude"):
         say("  claude doctor:")
         try:
             out = subprocess.run(["claude", "doctor"], capture_output=True, text=True, timeout=60)
@@ -1910,8 +1939,16 @@ def coerce_config_value(key: str, value: str) -> Any:
         if value != "inherit" and value not in POSTURES:
             raise SystemExit(f"permissions must be inherit, bypass, auto or manual; got '{value}'")
         return value
+    if key == "plan_allow_tools":
+        try:
+            globs = json.loads(value)
+        except ValueError:
+            globs = None
+        if not isinstance(globs, list) or not all(isinstance(item, str) and item.strip() for item in globs):
+            raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
+        return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"permissions, or one of {', '.join(BOOL_KEYS)}")
+                     f"permissions, plan_allow_tools, or one of {', '.join(BOOL_KEYS)}")
 
 
 def config_set(key: str, value: Optional[str]) -> int:
@@ -2063,6 +2100,21 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_keychain(args: argparse.Namespace) -> int:
+    """Give a home you built by hand its own default keychain, so a client launched there is silent."""
+    home = Path(args.home).expanduser().resolve()
+    if not home.is_dir():
+        raise SystemExit(f"not a directory: {home}")
+    if home == Path.home().resolve():
+        raise SystemExit("that is your own home; this command is for a disposable one")
+    try:
+        created = keychain.provision(home)
+    except OSError as exc:
+        raise SystemExit(f"{exc}\nDo not launch a client under this home.")
+    print(created if created else "nothing to do: a default keychain is present or this host needs none")
+    return 0
+
+
 def cmd_trust(args: argparse.Namespace) -> int:
     """Record (or with --remove, forget) a repository root the stop-gate hook may run a gate in."""
     start = Path(args.path).expanduser() if args.path else Path.cwd()
@@ -2090,13 +2142,42 @@ RULE_PROMOTE_SHARE = 0.30
 RULE_MIN_SESSIONS = 20
 
 
+def renamed_ids() -> Dict[str, str]:
+    """Old detector id → the id that replaced it, from the registry's own `RENAMED` map."""
+    module = load_detectors()
+    mapping = getattr(module, "RENAMED", {}) or {}
+    return {k: v for k, v in mapping.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def folded_rules(row: Dict[str, Any], renamed: Dict[str, str]) -> Dict[str, int]:
+    """One record's hits, with a renamed detector counted under its successor.
+
+    A rename would otherwise split one measurement across two lines, and the older half would
+    look like a detector that stopped firing. The ledger file is never rewritten for it: the
+    fold is done on every read, so a record keeps the id it was written under.
+    """
+    out: Dict[str, int] = {}
+    for did, n in (row.get("rules") or {}).items():
+        if not isinstance(did, str):
+            continue
+        try:
+            count = int(n or 0)
+        except (TypeError, ValueError):
+            count = 0
+        key = renamed.get(did, did)
+        out[key] = out.get(key, 0) + count
+    return out
+
+
 def rule_ids(rows: List[Dict[str, Any]]) -> List[str]:
     """Every detector id to report on: the registry's, so a rule with no hit is still a line,
-    plus any id a record carries that the registry no longer defines."""
+    plus any id a record carries that the registry no longer defines — under its current name
+    when the registry says it was renamed."""
     module = load_detectors()
+    renamed = renamed_ids()
     ids = set(getattr(module, "DETECTORS", {}) or {})
     for row in rows:
-        ids.update(k for k in (row.get("rules") or {}) if isinstance(k, str))
+        ids.update(renamed.get(k, k) for k in (row.get("rules") or {}) if isinstance(k, str))
     return sorted(ids)
 
 
@@ -2106,6 +2187,9 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     Only a record that carries a `rules` map is evidence. One written before the detectors
     existed, or one whose registry would not import, is absent from every count and from the
     denominator: counting it as a session with no hit would turn a gap into a clean bill.
+
+    Every grouping counts `folded_rules`, not the raw map, so a detector that was renamed is one
+    line and one series in all three: by rule, by repo and by stance.
     """
     measured = [r for r in rows if isinstance(r.get("rules"), dict) and not r.get("rules_errors")]
     legacy = sum(1 for r in rows if not isinstance(r.get("rules"), dict) and not r.get("rules_error"))
@@ -2116,15 +2200,17 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     if not measured:
         say(f"no measured sessions in the last {days} day(s)")
         return 0
+    renamed = renamed_ids()
+    counted = [(r, folded_rules(r, renamed)) for r in measured]
 
     if by == "rule":
-        total = len(measured)
+        total = len(counted)
         head = f"{'detector':<38}{'hits':>7}{'sessions':>10}{'of':>6}{'share':>8}  note"
         say(head)
         say("-" * len(head))
         for did in rule_ids(measured):
-            hits = sum(int(r["rules"].get(did) or 0) for r in measured)
-            seen = sum(1 for r in measured if int(r["rules"].get(did) or 0) > 0)
+            hits = sum(hits_of.get(did, 0) for _, hits_of in counted)
+            seen = sum(1 for _, hits_of in counted if hits_of.get(did, 0) > 0)
             share = seen / total if total else 0.0
             note = ""
             if total >= RULE_MIN_SESSIONS:
@@ -2138,13 +2224,13 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
         guessed = [r for r in measured if r.get("stances_source") == "rescan"]
         if guessed:
             say(f"{len(guessed)} rescanned session(s) excluded: stance not known at the time")
-        measured = [r for r in measured if r.get("stances_source") != "rescan"]
-        if not measured:
+        counted = [(r, h) for r, h in counted if r.get("stances_source") != "rescan"]
+        if not counted:
             say(f"no sessions with a known stance in the last {days} day(s)")
             return 0
 
     groups: Dict[str, List[Any]] = {}
-    for row in measured:
+    for row, hits_of in counted:
         if by == "stance":
             stances = row.get("stances") if isinstance(row.get("stances"), dict) else {}
             keys = [f"{k}={v}" for k, v in sorted(stances.items())] or ["(no stances)"]
@@ -2153,8 +2239,8 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
         for key in keys:
             acc = groups.setdefault(key, [0, {}])
             acc[0] += 1
-            for did, n in row["rules"].items():
-                acc[1][did] = acc[1].get(did, 0) + int(n or 0)
+            for did, n in hits_of.items():
+                acc[1][did] = acc[1].get(did, 0) + n
     head = f"{by:<42}{'sessions':>9}{'hits':>7}  top detectors"
     say(head)
     say("-" * len(head))
@@ -2166,7 +2252,361 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     return 0
 
 
-def percentile(values: List[int], share: float) -> int:
+# --------------------------------------------------------------------------- telemetry
+
+
+def load_telemetry(root: Path = REPO):
+    """The exporter the usage hook runs, from `root`'s checkout, or None when it has none.
+
+    Loaded from the hook's own file rather than reimplemented here, so the CLI validates a
+    `telemetry` block with the same code that will send the rows.
+    """
+    import importlib.util
+
+    path = root / "claude" / "hooks" / "telemetry.py"
+    if not path.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("harness_telemetry", str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+def telemetry_settings(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """The validated `telemetry` block. A block that cannot be honoured stops the command."""
+    module = load_telemetry()
+    if module is None:
+        return {"export": "off"}
+    try:
+        return module.settings(cfg)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+
+
+def _valid_date(value: str, flag: str) -> str:
+    try:
+        time.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise SystemExit(f"{flag} takes a date as YYYY-MM-DD; got '{value}'")
+    return value
+
+
+def cmd_usage_export(args: argparse.Namespace) -> int:
+    """Replay a window of ledger rows to the configured OTLP endpoint.
+
+    Delivery is at-least-once: a batch that fails is reported and left for the next replay,
+    and a backend de-duplicates on `harness.row_key`. The ledger is the record; the backend is
+    a copy that can be rebuilt from it. See docs/telemetry.md.
+    """
+    module = load_telemetry()
+    if module is None:
+        raise SystemExit("this checkout has no claude/hooks/telemetry.py; nothing can be exported")
+    if not getattr(args, "since", None):
+        raise SystemExit("usage export needs --since YYYY-MM-DD")
+    since = _valid_date(args.since, "--since")
+    until = _valid_date(args.until, "--until") if getattr(args, "until", None) else "9999-12-31"
+    settings = telemetry_settings(load_config())
+    if settings.get("export") != "otlp" and not args.dry_run:
+        raise SystemExit(
+            "telemetry.export is off; set it to \"otlp\" in ~/.config/agent-harness/config.json "
+            "to send rows, or re-run with --dry-run to count what a replay would send")
+    path = state_dir() / "usage.jsonl"
+    rows: List[Dict[str, Any]] = []
+    for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict) and since <= (row.get("ended") or "")[:10] <= until:
+            rows.append(row)
+    batch_count = sum(1 for _ in module.batches(rows))
+    window = f"{since}..{until if until != '9999-12-31' else 'today'}"
+    if args.dry_run:
+        target = module.endpoint_label(settings.get("endpoint", "")) or "no endpoint configured"
+        state = "" if settings.get("export") == "otlp" else " (export is off)"
+        say(f"{len(rows)} row(s) in {window} would be sent in {batch_count} batch(es) "
+            f"to {target}{state}")
+        return 0
+    sent, failed = module.export_rows(
+        rows, config=settings, version=VERSION,
+        errors_path=state_dir() / "usage.errors.jsonl")
+    say(f"{window}: sent {sent} row(s) in {batch_count} batch(es) to "
+        f"{module.endpoint_label(settings['endpoint'])}, {failed} row(s) failed")
+    if failed:
+        say(f"  failures are recorded in {state_dir() / 'usage.errors.jsonl'}; re-run the same "
+            f"window to retry, and de-duplicate on harness.row_key")
+    return 1 if failed else 0
+
+
+# --------------------------------------------------------------------------- prices
+
+PRICES_PATH = REPO / "policy" / "prices.json"
+# The four columns every entry must carry to price anything at all; a rate missing one of them
+# leaves the model unpriced rather than charging the part it knows about.
+RATE_FIELDS = ("input", "output", "cache_read", "cache_write")
+TOKEN_TIERS = ("cache_write_5m", "cache_write_1h")
+# A price read a quarter ago is a guess. `doctor` says so rather than a report quietly drifting.
+PRICE_STALE_DAYS = 90
+
+
+def shipped_prices(path: Optional[Path] = None) -> Dict[str, Any]:
+    """The price file as written, or an empty table when it is missing or unreadable.
+
+    A broken price file costs the report its dollar column and nothing else: `usage` still
+    counts tokens, which is what it did before prices existed.
+    """
+    data = read_json(PRICES_PATH if path is None else path) or {}
+    models = data.get("models")
+    return models if isinstance(models, dict) else {}
+
+
+def load_prices(cfg: Dict[str, Any], path: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
+    """The shipped table with the user's `prices` block merged over it, field by field.
+
+    Merged per model id rather than wholesale, so an override that names one rate keeps the
+    shipped `as_of` and `source` for the rest of the entry and a new model can be added
+    outright. Ids are normalised on both sides, so `Claude-Opus-5` overrides `claude-opus-5`.
+    """
+    table = dict((normalise_model(key), value) for key, value in shipped_prices(path).items()
+                 if isinstance(value, dict))
+    overrides = cfg.get("prices") if isinstance(cfg.get("prices"), dict) else {}
+    for key, value in overrides.items():
+        if not isinstance(value, dict):
+            continue
+        name = normalise_model(key)
+        merged = dict(table.get(name) or {})
+        merged.update(value)
+        table[name] = merged
+    return table
+
+
+def normalise_model(model: str) -> str:
+    """One spelling of a model id: lower case, no cloud vendor prefix, no context-window suffix.
+
+    A ledger holds the id each runtime reported, and the same model arrives as
+    `claude-haiku-4-5`, `anthropic.claude-haiku-4-5-20251001-v1:0` on Bedrock and
+    `claude-opus-5[1m]` in a long-context session. The suffix is dropped because the provider
+    prices the 1M window at the standard rate; the remainder is matched by prefix, so a dated id
+    still reaches its family.
+    """
+    name = (model or "").strip().lower()
+    name = re.sub(r"\[[^\]]*\]", "", name).split("/")[-1]
+    while True:
+        head, dot, rest = name.partition(".")
+        if not (dot and rest and head.isalpha()):
+            break
+        name = rest
+    return name.strip("-").strip()
+
+
+def usable_rate(entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    """An entry's four rates as floats, or None when any of them is missing or not a number."""
+    if not isinstance(entry, dict):
+        return None
+    rate: Dict[str, float] = {}
+    for field in RATE_FIELDS + TOKEN_TIERS:
+        value = entry.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            if field in RATE_FIELDS:
+                return None
+            continue
+        rate[field] = float(value)
+    return rate
+
+
+def price_for(table: Dict[str, Dict[str, Any]], model: str) -> Optional[Dict[str, float]]:
+    """The rate governing one model id: the longest listed prefix of its normalised form."""
+    name = normalise_model(model)
+    if not name:
+        return None
+    best = ""
+    for key in table:
+        if key and name.startswith(key) and len(key) > len(best):
+            best = key
+    return usable_rate(table.get(best)) if best else None
+
+
+def row_tokens(row: Dict[str, Any], rate: Optional[Dict[str, float]] = None) -> Optional[Dict[str, int]]:
+    """A row's four token counts, or None when the row cannot be priced from them.
+
+    A row marked `partial` — a transcript read to a budget, or a Codex snapshot carrying only a
+    total — is unpriced, never priced at what was readable: an understated dollar figure is
+    worse than an absent one, because nothing on the line says it is short.
+
+    An unreported count against a rate of zero is read as zero rather than as unknown, because
+    it cannot change the bill either way. That is what makes a Codex row priceable: its rollout
+    names no cache-write figure at all, and OpenAI charges nothing for one.
+    """
+    if row.get("partial"):
+        return None
+    tokens: Dict[str, int] = {}
+    for name in RATE_FIELDS:
+        value = row.get(name)
+        if value is None and rate is not None and not rate.get(name):
+            value = 0
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
+        tokens[name] = max(value, 0)
+    for name in TOKEN_TIERS:
+        value = row.get(name)
+        if not isinstance(value, bool) and isinstance(value, int):
+            tokens[name] = max(value, 0)
+    return tokens
+
+
+def tokens_cost(tokens: Dict[str, int], rate: Dict[str, float]) -> float:
+    """USD for one set of token counts at one rate.
+
+    Cache writes are charged tier by tier only when the row's tiers add up to its cache-write
+    total: a row that reports no split, or whose split disagrees with its total, is charged
+    whole at `cache_write`. Checking the sum rather than the keys' presence means a row whose
+    tiers are both zero because the runtime reported none is not read as writes at the 5-minute
+    rate.
+    """
+    total = (tokens["input"] * rate["input"] + tokens["output"] * rate["output"]
+             + tokens["cache_read"] * rate["cache_read"])
+    write = tokens["cache_write"]
+    tiers = dict((name, tokens.get(name) or 0) for name in TOKEN_TIERS)
+    if write and sum(tiers.values()) == write:
+        for name in TOKEN_TIERS:
+            total += tiers[name] * rate.get(name, rate["cache_write"])
+    else:
+        total += write * rate["cache_write"]
+    return total / 1_000_000
+
+
+def breakdown_cost(row: Dict[str, Any], table: Dict[str, Dict[str, Any]]) -> Optional[float]:
+    """USD for a row from its per-model breakdown, or None when the map cannot carry it.
+
+    The largest sessions are the ones that switched models, and their totals alone name several
+    rates and no split between them. `usage-log.py` records the split as `by_model`, checked
+    against the row's own totals before it is written, so this is a sum of parts and not an
+    allocation. Any part that cannot be priced leaves the whole row unpriced.
+
+    A part named for a harness-generated turn — `<synthetic>`, and anything else the transcript
+    brackets — is no model and has no rate. It is skipped when it spent nothing, which is the
+    only case where the real models still account for every token.
+    """
+    parts = row.get("by_model")
+    if not isinstance(parts, dict) or not parts:
+        return None
+    total = 0.0
+    for name, part in parts.items():
+        if not isinstance(name, str) or not isinstance(part, dict):
+            return None
+        if name.startswith("<"):
+            if any(part.get(field) for field in RATE_FIELDS):
+                return None
+            continue
+        rate = price_for(table, name)
+        if rate is None:
+            return None
+        tokens = row_tokens(dict(part, partial=row.get("partial")), rate)
+        if tokens is None:
+            return None
+        total += tokens_cost(tokens, rate)
+    return total
+
+
+def row_model(row: Dict[str, Any], excluded: Optional[set] = None) -> Optional[str]:
+    """The one model a row's tokens were spent on, or None when the row names several.
+
+    A session row names every model it ran on and carries one set of totals, so a session that
+    switched models mid-way cannot be split and is unpriced. Its subagents' models are taken off
+    the list first, since their tokens are being priced separately — unless that would empty it,
+    which is the session that ran the same model its subagent did.
+    """
+    models = [m for m in (row.get("models") or []) if isinstance(m, str) and m]
+    if excluded:
+        models = [m for m in models if normalise_model(m) not in excluded] or models
+    if not models and isinstance(row.get("model"), str) and row["model"]:
+        models = [row["model"]]
+    return models[0] if len(models) == 1 else None
+
+
+def row_cost(row: Dict[str, Any], table: Dict[str, Dict[str, Any]],
+             children: Optional[List[Dict[str, Any]]] = None) -> Optional[float]:
+    """USD for one ledger row, or None when it cannot be priced.
+
+    A row that carries a per-model breakdown is priced from it and from nothing else, which is
+    the only way a session that switched models can be priced at all; see `breakdown_cost`.
+    What follows is for the rows written before that map existed.
+
+    A Claude Code session's totals already include its subagents', which ran on their own models
+    at their own rates — the oracle session priced here spent 85% of its dollars on 1-hour cache
+    writes at the parent's rate and the rest on a subagent's 5-minute writes at another. So the
+    children's tokens come off the parent's totals, each child is priced at its own model, and
+    the two are added. A child that cannot be priced leaves the whole session unpriced, because
+    the remainder alone would read as the session's bill.
+
+    A row whose totals do not cover its children — an old row written before subagent tokens
+    were captured — is priced alone, exactly as its tokens are reported alone. Coverage is
+    decided on the counts, before anything is priced, so an unpriceable child does not turn a
+    parent that never held its tokens into an unpriced row.
+    """
+    if row.get("partial"):
+        return None
+    # A breakdown is the whole bill: for Claude Code it is cut from the same map the totals are
+    # summed over, subagent records included, so nothing is added to it.
+    direct = breakdown_cost(row, table)
+    if direct is not None:
+        return direct
+    joined: Optional[Dict[str, int]] = None
+    child_cost = 0.0
+    excluded: set = set()
+    base = row_tokens(row) if children else None
+    parts = [row_tokens(child) for child in children or []]
+    if base is not None and all(part is not None for part in parts) \
+            and all(base[name] >= sum(part[name] for part in parts) for name in RATE_FIELDS):
+        joined = dict(base)
+        for part in parts:
+            for name in RATE_FIELDS + TOKEN_TIERS:
+                if name in joined and name in part:
+                    joined[name] = max(joined[name] - part[name], 0)
+        for child in children or []:
+            cost = row_cost(child, table)
+            if cost is None:
+                return None
+            child_cost += cost
+        excluded = set(normalise_model(c.get("model") or "") for c in children or [])
+    rate = price_for(table, row_model(row, excluded) or "")
+    if rate is None:
+        return None
+    tokens = joined if joined is not None else row_tokens(row, rate)
+    if tokens is None:
+        return None
+    return tokens_cost(tokens, rate) + child_cost
+
+
+def session_children(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Claude Code subagent rows keyed by the session whose totals already hold their tokens."""
+    children: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        if row.get("kind") == "subagent" and row.get("runtime") != "codex" and row.get("session_id"):
+            children.setdefault(row["session_id"], []).append(row)
+    return children
+
+
+def newest_as_of(table: Dict[str, Dict[str, Any]]) -> str:
+    """The most recent `as_of` in the table, or "" when no entry carries one."""
+    dates = [e["as_of"] for e in table.values()
+             if isinstance(e, dict) and isinstance(e.get("as_of"), str) and e["as_of"]]
+    return max(dates) if dates else ""
+
+
+def price_age_days(as_of: str, now: Optional[float] = None) -> Optional[int]:
+    """Whole days between an `as_of` date and today, or None when the date will not parse."""
+    try:
+        stamp = time.mktime(time.strptime(as_of, "%Y-%m-%d"))
+    except (ValueError, TypeError):
+        return None
+    return int((time.time() if now is None else now) - stamp) // 86400
+
+
+def percentile(values: List[Any], share: float) -> Any:
     """The nearest-rank percentile of a sorted sample: the smallest value at or above `share`."""
     if not values:
         return 0
@@ -2174,12 +2614,37 @@ def percentile(values: List[int], share: float) -> int:
     return values[min(max(index, 0), len(values) - 1)]
 
 
-def role_report(rows: List[Dict[str, Any]], days: int) -> int:
-    """Output tokens and tool calls per agent type, over the subagent and worker rows.
+def stance_key(row: Dict[str, Any], dimension: str) -> str:
+    """The group a row belongs to under `--by stance --stance <dimension>`.
+
+    A row whose stances were stamped by a rescan is grouped as unknown rather than under a
+    variant it may never have run under — the rescan reads this minute's environment, not the
+    session's. Unknown is a group of its own and is counted: dropping those rows would make a
+    newly stamped variant look like the whole history of the ledger.
+    """
+    if row.get("stances_source") == "rescan":
+        return "(unknown)"
+    stances = row.get("stances") if isinstance(row.get("stances"), dict) else {}
+    value = stances.get(dimension)
+    return f"{dimension}={value}" if isinstance(value, str) and value else "(unknown)"
+
+
+ROLE_MIN_RUNS = 30
+
+
+def role_report(rows: List[Dict[str, Any]], days: int,
+                table: Optional[Dict[str, Dict[str, Any]]] = None) -> int:
+    """Output tokens, dollars and tool calls per agent type, over the subagent and worker rows.
 
     Spend per delegated task is a distribution, not a mean: a budget set at the mean is wrong
     for most of the sample, which is why the report prints three points on the curve instead.
+    Dollars get two points rather than three, because a role's dollar curve is its output curve
+    read through one model and the tail says nothing the tokens have not already said.
+
+    A role with fewer than `ROLE_MIN_RUNS` runs is marked `n<30`, because a p90 over eight runs
+    is the second-largest of eight and a budget re-seeded from it is a guess wearing a number.
     """
+    table = {} if table is None else table
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
         groups.setdefault(row.get("agent_type") or "(unnamed)", []).append(row)
@@ -2188,33 +2653,72 @@ def role_report(rows: List[Dict[str, Any]], days: int) -> int:
             "run `harness usage --rescan` to backfill them from transcripts")
         return 0
     head = (f"{'role':<30}{'runs':>6}{'out p50':>10}{'out p75':>10}{'out p90':>10}"
-            f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}{'unmeasured':>12}")
+            f"{'usd p50':>9}{'usd p75':>9}"
+            f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}{'unmeasured':>12}{'sample':>8}")
     say(head)
     say("-" * len(head))
+    unpriced = 0
     for key in sorted(groups):
         group = groups[key]
         output = sorted(int(r["output"]) for r in group if isinstance(r.get("output"), int))
         tools = sorted(int(r["tool_calls"]) for r in group if isinstance(r.get("tool_calls"), int))
+        # A delegated run is priced at the model it ran on, alone: a subagent has no children
+        # of its own in the ledger, so nothing is subtracted and nothing is added.
+        costs = [row_cost(r, table) for r in group]
+        unpriced += sum(1 for c in costs if c is None)
+        usd = sorted(c for c in costs if c is not None)
         # A run whose runtime reported no tool-call count is named, never averaged in as a
         # zero; the percentiles are taken over the runs that do report one.
         gaps = sum(1 for r in group if not isinstance(r.get("tool_calls"), int))
         cells = [f"{percentile(output, s):>10,}" if output else f"{'-':>10}" for s in (0.5, 0.75, 0.9)]
+        cells += [f"{percentile(usd, s):>9.4f}" if usd else f"{'-':>9}" for s in (0.5, 0.75)]
         cells += [f"{percentile(tools, s):>11,}" if tools else f"{'-':>11}" for s in (0.5, 0.75, 0.9)]
-        say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}")
+        mark = f"n<{ROLE_MIN_RUNS}" if len(group) < ROLE_MIN_RUNS else ""
+        say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}{mark:>8}")
+    say(f"unpriced: {unpriced} run(s), unknown model or partial tokens" if unpriced
+        else "unpriced: none")
     return 0
 
 
 def cmd_usage(args: argparse.Namespace) -> int:
     """Summarize the records the usage-log hook writes. Local file only.
 
-    Every row names its `kind`. A session's totals already include its subagents', so the token
-    groupings sum session and worker rows and never a subagent's; a role-run worker has no
-    session row, so leaving workers out would hide their spend entirely. `--by role` reads the
-    subagent and worker rows, which carry the same tokens a second time, attributed.
+    Every row names its `kind`. A Claude Code session's totals already include its subagents',
+    so the token groupings sum session and worker rows and never a Claude Code subagent's; a
+    role-run worker has no session row, so leaving workers out would hide their spend entirely.
+    `--by role` reads the subagent and worker rows, which for Claude Code carry the same tokens
+    a second time, attributed.
+
+    Codex is the other way round and its subagent rows are summed. A Codex thread's
+    `total_token_usage` counts that thread alone: over the 21 parent threads on one machine
+    that have both a typed total and children with one, four parents report fewer tokens than
+    their own children sum to — 2.0M against 30.6M in the widest case — which a total that
+    included them could not do. So a Codex parent plus its children is the session's bill, and
+    dropping the children would undercount it.
+
+    `--by day` reads a row's `days` slices when it carries them and falls back to its end date
+    when it does not, so a session that ran for a fortnight is spread over the days it spent on
+    rather than charged whole to the day it ended. The `--days` window then applies to the slice
+    date: a long session contributes only its in-window days.
+
+    Dollars come from `policy/prices.json` through `row_cost`, which prices a session's own
+    tokens at the session's model and its subagents' at theirs. A row with an unknown model or
+    partial tokens is counted as unpriced in the footer and contributes nothing to the column:
+    it is not free, and a zero would say it was.
     """
+    if getattr(args, "action", None) == "export":
+        return cmd_usage_export(args)
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
-    rules_mode = getattr(args, "rules", False) or by in ("rule", "stance")
+    stance = getattr(args, "stance", None)
+    # `--by stance` means one of two reports, and which one is said rather than inferred:
+    # `--rules` asks for detector hits per variant, `--stance <name>` for tokens grouped by that
+    # dimension's value. Neither is a report this cannot guess at, so it refuses.
+    rules_mode = getattr(args, "rules", False) or by == "rule"
+    if by == "stance" and not rules_mode and not stance:
+        print("usage --by stance needs --stance <dimension> for tokens, or --rules for hits",
+              file=sys.stderr)
+        return 2
     if rules_mode and by in ("model", "role"):
         # Reporting something else silently would be worse than refusing: a rule hit belongs
         # to a session, and a session's hits cannot be attributed to one of its models, nor to
@@ -2229,39 +2733,95 @@ def cmd_usage(args: argparse.Namespace) -> int:
         out = subprocess.run([sys.executable, str(hook), "--rescan", str(args.days)], capture_output=True, text=True)
         say((out.stdout or out.stderr).strip() or "rescan found no transcripts")
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - max(args.days, 0) * 86400))
-    groups: Dict[str, List[int]] = {}
+    cutoff_day = cutoff[:10]
+    sliced = by == "day" and not rules_mode
+    groups: Dict[str, List[Any]] = {}
     kept: List[Dict[str, Any]] = []
     delegated: List[Dict[str, Any]] = []
     unknown_metrics = set()
+    unpriced = 0
+    ledger: List[Dict[str, Any]] = []
     for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
         try:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(row, dict) or (row.get("ended") or "") < cutoff:
+        if isinstance(row, dict):
+            ledger.append(row)
+    table = load_prices(load_config())
+    # A session is priced with its subagent rows in hand, so the whole ledger is indexed before
+    # anything is summed; a child outside the window still belongs to its parent's bill.
+    children = session_children(ledger)
+    for row in ledger:
+        ended = row.get("ended") or ""
+        days_map = row.get("days") if isinstance(row.get("days"), dict) else {}
+        # A session that ran for a fortnight ended on one date and spent on fourteen. Grouped
+        # by day it is read through its slices, so it is kept when any of them is in the window
+        # even though its end date is not; every other grouping still turns on the end date.
+        if ended < cutoff and not (sliced and any(day >= cutoff_day for day in days_map)):
             continue
         # A row written before `kind` existed is a session, which is all there was to record.
         kind = row.get("kind") or "session"
-        if kind != "session":
+        if kind != "session" and ended >= cutoff:
             delegated.append(row)
-        # A subagent's tokens are already in its session's row; a worker's are in no session's,
-        # because a role-run worker has no session. So the totals are sessions plus workers.
-        if by == "role" or kind == "subagent":
+        # A Claude Code subagent's tokens are already in its session's row; a Codex subagent's
+        # are in no row but its own, and a worker's are in no session's because a role-run
+        # worker has no session. So the totals are sessions, workers and Codex subagents.
+        if by == "role" or (kind == "subagent" and row.get("runtime") != "codex"):
             continue
         if rules_mode:
             # Only a session's own conduct was measured by the detectors.
             if kind == "session":
                 kept.append(row)
             continue
+        cost = row_cost(row, table, children.get(row.get("session_id") or "")
+                        if kind == "session" and row.get("runtime") != "codex" else None)
+        if sliced and days_map:
+            # The run is counted on the day the session ended, once; its tokens are counted on
+            # the days they were spent. So the run column still counts sessions rather than
+            # session-days, and TOTAL runs stays the number of sessions in the window.
+            if ended >= cutoff:
+                groups.setdefault(ended[:10], [0, 0, 0, 0, 0, 0.0])[0] += 1
+                if cost is None:
+                    unpriced += 1
+            # A slice carries tokens and no model, so a multi-day session's cost is allocated
+            # across its days by each day's share of its tokens. For the single-day session,
+            # which is nearly all of them, the share is one and the allocation is exact; for a
+            # long one it is an allocation and not a measurement, and a day whose tokens were
+            # spent on a dearer model carries less than it cost.
+            spent = sum(max(int(row.get(name) or 0), 0) for name in RATE_FIELDS)
+            for date, slice_ in days_map.items():
+                if date < cutoff_day or not isinstance(slice_, dict):
+                    continue
+                acc = groups.setdefault(date, [0, 0, 0, 0, 0, 0.0])
+                share = 0
+                for i, name in enumerate(RATE_FIELDS):
+                    try:
+                        value = int(slice_.get(name) or 0)
+                    except (TypeError, ValueError):
+                        value = 0
+                    acc[i + 1] += value
+                    share += value
+                if cost is not None and spent:
+                    acc[5] += cost * share / spent
+            continue
         if by == "repo":
             key = row.get("repo") or "(no repo)"
         elif by == "model":
-            key = "+".join(row.get("models") or []) or "(unknown)"
+            # A session names every model it ran on; a subagent or worker row names the one it
+            # ran on, so both are read rather than the second falling to "(unknown)".
+            key = ("+".join(row.get("models") or []) or row.get("model") or "(unknown)")
+        elif by == "stance":
+            key = stance_key(row, stance)
         else:
-            key = (row.get("ended") or "")[:10]
-        acc = groups.setdefault(key, [0, 0, 0, 0, 0])
+            key = ended[:10]
+        acc = groups.setdefault(key, [0, 0, 0, 0, 0, 0.0])
         acc[0] += 1
-        for i, name in enumerate(("input", "output", "cache_read", "cache_write")):
+        if cost is None:
+            unpriced += 1
+        if cost is not None:
+            acc[5] += cost
+        for i, name in enumerate(RATE_FIELDS):
             if row.get(name) is None:
                 unknown_metrics.add(name)
             try:
@@ -2269,31 +2829,37 @@ def cmd_usage(args: argparse.Namespace) -> int:
             except (TypeError, ValueError):
                 pass
     if by == "role":
-        return role_report(delegated, args.days)
+        return role_report(delegated, args.days, table)
     if rules_mode:
         return rule_report(kept, by, args.days)
     if not groups:
         say(f"no sessions recorded in the last {args.days} day(s); looked in {path}")
         return 0
 
-    def line_for(label: str, acc: List[int]) -> str:
+    def line_for(label: str, acc: List[Any]) -> str:
         served = acc[1] + acc[3] + acc[4]
         hit = acc[3] / served if served else 0.0
         return (f"{label[:34]:<34}{acc[0]:>9}{acc[1]:>12,}{acc[2]:>12,}"
-                f"{acc[3]:>14,}{acc[4]:>14,}{hit:>7.0%}")
+                f"{acc[3]:>14,}{acc[4]:>14,}{hit:>7.0%}{acc[5]:>11.2f}")
 
     if unknown_metrics:
         say("Partial totals: unavailable metrics are excluded: " + ", ".join(sorted(unknown_metrics)))
     head = (f"{by:<34}{'runs':>9}{'input':>12}{'output':>12}"
-            f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}")
+            f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}{'usd':>11}")
     say(head)
     say("-" * len(head))
-    total = [0, 0, 0, 0, 0]
+    total = [0, 0, 0, 0, 0, 0.0]
     for key in sorted(groups):
         total = [t + a for t, a in zip(total, groups[key])]
         say(line_for(key, groups[key]))
     say("-" * len(head))
     say(line_for("TOTAL", total))
+    # Named on every report, priced or not: a dollar column with nothing under it reads as a
+    # cheap window unless the runs it could not price are counted somewhere.
+    say(f"unpriced: {unpriced} run(s), unknown model or partial tokens" if unpriced
+        else "unpriced: none")
+    if not table:
+        say(f"no price table: {PRICES_PATH} is missing or unreadable")
     return 0
 
 
@@ -2585,12 +3151,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.set_defaults(func=cmd_lint)
 
     p = sub.add_parser("usage", help="summarize recorded session tokens and cache hit rate")
+    p.add_argument("action", nargs="?", choices=["export"],
+                   help="export: replay recorded rows to the configured OTLP endpoint")
+    p.add_argument("--since", help="with export, the first day to replay, as YYYY-MM-DD")
+    p.add_argument("--until", help="with export, the last day to replay, as YYYY-MM-DD")
+    p.add_argument("--dry-run", action="store_true",
+                   help="with export, count what would be sent and open no connection")
     p.add_argument("--days", type=int, default=30)
     p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance"], default="day")
+    p.add_argument("--stance", choices=STANCE_NAMES,
+                   help="with --by stance, the dimension whose variants group the tokens")
     p.add_argument("--rules", action="store_true",
                    help="report rule-detector hits instead of tokens (--by rule, repo or stance)")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
     p.set_defaults(func=cmd_usage)
+
+    p = sub.add_parser("keychain", help="give a disposable HOME its own default keychain before a client is launched under it (macOS)")
+    p.add_argument("home")
+    p.set_defaults(func=cmd_keychain)
 
     p = sub.add_parser("trust", help="let the stop-gate hook run a repository's `## Gate` block (default: the current repo)")
     p.add_argument("path", nargs="?")

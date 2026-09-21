@@ -116,7 +116,17 @@ distribution at p50, p75 and p90 — until rerouted spawns have measured each ba
 themselves are a first cut to be re-seeded the same way.
 
 `harness usage` summarises what sessions have actually spent, from a local file with no network
-call — see [usage.md](usage.md).
+call unless you opt into [exporting it](telemetry.md) — see [usage.md](usage.md). It reports
+dollars as well as tokens, from `policy/prices.json`.
+A `prices` block in `config.json` merges over that file per model id, so you can correct a rate
+your account is billed differently at, or add a model the table does not list:
+
+```json
+{ "prices": { "claude-opus-5": { "input": 4.0 }, "some-local-model": {
+    "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0 } } }
+```
+
+An override that names one rate keeps the rest of the shipped entry; a new model needs all four.
 
 ## Other surfaces
 
@@ -138,6 +148,32 @@ VS Code, and `approval_policy` plus `sandbox_mode` in Codex. Session environment
 select it on a machine that touches regulated or customer data, and never carry it into an
 organisation's fork of this harness: leave `inherit` and let the organisation's managed settings
 decide. `auto` is the right choice for a supervised but low-friction setup.
+
+### What plan mode may do at that posture
+
+Plan mode exists to force a plan, its questions and a wait before anything is built. It is not a
+reason to investigate at a lower authority than you selected for every other mode, and natively it
+is: the allow rules and the read-only hook cover the commands the grammar can prove, so a script
+run, a `python3 -c`, a redirect into a scratch file or a test run still prompts.
+
+So under `bypass` or `auto`, in Claude Code, while `permission_mode` is `plan`, the PreToolUse
+coordinator answers what the native flow would prompt on:
+
+- Graded 0 or 1 — proved read-only, or writing only to this machine — is approved as investigation.
+- Graded 2 — a push, a release, an API call that mutates, anything a colleague would see — is
+  asked about, because that is execution rather than planning. Graded 3 is unchanged.
+- `manual` and `inherit` keep today's behaviour, and Codex is untouched: its client rejects an
+  `allow` decision outright.
+- The autonomy stance still wins where it is stricter. `confirm-writes` or `ask` asks about the
+  same grades in plan mode that it asks about everywhere else.
+
+**`plan_allow_tools`** is a list of tool-name globs (`fnmatch` syntax, for example
+`"mcp__notes__read_*"`) approved in plan mode under the same posture gate. It is empty by
+default and nothing is inferred: a PreToolUse payload says nothing about whether an MCP tool
+reads or writes, so only you can say which of them are research. Entries that are not non-empty
+strings are ignored, and a glob never reopens a tool the coordinator already governs — `Bash`
+keeps its grades, `Agent` its delegation guard, `WebFetch` its own plan-mode hook. Set it with
+`harness config set plan_allow_tools '["mcp__notes__read_*"]'`.
 
 ## The reasoning behind each stance
 
