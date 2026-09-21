@@ -111,10 +111,26 @@ class EntryPointTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("credentials: unreachable:", err)
 
-    def test_a_reachable_environment_exits_zero_and_names_the_variable(self):
+    def test_a_reachable_environment_exits_zero(self):
         code, out, _ = self.run_main({"ANTHROPIC_API_KEY": PRESENT})
         self.assertEqual(code, 0)
-        self.assertEqual(out.strip(), "credentials: ANTHROPIC_API_KEY")
+        self.assertEqual(out.strip(), "credentials: reachable")
+
+    def test_the_output_never_names_which_variable_was_found(self):
+        """Which variable answered is derived from the environment; `reachable` returns it instead."""
+        pointer = self.home / "credentials-file"
+        pointer.write_text("{}\n")
+        for var in credentials.REPORTABLE_VARS:
+            if var == "AWS_PROFILE":
+                env = {var: "acceptance", "AWS_CONFIG_FILE": str(pointer)}
+            elif var == "GOOGLE_APPLICATION_CREDENTIALS":
+                env = {var: str(pointer)}
+            else:
+                env = {var: PRESENT}
+            code, out, err = self.run_main(env)
+            self.assertEqual(code, 0, msg=var)
+            self.assertNotIn(var, out + err, msg=var)
+        self.assertEqual(credentials.reachable({"ANTHROPIC_API_KEY": PRESENT}), "ANTHROPIC_API_KEY")
 
     def test_only_a_known_variable_name_is_ever_printed(self):
         for name in credentials.REPORTABLE_VARS:

@@ -24,9 +24,9 @@ FILE_POINTER_VARS = ("AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE",
                      "GOOGLE_APPLICATION_CREDENTIALS")
 # An interactive login, which stays in the home that performed it and never reaches a disposable one.
 SESSION_LOGIN_FILES = (Path(".claude") / ".credentials.json", Path(".codex") / "auth.json")
-# Every name `reachable` can return, in the precedence `reachable` applies. `main` looks the returned
-# name up here and prints the tuple member at that index, never the returned string itself, so no
-# expression derived from the environment reaches standard output even by accident.
+# Every name `reachable` can return. `main` checks membership and then prints a fixed string: which
+# variable was found is itself derived from the environment, and a caller that needs the name calls
+# `reachable` for it rather than reading standard output.
 REPORTABLE_VARS = API_KEY_VARS + ("AWS_PROFILE", "GOOGLE_APPLICATION_CREDENTIALS")
 
 
@@ -75,13 +75,11 @@ def main():
     except Unreachable as error:
         print("credentials: unreachable: %s" % error, file=sys.stderr)
         return 1
-    try:
-        index = REPORTABLE_VARS.index(found)
-    except ValueError:
+    if found not in REPORTABLE_VARS:
         print("credentials: unreachable: the reachable credential is not a reportable variable",
               file=sys.stderr)
         return 1
-    print("credentials: %s" % REPORTABLE_VARS[index])
+    print("credentials: reachable")
     return 0
 
 
