@@ -158,12 +158,12 @@ coordinator answers what the native flow would prompt on:
   same grades in plan mode that it asks about everywhere else.
 
 **`plan_allow_tools`** is a list of tool-name globs (`fnmatch` syntax, for example
-`"mcp__cortex__memory_*"`) approved in plan mode under the same posture gate. It is empty by
+`"mcp__notes__read_*"`) approved in plan mode under the same posture gate. It is empty by
 default and nothing is inferred: a PreToolUse payload says nothing about whether an MCP tool
 reads or writes, so only you can say which of them are research. Entries that are not non-empty
 strings are ignored, and a glob never reopens a tool the coordinator already governs — `Bash`
 keeps its grades, `Agent` its delegation guard, `WebFetch` its own plan-mode hook. Set it with
-`harness config set plan_allow_tools '["mcp__cortex__memory_*"]'`.
+`harness config set plan_allow_tools '["mcp__notes__read_*"]'`.
 
 ## The reasoning behind each stance
 

@@ -14,7 +14,7 @@ All notable changes to this project are documented here. The format follows
   0 or 1 — and asks about grade 2, because a push or a mutating API call is execution rather than
   planning. Grade 3, the confirm marker, `manual`, `inherit` and Codex are all unchanged, and a
   stricter autonomy stance still wins. A new config key, `plan_allow_tools`, lists tool-name globs
-  (such as `mcp__cortex__memory_*`) approved in plan mode under the same posture gate; it is empty
+  (such as `mcp__notes__read_*`) approved in plan mode under the same posture gate; it is empty
   by default, because a hook payload carries no read-only hint for an MCP tool and nothing is
   inferred.
 

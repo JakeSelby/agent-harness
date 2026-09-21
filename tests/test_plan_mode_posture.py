@@ -93,7 +93,7 @@ class PlanModePostureTests(unittest.TestCase):
         self.configure(text="{not json")
         with patch.dict(os.environ, {"HOME": str(self.home), "HARNESS_HOME": str(self.home)}):
             self.assertFalse(lifecycle.investigating("claude-code", {"permission_mode": "plan"}))
-            self.assertFalse(lifecycle.plan_allowed_tool("mcp__cortex__memory_search"))
+            self.assertFalse(lifecycle.plan_allowed_tool("mcp__notes__read_page"))
 
     def test_nothing_changes_outside_plan_mode(self):
         self.configure(permissions="bypass")
@@ -119,30 +119,30 @@ class PlanModePostureTests(unittest.TestCase):
     # ------------------------------------------------------------------ the tool glob list
 
     def test_a_listed_tool_is_allowed_and_an_unlisted_one_is_not(self):
-        self.configure(permissions="bypass", plan_allow_tools=["mcp__cortex__memory_*"])
-        decision, reason = self.decide(tool="mcp__cortex__memory_search", query="x")
+        self.configure(permissions="bypass", plan_allow_tools=["mcp__notes__read_*"])
+        decision, reason = self.decide(tool="mcp__notes__read_page", query="x")
         self.assertEqual(decision, "allow")
         self.assertIn("plan_allow_tools", reason)
-        self.assertIsNone(self.decide(tool="mcp__cortex__action_log")[0])
+        self.assertIsNone(self.decide(tool="mcp__notes__write")[0])
 
     def test_the_list_is_empty_until_the_user_fills_it(self):
         self.configure(permissions="bypass")
-        self.assertIsNone(self.decide(tool="mcp__cortex__memory_search")[0])
+        self.assertIsNone(self.decide(tool="mcp__notes__read_page")[0])
         self.configure(permissions="bypass", plan_allow_tools=[])
-        self.assertIsNone(self.decide(tool="mcp__cortex__memory_search")[0])
+        self.assertIsNone(self.decide(tool="mcp__notes__read_page")[0])
 
     def test_the_posture_gate_and_plan_mode_both_bind_the_list(self):
-        self.configure(permissions="manual", plan_allow_tools=["mcp__cortex__*"])
-        self.assertIsNone(self.decide(tool="mcp__cortex__memory_search")[0])
-        self.configure(permissions="bypass", plan_allow_tools=["mcp__cortex__*"])
-        self.assertIsNone(self.decide(tool="mcp__cortex__memory_search", mode="default")[0])
-        self.assertIsNone(self.decide(tool="mcp__cortex__memory_search", runtime="codex")[0])
+        self.configure(permissions="manual", plan_allow_tools=["mcp__notes__*"])
+        self.assertIsNone(self.decide(tool="mcp__notes__read_page")[0])
+        self.configure(permissions="bypass", plan_allow_tools=["mcp__notes__*"])
+        self.assertIsNone(self.decide(tool="mcp__notes__read_page", mode="default")[0])
+        self.assertIsNone(self.decide(tool="mcp__notes__read_page", runtime="codex")[0])
 
     def test_entries_that_are_not_globs_are_ignored_rather_than_fatal(self):
-        self.configure(permissions="bypass", plan_allow_tools=[3, None, "  ", {"a": 1}, "mcp__cortex__*"])
-        self.assertEqual(self.decide(tool="mcp__cortex__memory_search")[0], "allow")
-        self.configure(permissions="bypass", plan_allow_tools="mcp__cortex__*")
-        self.assertIsNone(self.decide(tool="mcp__cortex__memory_search")[0])
+        self.configure(permissions="bypass", plan_allow_tools=[3, None, "  ", {"a": 1}, "mcp__notes__*"])
+        self.assertEqual(self.decide(tool="mcp__notes__read_page")[0], "allow")
+        self.configure(permissions="bypass", plan_allow_tools="mcp__notes__*")
+        self.assertIsNone(self.decide(tool="mcp__notes__read_page")[0])
 
     def test_the_list_never_reopens_a_tool_the_coordinator_already_governs(self):
         self.configure(permissions="bypass", plan_allow_tools=["*"])
