@@ -80,7 +80,7 @@ defined once and projected into each one.
 Five commands take a piece of work from a question to a reviewed pull request, with fresh eyes at
 the review step.
 
-- [The ritual](primitives/workflows): /research, /plan, /build, /review, /handoff.
+- [The ritual](primitives/workflows): /research, /plan, /build, /review, /land, /handoff, /close-out.
 - [Named roles](claude/agents): Builder, planner, reviewer, gatherer, designer and more, each with its own model class and tool limits.
 - [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code being written.
 - [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents don't step on your checkout or on each other.

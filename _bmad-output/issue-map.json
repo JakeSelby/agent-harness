@@ -5,7 +5,7 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 8,
-    "story": 150,
+    "story": 151,
     "task": 1,
     "bug": 50,
     "chore": 33,
@@ -3245,6 +3245,19 @@
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C032.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S150",
+      "github_number": 426,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/426",
+      "title": "Add a /close-out workflow for ending a finished session",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S150.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
