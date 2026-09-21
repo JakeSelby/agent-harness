@@ -37,6 +37,10 @@ SESSION_TTL_DAYS = 14
 SESSION_ID_MAX = 128
 # How stale a record may get before a spawn that read it moves its mtime out of the sweep's way.
 SESSION_REFRESH_SECONDS = 86400
+# The user-config key naming tool-name globs plan mode may use, and the postures under which a
+# widened plan-mode authority is what the user already asked for everywhere else.
+PLAN_TOOLS_KEY = "plan_allow_tools"
+OPEN_POSTURES = ("bypass", "auto")
 
 # The dimensions `bin/harness` resolves and the variant each falls back to, which is
 # `config.example.json`'s — the file the CLI layers the user config over, and a test holds the
@@ -642,6 +646,31 @@ def selected(name, fallback=None, env=None, strict=True):
     """
     env = os.environ if env is None else env
     return _selection(_user_config(env, strict), env, strict).get(name) or fallback
+
+
+def permissions(env=None, strict=False):
+    """The permission posture the user selected, or `inherit` when the config names none.
+
+    Non-strict by default: a posture nobody can read is not a posture the user chose, and a
+    caller that widens authority on it would be doing so on a file it could not open.
+    """
+    env = os.environ if env is None else env
+    value = _user_config(env, strict).get("permissions")
+    return value.strip() if isinstance(value, str) and value.strip() else "inherit"
+
+
+def plan_allow_tools(env=None, strict=False):
+    """The tool-name globs the user allows during plan mode, `fnmatch` style. Empty by default.
+
+    Nothing is inferred: a PreToolUse payload carries no read-only hint for an MCP tool, so the
+    only thing that can say a tool is safe to investigate with is the user naming it. A value
+    that is not a list of non-empty strings names nothing.
+    """
+    env = os.environ if env is None else env
+    value = _user_config(env, strict).get(PLAN_TOOLS_KEY)
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
 
 
 def row_for(table, role):

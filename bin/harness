@@ -47,7 +47,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client
+from harness_core import codex_client, keychain
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1261,7 +1261,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                           if stale else "set"))
     lines = _diff_lines()
     say("  drift: " + ("none" if not lines else f"{len(lines)} item(s), run `harness diff`"))
-    if shutil.which("claude"):
+    if shutil.which("claude") and keychain.missing():
+        say("  claude doctor: skipped, this HOME has no default keychain and a client launch "
+            "would raise a macOS dialog")
+    elif shutil.which("claude"):
         say("  claude doctor:")
         try:
             out = subprocess.run(["claude", "doctor"], capture_output=True, text=True, timeout=60)
@@ -1910,8 +1913,16 @@ def coerce_config_value(key: str, value: str) -> Any:
         if value != "inherit" and value not in POSTURES:
             raise SystemExit(f"permissions must be inherit, bypass, auto or manual; got '{value}'")
         return value
+    if key == "plan_allow_tools":
+        try:
+            globs = json.loads(value)
+        except ValueError:
+            globs = None
+        if not isinstance(globs, list) or not all(isinstance(item, str) and item.strip() for item in globs):
+            raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
+        return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"permissions, or one of {', '.join(BOOL_KEYS)}")
+                     f"permissions, plan_allow_tools, or one of {', '.join(BOOL_KEYS)}")
 
 
 def config_set(key: str, value: Optional[str]) -> int:
@@ -2063,6 +2074,21 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_keychain(args: argparse.Namespace) -> int:
+    """Give a home you built by hand its own default keychain, so a client launched there is silent."""
+    home = Path(args.home).expanduser().resolve()
+    if not home.is_dir():
+        raise SystemExit(f"not a directory: {home}")
+    if home == Path.home().resolve():
+        raise SystemExit("that is your own home; this command is for a disposable one")
+    try:
+        created = keychain.provision(home)
+    except OSError as exc:
+        raise SystemExit(f"{exc}\nDo not launch a client under this home.")
+    print(created if created else "nothing to do: a default keychain is present or this host needs none")
+    return 0
+
+
 def cmd_trust(args: argparse.Namespace) -> int:
     """Record (or with --remove, forget) a repository root the stop-gate hook may run a gate in."""
     start = Path(args.path).expanduser() if args.path else Path.cwd()
@@ -2090,13 +2116,42 @@ RULE_PROMOTE_SHARE = 0.30
 RULE_MIN_SESSIONS = 20
 
 
+def renamed_ids() -> Dict[str, str]:
+    """Old detector id → the id that replaced it, from the registry's own `RENAMED` map."""
+    module = load_detectors()
+    mapping = getattr(module, "RENAMED", {}) or {}
+    return {k: v for k, v in mapping.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def folded_rules(row: Dict[str, Any], renamed: Dict[str, str]) -> Dict[str, int]:
+    """One record's hits, with a renamed detector counted under its successor.
+
+    A rename would otherwise split one measurement across two lines, and the older half would
+    look like a detector that stopped firing. The ledger file is never rewritten for it: the
+    fold is done on every read, so a record keeps the id it was written under.
+    """
+    out: Dict[str, int] = {}
+    for did, n in (row.get("rules") or {}).items():
+        if not isinstance(did, str):
+            continue
+        try:
+            count = int(n or 0)
+        except (TypeError, ValueError):
+            count = 0
+        key = renamed.get(did, did)
+        out[key] = out.get(key, 0) + count
+    return out
+
+
 def rule_ids(rows: List[Dict[str, Any]]) -> List[str]:
     """Every detector id to report on: the registry's, so a rule with no hit is still a line,
-    plus any id a record carries that the registry no longer defines."""
+    plus any id a record carries that the registry no longer defines — under its current name
+    when the registry says it was renamed."""
     module = load_detectors()
+    renamed = renamed_ids()
     ids = set(getattr(module, "DETECTORS", {}) or {})
     for row in rows:
-        ids.update(k for k in (row.get("rules") or {}) if isinstance(k, str))
+        ids.update(renamed.get(k, k) for k in (row.get("rules") or {}) if isinstance(k, str))
     return sorted(ids)
 
 
@@ -2106,6 +2161,9 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     Only a record that carries a `rules` map is evidence. One written before the detectors
     existed, or one whose registry would not import, is absent from every count and from the
     denominator: counting it as a session with no hit would turn a gap into a clean bill.
+
+    Every grouping counts `folded_rules`, not the raw map, so a detector that was renamed is one
+    line and one series in all three: by rule, by repo and by stance.
     """
     measured = [r for r in rows if isinstance(r.get("rules"), dict) and not r.get("rules_errors")]
     legacy = sum(1 for r in rows if not isinstance(r.get("rules"), dict) and not r.get("rules_error"))
@@ -2116,15 +2174,17 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
     if not measured:
         say(f"no measured sessions in the last {days} day(s)")
         return 0
+    renamed = renamed_ids()
+    counted = [(r, folded_rules(r, renamed)) for r in measured]
 
     if by == "rule":
-        total = len(measured)
+        total = len(counted)
         head = f"{'detector':<38}{'hits':>7}{'sessions':>10}{'of':>6}{'share':>8}  note"
         say(head)
         say("-" * len(head))
         for did in rule_ids(measured):
-            hits = sum(int(r["rules"].get(did) or 0) for r in measured)
-            seen = sum(1 for r in measured if int(r["rules"].get(did) or 0) > 0)
+            hits = sum(hits_of.get(did, 0) for _, hits_of in counted)
+            seen = sum(1 for _, hits_of in counted if hits_of.get(did, 0) > 0)
             share = seen / total if total else 0.0
             note = ""
             if total >= RULE_MIN_SESSIONS:
@@ -2138,13 +2198,13 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
         guessed = [r for r in measured if r.get("stances_source") == "rescan"]
         if guessed:
             say(f"{len(guessed)} rescanned session(s) excluded: stance not known at the time")
-        measured = [r for r in measured if r.get("stances_source") != "rescan"]
-        if not measured:
+        counted = [(r, h) for r, h in counted if r.get("stances_source") != "rescan"]
+        if not counted:
             say(f"no sessions with a known stance in the last {days} day(s)")
             return 0
 
     groups: Dict[str, List[Any]] = {}
-    for row in measured:
+    for row, hits_of in counted:
         if by == "stance":
             stances = row.get("stances") if isinstance(row.get("stances"), dict) else {}
             keys = [f"{k}={v}" for k, v in sorted(stances.items())] or ["(no stances)"]
@@ -2153,8 +2213,8 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
         for key in keys:
             acc = groups.setdefault(key, [0, {}])
             acc[0] += 1
-            for did, n in row["rules"].items():
-                acc[1][did] = acc[1].get(did, 0) + int(n or 0)
+            for did, n in hits_of.items():
+                acc[1][did] = acc[1].get(did, 0) + n
     head = f"{by:<42}{'sessions':>9}{'hits':>7}  top detectors"
     say(head)
     say("-" * len(head))
@@ -2666,6 +2726,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="report rule-detector hits instead of tokens (--by rule, repo or stance)")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
     p.set_defaults(func=cmd_usage)
+
+    p = sub.add_parser("keychain", help="give a disposable HOME its own default keychain before a client is launched under it (macOS)")
+    p.add_argument("home")
+    p.set_defaults(func=cmd_keychain)
 
     p = sub.add_parser("trust", help="let the stop-gate hook run a repository's `## Gate` block (default: the current repo)")
     p.add_argument("path", nargs="?")
