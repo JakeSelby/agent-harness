@@ -24,6 +24,87 @@ refreshed for the four required Claude Code and Codex CLI targets listed below.
 Agent Harness is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
 Code and Codex remain responsible for model access, native permissions and client behavior.
 
+## What it does for you
+
+The same six groups are held as data in [`product.json`](product.json), so this list, the reference
+site and the GitHub description cannot drift apart.
+
+### Spend less without capping your agents
+
+A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things
+cost and let it pace itself.
+
+- [Cost postures](primitives/stances/cost): Pick frugal, balanced or max, or write your own. One table sets model, effort and a soft budget per role.
+- [Model tiering](primitives/stances/delegation): Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.
+- [Band workers](claude/agents/worker-a.md): A spawn that names no role gets a right-sized worker instead of your most expensive model.
+- [A budget in every brief](claude/hooks/brief-guard.py): Each subagent is told its expected tokens and tool calls. Finish if you're close, otherwise return what you have.
+- [Live usage feed](docs/usage.md): The orchestrator sees what each turn and each subagent cost while the session is still running.
+- [Lean context](docs/how-it-works.md): Always-loaded instructions are capped at 200 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.
+
+### Answers and plans you can actually read
+
+Most agent output is a wall of text. This puts the verdict first and the ask where you can find it.
+
+- [Voice stances](primitives/stances/voice): Choose answer-card or scannable. Same content, shaped for how you read.
+- [Scannable output style](claude/output-styles/scannable.md): Verdict first, action items in one place, and status in plain words: Fixed, Partially fixed, Not fixed, Unverified.
+- [Review Card plans](primitives/skills/plan-authoring): Every plan opens with a one-screen card and stops at a build gate until you say build.
+- [Bounded subagent returns](primitives/skills/transcript-hygiene): Subagents come back with findings and a word cap, not their whole transcript.
+- [Conciseness rules](primitives/rules/conciseness.md): Explain a decision once. Comments say why, not what.
+
+### Your opinions, as switches
+
+Reasonable developers disagree about testing, autonomy and how much to delegate. So none of that is
+hardcoded. They're stances, and you flip them.
+
+- [Stance dimensions and variants](primitives/stances): Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.
+- [User, project, session](docs/preferences.md): Set a default, override it for one repo, override that for one session.
+- [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
+- [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
+
+### Guardrails that leave room for judgment
+
+Hooks handle the few things that should be deterministic. Everything else stays the agent's call.
+
+- [Graded shell commands](claude/hooks/grade-bash.py): Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.
+- [Autonomy stances](primitives/stances/autonomy): Decide how far an agent goes before it checks in.
+- [Stop gate](claude/hooks/stop-gate.py): The turn doesn't end while your repo's own gate is red.
+- [Secrets and personal data](primitives/rules/secrets.md): Lint catches tokens, keys and personal strings before they're committed.
+- [Untrusted tool output](claude/hooks/neutralize-tool-output.py): Text that comes back from a tool is data, never instructions.
+- [Sandboxing](docs/sandboxing.md): Fence the filesystem and network before you leave a loop unattended.
+
+### One way of working, every provider
+
+I started in Cursor, moved to Claude Code, added Codex, and kept rebuilding the same setup. Now it's
+defined once and projected into each one.
+
+- [Shared primitives](docs/sync-model.md): Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.
+- [Same policy on both](docs/runtime-controls.md): A Claude Code spawn and a Codex spawn resolve to the same delegation policy.
+- [Capability classes](docs/role-workers.md): frontier, strong, standard, light. Each adapter maps them to its own models.
+- [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are.
+- [Reversible](docs/settings-ownership.md): Sync has a dry run, diff shows drift, and uninstall restores what it adopted.
+
+### A delivery loop, not just a prompt
+
+Five commands take a piece of work from a question to a reviewed pull request, with fresh eyes at
+the review step.
+
+- [The ritual](primitives/workflows): /research, /plan, /build, /review, /handoff.
+- [Named roles](claude/agents): Builder, planner, reviewer, gatherer, designer and more, each with its own model class and tool limits.
+- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code being written.
+- [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents don't step on your checkout or on each other.
+- [Testing and commit stances](primitives/stances/testing): Tests required, Conventional Commits, gated pushes. Or switch them.
+- [Planning in public](docs/bmad.md): The brief, architecture and stories are in the repo.
+
+### On the way
+
+Planned, not promised.
+
+- **Grok and Cursor adapters:** Grok is next.
+- **Fresh-session nudge:** A heads-up when the orchestrator's context has become expensive to keep dragging forward.
+- **Budget nudges mid-run:** Today a subagent learns its budget in the brief. Next it hears about it while it works.
+- **Jev judgment checks:** Small, bounded checks for the calls a deterministic hook can't make.
+- **Architecture viewer, out of preview:** A plan as the front door to a live supervision surface.
+
 ## Preferences you can switch
 
 A **stance** is a named choice about how you want an agent to work. Useful defaults ship with the

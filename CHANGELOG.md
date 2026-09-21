@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `product.json` now holds the landing copy as validated data: a `hero` of title, subtitle and proof
+  line, six `capabilities` groups of a pitch and three to six features each with a repository
+  relative `doc` path, and an `on_the_way` list of at most five items, each naming an issue, a
+  client the compatibility catalog calls `planned`, or a document. `headline` and
+  `github_description` now lead with the hero title, so the page, the README and the GitHub About
+  description share one source. `tests/test_release.py` fails when a `doc` path is missing, a group
+  or feature count leaves its range, a feature line runs past 170 characters, any string carries an
+  em dash, or the README and the data disagree.
+
+### Changed
+
+- The README carries the six capability groups between the badges and the install block, one linked
+  line per feature, plus the "On the way" list.
+
 ## [0.11.1] — 2026-09-21
 
 ### Changed
