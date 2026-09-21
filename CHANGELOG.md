@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Two deterministic pre-qualification checks that spend no model turns. A documentation-link check
+  resolves every relative path and heading anchor across the repository's Markdown, and a credential
+  probe names the variable a client would authenticate with or fails immediately with the reason,
+  instead of the 300-second hang a session-credentials-only home used to produce. Both are additive
+  and neither writes to `compatibility/evidence/` or appears in a catalog record, because a green
+  deterministic check is not native qualification (#334).
 - `audit --live` reports a parent only GitHub records as `run refresh` rather than `run apply`, so a
   sub-issue added after its mapping cannot be detached by the next projection; `refresh` adopts it (#388).
 - The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
