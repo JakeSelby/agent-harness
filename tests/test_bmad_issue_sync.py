@@ -333,6 +333,151 @@ class ApplyTests(unittest.TestCase):
                 sync.apply_manifest(manifest)
 
 
+class LiveAuditTests(unittest.TestCase):
+    def setUp(self):
+        self.live = [issue(1, "feat: first"), issue(2, "feat: second", state="closed")]
+        self.manifest = sync.build_manifest(self.live, "owner/repo")
+
+    def projected(self, live_issue):
+        item = next(i for i in self.manifest["items"] if i["github_number"] == live_issue["number"])
+        live_issue["body"] = sync.upsert_planning_block(live_issue["body"], sync.planning_block(item, "owner/repo"))
+        live_issue["labels"] = [{"name": "type::{}".format(item["type"])}]
+        return live_issue
+
+    def test_projected_and_current_mapping_has_no_findings(self):
+        live = [self.projected(entry) for entry in self.live]
+        self.assertEqual(sync.live_findings(self.manifest, live), ([], []))
+
+    def test_open_to_completed_completed_to_active_and_title_drift(self):
+        live = [self.projected(entry) for entry in self.live]
+        live[0]["state"] = "closed"
+        live[1]["state"] = "open"
+        live[1]["title"] = "feat: renamed"
+        findings, notices = sync.live_findings(self.manifest, live)
+        self.assertEqual(notices, [])
+        self.assertEqual(len(findings), 3)
+        self.assertRegex(findings[0], r"#1: GitHub is closed but the manifest says active")
+        self.assertRegex(findings[1], r"#2: title drift")
+        self.assertRegex(findings[2], r"#2: GitHub is open but the manifest says completed")
+
+    def test_lifecycle_drift_can_be_reported_without_failing(self):
+        live = [self.projected(entry) for entry in self.live]
+        live[0]["state"] = "closed"
+        findings, notices = sync.live_findings(self.manifest, live, check_lifecycle=False)
+        self.assertEqual(findings, [])
+        self.assertEqual(len(notices), 1)
+
+    def test_missing_issue_and_unprojected_issue_are_findings(self):
+        findings, _ = sync.live_findings(self.manifest, [self.live[0]])
+        self.assertIn("#1: projection drift (planning-block, type-label); run apply", findings)
+        self.assertIn("#2: mapped issue was not found on GitHub", findings)
+
+    def test_unmapped_issue_fails_once_accepted_and_waits_while_untriaged(self):
+        live = [self.projected(entry) for entry in self.live]
+        community = issue(3, "idea from a visitor")
+        community["author_association"] = "NONE"
+        owner = issue(4, "feat: maintainer work")
+        owner["author_association"] = "OWNER"
+        triaged = issue(5, "triaged idea", labels=["type::story"])
+        triaged["author_association"] = "NONE"
+        scheduled = issue(6, "scheduled idea")
+        scheduled["milestone"] = {"title": "v1.0.0"}
+        declined = issue(7, "declined", state="closed")
+        declined.update(author_association="OWNER", state_reason="not_planned")
+        findings, notices = sync.live_findings(self.manifest, live + [community, owner, triaged, scheduled, declined])
+        self.assertEqual([finding.split(":")[0] for finding in findings], ["#4", "#5", "#6"])
+        self.assertEqual([notice.split(":")[0] for notice in notices], ["#3", "#7"])
+
+    def test_grace_period_defers_a_new_accepted_issue_only_until_it_lapses(self):
+        live = [self.projected(entry) for entry in self.live]
+        fresh = issue(3, "feat: filed today")
+        fresh.update(author_association="OWNER", created_at="2026-01-10T12:00:00Z")
+        now = sync.dt.datetime(2026, 1, 11, 12, 0, 0)
+        findings, notices = sync.live_findings(self.manifest, live + [fresh], grace_days=2, now=now)
+        self.assertEqual((findings, len(notices)), ([], 1))
+        later = now + sync.dt.timedelta(days=2)
+        findings, notices = sync.live_findings(self.manifest, live + [fresh], grace_days=2, now=later)
+        self.assertEqual((len(findings), notices), (1, []))
+        findings, _ = sync.live_findings(self.manifest, live + [fresh], now=now)
+        self.assertEqual(len(findings), 1)
+
+    def test_live_audit_is_read_only(self):
+        with mock.patch.object(sync, "load_manifest", return_value=self.manifest), mock.patch.object(
+            sync, "audit_manifest", return_value=[]
+        ), mock.patch.object(sync, "fetch_issues", return_value=self.live), mock.patch.object(
+            sync.subprocess, "run"
+        ) as run, mock.patch.object(Path, "write_text") as write, redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(sync.main(["audit", "--live"]), 1)
+        run.assert_not_called()
+        write.assert_not_called()
+        self.assertIn("2 finding(s)", out.getvalue())
+
+    def test_malformed_planning_fences_are_one_finding_not_the_end_of_the_audit(self):
+        live = [self.projected(entry) for entry in self.live]
+        live[0]["body"] += "\n" + sync.BEGIN
+        findings, _ = sync.live_findings(self.manifest, live + [])
+        self.assertEqual(findings, ["#1: issue body has malformed BMad Planning fences"])
+        live[1]["labels"] = []
+        findings, _ = sync.live_findings(self.manifest, live)
+        self.assertEqual(len(findings), 2)
+        self.assertIn("#2: projection drift (type-label); run apply", findings)
+
+    def test_live_comparison_is_reported_as_skipped_when_the_local_audit_fails(self):
+        with mock.patch.object(sync, "load_manifest", return_value=self.manifest), mock.patch.object(
+            sync, "audit_manifest", return_value=["broken mapping"]
+        ), mock.patch.object(sync, "fetch_issues") as fetch, redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(sync.main(["audit", "--live"]), 1)
+        fetch.assert_not_called()
+        self.assertIn("notice: live comparison skipped", out.getvalue())
+
+    def test_offline_audit_never_fetches(self):
+        with mock.patch.object(sync, "load_manifest", return_value=self.manifest), mock.patch.object(
+            sync, "audit_manifest", return_value=[]
+        ), mock.patch.object(sync, "fetch_issues") as fetch, redirect_stdout(io.StringIO()):
+            self.assertEqual(sync.main(["audit"]), 0)
+        fetch.assert_not_called()
+
+
+class RefreshTests(unittest.TestCase):
+    def test_refresh_copies_title_and_state_into_manifest_and_artifact(self):
+        live = [issue(1, "feat: first")]
+        manifest = sync.build_manifest(live, "owner/repo")
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(sync, "ROOT", Path(temp)):
+            sync.write_manifest(manifest)
+            live[0].update(state="closed", title="feat: renamed")
+            self.assertEqual(sync.refresh(manifest, live), ["AH-S001"])
+            saved = json.loads((Path(temp) / "_bmad-output" / "issue-map.json").read_text(encoding="utf-8"))
+            self.assertEqual(sync.audit_manifest(saved), [])
+            self.assertEqual(saved["items"][0]["title"], "feat: renamed")
+            text = (Path(temp) / manifest["items"][0]["artifact_path"]).read_text(encoding="utf-8")
+        self.assertEqual(manifest["items"][0]["lifecycle"], "completed")
+        self.assertIn("# AH-S001 — feat: renamed", text)
+        self.assertIn("- **State:** completed", text)
+
+    def test_refresh_refuses_an_amended_artifact_before_writing_anything(self):
+        live = [issue(1, "feat: first"), issue(2, "feat: second")]
+        manifest = sync.build_manifest(live, "owner/repo")
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(sync, "ROOT", Path(temp)):
+            sync.write_manifest(manifest)
+            first, second = (Path(temp) / item["artifact_path"] for item in manifest["items"])
+            second.write_text(second.read_text(encoding="utf-8") + "\n## Amendment\n\nContext.\n", encoding="utf-8")
+            before = first.read_text(encoding="utf-8")
+            for entry in live:
+                entry["state"] = "closed"
+            with self.assertRaisesRegex(RuntimeError, "carries amendments.*AH-S002"):
+                sync.refresh(manifest, live)
+            self.assertEqual(first.read_text(encoding="utf-8"), before)
+            self.assertEqual(sync.audit_manifest(manifest), [])
+        self.assertEqual([item["lifecycle"] for item in manifest["items"]], ["active", "active"])
+
+    def test_refresh_without_drift_writes_nothing(self):
+        live = [issue(1, "feat: first")]
+        manifest = sync.build_manifest(live, "owner/repo")
+        with mock.patch.object(sync, "write_manifest") as write:
+            self.assertEqual(sync.refresh(manifest, live), [])
+        write.assert_not_called()
+
+
 class RemoteArtifactTests(unittest.TestCase):
     def test_remote_tree_distinguishes_present_and_missing_artifacts(self):
         manifest = sync.build_manifest([issue(1, "feat: first")], "owner/repo")

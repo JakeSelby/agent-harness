@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `scripts/bmad_issue_sync.py audit --live` compares the committed issue map with GitHub, read-only:
+  title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
+  `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
+  runs the audit daily and on issue events (#218).
 - Plan mode now investigates at the permission posture you selected instead of below it. Under
   `bypass` or `auto` in Claude Code, the PreToolUse coordinator approves the commands native plan
   mode prompts on — a script run, a `python3 -c`, a scratch redirect, a test run, anything graded
