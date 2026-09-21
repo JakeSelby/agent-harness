@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The `issue-ownership` check now refuses a pull request whose delivery issue has no BMad ID in the
+  issue map, and `scripts/bmad_issue_sync.py new` files an issue and reserves its ID in one step (#378).
 - `scripts/bmad_issue_sync.py audit --live` compares the committed issue map with GitHub, read-only:
   title and open/closed drift, a missing Planning block, and an accepted issue that has no BMad ID.
   `refresh` copies GitHub's title and state back into the map, and a `bmad traceability` workflow
