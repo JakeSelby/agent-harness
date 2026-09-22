@@ -51,7 +51,9 @@ MODEL_USAGE_KEYS = ("inputTokens", "outputTokens", "cacheCreationInputTokens", "
 # the fence admits, which is the arm's own; see `fence`.
 DENY_READ = ["~/.ssh", "~/.aws", "~/.config/gh"]
 DEFAULT_CONFIG_DIR = "~/.claude"
-SCRATCH_DIR = "/tmp"
+# The sandbox matches resolved paths: on macOS `/tmp` is a link to `/private/tmp`, and a rule
+# naming the link does not admit the target. Admit both spellings, deduplicated.
+SCRATCH_DIRS = tuple(dict.fromkeys(["/tmp", os.path.realpath("/tmp")]))
 # The gate this repository's AGENTS.md names, run inside the fence and reported as its own last line.
 # The suite's own stdout is block-buffered under a pipe and lands after unittest's stderr summary,
 # so the last line of `2>&1` is noise, not the verdict. Filter to the verdict lines and judge the
@@ -283,7 +285,7 @@ def fence(config_dir=None):
     `/tmp`; the arm then fails its gate and spends turns on a block the runner imposed. Each arm
     therefore gets its own directory, and the shared scratch directory, readable and writable.
     `denyRead` is the same for every arm."""
-    admitted = [str(config_dir) if config_dir else DEFAULT_CONFIG_DIR, SCRATCH_DIR]
+    admitted = [str(config_dir) if config_dir else DEFAULT_CONFIG_DIR] + list(SCRATCH_DIRS)
     return {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
                         "network": {"allowedDomains": [], "strictAllowlist": True},
                         "filesystem": {"denyRead": list(DENY_READ), "allowWrite": list(admitted),

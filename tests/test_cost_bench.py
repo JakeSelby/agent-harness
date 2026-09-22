@@ -234,14 +234,14 @@ class ReplayArmTests(unittest.TestCase):
         bench = json.loads(BENCH.arm_command("claude", "claude-test", "p", 2.0,
                                              "/b/.claude-bench-harness")[-1])["sandbox"]["filesystem"]
         for key in ("allowWrite", "allowRead"):
-            self.assertEqual(sorted(bench[key]), ["/b/.claude-bench-harness", "/tmp"])
+            self.assertEqual(sorted(bench[key]), sorted(["/b/.claude-bench-harness"] + list(BENCH.SCRATCH_DIRS)))
         self.assertEqual(bench["denyRead"], BENCH.DENY_READ)
 
     def test_an_arm_with_no_profile_of_its_own_gets_the_clis_default_one(self):
         inherited = BENCH.fence()["sandbox"]["filesystem"]
-        self.assertEqual(sorted(inherited["allowWrite"]), ["/tmp", "~/.claude"])
+        self.assertEqual(sorted(inherited["allowWrite"]), sorted(list(BENCH.SCRATCH_DIRS) + ["~/.claude"]))
         self.assertEqual(inherited["allowWrite"], inherited["allowRead"])
-        self.assertEqual(BENCH.fence("")["sandbox"]["filesystem"]["allowRead"], ["~/.claude", "/tmp"])
+        self.assertEqual(BENCH.fence("")["sandbox"]["filesystem"]["allowRead"], ["~/.claude"] + list(BENCH.SCRATCH_DIRS))
 
     def test_a_workdir_under_home_in_a_checkout_or_below_instructions_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -518,7 +518,7 @@ class ReplayPreflightTests(unittest.TestCase):
                 self.assertEqual(command[command.index("--model") + 1], "claude-test")
                 fence = json.loads(command[command.index("--settings") + 1])["sandbox"]["filesystem"]
                 self.assertEqual(sorted(fence["allowWrite"]),
-                                 sorted([kwargs["env"].get("CLAUDE_CONFIG_DIR", "~/.claude"), "/tmp"]))
+                                 sorted([kwargs["env"].get("CLAUDE_CONFIG_DIR", "~/.claude")] + list(BENCH.SCRATCH_DIRS)))
             self.assertEqual(checks[0][1]["env"]["CLAUDE_CONFIG_DIR"], str(opts["bare_config"]))
             self.assertNotIn("CLAUDE_CONFIG_DIR", checks[1][1]["env"])
 
