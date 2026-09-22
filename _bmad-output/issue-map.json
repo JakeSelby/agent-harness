@@ -5,9 +5,9 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 11,
-    "story": 178,
+    "story": 190,
     "task": 7,
-    "bug": 55,
+    "bug": 58,
     "chore": 42,
     "spike": 7,
     "decision": 7
@@ -1369,7 +1369,7 @@
       "bmad_id": "AH-E004",
       "github_number": 189,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/189",
-      "title": "Commit BMad as the repository\u2019s public planning system",
+      "title": "Commit BMad as the repository’s public planning system",
       "type": "epic",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-E004.md",
@@ -3277,6 +3277,58 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S178",
+      "github_number": 428,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/428",
+      "title": "Replay charges the user's personal layer to the harness",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S178.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B055",
+      "github_number": 429,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/429",
+      "title": "The delegation stance never fires: zero subagent spawns in 19 headless runs",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B055.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S179",
+      "github_number": 430,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/430",
+      "title": "Trim the harness's 12,607-token standing context",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S179.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T006",
+      "github_number": 431,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/431",
+      "title": "Replay task set sits below the harness's break-even size",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T006.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C034",
       "github_number": 432,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/432",
@@ -3287,6 +3339,19 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B056",
+      "github_number": 433,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/433",
+      "title": "bmad_issue_sync.py new files an issue then fails to reserve it, and its recovery hint omits --kind",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B056.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3313,6 +3378,32 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S180",
+      "github_number": 439,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/439",
+      "title": "Let plan mode own the plan review surface, so the native pane and the native approval replace the typed build gate",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S180.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B057",
+      "github_number": 440,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/440",
+      "title": "reserve hands out a BMad ID another worktree already took, because it trusts a per-checkout counter",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B057.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3641,6 +3732,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S181",
+      "github_number": 482,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/482",
+      "title": "Record the CLI's own account of the loaded surface on every replay row, and refuse to launch on plugin drift",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S181.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B053",
       "github_number": 483,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/483",
@@ -3677,6 +3781,32 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S182",
+      "github_number": 493,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/493",
+      "title": "usage-feed: surface a running agent's spend mid-run, and a live figure from harness role run",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S182.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S183",
+      "github_number": 497,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/497",
+      "title": "Record the cache-prefix figure per replay run beside normalised_cost",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S183.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3729,6 +3859,84 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S184",
+      "github_number": 509,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/509",
+      "title": "Price every rule, stance variant, skill and agent description individually in the static tier, and report a change's token delta in CI",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S184.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S185",
+      "github_number": 510,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/510",
+      "title": "Replay stored transcripts through the rule-detector registry offline, one row per rule per run, and backfill every evidence set",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S185.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S186",
+      "github_number": 511,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/511",
+      "title": "Run every hook against recorded tool calls under each stance variant as a deterministic permutation matrix",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S186.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S187",
+      "github_number": 512,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/512",
+      "title": "Add a micro-task tier on a cheap model that reports whether each claimed mechanism fires",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S187.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S188",
+      "github_number": 513,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/513",
+      "title": "Nudge delegation from the existing detector through PostToolUse context, since the spawn hook only fires once a spawn is attempted",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S188.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S189",
+      "github_number": 514,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/514",
+      "title": "Per-rule cost attribution across the whole loaded instruction surface",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S189.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3884,20 +4092,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C041.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-T006",
-      "github_number": 431,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/431",
-      "title": "Replay task set sits below the harness's break-even size",
-      "type": "task",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-T006.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     }
   ]
