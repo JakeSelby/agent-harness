@@ -47,7 +47,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client, keychain
+from harness_core import codex_client, keychain, collisions
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -984,6 +984,14 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
     cfg = load_config({key: value for key, value in os.environ.items() if key not in session_keys})
     if session_keys:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
+    # Before anything is written: a name two roots both define is resolved by the runtime
+    # first-wins and silently, so the install is refused rather than made ambiguous.
+    refusals = collisions.findings(REPO, cfg)
+    if refusals:
+        for line in refusals:
+            say(line)
+        say("sync refused: nothing was written")
+        return 2
     stances = resolve_stances(cfg)
     p = posture(cfg)
     telemetry = telemetry_settings(cfg)
@@ -1017,6 +1025,13 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         # than left to be discovered the next time an approval waits for a human.
         say("  notice  codex approval review: " + reviewer.detail)
         say("          `permissions=auto` will ask you to approve; `harness doctor` repeats this")
+    try:
+        project = Path.cwd()
+    except OSError:
+        project = None
+    for line in collisions.shadows(REPO, cfg, project):
+        # A project definition is meant to win; it is said so the precedence is not a surprise.
+        say("  notice  " + line)
     stale = placeholder_identity(cfg)
     if stale:
         say(f"  notice  identity {', '.join(stale)} still at the example value; the agent reads this")
@@ -1649,6 +1664,18 @@ def check_detectors(root: Path) -> List[str]:
     return hits
 
 
+def check_collisions(root: Path) -> List[str]:
+    """Fail when one skill, agent or command name is defined in two primitive roots.
+
+    The runtimes pick a winner silently; `harness_core.collisions` says why that is refused.
+    """
+    try:
+        cfg = load_config()
+    except Exception:
+        cfg = {}
+    return collisions.findings(root, cfg)
+
+
 NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
                 "ten", "eleven", "twelve"]
 
@@ -1766,6 +1793,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
         hits = lint_tree(root)
         scope = str(root)
     hits = hits + check_context_cap(root) + check_cost_sidecars(root)
+    hits += check_collisions(root)
     if (root / "primitives" / "roles").is_dir():
         hits += ["projection drift: " + name + "; run `harness generate`"
                  for name in primitive_catalog.projection_drift(root)]
