@@ -164,6 +164,15 @@ reviewer replies to. Three shapes, and nothing improvised.
 Deliberately excluded: the diagram (the file holds it), the steps, the
 risks, the addendum. Those are what the file is for. Do not summarize them either.
 
+**Put the file on screen before you post the message.** A link in chat is a path, not a
+rendering: in some clients it is clickable, in others it is dead text, and a plan written
+straight to disk never reaches a native plan view, because nothing registered it as one. The
+reviewer is then asked to approve a document they cannot see. So if the runtime can open a file
+beside the conversation, open the plan there first, and pass an **absolute** path unless you have
+confirmed that relative ones resolve; a rejected path is the common failure and it is silent.
+If the runtime cannot, say in the message how to open the file. The same applies on every
+revision round, since the reviewer is reading a changed file, not the one they opened before.
+
 **Revision round, after feedback.** Much shorter — the reviewer already knows the plan:
 
 1. **One line naming what changed**, matching the card's **Changed this round** line.

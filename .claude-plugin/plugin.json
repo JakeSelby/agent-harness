@@ -1,0 +1,27 @@
+{
+  "name": "agent-harness",
+  "displayName": "Agent Harness",
+  "version": "0.11.1",
+  "description": "Skills, subagent roles, slash commands and an output style from the Agent Harness checkout, installable on their own.",
+  "author": { "name": "Jake Selby", "url": "https://github.com/JakeSelby" },
+  "license": "MIT",
+  "homepage": "https://agent-harness.jakeselby.com",
+  "repository": "https://github.com/JakeSelby/agent-harness.git",
+  "keywords": ["claude-code", "codex", "agent-skills", "subagents", "context-engineering"],
+  "skills": "./primitives/skills/",
+  "agents": [
+    "./claude/agents/builder.md",
+    "./claude/agents/design-judge.md",
+    "./claude/agents/designer.md",
+    "./claude/agents/gatherer.md",
+    "./claude/agents/log-compressor.md",
+    "./claude/agents/planner.md",
+    "./claude/agents/reviewer.md",
+    "./claude/agents/spec-reviewer.md",
+    "./claude/agents/worker-a.md",
+    "./claude/agents/worker-b.md",
+    "./claude/agents/worker-c.md"
+  ],
+  "commands": "./claude/commands/",
+  "outputStyles": "./claude/output-styles/"
+}
