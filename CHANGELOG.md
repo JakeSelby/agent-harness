@@ -251,6 +251,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The credential probe's docstring records why its green line is a fixed string that never
+  names the variable it found: a clean CodeQL scan with no dismissals was judged worth more than
+  the name on stdout, and a caller that needs it calls `reachable` directly (#409).
+
 - `telemetry.native` takes `true`, `false` or a list of runtime names, so a collector that
   authenticates can be fed natively from Claude Code while Codex, which takes header values only
   as literals in its configuration file, is left alone. `true` keeps its meaning, an unknown name
