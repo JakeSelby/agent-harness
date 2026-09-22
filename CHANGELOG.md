@@ -262,6 +262,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `.agent-harness/evidence/`, `task.json` and `sync.lock` are ignored repository-wide, so captured
+  replay transcripts can never be staged or reach the lint, and the stop gate no longer goes red in
+  a checkout whose own change is clean; a test pins the rules (#432).
+
 - Three defects in the native acceptance runner, recorded during 0.11.0 qualification and none of
   them in the harness runtime. `orchestrator_text()` now reads a session's transcript whether or not
   a subagent directory was written, so a session that spawned none no longer returns an empty string
