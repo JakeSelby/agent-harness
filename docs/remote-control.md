@@ -39,6 +39,24 @@ harness remote-control uninstall             # unload and remove every agent
 Re-run `install` after changing the block. An agent whose definition is unchanged is left
 running, because reloading it would cut off the sessions its server is carrying.
 
+## Keeping sessions across a restart: `heal`
+
+A server that loses the network for ten minutes gives up, archives every session it was
+carrying and deregisters its environment; launchd then starts it again as a *new* environment
+that adopts nothing, and the chats open on your phone are gone. Claude Code can re-adopt the old
+environment — it asks the server to reuse the id in the folder's
+`~/.claude/projects/<slug>/bridge-pointer.json` — but only while that file is younger than its
+four-hour TTL and names a pid that is no longer running, and a server that started without a
+pointer never writes one. `harness remote-control heal` closes that gap: once a minute it reads
+each running agent's live environment id from its log and rewrites the folder's pointer with it,
+so a relaunch asks for the environment the sessions are actually on. `--dry-run` reports without
+writing, `--once` is the single pass the `com.agent-harness.remote-control-heal` agent runs, and
+`--preserve-worktrees` WIP-commits any dirty `bridge-cse_*` worktree first, so nothing unpushed
+can be deleted by a cleanup. Actions are appended to
+`~/.local/state/agent-harness/remote-control/heal.log`, and `status` reports the last one.
+Heal does not rescue an environment the give-up path already deregistered: reuse is refused once
+the environment is gone, and so is the bridge reconnect endpoint.
+
 ## What it will not do
 
 - **Accept workspace trust for you.** The server refuses a folder whose trust dialog was never

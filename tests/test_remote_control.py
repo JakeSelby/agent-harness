@@ -229,5 +229,196 @@ class CommandTests(unittest.TestCase):
             self.run_action("status")
 
 
+class PointerTests(unittest.TestCase):
+    def test_slug_matches_claude_code_project_key(self):
+        self.assertEqual(remote_control.project_slug("/u/dev/repos/app"),
+                         "-u-dev-repos-app")
+        self.assertEqual(
+            remote_control.project_slug("/u/dev/repos/app/.claude/worktrees/bridge-cse_01A"),
+            "-u-dev-repos-app--claude-worktrees-bridge-cse-01A")
+
+    def test_payload_carries_only_validated_keys(self):
+        previous = {"sessionId": "cse_01A", "environmentId": "env_01NEW", "source": "standalone",
+                    "pid": 1, "procStart": "old", "activeSessionIds": ["cse_01B"],
+                    "activeSessionIdsPersistedAt": 42, "somethingElse": "drop me"}
+        out = remote_control.pointer_payload("env_01NEW", 77, "Tue Sep 22 13:36:19 2026", previous)
+        self.assertEqual(out["environmentId"], "env_01NEW")
+        self.assertEqual(out["pid"], 77)
+        self.assertEqual(out["procStart"], "Tue Sep 22 13:36:19 2026")
+        self.assertEqual(out["source"], "standalone")
+        self.assertEqual(out["sessionId"], "cse_01A")
+        self.assertEqual(out["activeSessionIds"], ["cse_01B"])
+        self.assertNotIn("somethingElse", out)
+        self.assertLessEqual(set(out), set(remote_control.POINTER_KEYS))
+
+    def test_ids_from_another_environment_are_dropped(self):
+        previous = {"sessionId": "cse_01A", "environmentId": "env_01OLD", "source": "standalone",
+                    "activeSessionIds": ["cse_01B"], "activeSessionIdsPersistedAt": 42}
+        out = remote_control.pointer_payload("env_01NEW", 77, "now", previous)
+        self.assertEqual(out["sessionId"], "")
+        self.assertNotIn("activeSessionIds", out)
+
+    def test_payload_without_a_previous_file(self):
+        out = remote_control.pointer_payload("env_01NEW", 5, "now")
+        self.assertEqual(out["sessionId"], "")
+        self.assertNotIn("activeSessionIds", out)
+
+    def test_environment_id_takes_the_last_one_named(self):
+        log = "registered env_01AAA\nlater\nregistered env_01BBB\ntail\n"
+        self.assertEqual(remote_control.environment_id(log), "env_01BBB")
+        self.assertIsNone(remote_control.environment_id("nothing here"))
+
+    def test_pointer_is_current_only_while_young(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bridge-pointer.json"
+            wanted = remote_control.pointer_payload("env_01A", 1, "now")
+            path.write_text(json.dumps(wanted))
+            self.assertTrue(remote_control.pointer_is_current(wanted, wanted, path))
+            self.assertFalse(remote_control.pointer_is_current({"environmentId": "env_01B"}, wanted, path))
+            old = os.stat(path).st_mtime - remote_control.POINTER_TTL_SECONDS
+            os.utime(path, (old, old))
+            self.assertFalse(remote_control.pointer_is_current(wanted, wanted, path))
+
+    def test_read_pointer_tolerates_junk(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bridge-pointer.json"
+            self.assertIsNone(remote_control.read_pointer(path))
+            path.write_text("not json")
+            self.assertIsNone(remote_control.read_pointer(path))
+            path.write_text("[1]")
+            self.assertIsNone(remote_control.read_pointer(path))
+
+
+class RetryRunTests(unittest.TestCase):
+    def test_trailing_run_is_measured(self):
+        log = ("[01:30:00] Connected\n"
+               "[01:40:00] Connection error, retrying in 2s (0s elapsed): fetch failed\n"
+               "[01:47:30] Connection error, retrying in 2m (450s elapsed): fetch failed\n")
+        self.assertEqual(remote_control.retry_run_seconds(log), 450)
+
+    def test_a_later_line_resets_the_run(self):
+        log = ("[01:40:00] Connection error, retrying in 2s\n"
+               "[01:47:30] Connection error, retrying in 2m\n"
+               "[01:48:00] Connected\n")
+        self.assertEqual(remote_control.retry_run_seconds(log), 0)
+
+    def test_a_run_crossing_midnight_does_not_go_negative(self):
+        log = "[23:56:00] Connection error, retrying\n[00:04:00] Connection error, retrying\n"
+        self.assertEqual(remote_control.retry_run_seconds(log), 480)
+
+    def test_a_single_line_is_not_yet_a_run(self):
+        self.assertEqual(remote_control.retry_run_seconds("[01:40:00] Connection error, retrying\n"), 0)
+
+
+class HealPlistTests(unittest.TestCase):
+    def test_interval_and_command(self):
+        body = plistlib.loads(remote_control.render_heal("/bin/harness", "/u/dev", "/tmp/logs"))
+        self.assertEqual(body["StartInterval"], 60)
+        self.assertEqual(body["ProgramArguments"],
+                         ["/bin/harness", "remote-control", "heal", "--once"])
+        self.assertEqual(body["Label"], "com.agent-harness.remote-control-heal")
+
+    def test_label_is_outside_the_folder_agent_glob(self):
+        # `installed()` globs the folder labels; the heal agent must not look stale to `install`.
+        self.assertFalse(remote_control.HEAL_LABEL.startswith(remote_control.LABEL_PREFIX))
+
+
+class HealRunTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        self.folder = self.home / "repos" / "app"
+        (self.folder / ".claude" / "worktrees").mkdir(parents=True)
+        # `settings()` resolves every folder, and /var is a symlink to /private/var on macOS.
+        self.folder = self.folder.resolve()
+        (self.home / ".config" / "agent-harness").mkdir(parents=True)
+        (self.home / ".config" / "agent-harness" / "config.json").write_text(
+            json.dumps({"remote_control": {"folders": [str(self.folder)]}}))
+        (self.home / ".claude").mkdir(parents=True, exist_ok=True)
+        (self.home / ".claude" / "projects").mkdir(parents=True, exist_ok=True)
+        (self.home / ".claude.json").write_text(json.dumps(
+            {"projects": {str(self.folder): {"hasTrustDialogAccepted": True}}}))
+        self.log_dir = self.home / ".local" / "state" / "agent-harness" / "remote-control"
+        self.log_dir.mkdir(parents=True)
+        self.label = remote_control.label(self.folder)
+        (self.log_dir / (self.label + ".log")).write_text("bridge up on env_01LIVE\n")
+        self.env = mock.patch.dict(os.environ, {"HOME": str(self.home), "XDG_STATE_HOME": ""}, clear=False)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def run_heal(self, **flags):
+        fields = dict(action="heal", once=True, dry_run=False, preserve_worktrees=False)
+        fields.update(flags)
+        args = argparse.Namespace(**fields)
+        lines = []
+        with mock.patch.object(harness, "say", lines.append), \
+             mock.patch.object(harness, "home", lambda: self.home), \
+             mock.patch.object(harness, "remote_control_log_dir", lambda: self.log_dir), \
+             mock.patch.object(harness, "claude_state_file", lambda: self.home / ".claude.json"), \
+             mock.patch.object(harness, "host_pid", lambda name: 4242), \
+             mock.patch.object(harness, "proc_start", lambda pid: "Tue Sep 22 13:36:19 2026"), \
+             mock.patch.object(harness.platform, "system", lambda: "Darwin"):
+            code = harness.cmd_remote_control_heal(args)
+        return code, "\n".join(lines)
+
+    def pointer(self):
+        return remote_control.pointer_path(self.home / ".claude" / "projects", self.folder)
+
+    def test_writes_the_live_environment(self):
+        code, _ = self.run_heal()
+        self.assertEqual(code, 0)
+        written = json.loads(self.pointer().read_text())
+        self.assertEqual(written["environmentId"], "env_01LIVE")
+        self.assertEqual(written["pid"], 4242)
+        self.assertEqual(written["source"], "standalone")
+        self.assertIn("pointer", (self.log_dir / "heal.log").read_text())
+
+    def test_dry_run_writes_nothing(self):
+        code, out = self.run_heal(dry_run=True)
+        self.assertEqual(code, 0)
+        self.assertFalse(self.pointer().exists())
+        self.assertFalse((self.log_dir / "heal.log").exists())
+        self.assertIn("would", out)
+
+    def test_a_stopped_host_is_skipped_without_writing(self):
+        args = argparse.Namespace(action="heal", once=True, dry_run=False, preserve_worktrees=False)
+        with mock.patch.object(harness, "home", lambda: self.home), \
+             mock.patch.object(harness, "remote_control_log_dir", lambda: self.log_dir), \
+             mock.patch.object(harness, "claude_state_file", lambda: self.home / ".claude.json"), \
+             mock.patch.object(harness, "host_pid", lambda name: None), \
+             mock.patch.object(harness, "say", lambda line: None), \
+             mock.patch.object(harness.platform, "system", lambda: "Darwin"):
+            self.assertEqual(harness.cmd_remote_control_heal(args), 0)
+        self.assertFalse(self.pointer().exists())
+
+    def test_give_up_risk_is_logged_but_not_acted_on(self):
+        (self.log_dir / (self.label + ".log")).write_text(
+            "bridge up on env_01LIVE\n"
+            "[01:39:00] Connection error, retrying in 2s (0s elapsed)\n"
+            "[01:47:00] Connection error, retrying in 2m (480s elapsed)\n")
+        code, out = self.run_heal()
+        self.assertEqual(code, 0)
+        self.assertIn("give-up at 10m", out)
+
+    def test_wip_guard_commits_a_dirty_session_worktree(self):
+        tree = self.folder / ".claude" / "worktrees" / "bridge-cse_01A"
+        tree.mkdir()
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        subprocess.run(["git", "init", "-q", str(tree)], check=True)
+        subprocess.run(["git", "-C", str(tree), "commit", "-q", "--allow-empty", "-m", "init"],
+                       check=True, env=env)
+        (tree / "work.txt").write_text("unpushed")
+        self.assertEqual([p.name for p in harness.dirty_bridge_worktrees(self.folder)],
+                         ["bridge-cse_01A"])
+        with mock.patch.dict(os.environ, env):
+            self.assertTrue(harness.wip_commit(tree, dry=False))
+        self.assertEqual(harness.dirty_bridge_worktrees(self.folder), [])
+        subject = subprocess.run(["git", "-C", str(tree), "log", "-1", "--format=%s"],
+                                 capture_output=True, text=True).stdout.strip()
+        self.assertEqual(subject, "chore(wip): preserve work before reconnect")
+
+
 if __name__ == "__main__":
     unittest.main()
