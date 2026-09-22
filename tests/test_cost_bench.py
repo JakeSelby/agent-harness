@@ -749,8 +749,10 @@ class ManifestTests(unittest.TestCase):
     def setUp(self):
         self.tasks = BENCH.load_tasks(REPO / BENCH.TASKS)
 
-    def test_two_solved_issues_and_two_synthetic_tasks_are_pinned_by_full_sha(self):
-        self.assertEqual(sorted(t["kind"] for t in self.tasks), ["issue", "issue", "synthetic", "synthetic"])
+    def test_every_solved_issue_and_synthetic_task_is_pinned_by_full_sha(self):
+        kinds = [t["kind"] for t in self.tasks]
+        self.assertEqual((kinds.count("issue"), kinds.count("synthetic")), (6, 2))
+        self.assertEqual(len(kinds), len(set(t["id"] for t in self.tasks)))
         for task in self.tasks:
             self.assertRegex(task["parent_sha"], r"^[0-9a-f]{40}$")
             if task["kind"] == "issue":
@@ -763,6 +765,12 @@ class ManifestTests(unittest.TestCase):
             prompt = BENCH.prompt_of(task)
             for held in task["tests"].get("copy", []) + task["tests"].get("select", []) + ["oracle"]:
                 self.assertNotIn(held, prompt, msg=task["id"])
+
+    def test_every_task_declares_a_known_leak_class_the_loader_ignores(self):
+        for task in self.tasks:
+            self.assertIn(task["leak_class"], ("clean", "leaks", "control"), msg=task["id"])
+        self.assertEqual([t["id"] for t in self.tasks if t["leak_class"] != "clean"],
+                         ["link-alias", "cost-variants"])
 
     def test_a_malformed_task_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:

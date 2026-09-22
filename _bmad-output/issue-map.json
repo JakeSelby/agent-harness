@@ -5,10 +5,10 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 11,
-    "story": 178,
-    "task": 6,
-    "bug": 55,
-    "chore": 42,
+    "story": 173,
+    "task": 7,
+    "bug": 54,
+    "chore": 36,
     "spike": 7,
     "decision": 7
   },
@@ -784,7 +784,7 @@
       "bmad_id": "AH-E003",
       "github_number": 135,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/135",
-      "title": "Close the loop: Jev as the controller between measured rules and autonomy",
+      "title": "Add an optional semantic decision layer with Jev",
       "type": "epic",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-E003.md",
@@ -1778,7 +1778,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S103.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -2272,7 +2272,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B027.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -2987,7 +2987,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B041.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3000,7 +3000,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B045.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3039,7 +3039,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B046.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3065,7 +3065,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B048.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3091,7 +3091,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D003.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3169,7 +3169,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S148.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3195,7 +3195,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D004.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3247,7 +3247,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C032.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3260,7 +3260,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C033.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3273,7 +3273,20 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S150.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T006",
+      "github_number": 431,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/431",
+      "title": "Replay task set sits below the harness's break-even size",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T006.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3286,7 +3299,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C034.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3299,7 +3312,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B051.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3312,7 +3325,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T001.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3325,7 +3338,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-E008.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3338,7 +3351,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-E009.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3351,7 +3364,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-E010.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3364,7 +3377,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S151.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3377,7 +3390,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S170.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3390,7 +3403,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S152.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3403,7 +3416,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S153.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3416,7 +3429,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S154.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3429,7 +3442,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S155.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3442,7 +3455,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S156.md",
       "parent_bmad_id": "AH-E009",
       "parent_github_number": 443,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3455,7 +3468,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S157.md",
       "parent_bmad_id": "AH-E009",
       "parent_github_number": 443,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3468,7 +3481,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S158.md",
       "parent_bmad_id": "AH-E009",
       "parent_github_number": 443,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3481,7 +3494,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S159.md",
       "parent_bmad_id": "AH-E009",
       "parent_github_number": 443,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3494,7 +3507,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S160.md",
       "parent_bmad_id": "AH-E009",
       "parent_github_number": 443,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3507,7 +3520,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S161.md",
       "parent_bmad_id": "AH-E009",
       "parent_github_number": 443,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3520,7 +3533,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S162.md",
       "parent_bmad_id": "AH-E010",
       "parent_github_number": 444,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3533,7 +3546,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S163.md",
       "parent_bmad_id": "AH-E010",
       "parent_github_number": 444,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3546,7 +3559,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S164.md",
       "parent_bmad_id": "AH-E010",
       "parent_github_number": 444,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3559,7 +3572,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S165.md",
       "parent_bmad_id": "AH-E010",
       "parent_github_number": 444,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3572,7 +3585,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S166.md",
       "parent_bmad_id": "AH-E010",
       "parent_github_number": 444,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3585,7 +3598,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S167.md",
       "parent_bmad_id": "AH-E010",
       "parent_github_number": 444,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3598,7 +3611,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S168.md",
       "parent_bmad_id": "AH-E010",
       "parent_github_number": 444,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3611,7 +3624,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S169.md",
       "parent_bmad_id": "AH-E002",
       "parent_github_number": 116,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3624,7 +3637,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S171.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3637,7 +3650,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T002.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3650,7 +3663,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B053.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3663,7 +3676,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S172.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3676,7 +3689,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T003.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3689,7 +3702,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B052.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3702,7 +3715,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T004.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3715,7 +3728,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C035.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3728,162 +3741,6 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T005.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "completed",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C036",
-      "github_number": 516,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/516",
-      "title": "Fix the stale claims the enterprise-review intake found in our own docs",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C036.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S173",
-      "github_number": 517,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/517",
-      "title": "Unlisted model variants are unpriced instead of inheriting the family rate",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S173.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S174",
-      "github_number": 518,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/518",
-      "title": "Report the usage deduplication ratio beside the corrected figure",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S174.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-B054",
-      "github_number": 519,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/519",
-      "title": "Id-less assistant usage records are never deduplicated",
-      "type": "bug",
-      "native_type": "Bug",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-B054.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C037",
-      "github_number": 520,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/520",
-      "title": "State per runtime whether the model-tier restriction is enforced or advisory",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C037.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C038",
-      "github_number": 521,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/521",
-      "title": "Document the single-coordinator dispatch model and drop the dead hook entries from the template",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C038.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C039",
-      "github_number": 522,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/522",
-      "title": "Run the detector corpus in CI and label the repository-specific detectors",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C039.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S175",
-      "github_number": 523,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/523",
-      "title": "Add a tier-0 class with no model to the cost sidecar schema",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S175.md",
-      "parent_bmad_id": "AH-E003",
-      "parent_github_number": 135,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S176",
-      "github_number": 524,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/524",
-      "title": "Measure prompt-cache leverage: a cache axis in the replay, dispatch overhead, and the recorded TTL position",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S176.md",
-      "parent_bmad_id": "AH-E003",
-      "parent_github_number": 135,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S177",
-      "github_number": 525,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/525",
-      "title": "Record and replay model responses beneath the live cost benchmark",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S177.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C040",
-      "github_number": 526,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/526",
-      "title": "Capped reads ask for newest-first and assert the order",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C040.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C041",
-      "github_number": 527,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/527",
-      "title": "Log the enterprise-review roadmap intake",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C041.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
       "lifecycle": "active",
       "provenance": "authored"
     }
