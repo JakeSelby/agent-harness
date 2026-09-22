@@ -1,34 +1,9 @@
 # Comparing harnesses
 
-If you run a different set of rules and skills, these are the properties worth comparing.
-Each is observable in a transcript, not a matter of taste.
+This page has moved. The properties worth comparing, the projects that hold them today, and this
+repository's own gaps are in the dated [field scan](field-scan.md), which is re-checked on a
+schedule and replaced rather than amended.
 
-- **Transcript cost per task.** How many lines the user has to scroll past to find the answer:
-  raw tool output, relayed subagent reports, narration between tool calls. This harness caps
-  subagent returns at 400 words, forbids reprinting them, and makes the tool-call description
-  the log line.
-- **Where the verdict sits.** First line, or after the process story. The output style here
-  bans process openers and puts action items in one labelled section.
-- **What a plan looks like before approval.** One screen with the decisions numbered, or a
-  long document. The plan-authoring skill and its validator hook enforce a 70-line card.
-- **Delegation posture.** Whether gathering work is delegated by default, what tier it runs
-  on, and whether the return is bounded in the brief. Also whether anything found in a
-  subagent's summary can be executed directly (here: never).
-- **Permission posture in plan mode.** Whether exploring a codebase prompts on every read-only
-  command. The read-only hook here approves shell commands deterministically, with no model round trip,
-  so exploration never prompts in Manual mode or on API, Bedrock and Vertex sessions, where
-  Claude Code's own classifier is not on; in auto mode it skips the classifier's round trip.
-- **How preferences are handled.** Baked into the rules, or separable. Stances make the
-  preference layer explicit and swappable, and keep a fork mergeable.
-- **How the harness updates itself.** Whether "add a rule" lands in a repo with a lint and a
-  commit, or in a home directory nobody reviews.
-- **What is enforced versus advised.** Hooks enforce; rules advise. Count each.
-- **Whether the rules are measured.** A rule nobody can observe is a rule nobody can prune.
-  Here every rule names a deterministic detector over the transcript or opts out with a reason,
-  the lint enforces that, and `harness usage --rules` reports which rules fire.
-- **Whether irreversible commands are graded before they run.** A native prompt cannot tell
-  `git push` from `git push --force`. Here a hook grades every command 0–3 and asks, or denies
-  with a reason in the modes that never prompt, according to the autonomy stance.
-
-Send a comparison, or a counter-example, as an Idea issue. The point of publishing the harness
-is to find out which of these hold up outside one person's workflow.
+The one line worth keeping from the old version: send a comparison, or a counter-example, as an
+[Idea issue](https://github.com/JakeSelby/agent-harness/issues/new/choose). The point of publishing
+the harness is to find out which of its claims hold up outside one person's workflow.

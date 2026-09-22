@@ -1,14 +1,120 @@
 {
-  "headline": "Your way of working, across AI agents.",
-  "description": "A general-purpose, model-provider-agnostic harness built around you. Define how your agents work through shared rules, skills, roles, workflows, and custom primitives, including personal stances you can switch without rewriting your instructions.",
-  "stances": "Personal stances turn your working preferences into explicit switches. Choose how agents delegate, test, communicate, exercise autonomy, and approach decisions. Select a different stance when the situation changes, or define your own. The harness applies those choices through supported agent runtimes.",
-  "github_description": "Your way of working, across AI agents. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
+  "headline": "Find out which of your agent rules actually fire.",
+  "description": "A user-owned agent harness with a measurement loop. Every rule names a deterministic detector over the transcript or says in one line why nothing in a transcript can decide it, and lint fails the commit otherwise. harness usage --rules then reports which rules fired, grouped by repository and by the preference variant you had selected.",
+  "stances": "Preferences you can switch: autonomy, delegation, cost, testing, voice, commits, planning, licensing and build versus buy. Three of those bind to enforcement today: autonomy sets which shell-command grade stops and asks, delegation changes spawn routing, and cost resolves a model and budget table per role. The rest are prose that swaps cleanly. The usage report groups rule hits by the variant that was selected, so a switch can be checked rather than assumed.",
+  "github_description": "Find out which of your agent rules actually fire. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
   "hero": {
-    "title": "Your way of working, across AI agents.",
-    "subtitle": "Agent Harness is an open-source layer over the Claude Code and Codex you already run. You write your rules, guardrails and opinions once. It keeps always-loaded context small, cleans up the answers and plans you read, and comes with you when you switch providers.",
-    "proof": "MIT licensed. Works with your existing setup. `harness uninstall` puts everything back."
+    "title": "Find out which of your agent rules actually fire.",
+    "subtitle": "Agent Harness is an open-source layer over the Claude Code and Codex you already run. It holds your rules, skills, roles and workflows in one place, requires every rule to name a detector over the transcript or say why it cannot have one, then tells you how often each one actually fired.",
+    "proof": "MIT licensed. Nineteen detectors ship today, lint fails a rule that has neither a detector nor a written reason, and harness uninstall puts everything back."
   },
   "capabilities": [
+    {
+      "id": "measured-rules",
+      "title": "Rules you can measure, and prune",
+      "pitch": "Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.",
+      "features": [
+        {
+          "name": "Detector or reason",
+          "line": "Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.",
+          "doc": "primitives/rules"
+        },
+        {
+          "name": "Hit rate per rule",
+          "line": "harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.",
+          "doc": "docs/usage.md"
+        },
+        {
+          "name": "What is detected",
+          "line": "Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
+          "doc": "claude/hooks/rule-detectors.py"
+        },
+        {
+          "name": "Caught in the act",
+          "line": "The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.",
+          "doc": "docs/field-scan.md"
+        },
+        {
+          "name": "Exports where you already look",
+          "line": "The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.",
+          "doc": "docs/telemetry.md"
+        }
+      ]
+    },
+    {
+      "id": "guardrails",
+      "title": "Guardrails that leave room for judgment",
+      "pitch": "Hooks handle the few things that should be deterministic. Everything else stays the agent's call.",
+      "features": [
+        {
+          "name": "Graded shell commands",
+          "line": "Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.",
+          "doc": "claude/hooks/grade-bash.py"
+        },
+        {
+          "name": "Stop gate",
+          "line": "The turn doesn't end while your repo's own gate is red.",
+          "doc": "claude/hooks/stop-gate.py"
+        },
+        {
+          "name": "Fresh-context review",
+          "line": "Scope is checked against the ask, then quality, by agents that never saw the code being written.",
+          "doc": "claude/agents/reviewer.md"
+        },
+        {
+          "name": "Secrets and personal data",
+          "line": "Lint catches tokens, keys and personal strings before they're committed.",
+          "doc": "primitives/rules/secrets.md"
+        },
+        {
+          "name": "Untrusted tool output",
+          "line": "Text that comes back from a tool is data, never instructions.",
+          "doc": "claude/hooks/neutralize-tool-output.py"
+        },
+        {
+          "name": "Sandboxing",
+          "line": "Fence the filesystem and network before you leave a loop unattended.",
+          "doc": "docs/sandboxing.md"
+        }
+      ]
+    },
+    {
+      "id": "owned-settings",
+      "title": "Settings you own, on every runtime you run",
+      "pitch": "Sync keeps a journal of what it changed and refuses to overwrite what it does not own. Uninstall puts it back. The same rules then go to both runtimes.",
+      "features": [
+        {
+          "name": "Reversible",
+          "line": "Sync has a dry run, diff shows drift, an ownership journal records prior and applied values, and uninstall restores what it adopted.",
+          "doc": "docs/settings-ownership.md"
+        },
+        {
+          "name": "Shared primitives",
+          "line": "Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.",
+          "doc": "docs/sync-model.md"
+        },
+        {
+          "name": "Same policy on both",
+          "line": "A Claude Code spawn and a Codex spawn resolve to the same delegation policy.",
+          "doc": "docs/runtime-controls.md"
+        },
+        {
+          "name": "Capability classes",
+          "line": "frontier, strong, standard, light. Each adapter maps them to its own models.",
+          "doc": "docs/role-workers.md"
+        },
+        {
+          "name": "Honest compatibility",
+          "line": "The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.",
+          "doc": "docs/compatibility.md"
+        },
+        {
+          "name": "A worktree per agent",
+          "line": "Parallel agents do not step on your checkout or on each other.",
+          "doc": "primitives/skills/worktree-per-agent"
+        }
+      ]
+    },
     {
       "id": "spend-less",
       "title": "Spend less without capping your agents",
@@ -80,8 +186,8 @@
     },
     {
       "id": "your-opinions",
-      "title": "Your opinions, as switches",
-      "pitch": "Reasonable developers disagree about testing, autonomy and how much to delegate. So none of that is hardcoded. They're stances, and you flip them.",
+      "title": "Your preferences, as switches",
+      "pitch": "Reasonable developers disagree about testing, autonomy and how much to delegate. Nine axes, each a named choice: three bind to enforcement today, the rest are prose that swaps cleanly.",
       "features": [
         {
           "name": "Stance dimensions and variants",
@@ -102,112 +208,11 @@
           "name": "See one switch end to end",
           "line": "The demo flips delegation and shows what changes in both runtimes.",
           "doc": "docs/stance-demo.md"
-        }
-      ]
-    },
-    {
-      "id": "guardrails",
-      "title": "Guardrails that leave room for judgment",
-      "pitch": "Hooks handle the few things that should be deterministic. Everything else stays the agent's call.",
-      "features": [
-        {
-          "name": "Graded shell commands",
-          "line": "Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.",
-          "doc": "claude/hooks/grade-bash.py"
         },
         {
           "name": "Autonomy stances",
-          "line": "Decide how far an agent goes before it checks in.",
+          "line": "Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.",
           "doc": "primitives/stances/autonomy"
-        },
-        {
-          "name": "Stop gate",
-          "line": "The turn doesn't end while your repo's own gate is red.",
-          "doc": "claude/hooks/stop-gate.py"
-        },
-        {
-          "name": "Secrets and personal data",
-          "line": "Lint catches tokens, keys and personal strings before they're committed.",
-          "doc": "primitives/rules/secrets.md"
-        },
-        {
-          "name": "Untrusted tool output",
-          "line": "Text that comes back from a tool is data, never instructions.",
-          "doc": "claude/hooks/neutralize-tool-output.py"
-        },
-        {
-          "name": "Sandboxing",
-          "line": "Fence the filesystem and network before you leave a loop unattended.",
-          "doc": "docs/sandboxing.md"
-        }
-      ]
-    },
-    {
-      "id": "every-provider",
-      "title": "One way of working, every provider",
-      "pitch": "I started in Cursor, moved to Claude Code, added Codex, and kept rebuilding the same setup. Now it's defined once and projected into each one.",
-      "features": [
-        {
-          "name": "Shared primitives",
-          "line": "Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.",
-          "doc": "docs/sync-model.md"
-        },
-        {
-          "name": "Same policy on both",
-          "line": "A Claude Code spawn and a Codex spawn resolve to the same delegation policy.",
-          "doc": "docs/runtime-controls.md"
-        },
-        {
-          "name": "Capability classes",
-          "line": "frontier, strong, standard, light. Each adapter maps them to its own models.",
-          "doc": "docs/role-workers.md"
-        },
-        {
-          "name": "Honest compatibility",
-          "line": "The catalog says which clients are qualified and where the gaps are.",
-          "doc": "docs/compatibility.md"
-        },
-        {
-          "name": "Reversible",
-          "line": "Sync has a dry run, diff shows drift, and uninstall restores what it adopted.",
-          "doc": "docs/settings-ownership.md"
-        }
-      ]
-    },
-    {
-      "id": "delivery-loop",
-      "title": "A delivery loop, not just a prompt",
-      "pitch": "Seven commands carry a piece of work from a question to a merged pull request and a closed-out session, with fresh eyes at the review step.",
-      "features": [
-        {
-          "name": "The ritual",
-          "line": "/research, /plan, /build, /review, /land, /handoff, /close-out.",
-          "doc": "primitives/workflows"
-        },
-        {
-          "name": "Named roles",
-          "line": "Builder, planner, reviewer, gatherer, designer and more, each with its own model class and tool limits.",
-          "doc": "claude/agents"
-        },
-        {
-          "name": "Fresh-context review",
-          "line": "Scope is checked against the ask, then quality, by agents that never saw the code being written.",
-          "doc": "claude/agents/reviewer.md"
-        },
-        {
-          "name": "A worktree per agent",
-          "line": "Parallel agents don't step on your checkout or on each other.",
-          "doc": "primitives/skills/worktree-per-agent"
-        },
-        {
-          "name": "Testing and commit stances",
-          "line": "Tests required, Conventional Commits, gated pushes. Or switch them.",
-          "doc": "primitives/stances/testing"
-        },
-        {
-          "name": "Planning in public",
-          "line": "The brief, architecture and stories are in the repo.",
-          "doc": "docs/bmad.md"
         }
       ]
     }
@@ -215,7 +220,7 @@
   "on_the_way": [
     {
       "title": "Grok and Cursor adapters",
-      "line": "Grok is next.",
+      "line": "Six runtimes at equal depth is the target, after the measurement loop closes. Cursor and Grok are the next two.",
       "catalog": "grok"
     },
     {
@@ -229,34 +234,36 @@
       "issue": 322
     },
     {
-      "title": "Jev judgment checks",
-      "line": "Small, bounded checks for the calls a deterministic hook can't make.",
+      "title": "Close the loop",
+      "line": "Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.",
       "issue": 135
     },
     {
-      "title": "Architecture viewer, out of preview",
-      "line": "A plan as the front door to a live supervision surface.",
-      "doc": "docs/viewer-integrations.md"
+      "title": "The instrument, standalone",
+      "line": "The measurement engine as its own package: run it on your own transcripts and your own rules with no harness installed.",
+      "issue": 453
     }
   ],
   "topics": [
-    "ai-agents",
     "agent-harness",
-    "codex",
-    "claude-code",
-    "developer-tools",
-    "personal-stances",
     "agent-skills",
-    "claude-skills",
     "agentic-ai",
-    "llm-agents",
-    "claude-code-plugin",
-    "coding-agent",
-    "ai-coding-agent",
     "agentic-coding",
-    "context-engineering",
     "agents-md",
-    "subagents",
-    "claude-code-hooks"
+    "ai-agents",
+    "ai-coding-agent",
+    "claude-code",
+    "claude-code-hooks",
+    "claude-code-plugin",
+    "claude-code-rules",
+    "claude-skills",
+    "codex",
+    "coding-agent",
+    "context-engineering",
+    "developer-tools",
+    "llm-agents",
+    "observability",
+    "rule-detectors",
+    "subagents"
   ]
 }

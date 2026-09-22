@@ -15,3 +15,6 @@ __pycache__/
 /.agents/
 /.claude/skills/
 /.github/agents/
+
+# Research runs: the four curated-list README copies are other projects' text and stay local; digests carry the extracted claims.
+_bmad-output/planning-artifacts/research/**/imports/list-*.md

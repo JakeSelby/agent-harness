@@ -1,60 +1,66 @@
 {
-    "description": "Your way of working, across AI agents. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
+    "description": "Find out which of your agent rules actually fire. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
     "homepageUrl": "https://agent-harness.jakeselby.com",
     "repositoryTopics": [
         {
             "name": "agent-harness"
         },
         {
-            "name": "ai-agents"
-        },
-        {
-            "name": "claude-code"
-        },
-        {
-            "name": "developer-tools"
-        },
-        {
-            "name": "codex"
-        },
-        {
-            "name": "personal-stances"
-        },
-        {
             "name": "agent-skills"
-        },
-        {
-            "name": "claude-skills"
         },
         {
             "name": "agentic-ai"
         },
         {
-            "name": "llm-agents"
-        },
-        {
-            "name": "claude-code-plugin"
-        },
-        {
-            "name": "coding-agent"
-        },
-        {
-            "name": "ai-coding-agent"
-        },
-        {
             "name": "agentic-coding"
-        },
-        {
-            "name": "context-engineering"
         },
         {
             "name": "agents-md"
         },
         {
-            "name": "subagents"
+            "name": "ai-agents"
+        },
+        {
+            "name": "ai-coding-agent"
+        },
+        {
+            "name": "claude-code"
         },
         {
             "name": "claude-code-hooks"
+        },
+        {
+            "name": "claude-code-plugin"
+        },
+        {
+            "name": "claude-code-rules"
+        },
+        {
+            "name": "claude-skills"
+        },
+        {
+            "name": "codex"
+        },
+        {
+            "name": "coding-agent"
+        },
+        {
+            "name": "context-engineering"
+        },
+        {
+            "name": "developer-tools"
+        },
+        {
+            "name": "llm-agents"
+        },
+        {
+            "name": "observability"
+        },
+        {
+            "name": "rule-detectors"
+        },
+        {
+            "name": "subagents"
         }
     ]
 }

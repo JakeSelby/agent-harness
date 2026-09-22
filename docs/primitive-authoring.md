@@ -39,6 +39,12 @@ source and full resolved behavior. Custom dimensions are optional until selected
 use lowercase letters, digits and hyphens. Duplicate dimension/variant definitions, unknown
 selections and path traversal are errors, not fallback behavior.
 
+A skill, role or workflow name defined in two roots is an error as well. `harness lint` names
+both sources and `harness sync` refuses before it writes anything, because a runtime resolves a
+duplicate name silently, first-wins. A project's own `.claude/agents/` or `.claude/skills/` name
+is not a duplicate: the project definition is meant to win, so sync reports the shadow as a
+notice and carries on.
+
 Optional `constraints.json` alongside `stances/` can reject incompatible choices:
 
 ```json

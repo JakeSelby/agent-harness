@@ -408,9 +408,32 @@ def projections(root):
             clients = [row["id"] for row in data["clients"] if row["status"] == status]
             if clients:
                 lines.append("**" + status.capitalize() + ":** " + ", ".join("`" + name + "`" for name in clients) + ".")
+        lines.extend(compatibility_capability_table(root, data))
         block = "<!-- harness:compatibility:start -->\n" + "\n\n".join(lines) + "\n<!-- harness:compatibility:end -->"
         files[name] = re.sub(r"<!-- harness:compatibility:start -->.*?<!-- harness:compatibility:end -->", block, path.read_text(), flags=re.S)
     return files
+
+
+def compatibility_capability_table(root, data):
+    """The capability-by-client rows rendered beside the client statuses.
+
+    A capability's state is derived at generation time from the runtime's adapter, never written
+    here or in the catalog by hand. The layout follows the generated capability matrix in
+    wshobson/agents' `docs/harnesses.md`.
+    """
+    from . import compatibility
+    states = {row["id"]: compatibility.capability_states(root, data, row) for row in data["clients"]}
+    columns = [row["id"] for row in data["clients"] if states[row["id"]]]
+    names = sorted({name for row in columns for name in states[row]})
+    if not columns or not names:
+        return []
+    rows = ["| Capability | " + " | ".join("`" + name + "`" for name in columns) + " |",
+            "|---|" + "---|" * len(columns)]
+    for name in names:
+        rows.append("| `" + name + "` | "
+                    + " | ".join(states[client][name]["state"] for client in columns) + " |")
+    return ["A client's status is not a capability's status. Each cell is derived from that "
+            "runtime's `adapters/<runtime>/capabilities.json` at generation time:", "\n".join(rows)]
 
 
 def projection_drift(root):
