@@ -193,6 +193,24 @@ reports only the agent's **last** response: measured at 3,143 output tokens agai
 actually spent. Each line names the agent type, what it spent and, when its row carries budgets,
 the larger of the two ratios against them, prefixed `over budget` past a `nudge_at` multiple.
 
+The first line that carries a figure is followed, once per session, by what the figures are:
+output tokens and tool calls summed from each agent's own transcript, which is not the task
+notification's `subagent_tokens`. Measured live, one agent's line said 31,121 output tokens
+beside a notification's `subagent_tokens 102398`; both were right about different things.
+
+An agent resumed with a follow-up message stops once per round, against one agent id and one
+transcript. Every round is fed a line — `gatherer finished round 2 at 800 output tokens and
+2 tool calls (cumulative)` — because the transcript is the agent's whole life and a later
+round's figure covers the earlier ones. It stays one subagent in the session count, and only
+the rise reaches the session totals.
+
+A resumed agent's stop can fire before that round's responses are flushed, and the transcript
+ends on the previous round's finished response either way — so nothing about the file says the
+round is incomplete. What says it is the figure: a sum that has not passed the one already
+reported is a round that has not landed. Such a round is re-summed at each following event and
+nothing is said about it meanwhile, rather than a line repeating the previous round's number;
+after three tries, or a transcript that has gone, it is dropped unsaid.
+
 That sum is capped at 8 MiB from the end of the agent's transcript and at four seconds, because
 it runs inside a hook's timeout. When a cap bites, the line says `(partial)`; when the sum could
 not be made at all, it says `spend unknown` rather than reporting the agent at zero. Either way
@@ -208,6 +226,11 @@ budget shared by every agent that event reports. Agents that budget does not rea
 place and are summed at the next event. `spend unknown` therefore means a transcript that is not
 there; a transcript that is there and still holds no response says `spend not yet recorded`, and
 the figure it gains later reaches the session totals without the agent being named twice.
+
+`spend unknown` names the agent it is about — `unknown finished, spend unknown, no transcript
+found for agent a1b2c3` — and is fed once a session for that agent. It carries no figure and
+nothing will ever reconcile it, so repeating it turn after turn, which a session whose reader
+state was rebuilt used to do, only spends the orchestrator's context on a fact it has read.
 
 A synchronous return can also arrive before the agent's last response is on disk: one API
 response is written as several records, the early ones carrying a partial streaming count and

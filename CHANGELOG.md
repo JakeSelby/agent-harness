@@ -275,6 +275,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The usage feed says `spend unknown` once and names the agent it could not read, feeds a
+  cumulative line for every round of an agent resumed with a follow-up message rather than only
+  its first, and states once per session what its token figure measures so it cannot be read as
+  the task notification's `subagent_tokens` (#306).
 - `harness sync` installs the Claude Code output style from the `voice` stance instead of
   unconditionally: `scannable` installs `Scannable`, `answer-card` and `off` install none, a style
   you chose yourself survives, and a harness-installed style is removed when the variant changes.
