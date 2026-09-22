@@ -183,6 +183,7 @@ def release_errors(root):
     data = catalog(root)
     errors = [row["id"] + " is " + row["status"] for row in data["clients"]
               if row.get("required_for_release") and row["status"] != "qualified"]
+    errors += reconciliation_errors(root, data)
     if source_drift(root, data):
         errors.append("current runtime source differs from the released qualification source")
     return errors
@@ -194,3 +195,74 @@ def coverage(root, choices):
         bindings = json.loads((root / "adapters" / runtime / "capabilities.json").read_text())
         result[runtime] = {name: bindings["stances"].get(name, bindings["custom_stance_default"]) for name in choices}
     return result
+
+
+def capability_entries(root, runtime):
+    """An adapter's capability declarations: its stance dimensions and its role execution.
+
+    A missing adapter means the runtime declares no capability, which is how a `planned` client
+    reaches this code without inventing one.
+    """
+    path = root / "adapters" / runtime / "capabilities.json"
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text())
+    entries = dict(data.get("stances", {}))
+    if "role_execution" in data:
+        entries["role_execution"] = data["role_execution"]
+    return entries
+
+
+def capability_states(root, data, client):
+    """Per-capability qualification for one client, derived from that runtime's adapter.
+
+    A capability is qualified only when the client is qualified and a required acceptance case
+    the adapter names as exercising it passed for that client; it inherits nothing from the
+    client's own status. The rule and the optional `acceptance_cases` key are in
+    docs/compatibility.md.
+    """
+    # `catalog` refuses a qualified client whose evidence misses a required case, so a qualified
+    # client has passing native evidence for all of them and no other client has any.
+    passed = set(data["required_cases"]) if client.get("status") == "qualified" else set()
+    result = {}
+    for name, entry in sorted(capability_entries(root, client["runtime"]).items()):
+        cases = sorted(set(entry.get("acceptance_cases") or ()) & passed)
+        state = entry.get("qualification", "unqualified")
+        derived = "unqualified" if state == "qualified" and not cases else state
+        result[name] = {"state": derived, "declared": state,
+                        "mode": entry.get("mode"), "cases": cases}
+    return result
+
+
+def reconciliation_errors(root, data=None):
+    """Report where the catalog's acceptance cases and the adapters' capability states disagree.
+
+    The catalog is the single authority: a capability may claim `qualified` only against a case
+    the catalog requires, on a runtime some client has qualified natively.
+    """
+    data = catalog(root) if data is None else data
+    required, errors = set(data["required_cases"]), []
+    for runtime in sorted({row["runtime"] for row in data["clients"]}):
+        qualified = [row["id"] for row in data["clients"]
+                     if row["runtime"] == runtime and row["status"] == "qualified"]
+        for name, entry in sorted(capability_entries(root, runtime).items()):
+            label = runtime + " " + name
+            state, cases = entry.get("qualification"), entry.get("acceptance_cases") or []
+            if state not in STATES:
+                errors.append(label + " declares no valid qualification state")
+                continue
+            if not isinstance(cases, list) or not all(isinstance(case, str) for case in cases):
+                errors.append(label + " lists acceptance cases that are not strings")
+                continue
+            unknown = sorted(set(cases) - required)
+            if unknown:
+                errors.append(label + " names acceptance cases the catalog does not require: "
+                              + ", ".join(unknown))
+            if state == "qualified" and not cases:
+                errors.append(label + " is qualified with no acceptance case covering it")
+            if state == "qualified" and not qualified:
+                errors.append(label + " is qualified while no " + runtime + " client is")
+            if state != "qualified" and cases:
+                errors.append(label + " is " + state + " yet acceptance cases cover it: "
+                              + ", ".join(sorted(cases)))
+    return errors
