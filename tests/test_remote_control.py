@@ -91,10 +91,15 @@ class TrustAndPlanTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_trust_is_read_from_the_folder_or_a_parent(self):
+    def test_trust_is_read_from_the_exact_folder(self):
         self.assertTrue(remote_control.trusted(self.trusted, self.state))
-        self.assertTrue(remote_control.trusted(self.nested, self.state))
+        self.assertFalse(remote_control.trusted(self.nested, self.state))
         self.assertFalse(remote_control.trusted(self.untrusted, self.state))
+
+    def test_the_hint_names_the_command_that_fixes_it(self):
+        hint = remote_control.trust_hint(self.nested)
+        self.assertIn(f"bin/harness trust {self.nested}", hint)
+        self.assertIn("claude", hint)
 
     def test_missing_or_corrupt_state_is_untrusted(self):
         self.assertFalse(remote_control.trusted(self.trusted, self.base / "absent.json"))
@@ -132,6 +137,8 @@ class CommandTests(unittest.TestCase):
             mock.patch.object(harness.platform, "system", return_value="Darwin"),
             mock.patch.object(harness.shutil, "which", return_value="/opt/tools/claude"),
             mock.patch.object(harness, "launchctl", side_effect=self.launchctl),
+            # `status` asks the API which sessions are stranded; the suite never leaves the Mac.
+            mock.patch.object(harness, "lost_sessions", lambda folders: []),
         ]
         for p in patches:
             p.start()
@@ -165,14 +172,15 @@ class CommandTests(unittest.TestCase):
     def plist_path(self, folder):
         return self.home / "Library" / "LaunchAgents" / (remote_control.label(folder) + ".plist")
 
-    def test_install_loads_trusted_folder_and_reports_untrusted(self):
+    def test_install_loads_trusted_folder_and_refuses_untrusted(self):
         code, out = self.run_action("install")
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 1)
         data = plistlib.loads(self.plist_path(self.folder).read_bytes())
         self.assertEqual(data["WorkingDirectory"], str(self.folder))
         self.assertIn("auto", data["ProgramArguments"])
         self.assertFalse(self.plist_path(self.other).exists())
-        self.assertIn(f"skipped {self.other}", out)
+        self.assertIn(f"refusing {self.other}", out)
+        self.assertIn(f"bin/harness trust {self.other}", out)
         self.assertIn("bootstrap", [c[0] for c in self.calls])
 
     def test_reinstall_leaves_a_loaded_unchanged_agent_alone(self):
@@ -294,20 +302,20 @@ class RetryRunTests(unittest.TestCase):
         log = ("[01:30:00] Connected\n"
                "[01:40:00] Connection error, retrying in 2s (0s elapsed): fetch failed\n"
                "[01:47:30] Connection error, retrying in 2m (450s elapsed): fetch failed\n")
-        self.assertEqual(remote_control.retry_run_seconds(log), 450)
+        self.assertEqual(remote_control.unreachable_seconds(log), 450)
 
     def test_a_later_line_resets_the_run(self):
         log = ("[01:40:00] Connection error, retrying in 2s\n"
                "[01:47:30] Connection error, retrying in 2m\n"
                "[01:48:00] Connected\n")
-        self.assertEqual(remote_control.retry_run_seconds(log), 0)
+        self.assertEqual(remote_control.unreachable_seconds(log), 0)
 
     def test_a_run_crossing_midnight_does_not_go_negative(self):
         log = "[23:56:00] Connection error, retrying\n[00:04:00] Connection error, retrying\n"
-        self.assertEqual(remote_control.retry_run_seconds(log), 480)
+        self.assertEqual(remote_control.unreachable_seconds(log), 480)
 
     def test_a_single_line_is_not_yet_a_run(self):
-        self.assertEqual(remote_control.retry_run_seconds("[01:40:00] Connection error, retrying\n"), 0)
+        self.assertEqual(remote_control.unreachable_seconds("[01:40:00] Connection error, retrying\n"), 0)
 
 
 class HealPlistTests(unittest.TestCase):
@@ -392,14 +400,74 @@ class HealRunTests(unittest.TestCase):
             self.assertEqual(harness.cmd_remote_control_heal(args), 0)
         self.assertFalse(self.pointer().exists())
 
-    def test_give_up_risk_is_logged_but_not_acted_on(self):
-        (self.log_dir / (self.label + ".log")).write_text(
-            "bridge up on env_01LIVE\n"
-            "[01:39:00] Connection error, retrying in 2s (0s elapsed)\n"
-            "[01:47:00] Connection error, retrying in 2m (480s elapsed)\n")
-        code, out = self.run_heal()
+    def write_log(self, text):
+        (self.log_dir / (self.label + ".log")).write_text(text)
+
+    def test_an_outage_short_of_the_stop_is_only_warned_about(self):
+        self.write_log("bridge up on env_01LIVE\n"
+                       "[01:39:00] Connection error, retrying in 2s (0s elapsed): fetch failed\n"
+                       "[01:47:00] Connection error, retrying in 2m (480s elapsed): fetch failed\n")
+        with mock.patch.object(harness.os, "kill") as kill:
+            code, out = self.run_heal()
         self.assertEqual(code, 0)
-        self.assertIn("give-up at 10m", out)
+        self.assertIn("unreachable for 480s", out)
+        self.assertIn("give-up at 600s", out)
+        kill.assert_not_called()
+
+    def test_the_host_is_stopped_once_at_nine_minutes(self):
+        self.write_log("bridge up on env_01LIVE\n"
+                       "[01:39:00] Connection error, retrying in 2s (0s elapsed): fetch failed\n"
+                       "[01:48:01] Connection error, retrying in 2m (541s elapsed): fetch failed\n")
+        with mock.patch.object(harness, "claude_host_pid", lambda pid: 9001), \
+             mock.patch.object(harness.os, "kill") as kill:
+            _, out = self.run_heal()
+            self.assertEqual(kill.call_args[0], (9001, harness.signal.SIGTERM))
+            self.assertIn("SIGTERM to claude pid 9001 after 541s", out)
+            kill.reset_mock()
+            # The same host, still failing, on the next minute's pass: the pid is the guard.
+            _, again = self.run_heal()
+            kill.assert_not_called()
+        self.assertNotIn("SIGTERM", again)
+        state = remote_control.read_state(self.log_dir / remote_control.STATE_NAME)
+        self.assertEqual(state["stopped"], {self.label: 4242})
+
+    def test_system_sleep_resets_the_budget_and_stops_nothing(self):
+        self.write_log("bridge up on env_01LIVE\n"
+                       "[01:39:00] Connection error, retrying in 2s (0s elapsed): fetch failed\n"
+                       "[01:48:01] Connection error, retrying in 2m (541s elapsed): fetch failed\n"
+                       "[bridge:work] Detected system sleep (312s gap), resetting error budget\n")
+        with mock.patch.object(harness, "claude_host_pid", lambda pid: 9001), \
+             mock.patch.object(harness.os, "kill") as kill:
+            _, out = self.run_heal()
+        kill.assert_not_called()
+        self.assertNotIn("SIGTERM", out)
+
+    def test_a_removed_worktree_is_recreated_at_its_path_and_branch(self):
+        root = self.folder
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        subprocess.run(["git", "init", "-q", "-b", "main", str(root)], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "--allow-empty", "-m", "init"],
+                       check=True, env=env)
+        tree = root / ".claude" / "worktrees" / "bridge-cse_019mg2am4VzseDSBP658Z3j6"
+        self.write_log(
+            "bridge up on env_01LIVE\n"
+            "[01:47:17] Error: Persistent errors for 10 minutes, giving up.\n"
+            "[01:47:17] Shutting down 5 active session(s)…\n"
+            f"[01:47:19] removed worktree {tree}\n"
+            f"[01:47:23] kept worktree {root}/.claude/worktrees/bridge-cse_01X · uncommitted changes\n")
+        with mock.patch.dict(os.environ, env):
+            _, out = self.run_heal()
+        self.assertTrue(tree.is_dir())
+        self.assertIn(f"worktree {tree}: recreated on worktree-bridge-cse_019mg2am4VzseDSBP658Z3j6", out)
+        self.assertNotIn("bridge-cse_01X", out)
+        branch = subprocess.run(["git", "-C", str(tree), "branch", "--show-current"],
+                                capture_output=True, text=True).stdout.strip()
+        self.assertEqual(branch, "worktree-bridge-cse_019mg2am4VzseDSBP658Z3j6")
+        # A second pass has the line in its state and does not fight a worker for the directory.
+        with mock.patch.dict(os.environ, env):
+            _, again = self.run_heal()
+        self.assertNotIn("worktree", again)
 
     def test_wip_guard_commits_a_dirty_session_worktree(self):
         tree = self.folder / ".claude" / "worktrees" / "bridge-cse_01A"
@@ -418,6 +486,142 @@ class HealRunTests(unittest.TestCase):
         subject = subprocess.run(["git", "-C", str(tree), "log", "-1", "--format=%s"],
                                  capture_output=True, text=True).stdout.strip()
         self.assertEqual(subject, "chore(wip): preserve work before reconnect")
+
+
+# Every line here is copied from a real host log, so a wording change upstream fails a test
+# rather than silently disarming the supervisor.
+GIVE_UP_LOG = """[01:47:17] Error: Persistent errors for 10 minutes, giving up.
+[01:47:17] Shutting down 5 active session(s)…
+[01:47:19] removed worktree /repos/app/.claude/worktrees/bridge-cse_019mg2am4VzseDSBP658Z3j6
+[01:47:23] kept worktree /repos/app/.claude/worktrees/bridge-cse_01XvYaz9pZw94g7wzjJ6EJHM · uncommitted changes
+"""
+
+
+class HostLogTests(unittest.TestCase):
+    def test_the_elapsed_figure_the_host_prints_wins_over_the_clock(self):
+        log = ("[01:39:00] Connected\n"
+               "[01:48:01] Connection error, retrying in 2m (541s elapsed): fetch failed\n")
+        self.assertEqual(remote_control.unreachable_seconds(log), 541)
+
+    def test_a_reconnect_ends_the_run(self):
+        log = ("[01:48:01] Connection error, retrying in 2m (541s elapsed): fetch failed\n"
+               "[02:25:43] Reconnected after 7s\n")
+        self.assertEqual(remote_control.unreachable_seconds(log), 0)
+
+    def test_system_sleep_resets_the_budget(self):
+        log = ("[01:48:01] Connection error, retrying in 2m (541s elapsed): fetch failed\n"
+               "[bridge:work] Detected system sleep (312s gap), resetting error budget\n")
+        self.assertEqual(remote_control.unreachable_seconds(log), 0)
+        self.assertTrue(remote_control.SLEEP_RESET.search(log))
+
+    def test_the_give_up_and_shutdown_lines_are_recognised(self):
+        self.assertTrue(remote_control.gave_up(GIVE_UP_LOG))
+        self.assertEqual(remote_control.SHUTTING_DOWN.search(GIVE_UP_LOG).group(1), "5")
+        self.assertFalse(remote_control.gave_up("[01:39:00] Connected\n"))
+
+    def test_removed_worktrees_leave_out_the_kept_one(self):
+        self.assertEqual(remote_control.removed_worktrees(GIVE_UP_LOG),
+                         [("01:47:19", "/repos/app/.claude/worktrees/bridge-cse_019mg2am4VzseDSBP658Z3j6")])
+
+    def test_the_caffeinate_wrapper_is_not_the_host(self):
+        self.assertFalse(remote_control.is_host_process(
+            "/usr/bin/caffeinate -is /u/.local/bin/claude remote-control --name app"))
+        self.assertTrue(remote_control.is_host_process(
+            "/u/.local/bin/claude remote-control --name app --spawn worktree"))
+
+
+class SupervisorStateTests(unittest.TestCase):
+    def test_a_missing_or_junk_file_is_an_empty_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / remote_control.STATE_NAME
+            self.assertEqual(remote_control.read_state(path), {"stopped": {}, "recreated": []})
+            path.write_text("[]")
+            self.assertEqual(remote_control.read_state(path), {"stopped": {}, "recreated": []})
+
+    def test_the_stop_fires_once_per_host_process(self):
+        state = {"stopped": {}, "recreated": []}
+        self.assertFalse(remote_control.stop_is_due(539, "label", 10, state))
+        self.assertTrue(remote_control.stop_is_due(540, "label", 10, state))
+        remote_control.record_stop(state, "label", 10)
+        self.assertFalse(remote_control.stop_is_due(700, "label", 10, state))
+        # launchd's relaunch is a new pid, and its own outage gets its own stop.
+        self.assertTrue(remote_control.stop_is_due(700, "label", 11, state))
+
+    def test_a_worktree_line_is_acted_on_once(self):
+        state = {"stopped": {}, "recreated": []}
+        removed = [("01:47:19", "/repos/app/.claude/worktrees/bridge-cse_01A")]
+        self.assertEqual(remote_control.unseen_worktrees(removed, state), removed)
+        remote_control.record_worktree(state, *removed[0])
+        self.assertEqual(remote_control.unseen_worktrees(removed, state), [])
+
+    def test_the_add_command_reuses_a_surviving_branch(self):
+        fresh = remote_control.worktree_add_argv("/r", "/r/w", "worktree-bridge-cse_01A", "main", False)
+        self.assertEqual(fresh[-4:], ["/r/w", "-b", "worktree-bridge-cse_01A", "main"])
+        kept = remote_control.worktree_add_argv("/r", "/r/w", "worktree-bridge-cse_01A", "main", True)
+        self.assertEqual(kept[-2:], ["/r/w", "worktree-bridge-cse_01A"])
+
+
+class LostSessionTests(unittest.TestCase):
+    # The shape of one page of `GET /v1/code/sessions?limit=50`, observed 2026-09-22.
+    PAGE = {"data": [
+        {"id": "cse_01LOST", "status": "active", "connection_status": "disconnected",
+         "environment_id": "env_01LIVE", "title": "0.12 release checklist",
+         "updated_at": "2026-09-22T17:49:06.555477Z"},
+        {"id": "cse_01HERE", "status": "active", "connection_status": "connected",
+         "environment_id": "env_01LIVE", "title": "still served",
+         "updated_at": "2026-09-22T17:50:26Z"},
+        {"id": "cse_01OLD", "status": "archived", "connection_status": "disconnected",
+         "environment_id": "env_01LIVE", "title": "archived", "updated_at": "2026-09-21T00:00:00Z"},
+        {"id": "cse_01THEIRS", "status": "active", "connection_status": "disconnected",
+         "environment_id": "env_01OTHERMAC", "title": "another device",
+         "updated_at": "2026-09-22T17:00:00Z"}], "next_cursor": None}
+
+    def test_the_token_comes_out_of_the_keychain_payload(self):
+        self.assertEqual(remote_control.oauth_token(
+            json.dumps({"claudeAiOauth": {"accessToken": "sk-live", "scopes": []}})), "sk-live")
+        self.assertIsNone(remote_control.oauth_token("not json"))
+        self.assertIsNone(remote_control.oauth_token(json.dumps({"claudeAiOauth": {}})))
+
+    def test_the_request_carries_the_oauth_beta_headers(self):
+        request = remote_control.sessions_request("sk-live")
+        self.assertEqual(request.get_header("Authorization"), "Bearer sk-live")
+        self.assertEqual(request.get_header("Anthropic-beta"), "oauth-2025-04-20")
+        self.assertEqual(request.get_header("Anthropic-version"), "2023-06-01")
+
+    def test_only_this_mac_s_active_disconnected_sessions_count(self):
+        rows = remote_control.disconnected_sessions(self.PAGE["data"], ["env_01LIVE"])
+        self.assertEqual([r["id"] for r in rows], ["cse_01LOST"])
+        self.assertEqual(remote_control.disconnected_sessions(self.PAGE["data"], []), [])
+
+    def test_a_failed_call_is_none_and_not_an_exception(self):
+        def boom(request, timeout=None):
+            raise OSError("no route to host")
+        self.assertIsNone(remote_control.fetch_sessions("sk-live", opener=boom))
+
+    def test_status_prints_the_manual_command_with_its_warning(self):
+        payload = json.dumps(self.PAGE).encode()
+        opener = mock.MagicMock()
+        opener.return_value.__enter__.return_value.read.return_value = payload
+        lines = []
+        with mock.patch.object(remote_control, "urlopen", opener), \
+             mock.patch.object(harness, "claude_oauth_token", lambda: "sk-live"), \
+             mock.patch.object(harness, "host_environment_ids", lambda folders: ["env_01LIVE"]), \
+             mock.patch.object(harness, "say", lines.append):
+            found = harness.report_lost_sessions([Path("/repos/app")], {"permission_mode": "auto"})
+        out = "\n".join(lines)
+        self.assertEqual(found, 1)
+        self.assertIn("1 active but disconnected", out)
+        self.assertIn("claude remote-control --session-id cse_01LOST --permission-mode auto", out)
+        self.assertIn(remote_control.REATTACH_WARNING, out)
+        self.assertNotIn("cse_01THEIRS", out)
+        self.assertNotIn("sk-live", out)
+
+    def test_no_token_reads_differently_from_no_lost_sessions(self):
+        lines = []
+        with mock.patch.object(harness, "claude_oauth_token", lambda: None), \
+             mock.patch.object(harness, "say", lines.append):
+            self.assertEqual(harness.report_lost_sessions([], {"permission_mode": "default"}), 0)
+        self.assertIn("not checked", "\n".join(lines))
 
 
 if __name__ == "__main__":

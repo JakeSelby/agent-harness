@@ -12,6 +12,7 @@ import plistlib
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 LABEL_PREFIX = "com.agent-harness.remote-control."
 SPAWN_MODES = ("same-dir", "worktree", "session")
@@ -88,19 +89,25 @@ def render(folder, opts, claude_bin, home, log_dir):
 
 
 def trusted(folder, claude_json):
-    """Whether Claude Code's workspace-trust dialog was accepted for the folder or a parent."""
+    """Whether Claude Code's workspace-trust dialog was accepted for this exact folder.
+
+    A trusted parent does not trust a child: Claude Code keys trust by the directory it was
+    started in, so a host in an untrusted child exits at the prompt and launchd restarts that
+    refusal every minute forever.
+    """
     try:
         projects = json.loads(Path(claude_json).read_text(encoding="utf-8")).get("projects", {})
     except (OSError, ValueError):
         return False
     if not isinstance(projects, dict):
         return False
-    folder = Path(folder)
-    for candidate in [folder] + list(folder.parents):
-        entry = projects.get(str(candidate))
-        if isinstance(entry, dict) and entry.get("hasTrustDialogAccepted") is True:
-            return True
-    return False
+    entry = projects.get(str(Path(folder)))
+    return isinstance(entry, dict) and entry.get("hasTrustDialogAccepted") is True
+
+
+def trust_hint(folder):
+    """The one line that fixes an untrusted folder, named in `install` and in `status`."""
+    return f"workspace trust not accepted; run `bin/harness trust {folder}` then `claude` there once"
 
 
 def installed(agents_dir):
@@ -121,7 +128,7 @@ def plan(opts, agents_dir, claude_json):
         if not folder.is_dir():
             skipped.append((folder, "not a directory"))
         elif not trusted(folder, claude_json):
-            skipped.append((folder, "workspace trust not accepted; run `claude` there once"))
+            skipped.append((folder, trust_hint(folder)))
         else:
             serve.append(folder)
     wanted = {label(f) for f in serve}
@@ -143,7 +150,21 @@ POINTER_KEYS = ("sessionId", "environmentId", "source", "pid", "procStart",
                 "projectThreadSessionIds", "projectThreadSessionIdsPersistedAt")
 CARRIED_KEYS = POINTER_KEYS[5:]
 ENV_ID = re.compile(r"env_01[A-Za-z0-9]+")
+# The host prints its own error-budget age, so it is read rather than recomputed from the clock:
+# `[01:46:00] Connection error, retrying in 2m (541s elapsed): fetch failed`.
 RETRY_LINE = re.compile(r"\[(\d{2}):(\d{2}):(\d{2})\][^\n]*Connection error, retrying")
+RETRY_ELAPSED = re.compile(r"Connection error, retrying[^\n]*?\((\d+)s elapsed\)")
+# `[bridge:work] Detected system sleep (312s gap), resetting error budget` — the host starts the
+# budget again on wake, so the supervisor must too or it would stop a host that is not failing.
+SLEEP_RESET = re.compile(r"Detected system sleep \((\d+)s gap\), resetting error budget")
+RECONNECTED = re.compile(r"Reconnected after (\d+)s")
+GAVE_UP = re.compile(r"Persistent errors for \d+ minutes?, giving up\.")
+SHUTTING_DOWN = re.compile(r"Shutting down (\d+) active session\(s\)")
+REMOVED_WORKTREE = re.compile(r"\[(\d{2}:\d{2}:\d{2})\]\s*removed worktree (\S.*?)\s*$")
+# `connGiveUpMs` is hardcoded at ten minutes and its path archives every session and deregisters
+# the environment; nine minutes leaves a minute to stop the host while a restart can still resume.
+GIVE_UP_SECONDS = 600
+STOP_AT_SECONDS = 540
 
 
 def project_slug(folder):
@@ -191,26 +212,54 @@ def environment_id(log_text):
     return found[-1] if found else None
 
 
-def retry_run_seconds(log_text, now=None):
+def unreachable_seconds(log_text):
     """How long the host has been failing to reach the server, from the trailing run of
-    `Connection error, retrying` lines. Zero when the log ends on anything else, because a
-    later line means the poll loop recovered. Times are `[HH:MM:SS]` with no date, so a run
-    crossing midnight reads as a wrap, not as a negative gap."""
-    stamps = []
+    `Connection error, retrying` lines.
+
+    The `(Ns elapsed)` figure is the host's own error budget and wins; a log without one falls
+    back to the `[HH:MM:SS]` span, which reads a run crossing midnight as a wrap rather than as
+    a negative gap. Any other line ends the run, so a reconnect and the system-sleep reset both
+    put the budget back to zero — as they do inside the host.
+    """
+    elapsed, stamps = 0, []
     for line in (log_text or "").splitlines():
+        if not line.strip():
+            continue
         found = RETRY_LINE.search(line)
+        if not found:
+            elapsed, stamps = 0, []
+            continue
+        stamps.append(tuple(int(part) for part in found.groups()))
+        counted = RETRY_ELAPSED.search(line)
+        if counted:
+            elapsed = int(counted.group(1))
+    span = 0
+    if len(stamps) >= 2:
+        first, last = stamps[0], stamps[-1]
+        start = timedelta(hours=first[0], minutes=first[1], seconds=first[2])
+        end = timedelta(hours=last[0], minutes=last[1], seconds=last[2])
+        if end < start:
+            end += timedelta(days=1)
+        span = int((end - start).total_seconds())
+    return max(elapsed, span)
+
+
+def removed_worktrees(log_text):
+    """`(stamp, path)` for every session worktree the give-up cleanup deleted.
+
+    A `kept worktree … · uncommitted changes` line is not one: that checkout still exists.
+    """
+    out = []
+    for line in (log_text or "").splitlines():
+        found = REMOVED_WORKTREE.search(line)
         if found:
-            stamps.append(tuple(int(part) for part in found.groups()))
-        elif line.strip():
-            stamps = []
-    if len(stamps) < 2:
-        return 0
-    first, last = stamps[0], stamps[-1]
-    start = timedelta(hours=first[0], minutes=first[1], seconds=first[2])
-    end = timedelta(hours=last[0], minutes=last[1], seconds=last[2])
-    if end < start:
-        end += timedelta(days=1)
-    return int((end - start).total_seconds())
+            out.append((found.group(1), found.group(2)))
+    return out
+
+
+def gave_up(log_text):
+    """Whether the log's last give-up is more recent than its last registration."""
+    return bool(GAVE_UP.search(log_text or ""))
 
 
 def pointer_is_current(existing, wanted, path, now=None):
@@ -246,3 +295,144 @@ def heal_plist(harness_bin, home, log_dir, claude_bin=None):
 
 def render_heal(harness_bin, home, log_dir, claude_bin=None):
     return plistlib.dumps(heal_plist(harness_bin, home, log_dir, claude_bin), sort_keys=True)
+
+
+# --------------------------------------------------------------------------- supervisor state
+
+STATE_NAME = "supervisor-state.json"
+
+
+def read_state(path):
+    """What the supervisor already did: `{"stopped": {label: pid}, "recreated": [key]}`.
+
+    A missing or unreadable file is an empty state, so the worst a lost file costs is one
+    repeated SIGTERM to a host that is failing anyway.
+    """
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        value = None
+    value = value if isinstance(value, dict) else {}
+    stopped = value.get("stopped")
+    recreated = value.get("recreated")
+    return {"stopped": stopped if isinstance(stopped, dict) else {},
+            "recreated": recreated if isinstance(recreated, list) else []}
+
+
+def stop_is_due(elapsed, label, pid, state):
+    """Whether this host should be stopped now, and has not been stopped already.
+
+    The guard is the pid: launchd's relaunch is a new process, so the next outage stops the new
+    host once and this one never twice.
+    """
+    return elapsed >= STOP_AT_SECONDS and state["stopped"].get(label) != pid
+
+
+def record_stop(state, label, pid):
+    state["stopped"][str(label)] = int(pid)
+    return state
+
+
+def worktree_key(stamp, path):
+    return f"{stamp} {path}"
+
+
+def unseen_worktrees(removed, state):
+    """The `removed worktree` lines this run has not already acted on, oldest first."""
+    seen = set(state["recreated"])
+    return [(stamp, path) for stamp, path in removed if worktree_key(stamp, path) not in seen]
+
+
+def record_worktree(state, stamp, path):
+    state["recreated"].append(worktree_key(stamp, path))
+    # One outage's worth of keys is all that matters; the log itself rotates far more slowly.
+    state["recreated"] = state["recreated"][-256:]
+    return state
+
+
+def worktree_branch(path):
+    """The branch name Claude Code gives a spawned session's worktree: `worktree-<dirname>`."""
+    return "worktree-" + Path(path).name
+
+
+def worktree_add_argv(root, path, branch, base, branch_exists):
+    """`git worktree add`, attaching the session's branch when it survived the cleanup.
+
+    The host deletes the checkout but not always the branch, and re-creating a branch that
+    exists fails, so the two cases take different argument forms.
+    """
+    argv = ["git", "-C", str(root), "worktree", "add"]
+    return argv + ([str(path), branch] if branch_exists else [str(path), "-b", branch, str(base)])
+
+
+# --------------------------------------------------------------------------- lost sessions
+
+SESSIONS_URL = "https://api.anthropic.com/v1/code/sessions?limit=50"
+KEYCHAIN_SERVICE = "Claude Code-credentials"
+API_HEADERS = {"anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20"}
+# `--session-id` reattach hosts register the lost environment a second time, as a single-session
+# environment that then takes new chats from the client, so the command is printed and never run.
+REATTACH_WARNING = ("reattaching registers a second environment for this Mac and new chats may "
+                    "land on it; stop the host as soon as the session has answered")
+
+
+def oauth_token(keychain_payload):
+    """The claude.ai access token out of the keychain item's JSON. Never logged or stored."""
+    try:
+        value = json.loads(keychain_payload or "")
+    except ValueError:
+        return None
+    token = (value.get("claudeAiOauth") or {}).get("accessToken") if isinstance(value, dict) else None
+    return token if isinstance(token, str) and token else None
+
+
+def sessions_request(token):
+    return Request(SESSIONS_URL, headers=dict(API_HEADERS, Authorization="Bearer " + token))
+
+
+def fetch_sessions(token, opener=None):
+    """The account's recent Remote Control sessions, or None when the call fails.
+
+    A failure here is a report line, never an exit code: the supervisor's other work does not
+    depend on the network.
+    """
+    try:
+        with (opener or urlopen)(sessions_request(token), timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - any network or parse failure reads the same to the caller
+        return None
+    data = payload.get("data") if isinstance(payload, dict) else None
+    return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else None
+
+
+def disconnected_sessions(rows, environment_ids):
+    """Sessions still `active` whose bridge is `disconnected`, on an environment this Mac ran.
+
+    An archived session is past recovery and one on another device's environment is not ours,
+    so both are left out.
+    """
+    wanted = {str(e) for e in (environment_ids or [])}
+    out = []
+    for row in rows or []:
+        if row.get("status") != "active" or row.get("connection_status") != "disconnected":
+            continue
+        if row.get("environment_id") not in wanted:
+            continue
+        out.append(row)
+    return sorted(out, key=lambda row: str(row.get("updated_at") or ""), reverse=True)
+
+
+def reattach_command(session, permission_mode="default"):
+    """The manual recovery line for one lost session. Printed for the user to run, not run."""
+    return (f"claude remote-control --session-id {session.get('id')} "
+            f"--permission-mode {permission_mode}")
+
+
+def is_host_process(command):
+    """Whether a `ps -o command=` line is the `claude` host itself, not its caffeinate wrapper.
+
+    `keep_awake` makes the launchd job pid caffeinate's, and signalling that leaves the host
+    running, so the signal has to find the child.
+    """
+    parts = (command or "").split()
+    return bool(parts) and Path(parts[0]).name != "caffeinate" and "remote-control" in parts

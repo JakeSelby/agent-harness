@@ -57,12 +57,52 @@ can be deleted by a cleanup. Actions are appended to
 Heal does not rescue an environment the give-up path already deregistered: reuse is refused once
 the environment is gone, and so is the bridge reconnect endpoint.
 
+## Stopping a host before it gives up
+
+The ten-minute give-up is hardcoded in Claude Code and its path is destructive, so the fix is to
+never reach it. Each pass reads the host's log for the trailing run of
+`Connection error, retrying in 2m (541s elapsed)` lines — the host prints its own error-budget
+age, so it is read rather than timed — and at nine minutes sends one `SIGTERM` to the host's
+`claude` process, the child when `keep_awake` wraps it in `caffeinate`. launchd's `KeepAlive`
+starts it again within the throttle interval, and it registers asking to reuse the environment in
+the pointer heal has just refreshed. The stop fires once per host process: the relaunched host has
+a new pid and gets its own. A `Detected system sleep (Ns gap), resetting error budget` line, and a
+`Reconnected after Ns` line, both end the run, because the host restarts its budget there too.
+
+If the host gave up before the supervisor reached it, its log names the session worktrees the
+cleanup deleted. Heal recreates each at its path, attaching the branch when it survived and
+branching from the default branch when it did not, so a session picked up by a later lease has its
+directory. A worktree the host `kept … · uncommitted changes` is left alone, and every line is
+acted on once.
+
+## Sessions that were lost anyway: `status`
+
+`harness remote-control status` asks the account which sessions are still `active` with a
+`disconnected` bridge on an environment this Mac registered, and prints the reattach command for
+each. It does not run them. A `claude remote-control --session-id <id>` host registers the lost
+environment a *second* time, as a single-session environment, and the client then routes new chats
+to it — recovering five sessions that way leaves five stray environments competing for new work,
+and in 2.1.278 each host binds to the session the previous one was asked for rather than its own
+`--session-id`. So the recovery stays a deliberate, one-at-a-time act: run the command from an
+unused directory, let the session answer, and stop that host.
+
+The claude.ai token is read from the login keychain for the duration of the call and is never
+printed, logged or written anywhere.
+
+`harness doctor` reports the same ground per configured folder: whether the host process is alive,
+which environment it registered, whether the pointer names that environment and that pid, how long
+it has been unreachable, and how many of its sessions are disconnected.
+
 ## What it will not do
 
 - **Accept workspace trust for you.** The server refuses a folder whose trust dialog was never
-  accepted, and launchd would restart that refusal forever, so `install` skips the folder and
-  says so. Run `claude` in the folder once, accept the dialog, and re-run `install`.
-  `harness trust` is a different gate: it lets the stop-gate hook run a repository's gate.
+  accepted, and launchd would restart that refusal forever, so `install` refuses the folder and
+  exits non-zero with the fix. Trust is per exact directory: a trusted repository does not trust
+  its worktrees, and the failure is a host that exits with
+  `Error: Workspace not trusted. Please run \`claude\` in <path> first …` every minute. Run
+  `claude` in the folder once and accept the dialog. `harness trust` is a different gate — it
+  lets the stop-gate hook run a repository's gate — and `install` names it alongside, because a
+  folder served unattended usually wants both.
 - **Take over a folder already served from a terminal.** Claude Code allows one server per
   folder per device. Stop the terminal server; the agent retries every minute.
 - **Sign in.** The server uses the claude.ai login of the account that ran `install`. An API key
