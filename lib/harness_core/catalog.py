@@ -51,8 +51,12 @@ def resolve_stances(root, config):
             raise ValueError("primitive_roots must be absolute directories")
         roots.append(custom / "stances")
     available = {}
-    for source in roots:
+    for index, source in enumerate(roots):
         if not source.is_dir():
+            # A custom root may carry rules and skills only — `harness import` writes one — so a
+            # root with no `stances/` contributes nothing rather than breaking every sync.
+            if index:
+                continue
             raise ValueError("missing stance source: " + str(source))
         for dimension in sorted(source.iterdir()):
             if dimension.is_dir():

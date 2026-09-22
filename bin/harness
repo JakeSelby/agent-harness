@@ -48,7 +48,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client, keychain, collisions
+from harness_core import codex_client, keychain, collisions, importer
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -983,6 +983,12 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
     session_keys = [key for key in os.environ if key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
                     or key in ("HARNESS_PROJECT_CONFIG", "HARNESS_PERMISSIONS")]
     cfg = load_config({key: value for key, value in os.environ.items() if key not in session_keys})
+    # A root the caller is about to register, so `import` can show the projection of a root the
+    # configuration does not carry yet. Nothing else sets it, and a dry run is the only user.
+    for extra in getattr(args, "extra_roots", None) or []:
+        roots = cfg.setdefault("primitive_roots", [])
+        if str(extra) not in roots:
+            roots.append(str(extra))
     if session_keys:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
     # Before anything is written: a name two roots both define is resolved by the runtime
@@ -2205,6 +2211,87 @@ def cmd_install(args: argparse.Namespace) -> int:
     return rc
 
 
+def import_state_path() -> Path:
+    """Plans `harness import` has printed but not yet applied, keyed by source file."""
+    return state_dir() / "imports.json"
+
+
+def import_root(args: argparse.Namespace, name: str) -> Path:
+    if not args.root:
+        return home() / ".config" / "agent-harness" / "imported" / name
+    root = Path(args.root).expanduser()
+    if not root.is_absolute():
+        raise SystemExit("--root must be an absolute directory outside this checkout")
+    if root == REPO / "primitives" or REPO / "primitives" in root.parents:
+        raise SystemExit("import writes to an external primitive root, never into " + str(REPO / "primitives"))
+    return root
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Split an existing instruction file into primitives under an external root.
+
+    Two runs by design: the first prints the rules it would write and the sync projection of the
+    root carrying them, the second applies exactly that plan. Adopting somebody's instruction
+    file is a decision, and the diff is what makes it one.
+    """
+    source = Path(args.path).expanduser()
+    if not source.is_file():
+        raise SystemExit("import: no such file: " + str(source))
+    try:
+        files, notices = importer.plan(source, args.name)
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        raise SystemExit("import: " + str(exc))
+    name = importer.slug(args.name) if args.name else importer.default_name(source, importer.kind_of(source))
+    root = import_root(args, name)
+
+    owner = reconcile.Store(state_dir(), dry=True).data["files"].get(str(source.resolve()))
+    if owner is not None:
+        say("owned: " + str(source.resolve()) + " is a file the harness generated")
+        say("       " + json.dumps({k: v for k, v in owner.items() if k != "prior"}))
+        say("       edit its primitive and re-run `harness sync` instead of importing it")
+        say("import refused: nothing was written")
+        return 2
+    cfg = load_config()
+    projected = dict(cfg, primitive_roots=list(cfg.get("primitive_roots", [])) + [str(root)])
+    refusals = collisions.findings(REPO, projected)
+    if refusals:
+        for line in refusals:
+            say(line)
+        say("import refused: nothing was written")
+        return 2
+
+    say(f"agent-harness {VERSION} · import {source} · root {root}")
+    for item in files:
+        say("  write   " + str(root / item["path"]))
+    for line in notices:
+        say("  notice  " + line)
+    fingerprint = importer.digest(root, files)
+    state = read_json(import_state_path()) or {"schema_version": 1, "pending": {}}
+    pending = state.setdefault("pending", {})
+    approved = pending.get(str(source.resolve())) == {"root": str(root), "digest": fingerprint}
+    if args.dry_run or not approved:
+        pending[str(source.resolve())] = {"root": str(root), "digest": fingerprint}
+        write_json_atomic(import_state_path(), state)
+        say("")
+        try:
+            cmd_sync(argparse.Namespace(dry_run=True, adopt=False, adopt_codex=False,
+                                        print_only=False, extra_roots=[str(root)]))
+        except SystemExit as exc:
+            say("  notice  the sync projection did not resolve: " + str(exc))
+        say("")
+        say("import: nothing written. Re-run without --dry-run to write this plan.")
+        return 0
+    for item in files:
+        reconcile.atomic_text(root / item["path"], item["text"])
+    say("  wrote   " + str(len(files)) + " rule(s) under " + str(root))
+    roots = list(cfg.get("primitive_roots", []))
+    if str(root) not in roots:
+        config_set("primitive_roots", json.dumps(roots + [str(root)]))
+    del pending[str(source.resolve())]
+    write_json_atomic(import_state_path(), state)
+    return 0
+
+
 def cmd_config(args: argparse.Namespace) -> int:
     if args.action == "set":
         return config_set(args.key, args.value)
@@ -3400,6 +3487,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("key")
     p.add_argument("value", nargs="?")
     p.set_defaults(func=cmd_config)
+
+    p = sub.add_parser("import", help="read an existing CLAUDE.md, AGENTS.md or .cursorrules into "
+                                      "primitives under an external root")
+    p.add_argument("path", help="the instruction file to split; never executed")
+    p.add_argument("--root", help="absolute external primitive root to write into "
+                                  "(default ~/.config/agent-harness/imported/NAME)")
+    p.add_argument("--name", help="identifier for the import; default is the directory it came from")
+    p.add_argument("--dry-run", action="store_true", help="print the plan and the sync projection only")
+    p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("integrations", help="inspect or register interchangeable implementation adapters")
     p.add_argument("action", choices=["show", "register", "doctor"])
