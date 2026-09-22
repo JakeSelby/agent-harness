@@ -508,6 +508,10 @@ from the numbers alone. `promote?` means the detector hit in more than 30 percen
 sessions in a window of at least 20; `unobserved` means it hit in none of at least 20. A window
 narrower than 20 sessions is annotated nothing, because a share over three sessions says little.
 
+Two shipped features this loop caught — a stance measured as never firing and a hook whose metric
+did not move — are written up with their figures and commands in
+[caught in the act](caught-in-the-act.md).
+
 Those two are the ends of one ladder. A rule that trips in most sessions is prose that failed:
 the agent read it and walked past it anyway, so it wants to be a hook, where the decision is
 made for it rather than asked of it. A rule unobserved for a month is either kept honestly by
