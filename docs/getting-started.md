@@ -1,8 +1,9 @@
 # Start with your way of working
 
-Agent Harness is a general-purpose, model-provider-agnostic harness built around shared custom
-primitives. Your personal stances are switches for behavior: communication, delegation, testing,
-autonomy and decision-making. They remain your choices when you change agent runtimes.
+Agent Harness is a harness of shared custom primitives for the two runtimes it supports today,
+Claude Code and Codex. Your personal stances are switches for behavior: communication, delegation,
+testing, autonomy and decision-making. The same selection resolves in both runtimes, and three of
+the nine axes — autonomy, delegation and cost — bind to enforcement rather than to prose.
 
 ## Choose a runtime and inspect support
 
@@ -69,6 +70,18 @@ codex
 Ask the agent to explain its effective stance choices, then try a small task. Research and
 planning can work without a code repository. Build and review workflows need repository context;
 opening a pull request also needs a remote and a signed-in GitHub account.
+
+Then close the loop and ask which of your rules actually fired:
+
+```sh
+harness usage --rules
+```
+
+It prints one line per detector over the last 30 days — hits, the sessions that saw them and the
+share — with `--by repo` and `--by stance` regrouping the same hits by repository and by the
+preference variant in force. On a fresh home it says `no measured sessions in the last 30 day(s)`
+until a session or two has been recorded; `--rescan` backfills from transcripts you already have.
+[Usage](usage.md) explains the annotations and what the figures do not yet support.
 
 ## What it costs
 

@@ -1,8 +1,32 @@
 # How the shared harness works
 
-Your preferences select behavior from a provider-independent primitive catalog. Runtime adapters
-project that selection into native instructions, skill discovery, roles, workflows, settings and
-hooks. The agent runtime remains responsible for its native permissions and restrictions.
+A rule is written, given a detector or a stated reason it cannot have one, held to that by lint,
+and then measured. Everything below serves that loop. Your preferences select behavior from a
+shared primitive catalog, and the Claude Code and Codex adapters project that selection into each
+one's native instructions, skill discovery, roles, workflows, settings and hooks. The agent runtime
+remains responsible for its native permissions and restrictions.
+
+## The rule lifecycle
+
+Rules are the one primitive with a measurement loop around them, and it runs in five steps.
+
+1. **Write the rule.** One instruction per line under `primitives/rules/`, in second person, with
+   the reasoning in the skill it points at rather than in the rule file itself.
+2. **Name a detector, or say why there cannot be one.** A detector in
+   `claude/hooks/rule-detectors.py` decides from the transcript alone, deterministically, whether
+   the rule was in play. A rule about tone, altitude or honesty carries a one-line `OPT_OUT` reason
+   instead, and is then dark on purpose rather than by omission.
+3. **Lint enforces the choice.** `check_detectors` in `bin/harness` fails the commit on a rule that
+   has neither, so an unmeasured rule cannot arrive quietly.
+4. **The report says what fired.** `harness usage --rules` counts hits per rule over the window,
+   `--by repo` per repository and `--by stance` per `dimension=variant`, so a hit rate can be read
+   against the preference variant that was selected at the time. Thresholds, and what the numbers
+   do not support, are in [usage](usage.md).
+5. **Prune what never fires.** A detector the report marks `unobserved` across enough measured
+   sessions is evidence about the rule. Two of this repository's own shipped features were measured
+   doing nothing and filed as bugs on that evidence; [the field scan](field-scan.md) names both,
+   along with the gaps that qualify every figure — detector validity is unmeasured, and per-variant
+   rates are observational rather than an A/B.
 
 ## The authority and its projections
 
@@ -23,8 +47,9 @@ only user defaults; lifecycle hooks resolve invocation overrides without mutatin
 `harness stances --json` shows source, behavior and adapter coverage. Native restrictions always
 win. [Custom stance authoring](primitive-authoring.md) defines naming, roots and conflicts.
 
-Rules hold standing behavior. Stances make personal choices explicit and switchable. Skills hold
-procedures. Roles define responsibility, context and authority; native bindings select tools,
+Rules hold standing behavior. Stances make personal choices explicit and switchable; they are one
+capability here among several, and three of the nine axes bind to enforcement while the rest are
+prose that swaps cleanly. Skills hold procedures. Roles define responsibility, context and authority; native bindings select tools,
 models and effort. Workflows compose those pieces, while presentation defines output shape.
 All are authored under `primitives/`. The `claude/` compatibility paths are projections, not
 another source. Custom stances belong outside the distribution checkout.
