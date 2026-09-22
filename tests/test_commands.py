@@ -15,7 +15,7 @@ harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
 COMMANDS = REPO / "claude" / "commands"
-EXPECTED = ["build.md", "handoff.md", "land.md", "plan.md", "research.md", "review.md"]
+EXPECTED = ["build.md", "close-out.md", "handoff.md", "land.md", "plan.md", "research.md", "review.md"]
 MAX_BODY_LINES = 35
 
 
@@ -182,6 +182,43 @@ class CommandContentTests(unittest.TestCase):
         self.assertIn("never tags and never deploys", body)
         self.assertIn("no release due", body)
         self.assertIn("the repository's own agent instructions", body)
+
+    def test_close_out_sweeps_before_it_changes_anything(self):
+        """A close-out that opens with a merge has skipped the question it exists to ask."""
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Sweep before you change anything", body)
+        self.assertIn("harness worktree audit", body)
+        self.assertIn("an empty sweep is a result", body)
+
+    def test_close_out_delegates_to_the_workflows_that_already_own_their_steps(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("`land` workflow", body)
+        self.assertIn("`handoff` workflow", body)
+        self.assertIn("never by inlining its steps", body)
+        self.assertNotIn("gh pr merge", body)
+
+    def test_close_out_gates_the_issues_it_files_rather_than_fixing_them_in_place(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Batch the follow-ups", body)
+        self.assertIn("explicit go-ahead", body)
+        self.assertIn("never quietly fix one here", body)
+
+    def test_close_out_reaches_sibling_sessions_without_naming_one_client_tool(self):
+        """Workflows project to every runtime; a tool name here would be wrong on the others."""
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("where the client can list and message them", body)
+        self.assertIn("where the client cannot, use the handoff", body)
+
+    def test_close_out_never_clears_or_compacts_before_archiving(self):
+        """Archiving ends the session, so either one only burns context still in use."""
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Never clear or compact first", body)
+        self.assertIn("archiving ends the session", body)
+
+    def test_close_out_archives_only_when_the_invocation_asked_for_it(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Archive when the invocation already asked for it", body)
+        self.assertIn("the checklist and wait", body)
 
     def test_ownership_records_the_commands_directory(self):
         ownership = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
