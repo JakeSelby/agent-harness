@@ -58,15 +58,13 @@ SCRATCH_DIRS = tuple(dict.fromkeys(["/tmp", os.path.realpath("/tmp")]))
 # The suite's own stdout is block-buffered under a pipe and lands after unittest's stderr summary,
 # so the last line of `2>&1` is noise, not the verdict. Filter to the verdict lines and judge the
 # tool's output directly rather than whatever the model chose to relay.
-# Keep the failure names and causes as well as the verdict, bounded, so a red gate can be read
-# from the saved stream without re-running it.
-PREFLIGHT_PROMPT = ("Run exactly this and reply with its output: `python3 bin/harness lint && "
-                    "python3 -m unittest discover -s tests 2>&1 | grep -E "
-                    "'^(OK|FAILED|Ran [0-9]+ tests|ERROR:|FAIL:)|Error:|Operation not permitted' | head -120`")
+# The bar the prompts set, and no more: lint under the arm's own fence. The full suite is
+# profile-dependent at every snapshot commit (`claude_dir()` lets CLAUDE_CONFIG_DIR override the
+# tests' isolation), so demanding it here measures the profile, not the harness.
+PREFLIGHT_PROMPT = "Run exactly this and reply with its output: `python3 bin/harness lint`"
 PREFLIGHT_CAP_USD = 0.25
 PREFLIGHT_TURNS = 3
-PREFLIGHT_PASS = "OK"
-PREFLIGHT_RED = re.compile(r"^FAILED|PermissionError|Operation not permitted|^(ERROR|FAIL):", re.M)
+PREFLIGHT_RED = re.compile(r"PermissionError|Operation not permitted", re.M)
 INHERITED = "inherited"
 # What an arm actually loads: the always-on layer, the listed layer, and the personal file.
 CONFIG_GLOBS = ("CLAUDE.md", "CLAUDE.personal.md", "rules/**/*.md", "skills/*/SKILL.md",
@@ -562,10 +560,11 @@ def gate_output(stdout):
 
 
 def gate_passed(stdout):
-    """Green means lint reported no findings, unittest printed `OK`, and nothing was refused."""
+    """Green means lint reported no findings and nothing was refused. A suite verdict in the
+    output is ignored either way: it is not the bar, and on a bench profile it is red for reasons
+    that are not the arm's."""
     out = gate_output(stdout)
-    return ("lint: 0 finding(s)" in out and re.search(r"^%s\b" % PREFLIGHT_PASS, out, re.M) is not None
-            and PREFLIGHT_RED.search(out) is None)
+    return "lint: 0 finding(s)" in out and PREFLIGHT_RED.search(out) is None
 
 
 def reply_text(stdout):
