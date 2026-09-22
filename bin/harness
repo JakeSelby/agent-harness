@@ -3170,13 +3170,20 @@ def cmd_bmad(args: argparse.Namespace) -> int:
 
 
 def cmd_compatibility(args):
+    """One command shows both levels: the client's status and, beside it, the per-capability
+    state derived from that runtime's adapter. Neither is hand-written twice."""
     data = compatibility.catalog(REPO)
+    clients = [dict(row, capabilities=compatibility.capability_states(REPO, data, row))
+               for row in data["clients"]]
     if args.json:
-        print(json.dumps(data, indent=2))
+        print(json.dumps(dict(data, clients=clients), indent=2))
     else:
         say("Model provider and agent runtime are separate from the client you run.")
-        for client in data["clients"]:
+        for client in clients:
             say(client["id"] + ": " + client["status"])
+            for name, capability in client["capabilities"].items():
+                say("  " + name + ": " + capability["state"]
+                    + (" (" + ", ".join(capability["cases"]) + ")" if capability["cases"] else ""))
         for limitation in data["limitations"]:
             say(limitation)
         if compatibility.source_drift(REPO, data):
