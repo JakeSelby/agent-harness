@@ -27,6 +27,10 @@ RATE_FIELDS = ("input", "output", "cache_read", "cache_write")
 TOKEN_TIERS = ("cache_write_5m", "cache_write_1h")
 # A price read a quarter ago is a guess. `doctor` says so rather than a report quietly drifting.
 PRICE_STALE_DAYS = 90
+# A release suffix names when a model shipped, not which model it is: a date stamp, or a cloud
+# reseller's version tag. Only these are dropped on the way to a table key. A word after the
+# family name — `-pro`, `-mini` — is a different model at a different price and stays.
+RELEASE_SUFFIX = re.compile(r"(?:[-@](?:20\d{6}|20\d{2}-\d{2}-\d{2})|-v\d+(?::\d+)?)$")
 
 
 def prices_path():
@@ -75,13 +79,15 @@ def load_prices(cfg, path=None):
 
 
 def normalise_model(model):
-    """One spelling of a model id: lower case, no cloud vendor prefix, no context-window suffix.
+    """One spelling of a model id: lower case, no vendor prefix, no window or release suffix.
 
-    A ledger holds the id each runtime reported, and the same model arrives three ways: bare,
-    as `<vendor>.<family>-<date>-v1:0` on a cloud reseller, and with a context-window suffix in
-    brackets in a long-context session. The suffix is dropped because the provider prices the
-    larger window at the standard rate; the remainder is matched by prefix, so a dated id still
-    reaches its family. No model name is written here: `policy/prices.json` holds the ids.
+    A ledger holds the id each runtime reported, and the same model arrives several ways:
+    bare, as `<vendor>.<family>-<date>-v1:0` on a cloud reseller, as `<family>@<date>` on
+    another, and with a context-window suffix in brackets in a long-context session. The
+    window suffix is dropped because the provider prices the larger window at the standard
+    rate, and the release suffix because a date stamp names when a model shipped rather than
+    which model it is. What is left is matched exactly, never by prefix: see `price_key`. No
+    model name is written here: `policy/prices.json` holds the ids.
     """
     name = (model or "").strip().lower()
     name = re.sub(r"\[[^\]]*\]", "", name).split("/")[-1]
@@ -90,6 +96,11 @@ def normalise_model(model):
         if not (dot and rest and head.isalpha()):
             break
         name = rest
+    while True:
+        trimmed = RELEASE_SUFFIX.sub("", name)
+        if trimmed == name:
+            break
+        name = trimmed
     return name.strip("-").strip()
 
 
@@ -109,15 +120,15 @@ def usable_rate(entry):
 
 
 def price_key(table, model):
-    """The table key governing one model id: the longest listed prefix of its normalised form."""
+    """The table key governing one model id: its normalised form, listed exactly, or "".
+
+    Nothing resolves by prefix. A variant of a listed family is a different model at a
+    different price — `gpt-5.5-pro` is $30/$180 where `gpt-5.5` is $5/$30 — so an id the
+    table does not name is unpriced rather than billed at its nearest listed relative. To
+    price one, add it to `policy/prices.json` or override it under `prices` in `config.json`.
+    """
     name = normalise_model(model)
-    if not name:
-        return ""
-    best = ""
-    for key in table:
-        if key and name.startswith(key) and len(key) > len(best):
-            best = key
-    return best
+    return name if name in table else ""
 
 
 def price_for(table, model):
