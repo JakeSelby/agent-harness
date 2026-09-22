@@ -139,6 +139,12 @@ journal says the harness generated is refused with its record, and so is a skill
 workflow name the new root would define twice, in sync's own words and before anything is
 written.
 
+Once the root is registered, `harness sync` projects it like any other: the imported rules are
+linked into `~/.claude/rules/harness-roots/<root>/` and rendered into the Codex `AGENTS.md`
+after this repository's own rules, and any skills the root carries are linked beside the shared
+ones. [The sync model](sync-model.md) covers the ordering, the drift reporting and what
+uninstall takes back.
+
 ## Contribute shared primitives
 
 Author rules, stances, skills, roles, workflows and presentation under `primitives/`.
