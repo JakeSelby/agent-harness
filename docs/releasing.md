@@ -155,9 +155,12 @@ from a static-content rollback.
 
 ## Release status
 
-The 0.12.0 candidate requires fresh native qualification for Claude Code CLI and Codex CLI on
-macOS and Linux; until each carries evidence for this source, the preflight blocks publication.
-The VS Code surfaces and Codex Desktop are unqualified previews. The architecture-viewer
+The 0.12.0 release ships without native qualification. No client carries evidence for this
+source and none is marked required for release, which is what lets the preflight publish it;
+0.11.1 remains the last release qualifying Claude Code CLI and Codex CLI on macOS and Linux.
+The narrowed contract was taken deliberately for a pre-1.0 release, and the required flags
+return with the next qualification round. The VS Code surfaces and Codex Desktop are
+unqualified previews. The architecture-viewer
 integration is also a preview for a separately installed implementation, with no bundled viewer
 or distribution-clearance claim. The release is identified by the exact commit carrying the
 immutable `v0.12.0` tag. Reference and

@@ -183,9 +183,13 @@ trust if prompted. [Start with the full guide](docs/getting-started.md).
 
 ## Release status
 
-**Release status:** `0.12.0` is a release candidate. The shared engine, adapters, generated
-configuration and hook decisions are implemented and tested. Native qualification is being
-refreshed for the four required Claude Code and Codex CLI targets listed below.
+**Release status:** `0.12.0` is the current release, and it ships with no native
+qualification. No client carries evidence for this source, and no client is required for
+release, so every entry below reads unqualified. `0.11.1` remains the last release
+qualified on the Claude Code and Codex CLIs for macOS and Linux; if you want a qualified
+floor, install that tag. The shared engine, adapters, generated configuration and hook
+decisions are implemented and covered by the repository's own tests, which is not the same
+claim.
 
 <!-- harness:compatibility:start -->
 **Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
