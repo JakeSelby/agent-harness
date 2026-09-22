@@ -17,12 +17,49 @@ Codex projection and the hooks come from `bin/harness install`, and
 [runtime installation](runtime-installation.md) states the difference. Do not read successful source generation or deterministic tests as native
 client qualification.
 
+## What qualified means at each level
+
+Client qualification and capability qualification are separate claims, and this is the default
+rule reconciling them; a maintainer decision may replace it, in this section:
+
+> A client is qualified when its required acceptance cases pass natively. A capability is
+> qualified for a client only when that client is qualified AND a native acceptance case
+> exercising that capability exists and passed; otherwise the capability is `unqualified` and
+> inherits nothing from the client. The catalog is the single authority: per-capability state is
+> derived from the adapters' capability files at `harness compatibility` time and rendered beside
+> the client row, never hand-edited in two places.
+
+An adapter names the cases that exercise a capability with an optional `acceptance_cases` list on
+a stance entry or on `role_execution` in `adapters/<runtime>/capabilities.json`; every name in it
+must be one of the catalog's `required_cases`. Listing cases under a capability that is not
+`qualified`, or claiming `qualified` without them, is a contradiction between the two files:
+`harness compatibility --release-check` blocks the release and the test suite fails. Today no
+adapter names a case, so every capability is `unqualified` while the four CLI clients are
+qualified, which is what the table below says. `harness compatibility --json` emits both levels,
+each client row carrying its derived `capabilities`. The capability-by-client layout follows the
+generated matrix in [wshobson/agents' `docs/harnesses.md`](https://github.com/wshobson/agents/blob/main/docs/harnesses.md).
+
 <!-- harness:compatibility:start -->
 **Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
 
 **Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-vscode-macos`, `codex-desktop-macos`.
 
 **Planned:** `cursor`, `grok`.
+
+A client's status is not a capability's status. Each cell is derived from that runtime's `adapters/<runtime>/capabilities.json` at generation time:
+
+| Capability | `claude-code-cli-macos` | `claude-code-vscode-macos` | `claude-code-cli-linux` | `codex-cli-macos` | `codex-vscode-macos` | `codex-desktop-macos` | `codex-cli-linux` |
+|---|---|---|---|---|---|---|---|
+| `autonomy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `build-vs-buy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `commits` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `cost` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `delegation` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `licensing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `plan-ceremony` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 <!-- harness:compatibility:end -->
 
 Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md)
