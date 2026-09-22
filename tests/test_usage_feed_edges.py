@@ -14,7 +14,8 @@ Run: python3 -m unittest discover tests
 import json
 import unittest
 
-from test_usage_feed import Fixture, MEASURE, append, assistant, prompt
+from test_usage_feed import Fixture, MEASURE, append, assistant, prompt, write
+from test_usage_feed_settling import SettlingFixture, ended
 
 
 class ResumedAgentTests(Fixture):
@@ -69,15 +70,18 @@ class ResumedAgentTests(Fixture):
         self.assertEqual(self.finished(self.turn("m1", 10)), [])
         self.assertEqual(self.state()["rounds"]["ccc"], 1)
 
-    def test_a_later_round_with_no_figure_says_nothing(self):
-        # The repeating line this feed used to print was an announcement with nothing in it.
-        # A round whose spend could not be summed is folded in silently and never named.
+    def test_a_later_round_whose_transcript_has_gone_is_dropped_unsaid(self):
+        # There is no spend left to recover and no figure to name, so the round is given up on
+        # rather than announced with nothing in it — and the record does not sit there forever.
         self.agent("ddd", "gatherer", [("d1", 120, ())])
         self.stop("ddd")
         self.turn("m1", 10)
         self.agent_path("ddd").unlink()
         self.stop("ddd")
         self.assertEqual(self.finished(self.turn("m2", 10)), [])
+        self.assertEqual(self.finished(self.turn("m3", 20)), [])
+        self.assertEqual(self.state()["pending"], [])   # asked once, then given up on
+        self.assertEqual(self.state()["subagents"]["output"], 120)
 
 
 class UnknownLineTests(Fixture):
@@ -103,7 +107,12 @@ class UnknownLineTests(Fixture):
         state["counted"], state["journal_offset"] = [], 0
         path.write_text(json.dumps(state), encoding="utf-8")
         append(self.transcript, [prompt(), assistant("m2", 20)])
-        self.assertEqual([line for line in self.submit() if "spend unknown" in line], [])
+        lines = self.submit()
+        self.assertEqual([line for line in lines if "spend unknown" in line], [])
+        # And it is not counted a second time either: one agent, one unknown.
+        self.assertEqual(self.state()["subagents"]["count"], 1)
+        self.assertEqual(self.state()["subagents"]["unknown"], 1)
+        self.assertTrue(lines[0].endswith("1 subagent (partial)"), lines[0])
 
 
 class MeasureLineTests(Fixture):
@@ -125,11 +134,68 @@ class MeasureLineTests(Fixture):
         self.assertNotIn(MEASURE, second)
         self.assertTrue(self.state()["said_measure"])
 
+    def test_a_compaction_owes_the_measure_again(self):
+        # The reset is what a compaction looks like from here, and it takes the legend out of
+        # the orchestrator's context with everything else that was said before it.
+        self.agent("aaa", "gatherer", [("a1", 300, ())])
+        self.stop("aaa")
+        append(self.transcript, [assistant("m1", 10)])
+        self.assertEqual(self.submit()[-1], MEASURE)
+        write(self.transcript, [prompt("a different context entirely"), assistant("n1", 20)])
+        self.submit()
+        self.assertFalse(self.state()["said_measure"])
+        self.agent("bbb", "gatherer", [("b1", 400, ())])
+        self.stop("bbb")
+        self.assertEqual(self.submit()[-1], MEASURE)
+
     def test_a_turn_line_on_its_own_does_not_state_it(self):
         # The confusion is about a subagent's figure. A session that spawns nothing never needs
         # the sentence, and a feed spends no context on what it does not need to say.
         append(self.transcript, [assistant("m1", 500)])
         self.assertEqual(len(self.submit()), 1)
+
+
+class ResumedRaceTests(SettlingFixture):
+    """A resumed round's stop fires before that round's responses are flushed.
+
+    The transcript ends on the previous round's finished response, so every cheap test of
+    settledness passes while the new round is not on disk at all. What is left is the figure.
+    """
+
+    def turn(self, mid, output):
+        append(self.transcript, [prompt(), assistant(mid, output)])
+        return self.submit()
+
+    def finished(self, lines):
+        return [line for line in lines if "finished" in line]
+
+    def test_a_round_that_has_not_landed_waits_rather_than_repeating_the_last_figure(self):
+        self.records("aaa", "gatherer", [ended("a1", 300)])
+        self.stop("aaa")
+        self.assertIn("finished at 300 output tokens", self.finished(self.turn("m1", 10))[0])
+        # Round two ends; its stop is journalled against a transcript that still holds only
+        # round one. Nothing is said, and the stale figure is not counted a second time.
+        self.stop("aaa")
+        self.assertEqual(self.finished(self.turn("m2", 10)), [])
+        self.assertEqual(self.state()["subagents"]["output"], 300)
+        self.assertTrue(self.state()["pending"][0]["awaiting"])
+        # The response lands, the re-sum happens, and the round is named with its own figure.
+        append(self.agent_path("aaa"), [ended("a2", 500)])
+        line = self.finished(self.turn("m3", 10))[0]
+        self.assertIn("usage-feed: gatherer finished round 2 at 800 output tokens and 0 tool "
+                      "calls (cumulative)", line)
+        self.assertEqual(self.state()["subagents"]["output"], 800)
+        self.assertEqual(self.state()["pending"], [])
+
+    def test_a_round_that_never_lands_stops_being_asked_about(self):
+        self.records("bbb", "gatherer", [ended("b1", 300)])
+        self.stop("bbb")
+        self.turn("m1", 10)
+        self.stop("bbb")
+        for step in range(5):
+            self.assertEqual(self.finished(self.turn("n%d" % step, 10 + step)), [])
+        self.assertEqual(self.state()["pending"], [])
+        self.assertEqual(self.state()["subagents"]["output"], 300)
 
 
 if __name__ == "__main__":

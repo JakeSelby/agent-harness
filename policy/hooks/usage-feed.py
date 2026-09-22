@@ -42,7 +42,10 @@ Seven facts shape the whole file:
   skip the feed. What the figures measure is said once too, before the first of them. An agent
   resumed with a follow-up message, on the other hand, stops once per round against one agent id,
   and each of those rounds is a completion the feed owes a line — cumulative, because one
-  transcript covers them all.
+  transcript covers them all. Whether such a round has landed is not a question the transcript's
+  shape can answer: it ends on the previous round's finished response either way. So a later
+  round is settled by its figure passing the one already reported, and is re-summed at each
+  event, silently, until it does.
 - **Reads are bounded everywhere.** The parent transcript is read from a saved offset, trusted
   only while the inode and the hash of the first record still match, and from 8 MiB before the
   end on a cold start. The journal is read from its own saved offset, so a long session's totals
@@ -488,7 +491,7 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
             seen = state.get("inode") is not None
             kept = {key: state[key] for key in
                     ("journal_offset", "running", "pending", "counted", "figures", "unsummed",
-                     "subagents", "pruned", "rounds", "said_unknown", "said_measure")}
+                     "subagents", "pruned", "rounds", "said_unknown")}
             state = dict(new_state(), **kept)
             state["inode"], state["head"] = inode, head
             state["offset"] = max(0, size - COLD_TAIL)
@@ -798,15 +801,27 @@ def to_settle(state, journal_file, payload, env, first=None):
     """
     items = [first] if first and first[0] else []
     seen = {agent for agent, _ in items}
+    for record in state.get("pending") or []:
+        agent_id = record.get("id")
+        if (not record.get("awaiting") or agent_id in seen
+                or record.get("tries", 0) >= UNSUMMED_TRIES):
+            continue
+        seen.add(agent_id)
+        items.append((agent_id, record_path(record, payload, env)))
     for agent_id, entry in (state.get("unsummed") or {}).items():
         if agent_id in seen or entry[1] >= UNSUMMED_TRIES:
             continue
         seen.add(agent_id)
         items.append((agent_id, expand(entry[0], env, agent_id) or agent_transcript(
             payload.get("transcript_path"), payload.get("session_id"), agent_id)))
+    rounds = dict(state.get("rounds") or {})
     for record in journal_records(journal_file, state.get("journal_offset", 0)):
         agent_id = record["id"]
-        if agent_id in seen or not needs_sum(record):
+        repeat = False
+        if record.get("t") == "stop":
+            rounds[agent_id] = rounds.get(agent_id, 0) + 1
+            repeat = rounds[agent_id] > 1
+        if agent_id in seen or not (needs_sum(record) or repeat):
             continue
         seen.add(agent_id)
         items.append((agent_id, record_path(record, payload, env)))
@@ -876,20 +891,29 @@ def ingest(state, journal_file, resolved=None):
             if record.get("t") != "stop":
                 continue
             state["running"].pop(agent_id, None)
-            if needs_sum(record):
-                apply_settled(record, resolved.get(agent_id))
             round_number = bump_round(state, agent_id)
+            # A later round's stop is never taken at the figure it was journalled with. The
+            # transcript it was read from still ends on the previous round's finished response,
+            # so `summed` says final about a round whose own responses are not on disk yet.
+            if needs_sum(record) or round_number > 1:
+                apply_settled(record, resolved.get(agent_id))
             if agent_id in state["counted"]:
                 if agent_id in state["unsummed"] and record.get("output") is not None:
                     # Announced with no figure, and the journal brought one: the totals take it
                     # and the agent is not named again.
                     resolve_unknown(state, agent_id, figures_of(record))
                     del state["unsummed"][agent_id]
-                else:
+                elif round_number < 2:
                     reconcile(state, record)
-                if round_number > 1 and has_figure(record):
-                    record["round"] = round_number
-                    state["pending"].append(record)
+                if round_number > 1:
+                    open_round(state, record, round_number)
+                continue
+            if agent_id in (state.get("said_unknown") or []):
+                # The reader's record of this agent was lost, not the fact of it: it has been
+                # counted once and named once, and neither is owed a second time.
+                state["counted"].append(agent_id)
+                if has_figure(record):
+                    resolve_unknown(state, agent_id, figures_of(record))
                 continue
             state["counted"].append(agent_id)
             count(state, record)
@@ -909,6 +933,53 @@ def figures_of(record):
         except (TypeError, ValueError):
             out.append(0)
     return out
+
+
+def risen(record):
+    """Whether a later round's cumulative figure has passed the one already reported.
+
+    It is the only thing that says a resumed agent's round is on disk. The sum covers every
+    round the agent has run, and the transcript ends on a finished response either way, so a
+    total that has not moved is a round whose responses have not been flushed yet.
+    """
+    return has_figure(record) and figures_of(record)[0] > record.get("floor", 0)
+
+
+def open_round(state, record, round_number):
+    """One completion of a resumed agent: kept until its own spend has landed, then named.
+
+    Until it has, the record is re-summed at every event and nothing at all is said about it —
+    a line repeating the previous round's figure would be worse than a line a prompt later.
+    """
+    record["round"] = round_number
+    record["floor"] = (state["figures"].get(record.get("id")) or [0, 0])[0]
+    record["tries"] = 0
+    if risen(record):
+        reconcile(state, record)
+    else:
+        record["awaiting"] = True
+    state["pending"].append(record)
+
+
+def reconcile_rounds(state, resolved):
+    """Fold this event's sums into the later rounds whose own spend had not landed yet.
+
+    A round is accepted the moment its figure passes the one already reported, and is named from
+    the pending list like any other. A transcript that has gone, and a round that has had its
+    tries, are dropped: nothing was ever said about either, so nothing has to be taken back.
+    """
+    for record in list(state.get("pending") or []):
+        if not record.get("awaiting"):
+            continue
+        outcome = resolved.get(record.get("id"))
+        if isinstance(outcome, dict) and outcome["output"] > record.get("floor", 0):
+            apply_settled(record, outcome)
+            record.pop("awaiting", None)
+            reconcile(state, record)
+        elif outcome == ABSENT or record.get("tries", 0) >= UNSUMMED_TRIES:
+            state["pending"].remove(record)
+        elif outcome is not None:
+            record["tries"] = record.get("tries", 0) + 1
 
 
 def has_figure(record):
@@ -1284,6 +1355,7 @@ def refresh(state_file, journal_file, resolved):
     """
     state = load_state(state_file)
     reconcile_unsummed(state, resolved)
+    reconcile_rounds(state, resolved)
     return ingest(state, journal_file, resolved)
 
 
@@ -1337,7 +1409,8 @@ def on_agent_return(payload, env):
         state = refresh(state_file, journal_file, resolved)
         lines, figured = [], False
         if synchronous:
-            record = next((r for r in state["pending"] if r.get("id") == agent_id), None)
+            record = next((r for r in state["pending"]
+                           if r.get("id") == agent_id and not r.get("awaiting")), None)
             if record is not None:
                 line, ratio = stop_line(table, nudges, record)
                 if shows(mode, ratio, nudges):
@@ -1396,6 +1469,8 @@ def on_prompt(payload, env):
             lines.append(note)
         said = []
         for record in list(state["pending"]):
+            if record.get("awaiting"):
+                continue     # a resumed round whose own spend has not landed yet
             line, ratio = stop_line(table, nudges, record)
             if not shows(mode, ratio, nudges):
                 continue

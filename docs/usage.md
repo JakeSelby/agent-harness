@@ -202,8 +202,14 @@ An agent resumed with a follow-up message stops once per round, against one agen
 transcript. Every round is fed a line — `gatherer finished round 2 at 800 output tokens and
 2 tool calls (cumulative)` — because the transcript is the agent's whole life and a later
 round's figure covers the earlier ones. It stays one subagent in the session count, and only
-the rise reaches the session totals. A round whose spend could not be summed is folded in
-silently rather than announced with nothing in it.
+the rise reaches the session totals.
+
+A resumed agent's stop can fire before that round's responses are flushed, and the transcript
+ends on the previous round's finished response either way — so nothing about the file says the
+round is incomplete. What says it is the figure: a sum that has not passed the one already
+reported is a round that has not landed. Such a round is re-summed at each following event and
+nothing is said about it meanwhile, rather than a line repeating the previous round's number;
+after three tries, or a transcript that has gone, it is dropped unsaid.
 
 That sum is capped at 8 MiB from the end of the agent's transcript and at four seconds, because
 it runs inside a hook's timeout. When a cap bites, the line says `(partial)`; when the sum could

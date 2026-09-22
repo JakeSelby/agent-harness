@@ -165,7 +165,9 @@ class ReportTests(RaceFixture):
         self.unflushed("ccc")
         self.stop("ccc", agent_type="gatherer")
         self.flush("ccc")
-        self.assertEqual(len(self.returned("ccc", "gatherer")), 2)   # the line, the measure
+        self.assertEqual(self.returned("ccc", "gatherer"),
+                         ["usage-feed: gatherer finished at 4,250 output tokens and 3 "
+                          "tool calls — 0.5× its budget of 8,500 / 15", MEASURE])
         append(self.transcript, [assistant("m1", 20)])
         self.assertEqual([line for line in self.submit() if "finished" in line], [])
         self.assertEqual(self.state()["subagents"]["output"], 4250)
