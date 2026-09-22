@@ -442,8 +442,17 @@ class ReplayRunTests(unittest.TestCase):
 
 
 def gate_reply(text, cost=0.1):
-    """The CLI's JSON for a `-p` run whose final text is the gate's last line."""
-    return json.dumps(dict(result(cost=cost), result=text))
+    """The CLI's JSON stream for a `-p` run in which one Bash call returned `text`: the gate's
+    output as the tool saw it, which is what the pre-flight judges, plus a relay in `result`."""
+    call = {"type": "assistant", "message": {"role": "assistant", "id": "m1", "content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "gate"}}]}}
+    back = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t1", "content": text}]}}
+    return json.dumps([call, back, dict(result(cost=cost), result=text.strip().splitlines()[-1] if text.strip() else "")])
+
+
+GREEN = "lint: 0 finding(s) in /repo\nRan 12 tests in 0.1s\n\nOK\n"
+RED = "lint: 0 finding(s) in /repo\nRan 12 tests in 0.1s\n\nFAILED (failures=1)\n"
 
 
 class ReplayPreflightTests(unittest.TestCase):
@@ -453,12 +462,25 @@ class ReplayPreflightTests(unittest.TestCase):
 
     def test_a_red_gate_refuses_the_replay_before_any_scored_run(self):
         with tempfile.TemporaryDirectory() as tmp:
-            launch = Launch([gate_reply("OK"), gate_reply("FAILED (failures=1)")])
+            launch = Launch([gate_reply(GREEN), gate_reply(RED)])
             with self.assertRaises(SystemExit) as caught:
                 BENCH.replay([TASK], options(tmp, reps=1, skip_preflight=False), launch)
             self.assertEqual(caught.exception.code, 2)
             self.assertEqual(len(self.preflight_calls(launch)), 2)
             self.assertEqual(len(launch.calls), 2)  # the scored schedule never launched
+
+    def test_the_verdict_survives_the_suite_flushing_noise_after_ok(self):
+        """The repo's suite prints worktree paths from stdout, block-buffered, after unittest's
+        stderr summary; a judge reading the last line calls a green gate red. Judge the tool's
+        whole output for the verdict line instead."""
+        noisy = GREEN + "/private/tmp/x/worktrees/project/task-one\n"
+        self.assertTrue(BENCH.gate_passed(gate_reply(noisy)))
+        self.assertFalse(BENCH.gate_passed(gate_reply("lint: 0 finding(s) in /repo\n/private/tmp/x/task-one\n")))
+
+    def test_a_refused_read_is_red_even_when_unittest_says_ok(self):
+        blocked = GREEN.replace("OK", "PermissionError: [Errno 1] Operation not permitted: '/x/plans'\nOK")
+        self.assertFalse(BENCH.gate_passed(gate_reply(blocked)))
+        self.assertFalse(BENCH.gate_passed(gate_reply(GREEN.replace("lint: 0 finding(s)", "lint: 2 finding(s)"))))
 
     def test_unreadable_output_is_a_red_gate_and_never_a_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -471,7 +493,7 @@ class ReplayPreflightTests(unittest.TestCase):
     def test_a_green_gate_stamps_every_scored_row_and_runs_each_arms_own_fence(self):
         with tempfile.TemporaryDirectory() as tmp:
             opts = options(tmp, reps=1, skip_preflight=False)
-            launch = Launch([gate_reply("OK\n")] * 2 + [json.dumps(result())] * 2)
+            launch = Launch([gate_reply(GREEN)] * 2 + [json.dumps(result())] * 2)
             rows, stopped = BENCH.replay([TASK], opts, launch)
             self.assertEqual((stopped, len(rows)), (False, 2))
             self.assertEqual([r["preflight"] for r in rows], ["passed"] * 2)
@@ -489,7 +511,7 @@ class ReplayPreflightTests(unittest.TestCase):
 
     def test_the_pre_flight_spends_against_the_same_cumulative_cap(self):
         with tempfile.TemporaryDirectory() as tmp:
-            launch = Launch([gate_reply("OK", cost=0.5)] * 2)
+            launch = Launch([gate_reply(GREEN, cost=0.5)] * 2)
             rows, stopped = BENCH.replay([TASK], options(tmp, reps=1, skip_preflight=False,
                                                          spend_cap=2.5), launch)
             self.assertEqual((rows, stopped), ([], True))  # 1.0 spent, and 1.0 + 2.0 passes 2.5

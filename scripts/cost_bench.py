@@ -53,11 +53,15 @@ DENY_READ = ["~/.ssh", "~/.aws", "~/.config/gh"]
 DEFAULT_CONFIG_DIR = "~/.claude"
 SCRATCH_DIR = "/tmp"
 # The gate this repository's AGENTS.md names, run inside the fence and reported as its own last line.
-PREFLIGHT_PROMPT = ("Run exactly this and reply with only its last line: `python3 bin/harness lint && "
-                    "python3 -m unittest discover -s tests 2>&1 | tail -1`")
+# The suite's own stdout is block-buffered under a pipe and lands after unittest's stderr summary,
+# so the last line of `2>&1` is noise, not the verdict. Filter to the verdict lines and judge the
+# tool's output directly rather than whatever the model chose to relay.
+PREFLIGHT_PROMPT = ("Run exactly this and reply with its output: `python3 bin/harness lint && "
+                    "python3 -m unittest discover -s tests 2>&1 | grep -E '^(OK|FAILED|Ran [0-9]+ tests)'`")
 PREFLIGHT_CAP_USD = 0.25
 PREFLIGHT_TURNS = 3
 PREFLIGHT_PASS = "OK"
+PREFLIGHT_RED = re.compile(r"^FAILED|PermissionError|Operation not permitted|^(ERROR|FAIL):", re.M)
 INHERITED = "inherited"
 # What an arm actually loads: the always-on layer, the listed layer, and the personal file.
 CONFIG_GLOBS = ("CLAUDE.md", "CLAUDE.personal.md", "rules/**/*.md", "skills/*/SKILL.md",
@@ -536,6 +540,29 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
         shutil.rmtree(str(workdir.parent), ignore_errors=True)  # removed, never reset
 
 
+def gate_output(stdout):
+    """Every tool result in a `-p` stream, joined: the gate's own output, not the model's relay."""
+    try:
+        data = json.loads(stdout)
+    except (TypeError, ValueError):
+        return ""
+    parts = []
+    for ev in data if isinstance(data, list) else [data]:
+        content = ((ev.get("message") or {}).get("content") if isinstance(ev, dict) else None) or []
+        for blk in content if isinstance(content, list) else []:
+            if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                text = blk.get("content")
+                parts.append(text if isinstance(text, str) else json.dumps(text))
+    return "\n".join(parts)
+
+
+def gate_passed(stdout):
+    """Green means lint reported no findings, unittest printed `OK`, and nothing was refused."""
+    out = gate_output(stdout)
+    return ("lint: 0 finding(s)" in out and re.search(r"^%s\b" % PREFLIGHT_PASS, out, re.M) is not None
+            and PREFLIGHT_RED.search(out) is None)
+
+
 def reply_text(stdout):
     """The final text of a `-p` run: the `result` field of the CLI's last result message, or ""."""
     try:
@@ -575,13 +602,16 @@ def preflight(tasks, opts, launch=subprocess.run):
                 spent += PREFLIGHT_CAP_USD
                 checks.append({"arm": arm, "passed": False, "reply": "timeout", "cost_usd": None})
                 continue
+            if opts.get("raw"):
+                raw = Path(opts["raw"]); raw.mkdir(parents=True, exist_ok=True)
+                (raw / ("preflight-%s.json" % arm)).write_text(done.stdout or "", encoding="utf-8")
             reply = reply_text(done.stdout)
             try:
                 cost = parse_result(done.stdout)["cost_usd"]
             except ValueError:
                 cost = None
             spent += PREFLIGHT_CAP_USD if cost is None else cost
-            checks.append({"arm": arm, "passed": reply.endswith(PREFLIGHT_PASS), "reply": reply,
+            checks.append({"arm": arm, "passed": gate_passed(done.stdout), "reply": reply,
                            "cost_usd": cost})
         finally:
             shutil.rmtree(str(workdir.parent), ignore_errors=True)
