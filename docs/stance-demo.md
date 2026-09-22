@@ -1,6 +1,11 @@
 # One personal switch, two runtime projections
 
-The demonstration below describes deterministic adapter behavior. It is not a native client
+Nine stance axes ship, and three of them bind to enforcement: `autonomy` decides which
+shell-command grade stops and asks, `delegation` routes a spawn, and `cost` resolves a class, an
+effort and a budget per role. The other six are prose that swaps cleanly in both projections. The
+switch demonstrated below is `delegation`, one of the three.
+
+The demonstration describes deterministic adapter behavior. It is not a native client
 qualification result; use the [catalog](compatibility.md) for that evidence.
 
 ```sh

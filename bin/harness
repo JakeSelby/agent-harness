@@ -15,6 +15,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness uninstall
     harness lint    [PATH]
     harness usage   [--days N] [--by day|repo|model|role|stance|decision] [--stance NAME] [--rescan]
+    harness usage   --rules [--by rule|repo|stance] [--days N] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
     harness worktree remove NAME [REPO] [--merged] [--also-clear NAME]
@@ -47,7 +48,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client, keychain
+from harness_core import codex_client, keychain, collisions, importer
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -146,9 +147,25 @@ def load_detectors(root: Path = REPO):
 # Secret shapes live in claude/hooks/rule-detectors.py; the lint and the detector share one list.
 SECRET_PATTERNS = getattr(load_detectors(), "SECRET_PATTERNS", [])
 # Everything in `claude/CLAUDE.md`, `claude/rules/` and one variant of every stance is re-read on
-# every turn of every session, so its size is a standing tax on every task. The cap is enforced by
-# `harness lint`; the stance count uses the LONGEST variant of each dimension, so no selection a
-# user can make is ever over it. Rationale: docs/how-it-works.md.
+# every turn of every session, so its size is a standing tax on every task. `harness lint` enforces
+# the caps below; the stance count uses the LONGEST variant of each dimension, so no selection a
+# user can make is ever over them. Rationale: docs/how-it-works.md.
+#
+# The cap is a token cap, not a line cap, because no runtime truncates what this layer measures.
+# Claude Code "loads a CLAUDE.md file of up to 4 MiB in full and skips a larger file"; its 200-line
+# limit applies only to auto-memory `MEMORY.md`, and its "target under 200 lines" is authoring
+# advice for a single file, not a sum over many
+# (https://code.claude.com/docs/en/memory). Codex documents no AGENTS.md limit on its config page,
+# and the harness renders no AGENTS.md for it in any case. What the layer does cost is measured:
+# issue #430 put the harness's live standing context at 12,607 tokens against a bare profile,
+# stable to +/- 15 across eight task pairs. This layer may hold a third of that.
+MEASURED_STANDING_CONTEXT_TOKENS = 12607  # issue #430, measured from session transcripts
+ALWAYS_LOADED_TOKEN_CAP = MEASURED_STANDING_CONTEXT_TOKENS // 3
+# Characters per token, the same tokenizer-free approximation `scripts/cost_bench.py` uses; the
+# tests assert the two agree. Good for a cap and a trend, never for billing.
+CHARS_PER_TOKEN = 4.0
+# The secondary guard. A layer under the token cap but sprawling over hundreds of short lines is
+# still hard to read and hard to obey, so the line count stays bounded too.
 ALWAYS_LOADED_CAP = 200
 
 NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates", "primitives", "adapters"}
@@ -337,11 +354,19 @@ def placeholder_identity(cfg: Dict[str, Any]) -> List[str]:
             if k in example and str(resolved.get(k, example[k])).strip() == str(example[k]).strip()]
 
 
-def resolve_stances(cfg: Dict[str, Any]) -> Dict[str, Path]:
+def resolve_stances(cfg: Dict[str, Any], strict: bool = True) -> Dict[str, Path]:
     try:
-        return primitive_catalog.resolve_stances(REPO, cfg)
+        return primitive_catalog.resolve_stances(REPO, cfg, strict=strict)
     except ValueError as exc:
         raise SystemExit(str(exc))
+
+
+def stance_conflicts(cfg: Dict[str, Any]) -> List[str]:
+    """Which shipped constraints this selection violates; a sync still refuses to run on one."""
+    try:
+        return primitive_catalog.stance_conflicts(REPO, cfg)
+    except ValueError as exc:
+        return ["stance constraints unreadable: " + str(exc)]
 
 
 def cost_table(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -982,8 +1007,22 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
     session_keys = [key for key in os.environ if key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
                     or key in ("HARNESS_PROJECT_CONFIG", "HARNESS_PERMISSIONS")]
     cfg = load_config({key: value for key, value in os.environ.items() if key not in session_keys})
+    # A root the caller is about to register, so `import` can show the projection of a root the
+    # configuration does not carry yet. Nothing else sets it, and a dry run is the only user.
+    for extra in getattr(args, "extra_roots", None) or []:
+        roots = cfg.setdefault("primitive_roots", [])
+        if str(extra) not in roots:
+            roots.append(str(extra))
     if session_keys:
         say("  scope   sync projects user defaults; project/session overrides stay in the session")
+    # Before anything is written: a name two roots both define is resolved by the runtime
+    # first-wins and silently, so the install is refused rather than made ambiguous.
+    refusals = collisions.findings(REPO, cfg)
+    if refusals:
+        for line in refusals:
+            say(line)
+        say("sync refused: nothing was written")
+        return 2
     stances = resolve_stances(cfg)
     p = posture(cfg)
     telemetry = telemetry_settings(cfg)
@@ -1017,6 +1056,13 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         # than left to be discovered the next time an approval waits for a human.
         say("  notice  codex approval review: " + reviewer.detail)
         say("          `permissions=auto` will ask you to approve; `harness doctor` repeats this")
+    try:
+        project = Path.cwd()
+    except OSError:
+        project = None
+    for line in collisions.shadows(REPO, cfg, project):
+        # A project definition is meant to win; it is said so the precedence is not a surprise.
+        say("  notice  " + line)
     stale = placeholder_identity(cfg)
     if stale:
         say(f"  notice  identity {', '.join(stale)} still at the example value; the agent reads this")
@@ -1305,6 +1351,65 @@ def _diff_lines() -> List[str]:
     return lines
 
 
+def _plugin_names() -> Tuple[str, str, str]:
+    """This checkout's plugin name, marketplace name and source repository, from its manifests.
+
+    The repository comes from the manifest rather than the directory name, because a worktree
+    is named for its branch.
+    """
+    manifest = read_json(REPO / ".claude-plugin" / "plugin.json") or {}
+    plugin = manifest.get("name", "agent-harness")
+    market = (read_json(REPO / ".claude-plugin" / "marketplace.json") or {}).get("name", plugin)
+    slug = str(manifest.get("repository", "")).rstrip("/").rsplit("/", 1)[-1]
+    return plugin, market, slug[:-4] if slug.endswith(".git") else slug
+
+
+def plugin_install_state() -> Dict[str, Any]:
+    """Which of the two install paths is live: the marketplace plugin, the synced home, or both.
+
+    They are independent. A marketplace install lands in Claude Code's own plugin cache and is
+    recorded in `enabledPlugins`; `bin/harness install` writes the ownership manifest instead.
+    See docs/runtime-installation.md for what each one covers.
+    """
+    plugin, market, slug = _plugin_names()
+    state = {"plugin": plugin, "marketplace": market, "registered": [], "enabled": [],
+             "cached": [], "synced": manifest_path().is_file()}
+    plugins = claude_dir() / "plugins"
+    try:
+        known = read_json(plugins / "known_marketplaces.json") or {}
+        settings = read_json(claude_dir() / "settings.json") or {}
+    except (SystemExit, OSError):
+        return state
+    state["registered"] = sorted(
+        name for name, entry in known.items() if isinstance(entry, dict)
+        and bool(slug) and str((entry.get("source") or {}).get("repo", "")).split("/")[-1] == slug)
+    state["enabled"] = sorted(
+        key for key, value in (settings.get("enabledPlugins") or {}).items()
+        if value is not False and str(key).split("@")[0] == plugin)
+    cache = plugins / "cache"
+    if cache.is_dir():
+        state["cached"] = sorted(str(path.relative_to(cache))
+                                 for path in cache.glob("*/" + plugin) if path.is_dir())
+    return state
+
+
+def _plugin_install_line() -> str:
+    state = plugin_install_state()
+    live = []
+    if state["enabled"] or state["cached"]:
+        live.append("marketplace plugin " + (state["enabled"] or state["cached"])[0])
+    if state["synced"]:
+        live.append("synced home (" + str(manifest_path()) + ")")
+    if not live:
+        detail = "neither; run `bin/harness install` or `/plugin install %s@%s`" % (
+            state["plugin"], state["marketplace"])
+    else:
+        detail = " and ".join(live)
+    if state["registered"] and not (state["enabled"] or state["cached"]):
+        detail += "; marketplace registered, plugin not installed"
+    return "  install path: " + detail
+
+
 def _checkout_state() -> str:
     try:
         ref = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=5).stdout.strip()
@@ -1395,6 +1500,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"agent-harness {VERSION}")
     say(f"  repo: {REPO}")
     say(f"  checkout: {_checkout_state()}")
+    say(_plugin_install_line())
     for name, cmd in (("claude", ["claude", "--version"]), ("code", ["code", "--version"]), ("codex", ["codex", "--version"]), ("gh", ["gh", "--version"]), ("python3", [sys.executable, "--version"])):
         say(f"  {name}: {_version_of(cmd)}")
     say(f"  gh login: {_version_of(['gh', 'auth', 'status'])}")
@@ -1649,6 +1755,18 @@ def check_detectors(root: Path) -> List[str]:
     return hits
 
 
+def check_collisions(root: Path) -> List[str]:
+    """Fail when one skill, agent or command name is defined in two primitive roots.
+
+    The runtimes pick a winner silently; `harness_core.collisions` says why that is refused.
+    """
+    try:
+        cfg = load_config()
+    except Exception:
+        cfg = {}
+    return collisions.findings(root, cfg)
+
+
 NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
                 "ten", "eleven", "twelve"]
 
@@ -1694,6 +1812,33 @@ def check_cost_sidecars(root: Path) -> List[str]:
     return hits
 
 
+def check_stance_constraints(root: Path) -> List[str]:
+    """Fail when the shipped constraints do not load, or the shipped defaults violate one.
+
+    The constraints are the machine-readable half of a claim two variants, or a variant and a
+    role contract, otherwise make only in prose. Evaluating them against `config.example.json`
+    is what catches a new variant, a new role or a reworded default landing in a contradiction.
+    """
+    path = root / "primitives" / "constraints.json"
+    if not path.is_file():
+        return []
+    rel = path.relative_to(root)
+    cfg = {"stances": (read_json(root / "config.example.json") or {}).get("stances", {}),
+           "primitive_roots": []}
+    try:
+        rules = primitive_catalog.stance_constraints(root, cfg)
+        hits = [f"stance-constraints: the default selection violates a constraint: {c}"
+                for c in primitive_catalog.stance_conflicts(root, cfg)]
+    except ValueError as exc:
+        return [f"stance-constraints: {rel}: {exc}"]
+    if not rules:
+        return [f"stance-constraints: {rel} ships no constraint; delete the file or state one"]
+    if hits:
+        hits.append("stance-constraints: change the default selection, the variant prose, or the "
+                    "constraint that no longer holds; a role a constraint exempts goes in its `allow`")
+    return hits
+
+
 def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -> List[str]:
     """Lint everything git would commit: tracked files plus untracked files that are not ignored.
     Outside a git repository, every file."""
@@ -1712,20 +1857,33 @@ def _line_count(path: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines())
 
 
-def always_loaded_lines(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
-    """Line counts of everything loaded on every turn, as (total, [(group, lines)]).
+def est_tokens(chars: int) -> int:
+    """Characters to tokens, the tokenizer-free approximation. See CHARS_PER_TOKEN."""
+    return int(round(chars / CHARS_PER_TOKEN))
 
-    The stance total is the worst case — the longest variant of each dimension — so the cap holds
+
+def always_loaded_groups(root: Path) -> List[Tuple[str, int, int]]:
+    """Everything loaded on every turn, as [(group, lines, chars)].
+
+    The stance total is the worst case — the longest variant of each dimension — so the caps hold
     for every selection a user could make, not only the default one.
     """
-    groups: List[Tuple[str, int]] = []
+    groups: List[Tuple[str, int, int]] = []
+
+    def size(path: Path) -> Tuple[int, int]:
+        body = path.read_text(encoding="utf-8")
+        return len(body.splitlines()), len(body)
+
     claude_md = root / "claude" / "CLAUDE.md"
     if claude_md.is_file():
-        groups.append(("claude/CLAUDE.md", _line_count(claude_md)))
+        lines, chars = size(claude_md)
+        groups.append(("claude/CLAUDE.md", lines, chars))
     rules = sorted((root / "claude" / "rules").glob("*.md"))
     if rules:
         plural = "file" if len(rules) == 1 else "files"
-        groups.append((f"claude/rules/ ({len(rules)} {plural})", sum(_line_count(p) for p in rules)))
+        sizes = [size(p) for p in rules]
+        groups.append((f"claude/rules/ ({len(rules)} {plural})",
+                       sum(s[0] for s in sizes), sum(s[1] for s in sizes)))
     stances = root / "claude" / "stances"
     if stances.is_dir():
         for d in sorted(p for p in stances.iterdir() if p.is_dir()):
@@ -1733,18 +1891,50 @@ def always_loaded_lines(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
             if not variants:
                 continue
             worst = max(variants, key=lambda p: (_line_count(p), p.name))
-            groups.append((f"claude/stances/{d.name}/ (longest: {worst.name})", _line_count(worst)))
-    return sum(n for _, n in groups), groups
+            lines, chars = size(worst)
+            groups.append((f"claude/stances/{d.name}/ (longest: {worst.name})", lines, chars))
+    return groups
+
+
+def always_loaded_lines(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
+    """Line counts of the always-loaded set, as (total, [(group, lines)])."""
+    groups = always_loaded_groups(root)
+    return sum(g[1] for g in groups), [(name, lines) for name, lines, _ in groups]
+
+
+def always_loaded_tokens(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
+    """Estimated token counts of the always-loaded set, as (total, [(group, tokens)])."""
+    groups = always_loaded_groups(root)
+    return est_tokens(sum(g[2] for g in groups)), [(name, est_tokens(chars)) for name, _, chars in groups]
+
+
+def context_summary(root: Path) -> str:
+    """One line for `harness lint` naming both measures and both caps, pass or fail."""
+    groups = always_loaded_groups(root)
+    lines = sum(g[1] for g in groups)
+    tokens = est_tokens(sum(g[2] for g in groups))
+    return (f"context: always-loaded is ~{tokens} tokens of {ALWAYS_LOADED_TOKEN_CAP} "
+            f"and {lines} lines of {ALWAYS_LOADED_CAP}")
 
 
 def check_context_cap(root: Path) -> List[str]:
-    """Fail when always-loaded context exceeds the cap, printing the breakdown."""
-    total, groups = always_loaded_lines(root)
-    if not groups or total <= ALWAYS_LOADED_CAP:
+    """Fail when always-loaded context exceeds either cap, printing the breakdown."""
+    groups = always_loaded_groups(root)
+    if not groups:
         return []
-    hits = [f"context-cap: always-loaded context is {total} lines, over the {ALWAYS_LOADED_CAP}-line cap"]
-    for name, n in sorted(groups, key=lambda g: (-g[1], g[0])):
-        hits.append(f"context-cap:   {n:4d}  {name}")
+    lines = sum(g[1] for g in groups)
+    tokens = est_tokens(sum(g[2] for g in groups))
+    hits = []
+    if lines > ALWAYS_LOADED_CAP:
+        hits.append(f"context-cap: always-loaded context is {lines} lines, "
+                    f"over the {ALWAYS_LOADED_CAP}-line cap")
+    if tokens > ALWAYS_LOADED_TOKEN_CAP:
+        hits.append(f"context-cap: always-loaded context is ~{tokens} tokens, "
+                    f"over the {ALWAYS_LOADED_TOKEN_CAP}-token cap (issue #430)")
+    if not hits:
+        return []
+    for name, n, chars in sorted(groups, key=lambda g: (-g[2], g[0])):
+        hits.append(f"context-cap:   {n:4d} lines  ~{est_tokens(chars):5d} tokens  {name}")
     hits.append("context-cap: keep the operative lines in the rule and move the rest into the skill it "
                 "points at (see the harness-authoring skill)")
     return hits
@@ -1765,12 +1955,15 @@ def cmd_lint(args: argparse.Namespace) -> int:
     else:
         hits = lint_tree(root)
         scope = str(root)
-    hits = hits + check_context_cap(root) + check_cost_sidecars(root)
+    hits = hits + check_context_cap(root) + check_cost_sidecars(root) + check_stance_constraints(root)
+    hits += check_collisions(root)
     if (root / "primitives" / "roles").is_dir():
         hits += ["projection drift: " + name + "; run `harness generate`"
                  for name in primitive_catalog.projection_drift(root)]
     for h in hits:
         say(h)
+    if not getattr(args, "staged", False) and always_loaded_groups(root):
+        say(context_summary(root))
     everywhere, _ = load_lint_terms()
     note = "" if everywhere else " (no personal lint-terms file; shapes and secrets only)"
     say(f"lint: {len(hits)} finding(s) in {scope}{note}")
@@ -1797,12 +1990,15 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 def cmd_stances(args: argparse.Namespace) -> int:
     cfg = load_config()
-    choices = resolve_stances(cfg)
+    # Non-strict for the same reason the cost table is: a command whose job is to say what is in
+    # force must name the conflict, not die of it. `harness sync` still refuses the selection.
+    choices = resolve_stances(cfg, strict=False)
     data = {"schema_version": 1, "precedence": ["defaults", "user", "project", "session"],
             "stances": {name: {"variant": path.stem, "source": str(path),
                                 "behavior": path.read_text(encoding="utf-8").strip()}
                         for name, path in choices.items()}}
     data["adapter_coverage"] = compatibility.coverage(REPO, choices)
+    data["conflicts"] = stance_conflicts(cfg)
     posture = load_posture()
     # Non-strict: a cost sidecar nobody can read is reported here, not raised as a traceback
     # over a command whose job is to tell you what is in force.
@@ -1823,6 +2019,10 @@ def cmd_stances(args: argparse.Namespace) -> int:
                 " (full table: `harness stances --json`)")
             if cost["warnings"]:
                 say(f"cost warnings: {len(cost['warnings'])}; `harness stances --json` names them")
+        for conflict in data["conflicts"]:
+            say("stance conflict: " + conflict)
+        if data["conflicts"]:
+            say("stance conflict: `harness sync` refuses this selection; change one of the two.")
         say("Native runtime restrictions still apply; stance guidance is not proof of enforcement.")
     return 0
 
@@ -2174,6 +2374,87 @@ def cmd_install(args: argparse.Namespace) -> int:
         say("  codex    — run `codex login`")
     say("  gh       — " + _gh_login_line())
     return rc
+
+
+def import_state_path() -> Path:
+    """Plans `harness import` has printed but not yet applied, keyed by source file."""
+    return state_dir() / "imports.json"
+
+
+def import_root(args: argparse.Namespace, name: str) -> Path:
+    if not args.root:
+        return home() / ".config" / "agent-harness" / "imported" / name
+    root = Path(args.root).expanduser()
+    if not root.is_absolute():
+        raise SystemExit("--root must be an absolute directory outside this checkout")
+    if root == REPO / "primitives" or REPO / "primitives" in root.parents:
+        raise SystemExit("import writes to an external primitive root, never into " + str(REPO / "primitives"))
+    return root
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Split an existing instruction file into primitives under an external root.
+
+    Two runs by design: the first prints the rules it would write and the sync projection of the
+    root carrying them, the second applies exactly that plan. Adopting somebody's instruction
+    file is a decision, and the diff is what makes it one.
+    """
+    source = Path(args.path).expanduser()
+    if not source.is_file():
+        raise SystemExit("import: no such file: " + str(source))
+    try:
+        files, notices = importer.plan(source, args.name)
+    except (OSError, ValueError, UnicodeDecodeError) as exc:
+        raise SystemExit("import: " + str(exc))
+    name = importer.slug(args.name) if args.name else importer.default_name(source, importer.kind_of(source))
+    root = import_root(args, name)
+
+    owner = reconcile.Store(state_dir(), dry=True).data["files"].get(str(source.resolve()))
+    if owner is not None:
+        say("owned: " + str(source.resolve()) + " is a file the harness generated")
+        say("       " + json.dumps({k: v for k, v in owner.items() if k != "prior"}))
+        say("       edit its primitive and re-run `harness sync` instead of importing it")
+        say("import refused: nothing was written")
+        return 2
+    cfg = load_config()
+    projected = dict(cfg, primitive_roots=list(cfg.get("primitive_roots", [])) + [str(root)])
+    refusals = collisions.findings(REPO, projected)
+    if refusals:
+        for line in refusals:
+            say(line)
+        say("import refused: nothing was written")
+        return 2
+
+    say(f"agent-harness {VERSION} · import {source} · root {root}")
+    for item in files:
+        say("  write   " + str(root / item["path"]))
+    for line in notices:
+        say("  notice  " + line)
+    fingerprint = importer.digest(root, files)
+    state = read_json(import_state_path()) or {"schema_version": 1, "pending": {}}
+    pending = state.setdefault("pending", {})
+    approved = pending.get(str(source.resolve())) == {"root": str(root), "digest": fingerprint}
+    if args.dry_run or not approved:
+        pending[str(source.resolve())] = {"root": str(root), "digest": fingerprint}
+        write_json_atomic(import_state_path(), state)
+        say("")
+        try:
+            cmd_sync(argparse.Namespace(dry_run=True, adopt=False, adopt_codex=False,
+                                        print_only=False, extra_roots=[str(root)]))
+        except SystemExit as exc:
+            say("  notice  the sync projection did not resolve: " + str(exc))
+        say("")
+        say("import: nothing written. Re-run without --dry-run to write this plan.")
+        return 0
+    for item in files:
+        reconcile.atomic_text(root / item["path"], item["text"])
+    say("  wrote   " + str(len(files)) + " rule(s) under " + str(root))
+    roots = list(cfg.get("primitive_roots", []))
+    if str(root) not in roots:
+        config_set("primitive_roots", json.dumps(roots + [str(root)]))
+    del pending[str(source.resolve())]
+    write_json_atomic(import_state_path(), state)
+    return 0
 
 
 def cmd_config(args: argparse.Namespace) -> int:
@@ -3141,13 +3422,20 @@ def cmd_bmad(args: argparse.Namespace) -> int:
 
 
 def cmd_compatibility(args):
+    """One command shows both levels: the client's status and, beside it, the per-capability
+    state derived from that runtime's adapter. Neither is hand-written twice."""
     data = compatibility.catalog(REPO)
+    clients = [dict(row, capabilities=compatibility.capability_states(REPO, data, row))
+               for row in data["clients"]]
     if args.json:
-        print(json.dumps(data, indent=2))
+        print(json.dumps(dict(data, clients=clients), indent=2))
     else:
         say("Model provider and agent runtime are separate from the client you run.")
-        for client in data["clients"]:
+        for client in clients:
             say(client["id"] + ": " + client["status"])
+            for name, capability in client["capabilities"].items():
+                say("  " + name + ": " + capability["state"]
+                    + (" (" + ", ".join(capability["cases"]) + ")" if capability["cases"] else ""))
         for limitation in data["limitations"]:
             say(limitation)
         if compatibility.source_drift(REPO, data):
@@ -3364,6 +3652,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("key")
     p.add_argument("value", nargs="?")
     p.set_defaults(func=cmd_config)
+
+    p = sub.add_parser("import", help="read an existing CLAUDE.md, AGENTS.md or .cursorrules into "
+                                      "primitives under an external root")
+    p.add_argument("path", help="the instruction file to split; never executed")
+    p.add_argument("--root", help="absolute external primitive root to write into "
+                                  "(default ~/.config/agent-harness/imported/NAME)")
+    p.add_argument("--name", help="identifier for the import; default is the directory it came from")
+    p.add_argument("--dry-run", action="store_true", help="print the plan and the sync projection only")
+    p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("integrations", help="inspect or register interchangeable implementation adapters")
     p.add_argument("action", choices=["show", "register", "doctor"])

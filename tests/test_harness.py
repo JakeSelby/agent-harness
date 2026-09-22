@@ -14,6 +14,8 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -21,6 +23,9 @@ loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "har
 spec = importlib.util.spec_from_loader("harness", loader)
 harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
+
+sys.path.insert(0, str(REPO / "scripts"))
+import cost_bench  # noqa: E402  the token estimate must match the benchmark's
 
 TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
 CFG = json.loads((REPO / "config.example.json").read_text())
@@ -399,6 +404,49 @@ class ContextCapTests(TempHome):
         empty = Path(self.tmp.name) / "empty"
         empty.mkdir()
         self.assertEqual(harness.check_context_cap(empty), [])
+
+    def test_the_token_cap_derives_from_the_measured_standing_context(self):
+        """The number is a third of #430's measured figure, not a round one someone liked."""
+        self.assertEqual(harness.MEASURED_STANDING_CONTEXT_TOKENS, 12607)
+        self.assertEqual(harness.ALWAYS_LOADED_TOKEN_CAP,
+                         harness.MEASURED_STANDING_CONTEXT_TOKENS // 3)
+        self.assertEqual(harness.CHARS_PER_TOKEN, cost_bench.CHARS_PER_TOKEN)
+
+    def test_the_cap_comment_cites_its_source(self):
+        text = (REPO / "bin" / "harness").read_text(encoding="utf-8")
+        head = text.split("ALWAYS_LOADED_TOKEN_CAP", 1)[0]
+        self.assertIn("code.claude.com/docs/en/memory", head)
+        self.assertIn("#430", head)
+
+    def test_repo_is_under_the_token_cap(self):
+        total, groups = harness.always_loaded_tokens(REPO)
+        self.assertLessEqual(total, harness.ALWAYS_LOADED_TOKEN_CAP, msg=f"{total} tokens: {groups}")
+        self.assertEqual(total, harness.est_tokens(
+            sum(g[2] for g in harness.always_loaded_groups(REPO))))
+
+    def test_a_tree_under_the_line_cap_can_still_fail_on_tokens(self):
+        """Long lines cost tokens the line count cannot see, so the token cap is the binding one."""
+        root = self._tree(10, {"off": 2})
+        fat = "x" * (harness.ALWAYS_LOADED_TOKEN_CAP * int(harness.CHARS_PER_TOKEN) + 400)
+        (root / "claude" / "rules" / "a.md").write_text(fat + "\n")
+        lines, _ = harness.always_loaded_lines(root)
+        self.assertLessEqual(lines, harness.ALWAYS_LOADED_CAP)
+        hits = harness.check_context_cap(root)
+        self.assertTrue(hits)
+        self.assertIn(f"over the {harness.ALWAYS_LOADED_TOKEN_CAP}-token cap", hits[0])
+        self.assertNotIn("-line cap", hits[0])
+        self.assertTrue(any("claude/rules/" in h and "tokens" in h for h in hits[1:]), msg=str(hits))
+
+    def test_lint_reports_both_measures_when_the_tree_passes(self):
+        out = io.StringIO()
+        os.environ.pop("HARNESS_QUIET", None)  # `say` prints nothing while it is set
+        with redirect_stdout(out):
+            rc = harness.cmd_lint(harness.argparse.Namespace(path=str(REPO), staged=False))
+        self.assertEqual(rc, 0)
+        line = [ln for ln in out.getvalue().splitlines() if ln.startswith("context:")]
+        self.assertEqual(len(line), 1, msg=out.getvalue())
+        self.assertIn(f"of {harness.ALWAYS_LOADED_TOKEN_CAP}", line[0])
+        self.assertIn(f"of {harness.ALWAYS_LOADED_CAP}", line[0])
 
 
 class DetectorCoverageTests(TempHome):
