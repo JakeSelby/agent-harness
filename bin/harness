@@ -3442,7 +3442,11 @@ def cmd_usage(args: argparse.Namespace) -> int:
         return (f"{label[:34]:<34}{acc[0]:>9}{acc[1]:>12,}{acc[2]:>12,}"
                 f"{acc[3]:>14,}{acc[4]:>14,}{hit:>7.0%}{acc[5]:>11.2f}")
 
-    if unknown_metrics:
+    # Said once, or not at all: when a run's missing counts left it unpriced, the footer below
+    # already reports it, and the two lines read as two different problems — one that figures
+    # were dropped from the totals, one that they were counted as unpriced. A report with no
+    # unpriced run still needs the warning, because nothing else says a column is short.
+    if unknown_metrics and not unpriced:
         say("Partial totals: unavailable metrics are excluded: " + ", ".join(sorted(unknown_metrics)))
     head = (f"{by:<34}{'runs':>9}{'input':>12}{'output':>12}"
             f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}{'usd':>11}")
