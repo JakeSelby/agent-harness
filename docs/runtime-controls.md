@@ -59,6 +59,35 @@ refuses an overwrite; detached worker failures go to `usage.errors.jsonl` beside
 Transcript adapters cannot observe nested tool calls absent from the transcript and do not prove
 that a stance caused a behavior.
 
+## Decision providers
+
+`lib/harness_core/decision.py` holds one transport-agnostic contract for the question "may this
+action proceed, and how": `decide(action, counterparty, context)` returns a `Decision` carrying an
+outcome of `allow`, `ask` or `deny`, an autonomy level of 1 to 3, the provider name, a reason, and
+an `injected_cognition` block of rule matches and optional agent and user messages;
+`record(action_outcome)` notes how an action turned out; `learn(approval_stream)` takes past
+approvals and may be a no-op. The shape deliberately mirrors the `decide`/`record`/`learn` surface
+of an external control plane, so a hosted provider can be added later without a second contract.
+An action names a class — `coding.shell_exec`, `coding.git_commit`, `coding.git_push`,
+`coding.deploy`, `coding.file_write` — and the command grade where one is known. A counterparty is
+the `repo:<name>/<branch>` slug the usage ledger already derives.
+
+Two providers ship. `none` is the default: every action is allowed at level 3 with the reason
+`governance: none`. `local` reads `.agent-harness/governance.json` in the repository
+(`defaults`, `pairs`, `caps`) and resolves a level in that order — an explicit counterparty pair,
+then the action class default, then the level the autonomy stance implies (`execute` 3,
+`confirm-writes` 2, `ask` 1, and 1 when nothing resolves). A cap is a ceiling the resolved level
+never exceeds; `coding.deploy` carries a built-in cap of 2 that a policy file may lower and may not
+raise. Level 3 allows every grade, level 2 asks at grade 2 and up, level 1 asks at grade 1 and up,
+and an unknown grade is judged as 1. A policy file that cannot be honoured as written is an error
+naming the file, never a silent "no policy". Both providers write to the existing
+`decisions.jsonl` ledger and neither reaches the network.
+
+`governance.provider` selects one; the default is `none`. `harness decide --action <class>
+[--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.
+Nothing consults a provider yet: command grading still answers the permission question on its own,
+and binding the two is separate work.
+
 Session start checks BMad configuration without installing it. Installation remains explicit.
 See [task continuation and BMad](bmad.md), [installation ownership](runtime-installation.md),
 and the compatibility catalog for qualification evidence.
