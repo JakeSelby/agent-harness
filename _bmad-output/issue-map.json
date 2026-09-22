@@ -6,7 +6,7 @@
   "next_ids": {
     "epic": 11,
     "story": 172,
-    "task": 2,
+    "task": 3,
     "bug": 52,
     "chore": 34,
     "spike": 7,
@@ -3611,6 +3611,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S171.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T002",
+      "github_number": 480,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/480",
+      "title": "Record the fields a cost-replay regression needs to be diagnosed from the ledger alone",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T002.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     }
