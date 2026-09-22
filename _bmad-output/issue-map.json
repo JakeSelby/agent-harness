@@ -8,7 +8,7 @@
     "story": 151,
     "task": 1,
     "bug": 50,
-    "chore": 33,
+    "chore": 34,
     "spike": 7,
     "decision": 7
   },
@@ -3245,6 +3245,19 @@
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C032.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C033",
+      "github_number": 424,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/424",
+      "title": "Reserve BMad IDs for the comms-gap issues filed into v0.12.0",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C033.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
