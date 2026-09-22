@@ -13,6 +13,19 @@
       "runtime_dependencies": [],
       "notice": "THIRD_PARTY_NOTICES",
       "file": "lib/vendor/tomlkit-0.15.1-py3-none-any.whl"
+    },
+    {
+      "name": "ruleprobe",
+      "version": "0.1.0",
+      "source": "https://github.com/JakeSelby/ruleprobe",
+      "artifact_url": "https://github.com/JakeSelby/ruleprobe/releases/download/v0.1.0/ruleprobe-0.1.0-py3-none-any.whl",
+      "sha256": "2756bdcd4f25e87d1852fa61b76da6e8a8d2867e5ba7755918c62016abd17c3a",
+      "license": "MIT",
+      "rightsholder": "Jake Selby",
+      "modifications": "None",
+      "runtime_dependencies": [],
+      "notice": "THIRD_PARTY_NOTICES",
+      "file": "lib/vendor/ruleprobe-0.1.0-py3-none-any.whl"
     }
   ]
 }
