@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness usage --by prefix` reports whether each session held its cached prefix: the cache-miss
+  ratio `cache_write / (cache_read + cache_write)` from the ledger rows it already has, and the
+  slice at which the ratio stepped. Rows with no cache fields, and reads against zero writes,
+  report `unknown` rather than a figure. It measures and does not enforce; Codex exports no
+  per-turn cache figures, which its capabilities file now records (#415).
+
 - A `/close-out` workflow ends a finished session in one invocation: it sweeps for work still
   open — dirty checkouts, `harness worktree audit`, this session's pull requests and their
   checks, running background work, parked decisions — delegates the merge to `/land` and the
