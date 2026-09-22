@@ -1,5 +1,4 @@
 {
-  "outputStyle": "Scannable",
   "plansDirectory": ".agent-harness/plans",
   "useAutoModeDuringPlan": true,
   "showThinkingSummaries": true,
