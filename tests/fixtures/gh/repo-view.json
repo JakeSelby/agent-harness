@@ -1,24 +1,66 @@
 {
-    "description": "Your way of working, across AI agents. A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable personal stances.",
+    "description": "Find out which of your agent rules actually fire. A user-owned agent harness for Claude Code and Codex: every rule carries a transcript detector, and usage reports hit rate per rule.",
     "homepageUrl": "https://agent-harness.jakeselby.com",
     "repositoryTopics": [
         {
             "name": "agent-harness"
         },
         {
+            "name": "agent-skills"
+        },
+        {
+            "name": "agentic-ai"
+        },
+        {
+            "name": "agentic-coding"
+        },
+        {
+            "name": "agents-md"
+        },
+        {
             "name": "ai-agents"
+        },
+        {
+            "name": "ai-coding-agent"
         },
         {
             "name": "claude-code"
         },
         {
-            "name": "developer-tools"
+            "name": "claude-code-hooks"
+        },
+        {
+            "name": "claude-code-plugin"
+        },
+        {
+            "name": "claude-code-rules"
+        },
+        {
+            "name": "claude-skills"
         },
         {
             "name": "codex"
         },
         {
-            "name": "personal-stances"
+            "name": "coding-agent"
+        },
+        {
+            "name": "context-engineering"
+        },
+        {
+            "name": "developer-tools"
+        },
+        {
+            "name": "llm-agents"
+        },
+        {
+            "name": "observability"
+        },
+        {
+            "name": "rule-detectors"
+        },
+        {
+            "name": "subagents"
         }
     ]
 }

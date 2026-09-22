@@ -245,15 +245,25 @@
     }
   ],
   "topics": [
-    "ai-agents",
     "agent-harness",
+    "agent-skills",
+    "agentic-ai",
+    "agentic-coding",
+    "agents-md",
+    "ai-agents",
+    "ai-coding-agent",
     "claude-code",
-    "codex",
-    "developer-tools",
-    "rule-detectors",
-    "observability",
-    "context-engineering",
+    "claude-code-hooks",
+    "claude-code-plugin",
     "claude-code-rules",
-    "agents-md"
+    "claude-skills",
+    "codex",
+    "coding-agent",
+    "context-engineering",
+    "developer-tools",
+    "llm-agents",
+    "observability",
+    "rule-detectors",
+    "subagents"
   ]
 }
