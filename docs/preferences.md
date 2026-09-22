@@ -244,7 +244,10 @@ session's own effort rather than by spawning. What each variant sets is above, u
 `delegation-tiering` skill.
 
 **Voice.** `voice` governs how a reply is laid out, and nothing about what the work is. `scannable`
-defers to the Scannable output style: verdict first, registers separated, at most one table.
+defers to the Scannable output style: verdict first, registers separated, at most one table. It is
+the only variant that carries presentation material, on either runtime; under `answer-card` and
+`off` a sync installs no output style and takes back out the one a previous selection left, while
+an output style you chose yourself is left exactly as it is, whatever it is called.
 `answer-card` is for reading on a phone — the answer in the first line, then why, the catch, and the
 alternatives, about 150 words, no tables, with the reasoning left in the file it links rather than
 re-argued in the message. It wins over the output style where the two differ. `off` imposes no shape
