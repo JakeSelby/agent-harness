@@ -7,9 +7,13 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+from harness_core import reconcile  # noqa: E402  the journal these tests read ownership from
 
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
@@ -63,21 +67,32 @@ class PreservationTests(unittest.TestCase):
                 self.assertEqual(merged["outputStyle"], USER_STYLE)
 
     def test_switching_away_from_scannable_removes_the_style_the_harness_installed(self):
-        installed = harness.merge_claude_settings({}, TEMPLATE, cfg_with("scannable"))
-        merged = harness.merge_claude_settings(installed, TEMPLATE, cfg_with("off"))
+        live = harness.merge_claude_settings({}, TEMPLATE, cfg_with("scannable"))
+        merged = harness.merge_claude_settings(live, TEMPLATE, cfg_with("off"), installed="Scannable")
         self.assertNotIn("outputStyle", merged)
+
+    def test_a_style_the_user_chose_first_survives_even_when_we_ship_that_name(self):
+        """Ownership is what the journal recorded, not what the style is called."""
+        live = {"outputStyle": "Scannable"}
+        for variant in [v for v, style in EXPECTED.items() if style is None]:
+            with self.subTest(variant=variant):
+                merged = harness.merge_claude_settings(live, TEMPLATE, cfg_with(variant), installed=None)
+                self.assertEqual(merged["outputStyle"], "Scannable")
+        self.assertEqual(harness.strip_claude_settings(live, TEMPLATE, None)["outputStyle"], "Scannable")
 
     def test_uninstall_strips_our_style_and_keeps_the_user_s(self):
         ours = harness.merge_claude_settings({"model": "m"}, TEMPLATE, cfg_with("scannable"))
-        self.assertNotIn("outputStyle", harness.strip_claude_settings(ours, TEMPLATE))
+        self.assertNotIn("outputStyle", harness.strip_claude_settings(ours, TEMPLATE, "Scannable"))
         theirs = {"model": "m", "outputStyle": USER_STYLE}
-        self.assertEqual(harness.strip_claude_settings(theirs, TEMPLATE)["outputStyle"], USER_STYLE)
+        self.assertEqual(harness.strip_claude_settings(theirs, TEMPLATE, None)["outputStyle"], USER_STYLE)
 
     def test_a_user_chosen_style_is_not_in_the_projection_that_reports_drift(self):
-        proj = harness.claude_projection({"outputStyle": USER_STYLE}, TEMPLATE)
+        proj = harness.claude_projection({"outputStyle": USER_STYLE}, TEMPLATE, installed=None)
         self.assertIsNone(proj["keys"]["outputStyle"])
         ours = harness.merge_claude_settings({}, TEMPLATE, cfg_with("scannable"))
-        self.assertEqual(harness.claude_projection(ours, TEMPLATE)["keys"]["outputStyle"], "Scannable")
+        self.assertEqual(
+            harness.claude_projection(ours, TEMPLATE, installed="Scannable")["keys"]["outputStyle"],
+            "Scannable")
 
 
 class RuntimeAgreementTests(unittest.TestCase):
@@ -141,6 +156,56 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(settings["model"], "m")
         self.assertEqual(self.sync()["outputStyle"], USER_STYLE)
         self.assertEqual([l for l in harness._diff_lines() if "outputStyle" in l], [])
+
+    def test_a_style_the_user_chose_before_installing_survives_a_sync_and_an_uninstall(self):
+        """Our own style name, chosen by the user first: the journal has never recorded it."""
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        self.settings.write_text(json.dumps({"outputStyle": "Scannable"}))
+        self.select("off")
+        self.assertEqual(self.sync()["outputStyle"], "Scannable")
+        harness.cmd_uninstall(harness.argparse.Namespace())
+        self.assertEqual(json.loads(self.settings.read_text())["outputStyle"], "Scannable")
+
+    def test_an_unowned_style_is_not_recorded_as_owned_and_a_hand_edit_is_not_drift(self):
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        self.settings.write_text(json.dumps({"outputStyle": USER_STYLE}))
+        self.select("off")
+        self.sync()
+        store = reconcile.Store(self.home / ".local/state/agent-harness", dry=True)
+        keys = store.data["files"].get(str(self.settings), {}).get("keys", {})
+        self.assertNotIn(harness.OUTPUT_STYLE_PATH, keys)
+        settings = json.loads(self.settings.read_text())
+        settings["outputStyle"] = "Something Else"
+        self.settings.write_text(json.dumps(settings))
+        drift = harness._diff_lines() + reconcile.Store(self.home / ".local/state/agent-harness",
+                                                        dry=True).drift()
+        self.assertEqual([l for l in drift if "outputStyle" in l], [])
+        self.assertEqual(self.sync()["outputStyle"], "Something Else")
+
+    def test_uninstall_restores_what_was_there_before_our_style(self):
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        self.settings.write_text(json.dumps({"outputStyle": USER_STYLE}))
+        self.select("scannable")
+        self.assertEqual(self.sync()["outputStyle"], "Scannable")
+        harness.cmd_uninstall(harness.argparse.Namespace())
+        self.assertEqual(json.loads(self.settings.read_text())["outputStyle"], USER_STYLE)
+
+    def test_uninstall_leaves_no_style_where_there_was_none(self):
+        self.select("scannable")
+        self.assertEqual(self.sync()["outputStyle"], "Scannable")
+        harness.cmd_uninstall(harness.argparse.Namespace())
+        self.assertNotIn("outputStyle", json.loads(self.settings.read_text()))
+
+    def test_drift_on_our_own_style_names_the_live_value(self):
+        self.select("scannable")
+        self.sync()
+        settings = json.loads(self.settings.read_text())
+        settings["outputStyle"] = "Hand Edited"
+        self.settings.write_text(json.dumps(settings))
+        lines = [l for l in harness._diff_lines() if "outputStyle" in l]
+        self.assertTrue(lines, "a hand-edited harness style is drift")
+        self.assertIn("Hand Edited", lines[0])
+        self.assertNotIn("None", lines[0])
 
 
 if __name__ == "__main__":
