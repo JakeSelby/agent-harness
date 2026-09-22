@@ -534,6 +534,10 @@ The groupings and the two annotations are in [which rules fired](#which-rules-fi
 Every registry id gets a line, including the ones with no hit, so an unobserved rule is visible
 rather than absent.
 
+Two shipped features this loop caught — a stance measured as never firing and a hook whose metric
+did not move — are written up with their figures and commands in
+[caught in the act](caught-in-the-act.md).
+
 Those two are the ends of one ladder. A rule that trips in most sessions is prose that failed:
 the agent read it and walked past it anyway, so it wants to be a hook, where the decision is
 made for it rather than asked of it. A rule unobserved for a month is either kept honestly by
