@@ -18,3 +18,11 @@ __pycache__/
 
 # Research runs: the four curated-list README copies are other projects' text and stay local; digests carry the extracted claims.
 _bmad-output/planning-artifacts/research/**/imports/list-*.md
+
+# Harness bookkeeping the CLI writes into whatever checkout it runs in: a task record
+# keyed to an absolute repository path, the sync lock, and captured cost-replay
+# transcripts. None can ever be committed. Plans and progress stay visible under
+# .agent-harness/, because a handoff counts them as task inputs.
+.agent-harness/task.json
+.agent-harness/sync.lock
+.agent-harness/evidence/
