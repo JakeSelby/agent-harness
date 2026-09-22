@@ -2,7 +2,7 @@
   "headline": "Your way of working, across AI agents.",
   "description": "A general-purpose, model-provider-agnostic harness built around you. Define how your agents work through shared rules, skills, roles, workflows, and custom primitives, including personal stances you can switch without rewriting your instructions.",
   "stances": "Personal stances turn your working preferences into explicit switches. Choose how agents delegate, test, communicate, exercise autonomy, and approach decisions. Select a different stance when the situation changes, or define your own. The harness applies those choices through supported agent runtimes.",
-  "github_description": "Your way of working, across AI agents. A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable personal stances.",
+  "github_description": "Your way of working, across AI agents. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
   "hero": {
     "title": "Your way of working, across AI agents.",
     "subtitle": "Agent Harness is an open-source layer over the Claude Code and Codex you already run. You write your rules, guardrails and opinions once. It keeps always-loaded context small, cleans up the answers and plans you read, and comes with you when you switch providers.",
@@ -245,6 +245,18 @@
     "codex",
     "claude-code",
     "developer-tools",
-    "personal-stances"
+    "personal-stances",
+    "agent-skills",
+    "claude-skills",
+    "agentic-ai",
+    "llm-agents",
+    "claude-code-plugin",
+    "coding-agent",
+    "ai-coding-agent",
+    "agentic-coding",
+    "context-engineering",
+    "agents-md",
+    "subagents",
+    "claude-code-hooks"
   ]
 }
