@@ -7,13 +7,18 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
 
-## Define your working preferences once. Apply them to Claude Code and Codex.
+## Find out which of your agent rules actually fire.
 
 ![Terminal output of `bin/harness sync --dry-run` on a fresh home: the resolved personal stances, then every link, rendered file and setting the sync would create for Claude Code and Codex, ending in "sync complete". Nothing is written.](docs/assets/sync-dry-run.svg)
 
-Agent Harness keeps shared instructions, skills, roles, workflows and personal preferences in one
-place, then projects them into the native formats each runtime understands. You do not have to
-maintain one working agreement for Claude Code and another for Codex.
+Every project in this field writes instructions and hopes. Here every rule names a deterministic
+detector over the agent's own transcript, or says in one line why nothing in a transcript can decide it,
+and lint fails the commit otherwise. `harness usage --rules` then reports how often each rule fired,
+grouped by repository and by the preference variant you had selected at the time.
+
+Around that loop, Agent Harness keeps rules, skills, roles and workflows in one place and projects
+them into Claude Code and Codex, with an ownership journal for every file it touches and an uninstall
+that puts things back. The same ledger exports over OTLP to Langfuse, Phoenix or Opik, off by default.
 
 Agent Harness is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
 Code and Codex remain responsible for model access, native permissions and client behavior.
@@ -23,10 +28,41 @@ Code and Codex remain responsible for model access, native permissions and clien
 The same six groups are held as data in [`product.json`](product.json), so this list, the reference
 site and the GitHub description cannot drift apart.
 
+### Rules you can measure, and prune
+
+Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.
+
+- [Detector or reason](primitives/rules): Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.
+- [Hit rate per rule](docs/usage.md): harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.
+- [What is detected](claude/hooks/rule-detectors.py): Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
+- [Caught in the act](docs/field-scan.md): The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.
+- [Exports where you already look](docs/telemetry.md): The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.
+
+### Guardrails that leave room for judgment
+
+Hooks handle the few things that should be deterministic. Everything else stays the agent's call.
+
+- [Graded shell commands](claude/hooks/grade-bash.py): Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.
+- [Stop gate](claude/hooks/stop-gate.py): The turn doesn't end while your repo's own gate is red.
+- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code being written.
+- [Secrets and personal data](primitives/rules/secrets.md): Lint catches tokens, keys and personal strings before they're committed.
+- [Untrusted tool output](claude/hooks/neutralize-tool-output.py): Text that comes back from a tool is data, never instructions.
+- [Sandboxing](docs/sandboxing.md): Fence the filesystem and network before you leave a loop unattended.
+
+### Settings you own, on every runtime you run
+
+Sync keeps a journal of what it changed and refuses to overwrite what it does not own. Uninstall puts it back. The same rules then go to both runtimes.
+
+- [Reversible](docs/settings-ownership.md): Sync has a dry run, diff shows drift, an ownership journal records prior and applied values, and uninstall restores what it adopted.
+- [Shared primitives](docs/sync-model.md): Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.
+- [Same policy on both](docs/runtime-controls.md): A Claude Code spawn and a Codex spawn resolve to the same delegation policy.
+- [Capability classes](docs/role-workers.md): frontier, strong, standard, light. Each adapter maps them to its own models.
+- [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.
+- [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents do not step on your checkout or on each other.
+
 ### Spend less without capping your agents
 
-A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things
-cost and let it pace itself.
+A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things cost and let it pace itself.
 
 - [Cost postures](primitives/stances/cost): Pick frugal, balanced or max, or write your own. One table sets model, effort and a soft budget per role.
 - [Model tiering](primitives/stances/delegation): Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.
@@ -45,59 +81,36 @@ Most agent output is a wall of text. This puts the verdict first and the ask whe
 - [Bounded subagent returns](primitives/skills/transcript-hygiene): Subagents come back with findings and a word cap, not their whole transcript.
 - [Conciseness rules](primitives/rules/conciseness.md): Explain a decision once. Comments say why, not what.
 
-### Your opinions, as switches
+### Your preferences, as switches
 
-Reasonable developers disagree about testing, autonomy and how much to delegate. So none of that is
-hardcoded. They're stances, and you flip them.
+Reasonable developers disagree about testing, autonomy and how much to delegate. Nine axes, each a named choice: three bind to enforcement today, the rest are prose that swaps cleanly.
 
 - [Stance dimensions and variants](primitives/stances): Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.
 - [User, project, session](docs/preferences.md): Set a default, override it for one repo, override that for one session.
 - [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
 - [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
-
-### Guardrails that leave room for judgment
-
-Hooks handle the few things that should be deterministic. Everything else stays the agent's call.
-
-- [Graded shell commands](claude/hooks/grade-bash.py): Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.
-- [Autonomy stances](primitives/stances/autonomy): Decide how far an agent goes before it checks in.
-- [Stop gate](claude/hooks/stop-gate.py): The turn doesn't end while your repo's own gate is red.
-- [Secrets and personal data](primitives/rules/secrets.md): Lint catches tokens, keys and personal strings before they're committed.
-- [Untrusted tool output](claude/hooks/neutralize-tool-output.py): Text that comes back from a tool is data, never instructions.
-- [Sandboxing](docs/sandboxing.md): Fence the filesystem and network before you leave a loop unattended.
-
-### One way of working, every provider
-
-I started in Cursor, moved to Claude Code, added Codex, and kept rebuilding the same setup. Now it's
-defined once and projected into each one.
-
-- [Shared primitives](docs/sync-model.md): Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.
-- [Same policy on both](docs/runtime-controls.md): A Claude Code spawn and a Codex spawn resolve to the same delegation policy.
-- [Capability classes](docs/role-workers.md): frontier, strong, standard, light. Each adapter maps them to its own models.
-- [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are.
-- [Reversible](docs/settings-ownership.md): Sync has a dry run, diff shows drift, and uninstall restores what it adopted.
-
-### A delivery loop, not just a prompt
-
-Five commands take a piece of work from a question to a reviewed pull request, with fresh eyes at
-the review step.
-
-- [The ritual](primitives/workflows): /research, /plan, /build, /review, /land, /handoff, /close-out.
-- [Named roles](claude/agents): Builder, planner, reviewer, gatherer, designer and more, each with its own model class and tool limits.
-- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code being written.
-- [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents don't step on your checkout or on each other.
-- [Testing and commit stances](primitives/stances/testing): Tests required, Conventional Commits, gated pushes. Or switch them.
-- [Planning in public](docs/bmad.md): The brief, architecture and stories are in the repo.
+- [Autonomy stances](primitives/stances/autonomy): Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.
 
 ### On the way
 
 Planned, not promised.
 
-- **Grok and Cursor adapters:** Grok is next.
+- **Grok and Cursor adapters:** Six runtimes at equal depth is the target, after the measurement loop closes. Cursor and Grok are the next two.
 - **Fresh-session nudge:** A heads-up when the orchestrator's context has become expensive to keep dragging forward.
 - **Budget nudges mid-run:** Today a subagent learns its budget in the brief. Next it hears about it while it works.
-- **Jev judgment checks:** Small, bounded checks for the calls a deterministic hook can't make.
-- **Architecture viewer, out of preview:** A plan as the front door to a live supervision surface.
+- **Close the loop:** Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.
+- **The instrument, standalone:** The measurement engine as its own package: run it on your own transcripts and your own rules with no harness installed.
+
+## The delivery loop
+
+Seven commands carry a piece of work from a question to a merged pull request and a closed-out
+session, with fresh eyes at the review step: `/research`, `/plan`, `/build`, `/review`, `/land`,
+`/handoff`, `/close-out` ([workflows](primitives/workflows)). Named roles ([builder, planner, reviewer,
+gatherer, designer and more](claude/agents)) each carry a model class and tool limits; the review is done
+by agents that never saw the code being written; the testing and commit stances
+([required tests, Conventional Commits, gated pushes, or switch them](primitives/stances/testing)) decide
+how strict that loop is; and the brief, architecture and stories are [planned in public](docs/bmad.md).
+Every project in this field ships a loop like it, which is why it is a section and not a claim.
 
 ## Preferences you can switch
 
