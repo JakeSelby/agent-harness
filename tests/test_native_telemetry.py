@@ -23,6 +23,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import isolate_home, without_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
@@ -216,7 +218,7 @@ class HeadersHelperTests(unittest.TestCase):
         path.write_text(json.dumps({"telemetry": block}))
 
     def run_helper(self):
-        env = dict(os.environ, HOME=str(self.home), HARNESS_HOME=str(self.home))
+        env = dict(without_config_dir(), HOME=str(self.home), HARNESS_HOME=str(self.home))
         return subprocess.run([sys.executable, str(HELPER)], capture_output=True, text=True, env=env)
 
     def test_it_prints_one_json_object_of_headers(self):
@@ -257,11 +259,7 @@ class SyncTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._environ = dict(os.environ)
-        os.environ["HOME"] = str(self.home)
-        for key in list(os.environ):
-            if key.startswith("HARNESS_"):
-                del os.environ[key]
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
         self.settings_file = self.home / ".claude" / "settings.json"
         self.config_toml = self.home / ".codex" / "config.toml"
         self.headers = self.home / "otlp-headers"

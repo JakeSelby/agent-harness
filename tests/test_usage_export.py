@@ -24,6 +24,8 @@ import threading
 import time
 import unittest
 from pathlib import Path
+
+from isolation import without_config_dir
 from unittest.mock import patch
 
 from test_usage import REPO, _load, harness
@@ -326,7 +328,7 @@ class TheHook(Fixture):
         started = time.time()
         out = subprocess.run([sys.executable, str(HOOK), "--worker", str(transcript), "s-1", ""],
                              capture_output=True, text=True,
-                             env=dict(os.environ, HOME=str(home)), timeout=120)
+                             env=dict(without_config_dir(), HOME=str(home)), timeout=120)
         return out, time.time() - started
 
     def transcript(self, home):

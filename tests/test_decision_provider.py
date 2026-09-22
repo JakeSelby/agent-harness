@@ -17,6 +17,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import decision
@@ -25,7 +27,7 @@ from harness_core import decision
 class Base(unittest.TestCase):
     def env(self):
         """A disposable HOME, and no inherited `HARNESS_*` to speak for the real one."""
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env.update({"HOME": str(self.root), "HARNESS_HOME": str(self.root)})
         return env
 

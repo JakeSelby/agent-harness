@@ -11,6 +11,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import isolate_home, without_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
 spec = importlib.util.spec_from_loader("harness", loader)
@@ -87,7 +89,7 @@ class DesignerSpawnTests(unittest.TestCase):
         agents = self.home / ".claude" / "agents"
         agents.mkdir(parents=True)
         (agents / "designer.md").write_text(AGENT.read_text(encoding="utf-8"))
-        self.env = dict(os.environ, HOME=str(self.home), HARNESS_STANCE_DELEGATION="tiered")
+        self.env = dict(without_config_dir(), HOME=str(self.home), HARNESS_STANCE_DELEGATION="tiered")
 
     def hook(self, tool_input):
         out = subprocess.run([sys.executable, str(HOOK)], input=json.dumps({"tool_name": "Agent", "tool_input": tool_input}),
@@ -113,11 +115,7 @@ class DesignerSyncTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old_environ = dict(os.environ)
-        os.environ["HOME"] = str(self.home)
-        for k in list(os.environ):
-            if k.startswith("HARNESS_"):
-                del os.environ[k]
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def tearDown(self):
         os.environ.clear()

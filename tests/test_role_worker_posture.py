@@ -21,6 +21,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
@@ -140,7 +142,7 @@ class SessionSelectionTests(PostureCase):
         super().setUp()
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = self.tmp.name
         patcher = unittest.mock.patch.dict(os.environ, env, clear=True)
         patcher.start()

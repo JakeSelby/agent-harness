@@ -24,6 +24,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import isolate_home, without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 _loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
@@ -53,7 +55,7 @@ class RegistryCase(unittest.TestCase):
         (d / "config.json").write_text(json.dumps({"stances": {"delegation": "tiered"}}))
 
     def env(self, extra=None):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         env.update(extra or {})
         return env
@@ -462,10 +464,7 @@ class UninstallTests(unittest.TestCase):
         self.home = Path(self.tmp.name)
         self._environ = dict(os.environ)
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self._environ)))
-        for key in [k for k in os.environ if k.startswith("HARNESS_")]:
-            del os.environ[key]
-        os.environ["HOME"] = str(self.home)
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def test_uninstall_removes_the_session_directory(self):
         state = self.home / ".local" / "state" / "agent-harness"

@@ -18,6 +18,8 @@ import io
 from contextlib import redirect_stdout
 from pathlib import Path
 
+from isolation import isolate_home, without_config_dir, without_harness_vars  # noqa: F401
+
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
 spec = importlib.util.spec_from_loader("harness", loader)
@@ -37,11 +39,7 @@ class TempHome(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old_home = os.environ.get("HOME")
-        os.environ["HOME"] = str(self.home)
-        for k in list(os.environ):
-            if k.startswith("HARNESS_"):
-                del os.environ[k]
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def tearDown(self):
         if self._old_home is not None:

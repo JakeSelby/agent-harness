@@ -14,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "tier-agent-spawns.py"
 TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
@@ -52,7 +54,7 @@ class TierSpawnsTests(unittest.TestCase):
         self.transcript.write_text("\n".join(lines) + "\n")
 
     def run_hook(self, payload, env=None):
-        merged = dict(os.environ)
+        merged = without_config_dir()
         merged.pop("HARNESS_STANCE_DELEGATION", None)
         merged["HOME"] = str(self.home)
         merged.update(env or {})

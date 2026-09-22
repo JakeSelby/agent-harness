@@ -20,6 +20,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import without_config_dir
+
 from test_usage import REPO, _load, harness
 from test_usage_export import HOOK, SESSION_ROW, SUBAGENT_ROW, attrs, collector, records
 
@@ -280,7 +282,7 @@ class FromTheLiveWorker(Fixture):
                                    "cache_creation_input_tokens": 0}}}) + "\n", encoding="utf-8")
         out = subprocess.run([sys.executable, str(HOOK), "--worker", str(transcript), "s-1", ""],
                              capture_output=True, text=True,
-                             env=dict(os.environ, HOME=str(home), HARNESS_HOME=str(home)),
+                             env=dict(without_config_dir(), HOME=str(home), HARNESS_HOME=str(home)),
                              timeout=120)
         self.assertEqual(out.returncode, 0, out.stderr)
         session = [attrs(r) for r in records(seen[0])
