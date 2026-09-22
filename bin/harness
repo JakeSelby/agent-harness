@@ -14,7 +14,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness doctor
     harness uninstall
     harness lint    [PATH]
-    harness usage   [--days N] [--by day|repo|model|role|stance|decision] [--stance NAME] [--rescan]
+    harness usage   [--days N] [--by day|repo|model|role|stance|decision|prefix] [--stance NAME] [--rescan]
     harness usage   --rules [--by rule|repo|stance] [--days N] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
@@ -48,7 +48,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
-from harness_core import codex_client, keychain, collisions, importer
+from harness_core import codex_client, keychain, collisions, importer, cache_prefix
 from harness_core import decision as decisions_provider
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
@@ -3459,6 +3459,13 @@ def cmd_usage(args: argparse.Namespace) -> int:
         print(f"usage --rules groups by rule, repo or stance; --by {by} is not one of them",
               file=sys.stderr)
         return 2
+    if by == "prefix" and (rules_mode or stance):
+        # A detector hit belongs to a session's conduct and a stance groups its tokens; a
+        # cache prefix is a property of the session's context, and neither of those reports
+        # answers its question. Refused rather than accepted and ignored.
+        print("usage --by prefix reports cache-prefix stability; --rules and --stance do not apply",
+              file=sys.stderr)
+        return 2
     if rules_mode and by == "day":
         by = "rule"
     if getattr(args, "rescan", False):
@@ -3481,6 +3488,10 @@ def cmd_usage(args: argparse.Namespace) -> int:
             continue
         if isinstance(row, dict):
             ledger.append(row)
+    if by == "prefix":
+        # Read-only and retrospective: `cache_prefix` derives the miss ratio from the cache
+        # fields these rows already carry and names where it stepped. Nothing is priced.
+        return cache_prefix.report(ledger, cutoff, args.days, say)
     table = load_prices(load_config())
     # A session is priced with its subagent rows in hand, so the whole ledger is indexed before
     # anything is summed; a child outside the window still belongs to its parent's bill.
@@ -3934,7 +3945,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--dry-run", action="store_true",
                    help="with export, count what would be sent and open no connection")
     p.add_argument("--days", type=int, default=30)
-    p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance", "decision"],
+    p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance", "decision",
+                                    "prefix"],
                    default="day")
     p.add_argument("--stance", choices=STANCE_NAMES,
                    help="with --by stance, the dimension whose variants group the tokens")
