@@ -10,14 +10,17 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 and **unsupported** means a combination explicitly outside the integration contract.
 
 Claude Code and Codex are this release's integration targets. The v0.11.1 stable support floor
-qualifies their CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces and Codex Desktop on macOS remain
-unqualified previews. Do not read successful source generation or deterministic tests as native
+qualifies their CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
+plugin-marketplace install remain unqualified previews. A marketplace install carries the
+skills, roles, commands and output style only; the ownership journal, stance selection, the
+Codex projection and the hooks come from `bin/harness install`, and
+[runtime installation](runtime-installation.md) states the difference. Do not read successful source generation or deterministic tests as native
 client qualification.
 
 <!-- harness:compatibility:start -->
 **Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
 
-**Unqualified:** `claude-code-vscode-macos`, `codex-vscode-macos`, `codex-desktop-macos`.
+**Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-vscode-macos`, `codex-desktop-macos`.
 
 **Planned:** `cursor`, `grok`.
 <!-- harness:compatibility:end -->
