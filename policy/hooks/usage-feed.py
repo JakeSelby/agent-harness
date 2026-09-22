@@ -8,7 +8,7 @@ and says how many agents are running when that is past the posture's width. `Use
 reports the turn and every subagent that finished since the previous prompt — which is how a
 background spawn, whose `PostToolUse` fires at launch with no totals, is reported at all.
 
-Six facts shape the whole file:
+Seven facts shape the whole file:
 
 - **A tool response's token figure describes only the subagent's last response.** Measured on a
   live return: `tool_response.usage.output_tokens` said 3,143 against 10,575 actually spent over
@@ -37,6 +37,12 @@ Six facts shape the whole file:
   agent that event reports. The return also waits a bounded moment for the last response to
   finish being written, says `(so far)` when it never does, and the stop the journal brings later
   raises the session totals without the agent being announced a second time.
+- **A line is worth saying once.** `spend unknown` names its agent and is said once, because no
+  later event can put a figure on it and a session that repeats it teaches the orchestrator to
+  skip the feed. What the figures measure is said once too, before the first of them. An agent
+  resumed with a follow-up message, on the other hand, stops once per round against one agent id,
+  and each of those rounds is a completion the feed owes a line — cumulative, because one
+  transcript covers them all.
 - **Reads are bounded everywhere.** The parent transcript is read from a saved offset, trusted
   only while the inode and the hash of the first record still match, and from 8 MiB before the
   end on a cold start. The journal is read from its own saved offset, so a long session's totals
@@ -196,7 +202,8 @@ def new_state():
             "previous_turn": {"output": 0, "tool_calls": 0},
             "subagents": {"output": 0, "tool_calls": 0, "count": 0, "unknown": 0},
             "journal_offset": 0, "running": {}, "pending": [], "counted": [],
-            "figures": {}, "unsummed": {}, "open": [], "pruned": 0, "said_turn": None}
+            "figures": {}, "unsummed": {}, "open": [], "pruned": 0, "said_turn": None,
+            "rounds": {}, "said_unknown": [], "said_measure": False}
 
 
 def load_state(path):
@@ -234,9 +241,16 @@ def load_state(path):
         if not (isinstance(entry, list) and len(entry) == 2 and isinstance(entry[0], str)
                 and isinstance(entry[1], int) and not isinstance(entry[1], bool)):
             del state["unsummed"][agent]
-    for key in ("pending", "counted", "open"):
+    rounds = state.get("rounds")
+    state["rounds"] = rounds if isinstance(rounds, dict) else {}
+    for agent, value in list(state["rounds"].items()):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            del state["rounds"][agent]
+    state["said_measure"] = bool(state.get("said_measure"))
+    for key in ("pending", "counted", "open", "said_unknown"):
         if not isinstance(state.get(key), list):
             state[key] = []
+    state["said_unknown"] = [v for v in state["said_unknown"] if isinstance(v, str)]
     return state
 
 
@@ -244,6 +258,10 @@ def save_state(path, state):
     """Atomic and private. Called before the slow read as well as after it."""
     state["pending"] = state.get("pending", [])[-MAX_PENDING:]
     state["counted"] = state.get("counted", [])[-MAX_COUNTED:]
+    state["said_unknown"] = state.get("said_unknown", [])[-MAX_COUNTED:]
+    for stale in list(state.get("rounds", {}))[:max(0, len(state.get("rounds", {}))
+                                                    - MAX_COUNTED)]:
+        del state["rounds"][stale]
     for stale in list(state.get("unsummed", {}))[:max(0, len(state.get("unsummed", {}))
                                                       - MAX_PENDING)]:
         del state["unsummed"][stale]
@@ -470,7 +488,7 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
             seen = state.get("inode") is not None
             kept = {key: state[key] for key in
                     ("journal_offset", "running", "pending", "counted", "figures", "unsummed",
-                     "subagents", "pruned")}
+                     "subagents", "pruned", "rounds", "said_unknown", "said_measure")}
             state = dict(new_state(), **kept)
             state["inode"], state["head"] = inode, head
             state["offset"] = max(0, size - COLD_TAIL)
@@ -860,6 +878,7 @@ def ingest(state, journal_file, resolved=None):
             state["running"].pop(agent_id, None)
             if needs_sum(record):
                 apply_settled(record, resolved.get(agent_id))
+            round_number = bump_round(state, agent_id)
             if agent_id in state["counted"]:
                 if agent_id in state["unsummed"] and record.get("output") is not None:
                     # Announced with no figure, and the journal brought one: the totals take it
@@ -868,6 +887,9 @@ def ingest(state, journal_file, resolved=None):
                     del state["unsummed"][agent_id]
                 else:
                     reconcile(state, record)
+                if round_number > 1 and has_figure(record):
+                    record["round"] = round_number
+                    state["pending"].append(record)
                 continue
             state["counted"].append(agent_id)
             count(state, record)
@@ -887,6 +909,26 @@ def figures_of(record):
         except (TypeError, ValueError):
             out.append(0)
     return out
+
+
+def has_figure(record):
+    """Whether a stop carries a number at all. Null counts are a sum that could not be made."""
+    return not (record.get("output") is None and record.get("tool_calls") is None)
+
+
+def bump_round(state, agent_id):
+    """Which completion of this agent a journalled stop is, counting from one.
+
+    An agent resumed with a follow-up message stops once per round, against one agent id and one
+    transcript, so every round after the first was folded into the totals and never named: only
+    its first completion fed a line. The stop count is what tells a resumed round apart from the
+    settled copy of a round already reported — that one is still the same, first, stop.
+    """
+    rounds = state.setdefault("rounds", {})
+    number = rounds.get(agent_id)
+    number = number + 1 if isinstance(number, int) and not isinstance(number, bool) else 1
+    rounds[agent_id] = number
+    return number
 
 
 def count(state, record):
@@ -1016,7 +1058,7 @@ def budgets(row):
 
 
 def agent_line(agent_type, output, calls, row, nudges, partial=False, provisional=False,
-               not_yet=False):
+               not_yet=False, agent_id=None, round_number=1):
     """`(line, ratio)` for one finished subagent; ratio is None when there is nothing to compare.
 
     Null counts are what a sum that could not be computed leaves behind, and the line says so:
@@ -1027,17 +1069,29 @@ def agent_line(agent_type, output, calls, row, nudges, partial=False, provisiona
     half of the unit names that half, because `n / None` would read as a figure to act on.
     `provisional` is the figure of a response still being written: `(so far)`, never a number
     presented as exact. `(partial)` subsumes it — a sum that was cut short is the larger caveat.
+
+    `spend unknown` names the agent it is about, because it is the one line that carries no figure
+    to tell two of them apart: a session that emitted it once an hour and a session emitting it
+    every turn read identically until the id was in it.
+
+    A round past the first is one completion of a resumed agent, and its figure is its whole
+    transcript rather than that round alone, so the line says `(cumulative)`.
     """
     if output is None and calls is None:
         if not_yet:
             return PREFIX + agent_type + " finished, spend not yet recorded", None
-        return PREFIX + agent_type + " finished, spend unknown", None
-    text = (PREFIX + agent_type + " finished at " + plural(output or 0, "output token")
+        named = (", no transcript found for agent " + agent_id) if agent_id else ""
+        return PREFIX + agent_type + " finished, spend unknown" + named, None
+    text = (PREFIX + agent_type + " finished" + ("" if round_number < 2 else
+            " round " + "{:,}".format(round_number)) + " at " + plural(output or 0, "output token")
             + " and " + plural(calls or 0, "tool call"))
+    marks = ["cumulative"] if round_number > 1 else []
     if partial:
-        text += " (partial)"
+        marks.append("partial")
     elif provisional:
-        text += " (so far)"
+        marks.append("so far")
+    if marks:
+        text += " (" + ", ".join(marks) + ")"
     budget_out, budget_calls = budgets(row)
     ratios, halves = [], []
     if budget_out:
@@ -1108,10 +1162,53 @@ def row_for(table, agent_type):
 
 
 def stop_line(table, nudges, record):
+    agent_id = record.get("id")
+    round_number = record.get("round")
     return agent_line(agent_name(record.get("type")), record.get("output"),
                       record.get("tool_calls"), row_for(table, record.get("type")), nudges,
                       bool(record.get("partial")), bool(record.get("so_far")),
-                      bool(record.get("not_yet")))
+                      bool(record.get("not_yet")),
+                      agent_id if isinstance(agent_id, str) else None,
+                      round_number if isinstance(round_number, int) else 1)
+
+
+def unknown_final(record):
+    """A stop whose spend nothing is going to recover: `spend unknown`, not `not yet recorded`."""
+    return not has_figure(record) and not record.get("not_yet")
+
+
+def said_unknown(state, record):
+    """Whether this agent's `spend unknown` has already been fed, so it is never fed twice.
+
+    The line carries no figure and cannot be reconciled, so nothing about the agent will ever
+    change it. Repeating it turn after turn — what a session whose reader state was rebuilt used
+    to do — spends the orchestrator's context on a fact it read the first time.
+    """
+    return unknown_final(record) and record.get("id") in (state.get("said_unknown") or [])
+
+
+def note_unknown(state, record):
+    """Remember a `spend unknown` that has just been fed, bounded like every other list here."""
+    if not unknown_final(record) or not isinstance(record.get("id"), str):
+        return
+    already = state.setdefault("said_unknown", [])
+    if record["id"] not in already:
+        already.append(record["id"])
+
+
+#: What the feed's numbers are, said once per session so they cannot be read as another measure.
+#: Reported live: one agent's line said 31,121 output tokens beside a task notification's
+#: `subagent_tokens 102398`, and both were right about different things.
+MEASURE = (PREFIX + "figures above are output tokens and tool calls summed from each agent's own "
+           "transcript — not the task notification's subagent_tokens, which is another measure.")
+
+
+def legend(state):
+    """The measure line, the first time this session feeds a figure, and never again."""
+    if state.get("said_measure"):
+        return None
+    state["said_measure"] = True
+    return MEASURE
 
 
 # --------------------------------------------------------------------------- the events
@@ -1163,6 +1260,18 @@ def on_subagent_event(payload, env, kind):
     finally:
         journal_append(found[1], record)
     return None
+
+
+def emit(state, lines, record, line):
+    """Add one subagent's line, unless it is a `spend unknown` this session has already said.
+
+    Returns whether the line carried a figure, which is what the measure line is owed to.
+    """
+    if said_unknown(state, record):
+        return False
+    note_unknown(state, record)
+    lines.append(line)
+    return has_figure(record)
 
 
 def refresh(state_file, journal_file, resolved):
@@ -1226,14 +1335,14 @@ def on_agent_return(payload, env):
         if not held:
             return None
         state = refresh(state_file, journal_file, resolved)
-        lines = []
+        lines, figured = [], False
         if synchronous:
             record = next((r for r in state["pending"] if r.get("id") == agent_id), None)
             if record is not None:
                 line, ratio = stop_line(table, nudges, record)
                 if shows(mode, ratio, nudges):
                     state["pending"].remove(record)
-                    lines.append(line)
+                    figured = emit(state, lines, record, line)
             elif agent_id not in state["counted"]:
                 # The stop has not been journalled yet. Reporting it now means counting it now,
                 # so the journal's copy is skipped when it arrives. An outcome of `ABSENT` is
@@ -1246,10 +1355,14 @@ def on_agent_return(payload, env):
                     if fresh.get("not_yet"):
                         remember_unsummed(state, agent_id, redact(first[1], env))
                     state["running"].pop(agent_id, None)
-                    lines.append(line)
+                    figured = emit(state, lines, fresh, line)
         note = width_line(running_now(state), width)
         if note:
             lines.append(note)
+        if figured:
+            measure = legend(state)
+            if measure:
+                lines.append(measure)
         save_state(state_file, state)
         return lines or None
 
@@ -1286,14 +1399,23 @@ def on_prompt(payload, env):
             line, ratio = stop_line(table, nudges, record)
             if not shows(mode, ratio, nudges):
                 continue
+            if said_unknown(state, record):
+                # Nothing will ever put a figure on it and the orchestrator has read it once.
+                state["pending"].remove(record)
+                continue
             said.append((record, line))
         # Only the agents this turn actually names are retired. The cap bounds how much is said
         # at once, so the rest are named at the next prompt rather than dropped unsaid.
+        figured = False
         for record, line in said[:MAX_LISTED]:
             state["pending"].remove(record)
-            lines.append(line)
+            figured = emit(state, lines, record, line) or figured
         if len(said) > MAX_LISTED:
             lines.append("… and " + "{:,}".format(len(said) - MAX_LISTED) + " more")
+        if figured:
+            measure = legend(state)
+            if measure:
+                lines.append(measure)
         save_state(state_file, state)
     return lines or None
 
