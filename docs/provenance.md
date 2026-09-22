@@ -25,5 +25,5 @@ personal left in it. This page records where the ideas came from, as history.
   screen.
 
 The audit that decided what to bring in and what to leave out is summarised in
-[comparison.md](comparison.md)'s properties: anything that was true of one person, one
+[field-scan.md](field-scan.md)'s properties: anything that was true of one person, one
 project, or one employer stayed out.
