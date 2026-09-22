@@ -4,7 +4,8 @@
 
 Claude Code reads the path to this script from the `otelHeadersHelper` setting, runs it about
 every 29 minutes, and parses its standard output as `{"name": "value"}`. `harness sync` writes
-that setting only when `telemetry.native` is on and a header source is configured.
+that setting only when `telemetry.native` names `claude-code` and a header source is
+configured.
 
 Every value here is a credential, so a failure prints **nothing at all** and fails by exit
 status: text on standard output would be parsed as a header, and text on standard error lands
@@ -34,7 +35,7 @@ def main():
     try:
         telemetry = load()
         config = telemetry.settings()
-        if not config.get("native"):
+        if "claude-code" not in (config.get("native") or []):
             return 1
         values = telemetry.headers(config)
     except Exception:

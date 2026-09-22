@@ -243,6 +243,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `telemetry.native` takes `true`, `false` or a list of runtime names, so a collector that
+  authenticates can be fed natively from Claude Code while Codex, which takes header values only
+  as literals in its configuration file, is left alone. `true` keeps its meaning, an unknown name
+  stops `sync`, and `docs/telemetry.md` says which runtime can reach an authenticated endpoint (#405).
+
 - The README's install command clones the `stable` branch, so a new install starts from the latest
   release instead of the development trunk.
 
@@ -269,6 +274,12 @@ All notable changes to this project are documented here. The format follows
   picked before installing is left alone even when the harness ships one by that name. The Codex
   projection is unchanged; `scannable` was already the only variant it gave presentation material
   to, so the two runtimes now mean the same thing by each variant (#394).
+- `harness usage` no longer prints the partial-totals warning above a USD report whose own
+  footer already counts those runs as unpriced; a report with no unpriced run still warns that
+  a column is short (#407).
+- `.agent-harness/evidence/`, `task.json` and `sync.lock` are ignored repository-wide, so captured
+  replay transcripts can never be staged or reach the lint, and the stop gate no longer goes red in
+  a checkout whose own change is clean; a test pins the rules (#432).
 
 - Three defects in the native acceptance runner, recorded during 0.11.0 qualification and none of
   them in the harness runtime. `orchestrator_text()` now reads a session's transcript whether or not

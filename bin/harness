@@ -619,6 +619,21 @@ CODEX_OTEL_PROTOCOL = "binary"
 OTEL_LABEL_SAFE = re.compile(r"^[A-Za-z0-9_.:/@+-]+$")
 
 
+def native_runtimes(telemetry: Dict[str, Any]) -> List[str]:
+    """The runtimes `telemetry.native` asks to export their own telemetry.
+
+    Resolved by `claude/hooks/telemetry.py`, which both validates the key and owns the list of
+    names, rather than by a second copy of that list here: a runtime added there is configurable
+    from this side with no further change, and a value it refuses is refused here too, so a
+    block assembled by hand means what the same block in a config file means. A checkout with no
+    hook file exports nothing natively, so there is nothing for it to name.
+    """
+    module = load_telemetry()
+    if module is None:
+        return []
+    return list(module.native_runtimes(telemetry.get("native", False)))
+
+
 def native_labels(cfg: Dict[str, Any], telemetry: Dict[str, Any]) -> Tuple[Dict[str, str], List[str]]:
     """The labels stamped on native telemetry, and the names of any that cannot travel.
 
@@ -643,7 +658,7 @@ def resource_attributes(cfg: Dict[str, Any], telemetry: Dict[str, Any]) -> Tuple
 
 def claude_native_values(telemetry: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[Dict[Tuple[str, ...], str], List[str]]:
     """Every Claude settings field the pass-through sets, by path, and the labels left out."""
-    if not telemetry.get("native"):
+    if "claude-code" not in native_runtimes(telemetry):
         return {}, []
     attributes, omitted = resource_attributes(cfg, telemetry)
     values = {("env", "CLAUDE_CODE_ENABLE_TELEMETRY"): "1",
@@ -716,8 +731,10 @@ def codex_native_otel(telemetry: Dict[str, Any], live: Optional[Dict[str, Any]],
     environment or command indirection for it, and a credential in a configuration file is what
     the exporter's own rules refuse; native Codex export therefore needs an endpoint that accepts
     unauthenticated traffic from this machine, or one the user authenticates some other way.
+    That is why `telemetry.native` can name `claude-code` alone: against a collector that
+    requires a header, a Codex table written here would export nothing but 401s.
     """
-    if not telemetry.get("native"):
+    if "codex" not in native_runtimes(telemetry):
         return None, []
     base = str(telemetry.get("endpoint", "")).rstrip("/")
     ours = {"exporter": {"otlp-http": {"endpoint": base + "/v1/logs",
@@ -1383,14 +1400,15 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         native_paths, native_notices = apply_native_claude(merged, live, held, telemetry, cfg, ownership)
         owned_paths += native_paths
         report.extend(native_notices)
-        if telemetry.get("native"):
+        if "claude-code" in native_runtimes(telemetry):
             attributes, _ = resource_attributes(cfg, telemetry)
             helper = "headers helper" if ("otelHeadersHelper" in merged) else "no headers"
             say(f"  native  claude-code exports its own telemetry to "
                 f"{telemetry.get('endpoint', '')} ({CLAUDE_OTEL_PROTOCOL}, {helper})")
             say(f"          labels {attributes}")
         elif native_paths:
-            say("  native  telemetry.native is off; removing the Claude telemetry settings sync added")
+            say("  native  telemetry.native no longer names claude-code; removing the Claude "
+                "telemetry settings sync added")
         store.json(settings_file, merged, owned_paths)
         applied["claude"] = claude_projection(merged, template, installed=style)
         applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template,
@@ -1440,7 +1458,8 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
             say("          no header is written: Codex takes a literal header map, so the "
                 "endpoint must accept this machine unauthenticated or be fronted by the user")
         elif owned_otel:
-            say("  native  telemetry.native is off; restoring the Codex [otel] table sync replaced")
+            say("  native  telemetry.native no longer names codex; restoring the Codex [otel] "
+                "table sync replaced")
         store.toml(config_toml, codex_wanted(cfg, reviewer, otel if (otel is not None or owned_otel)
                                              else UNMANAGED))
         hook_file = codex_dir() / "hooks.json"
@@ -1761,27 +1780,55 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             detail = f"headers unavailable: {exc}"
         say(f"  telemetry export: otlp -> {module.endpoint_label(telemetry['endpoint'])}, {detail}")
         say("    the ledger is the record; replay a window with `harness usage export --since`")
-    if not telemetry.get("native"):
+    runtimes = native_runtimes(telemetry)
+    if not runtimes:
         say("  native telemetry: off; neither runtime is asked to export its own")
     else:
         host = module.endpoint_label(telemetry["endpoint"]) if module else telemetry["endpoint"]
-        say(f"  native telemetry: on -> {host}")
+        say(f"  native telemetry: on -> {host} ({', '.join(runtimes)})")
         attributes, omitted = resource_attributes(cfg, telemetry)
-        live = (read_json(claude_dir() / "settings.json") or {}) if cfg.get("claude", {}).get("manage", True) else {}
-        current = (live.get("env") or {}).get("OTEL_RESOURCE_ATTRIBUTES")
-        if current is None:
-            say("    claude-code: not configured in settings.json; run `harness sync`")
-        elif current == attributes:
-            say(f"    claude-code: labels match this version and these stances ({attributes})")
+        # Each runtime is reported from its own live file, never from the config key alone: a
+        # name in `native` is a request, and a `manage` switch, a value the harness did not
+        # write or a sync that has not run yet can all leave it unhonoured.
+        if "claude-code" not in runtimes:
+            say("    claude-code: not named by telemetry.native; its settings are left alone")
+        elif not cfg.get("claude", {}).get("manage", True):
+            say("    claude-code: named by telemetry.native, but claude.manage is off, so `sync` "
+                "writes nothing for it")
         else:
-            say("    claude-code: labels are from an earlier sync and mislabel data until the "
-                f"next one; run `harness sync`. Wanted {attributes}")
-        for name in omitted:
-            say(f"    label {name} cannot travel in OTEL_RESOURCE_ATTRIBUTES and is left off")
-        say("    codex: no header is written, because [otel] takes a literal header map; its "
-            "export needs an endpoint that accepts this machine unauthenticated")
-        say("    both runtimes attach their own user and organization identifiers to what they "
-            "send; read docs/telemetry.md before pointing this at a hosted endpoint")
+            live = read_json(claude_dir() / "settings.json") or {}
+            current = (live.get("env") or {}).get("OTEL_RESOURCE_ATTRIBUTES")
+            if current is None:
+                say("    claude-code: not configured in settings.json; run `harness sync`")
+            elif current == attributes:
+                say(f"    claude-code: labels match this version and these stances ({attributes})")
+            else:
+                say("    claude-code: labels are from an earlier sync and mislabel data until the "
+                    f"next one; run `harness sync`. Wanted {attributes}")
+            for name in omitted:
+                say(f"    label {name} cannot travel in OTEL_RESOURCE_ATTRIBUTES and is left off")
+        if "codex" not in runtimes:
+            say("    codex: not named by telemetry.native; its [otel] table is left alone, which "
+                "is the setting to use against a collector that requires a header")
+        elif not cfg.get("codex", {}).get("manage", True):
+            say("    codex: named by telemetry.native, but codex.manage is off, so `sync` writes "
+                "nothing for it")
+        else:
+            config_toml = codex_dir() / "config.toml"
+            table = codex_otel_in_config(config_toml.read_text()) if config_toml.is_file() else None
+            wanted, _ = codex_native_otel(telemetry, {}, True)
+            if table is None or not any(key in table for key in wanted):
+                say("    codex: [otel] not configured in config.toml; run `harness sync`")
+            elif all(table.get(key) == value for key, value in (wanted or {}).items()):
+                say("    codex: [otel] exports logs and metrics to this endpoint. No header is "
+                    "written, because [otel] takes a literal header map; its export needs an "
+                    "endpoint that accepts this machine unauthenticated")
+            else:
+                say("    codex: [otel] holds exporters this endpoint did not ask for — an earlier "
+                    "sync, or a value the harness did not write and left alone; run "
+                    "`harness sync` and read what it reports")
+        say("    a runtime named here attaches its own user and organization identifiers to what "
+            "it sends; read docs/telemetry.md before pointing this at a hosted endpoint")
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))
@@ -3528,7 +3575,11 @@ def cmd_usage(args: argparse.Namespace) -> int:
         return (f"{label[:34]:<34}{acc[0]:>9}{acc[1]:>12,}{acc[2]:>12,}"
                 f"{acc[3]:>14,}{acc[4]:>14,}{hit:>7.0%}{acc[5]:>11.2f}")
 
-    if unknown_metrics:
+    # Said once, or not at all: when a run's missing counts left it unpriced, the footer below
+    # already reports it, and the two lines read as two different problems — one that figures
+    # were dropped from the totals, one that they were counted as unpriced. A report with no
+    # unpriced run still needs the warning, because nothing else says a column is short.
+    if unknown_metrics and not unpriced:
         say("Partial totals: unavailable metrics are excluded: " + ", ".join(sorted(unknown_metrics)))
     head = (f"{by:<34}{'runs':>9}{'input':>12}{'output':>12}"
             f"{'cache_read':>14}{'cache_write':>14}{'hit':>7}{'usd':>11}")
