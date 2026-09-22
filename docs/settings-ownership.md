@@ -8,6 +8,13 @@ changing the template.
 
 - **Owned keys**: `outputStyle`, `plansDirectory`, `useAutoModeDuringPlan`,
   `showThinkingSummaries`. Reconciled against the ownership journal; user edits produce conflicts.
+- **Output style**: `outputStyle` comes from the `voice` stance, not from the template. A variant
+  with a file in `claude/output-styles/` installs that style — `scannable` installs `Scannable` —
+  and a variant without one, `answer-card` and `off` today, installs none and removes a style an
+  earlier selection installed. That is the rule the Codex projection applies to
+  `primitives/presentation/`, so both runtimes make the same variant mean the same thing. A style
+  the harness does not ship is yours: it survives a sync at `voice=off`, is never removed at
+  uninstall, and is not reported as drift.
 - **Posture key**: `permissions.defaultMode`, written only when config `permissions` is not
   `inherit` (`bypass` → `bypassPermissions`, `auto` → `auto`, `manual` → `default`).
 - **Allow rules**: the template's list is merged as a set into `permissions.allow`. The list is

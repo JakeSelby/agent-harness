@@ -440,6 +440,44 @@ def _is_harness_entry(entry: Dict[str, Any]) -> bool:
     return False
 
 
+def harness_output_styles() -> Dict[str, str]:
+    """The output styles this checkout ships, as voice variant -> the style's own name.
+
+    `claude/output-styles/<variant>.md` is the whole registry: a `voice` variant gets an output
+    style when a file is named after it, which is the rule the Codex projection applies to
+    `primitives/presentation/<variant>.md`, so the two runtimes cannot drift apart over what a
+    variant means. A variant with no file imposes its shape through its stance text alone.
+    """
+    styles: Dict[str, str] = {}
+    for path in sorted((REPO / "claude" / "output-styles").glob("*.md")):
+        name, fence = path.stem, 0
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip() == "---":
+                fence += 1
+                if fence == 2:
+                    break
+            elif fence == 1 and line.startswith("name:"):
+                name = line.split(":", 1)[1].strip().strip("\"'") or path.stem
+        styles[path.stem] = name
+    return styles
+
+
+def voice_output_style(cfg: Dict[str, Any]) -> Optional[str]:
+    """The output style the configured `voice` selects, or `None` when it selects none."""
+    variant = (cfg.get("stances") or {}).get("voice")
+    return harness_output_styles().get(variant) if variant else None
+
+
+def owns_output_style(settings: Dict[str, Any]) -> bool:
+    """Whether `outputStyle` here is the harness's to write: a style it ships, or nothing yet.
+
+    A style the user chose themselves is not one of ours, so `voice=off` leaves it alone
+    instead of clobbering it.
+    """
+    value = settings.get("outputStyle")
+    return value is None or value in set(harness_output_styles().values())
+
+
 def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: Dict[str, Any],
                           retired: Iterable[str] = ()) -> Dict[str, Any]:
     """`retired` names allow rules an earlier template added that this one no longer carries;
@@ -450,6 +488,14 @@ def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: D
     for key in owned:
         if key in template:
             out[key] = template[key]
+    # `outputStyle` comes from the `voice` stance, not from the template: selecting a variant
+    # with no style of its own removes the one an earlier selection installed and keeps any
+    # style the user chose.
+    style = voice_output_style(cfg)
+    if style:
+        out["outputStyle"] = style
+    elif owns_output_style(out):
+        out.pop("outputStyle", None)
     perms = out.setdefault("permissions", {})
     p = posture(cfg)
     if p != "inherit":
@@ -489,6 +535,8 @@ def strip_claude_settings(live: Dict[str, Any], template: Dict[str, Any]) -> Dic
     out = deepcopy(live) if live else {}
     ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
     for key in ownership.get("claude", {}).get("owned_keys", []):
+        if key == "outputStyle" and not owns_output_style(out):
+            continue
         out.pop(key, None)
     perms = out.get("permissions", {})
     if "allow" in perms:
@@ -516,6 +564,10 @@ def claude_projection(settings: Dict[str, Any], template: Dict[str, Any]) -> Dic
     ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
     owned = ownership.get("claude", {}).get("owned_keys", [])
     proj: Dict[str, Any] = {"keys": {k: settings.get(k) for k in owned}}
+    # A style the user chose under a voice variant that installs none is not harness material,
+    # so it belongs in neither the applied record nor the drift report.
+    if not owns_output_style(settings):
+        proj["keys"]["outputStyle"] = None
     proj["defaultMode"] = settings.get("permissions", {}).get("defaultMode")
     proj["allow"] = sorted(settings.get("permissions", {}).get("allow", []))
     proj["hooks"] = sorted(
@@ -1292,7 +1344,11 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         applied = read_json(applied_path()) or {}
         merged = merge_claude_settings(live, template, cfg, retired=retired_allow_rules(applied, template))
         ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
-        owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])]
+        # `outputStyle` is listed only while the harness has something to say about it: the
+        # style the voice stance selects, or one it installed for an earlier selection and is
+        # now taking back out. Otherwise the key stays unowned and the user's own style stands.
+        owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])
+                       if k != "outputStyle" or "outputStyle" in merged or owns_output_style(live)]
         owned_paths += [["permissions", "allow"], ["permissions", "defaultMode"]]
         owned_paths += [["hooks", event] for event in template.get("hooks", {})]
         held = store.data["files"].get(str(settings_file), {}).get("keys", {})
