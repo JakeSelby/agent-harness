@@ -122,7 +122,9 @@ belongs in the issue or in `docs/`, referenced from the PR body.
 
 `primitives/instructions.md`, every file in `primitives/rules/`, and the longest variant of each
 stance dimension are loaded on every turn of every session. `harness lint` fails when their combined
-line count exceeds `ALWAYS_LOADED_CAP` in `bin/harness`. A rule that needs more room than the
+size exceeds `ALWAYS_LOADED_TOKEN_CAP` in `bin/harness` — a third of the 12,607-token standing
+context measured in issue #430, and the binding limit — or the secondary `ALWAYS_LOADED_CAP` in
+lines. Both are printed on every lint run. A rule that needs more room than the
 cap allows is telling you it wanted to be a skill: keep the operative line resident, move the
 rationale, examples and evidence into the skill the rule points at, and leave a one-line pointer
 behind. The stance count uses the *longest* variant per dimension, so no configuration a user

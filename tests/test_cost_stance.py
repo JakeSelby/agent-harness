@@ -20,8 +20,9 @@ harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
 COST = REPO / "primitives" / "stances" / "cost"
-# One line under the cap is reserved for the next rule change; the lint cap itself is 200.
-BUDGET = 196
+
+sys.path.insert(0, str(REPO / "tests"))
+from context_budget import LINE_BUDGET, LINE_CAP, TOKEN_CAP, breakdown, measured  # noqa: E402
 
 
 class TempHome(unittest.TestCase):
@@ -87,10 +88,11 @@ class CostConfigFileTests(TempHome):
 
 
 class CostBudgetTests(unittest.TestCase):
-    def test_always_loaded_total_leaves_room_under_the_cap(self):
-        total, groups = harness.always_loaded_lines(REPO)
-        self.assertLessEqual(total, BUDGET, msg=f"{total} lines: {groups}")
-        self.assertLessEqual(BUDGET, harness.ALWAYS_LOADED_CAP)
+    def test_always_loaded_total_leaves_room_under_the_caps(self):
+        lines, tokens = measured()
+        self.assertLessEqual(lines, LINE_BUDGET, msg=breakdown())
+        self.assertLessEqual(tokens, TOKEN_CAP, msg=breakdown())
+        self.assertLessEqual(LINE_BUDGET, LINE_CAP)
 
     def test_every_cost_variant_stays_short(self):
         for path in sorted(COST.glob("*.md")):

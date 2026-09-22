@@ -146,9 +146,25 @@ def load_detectors(root: Path = REPO):
 # Secret shapes live in claude/hooks/rule-detectors.py; the lint and the detector share one list.
 SECRET_PATTERNS = getattr(load_detectors(), "SECRET_PATTERNS", [])
 # Everything in `claude/CLAUDE.md`, `claude/rules/` and one variant of every stance is re-read on
-# every turn of every session, so its size is a standing tax on every task. The cap is enforced by
-# `harness lint`; the stance count uses the LONGEST variant of each dimension, so no selection a
-# user can make is ever over it. Rationale: docs/how-it-works.md.
+# every turn of every session, so its size is a standing tax on every task. `harness lint` enforces
+# the caps below; the stance count uses the LONGEST variant of each dimension, so no selection a
+# user can make is ever over them. Rationale: docs/how-it-works.md.
+#
+# The cap is a token cap, not a line cap, because no runtime truncates what this layer measures.
+# Claude Code "loads a CLAUDE.md file of up to 4 MiB in full and skips a larger file"; its 200-line
+# limit applies only to auto-memory `MEMORY.md`, and its "target under 200 lines" is authoring
+# advice for a single file, not a sum over many
+# (https://code.claude.com/docs/en/memory). Codex documents no AGENTS.md limit on its config page,
+# and the harness renders no AGENTS.md for it in any case. What the layer does cost is measured:
+# issue #430 put the harness's live standing context at 12,607 tokens against a bare profile,
+# stable to +/- 15 across eight task pairs. This layer may hold a third of that.
+MEASURED_STANDING_CONTEXT_TOKENS = 12607  # issue #430, measured from session transcripts
+ALWAYS_LOADED_TOKEN_CAP = MEASURED_STANDING_CONTEXT_TOKENS // 3
+# Characters per token, the same tokenizer-free approximation `scripts/cost_bench.py` uses; the
+# tests assert the two agree. Good for a cap and a trend, never for billing.
+CHARS_PER_TOKEN = 4.0
+# The secondary guard. A layer under the token cap but sprawling over hundreds of short lines is
+# still hard to read and hard to obey, so the line count stays bounded too.
 ALWAYS_LOADED_CAP = 200
 
 NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates", "primitives", "adapters"}
@@ -1712,20 +1728,33 @@ def _line_count(path: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines())
 
 
-def always_loaded_lines(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
-    """Line counts of everything loaded on every turn, as (total, [(group, lines)]).
+def est_tokens(chars: int) -> int:
+    """Characters to tokens, the tokenizer-free approximation. See CHARS_PER_TOKEN."""
+    return int(round(chars / CHARS_PER_TOKEN))
 
-    The stance total is the worst case — the longest variant of each dimension — so the cap holds
+
+def always_loaded_groups(root: Path) -> List[Tuple[str, int, int]]:
+    """Everything loaded on every turn, as [(group, lines, chars)].
+
+    The stance total is the worst case — the longest variant of each dimension — so the caps hold
     for every selection a user could make, not only the default one.
     """
-    groups: List[Tuple[str, int]] = []
+    groups: List[Tuple[str, int, int]] = []
+
+    def size(path: Path) -> Tuple[int, int]:
+        body = path.read_text(encoding="utf-8")
+        return len(body.splitlines()), len(body)
+
     claude_md = root / "claude" / "CLAUDE.md"
     if claude_md.is_file():
-        groups.append(("claude/CLAUDE.md", _line_count(claude_md)))
+        lines, chars = size(claude_md)
+        groups.append(("claude/CLAUDE.md", lines, chars))
     rules = sorted((root / "claude" / "rules").glob("*.md"))
     if rules:
         plural = "file" if len(rules) == 1 else "files"
-        groups.append((f"claude/rules/ ({len(rules)} {plural})", sum(_line_count(p) for p in rules)))
+        sizes = [size(p) for p in rules]
+        groups.append((f"claude/rules/ ({len(rules)} {plural})",
+                       sum(s[0] for s in sizes), sum(s[1] for s in sizes)))
     stances = root / "claude" / "stances"
     if stances.is_dir():
         for d in sorted(p for p in stances.iterdir() if p.is_dir()):
@@ -1733,18 +1762,50 @@ def always_loaded_lines(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
             if not variants:
                 continue
             worst = max(variants, key=lambda p: (_line_count(p), p.name))
-            groups.append((f"claude/stances/{d.name}/ (longest: {worst.name})", _line_count(worst)))
-    return sum(n for _, n in groups), groups
+            lines, chars = size(worst)
+            groups.append((f"claude/stances/{d.name}/ (longest: {worst.name})", lines, chars))
+    return groups
+
+
+def always_loaded_lines(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
+    """Line counts of the always-loaded set, as (total, [(group, lines)])."""
+    groups = always_loaded_groups(root)
+    return sum(g[1] for g in groups), [(name, lines) for name, lines, _ in groups]
+
+
+def always_loaded_tokens(root: Path) -> Tuple[int, List[Tuple[str, int]]]:
+    """Estimated token counts of the always-loaded set, as (total, [(group, tokens)])."""
+    groups = always_loaded_groups(root)
+    return est_tokens(sum(g[2] for g in groups)), [(name, est_tokens(chars)) for name, _, chars in groups]
+
+
+def context_summary(root: Path) -> str:
+    """One line for `harness lint` naming both measures and both caps, pass or fail."""
+    groups = always_loaded_groups(root)
+    lines = sum(g[1] for g in groups)
+    tokens = est_tokens(sum(g[2] for g in groups))
+    return (f"context: always-loaded is ~{tokens} tokens of {ALWAYS_LOADED_TOKEN_CAP} "
+            f"and {lines} lines of {ALWAYS_LOADED_CAP}")
 
 
 def check_context_cap(root: Path) -> List[str]:
-    """Fail when always-loaded context exceeds the cap, printing the breakdown."""
-    total, groups = always_loaded_lines(root)
-    if not groups or total <= ALWAYS_LOADED_CAP:
+    """Fail when always-loaded context exceeds either cap, printing the breakdown."""
+    groups = always_loaded_groups(root)
+    if not groups:
         return []
-    hits = [f"context-cap: always-loaded context is {total} lines, over the {ALWAYS_LOADED_CAP}-line cap"]
-    for name, n in sorted(groups, key=lambda g: (-g[1], g[0])):
-        hits.append(f"context-cap:   {n:4d}  {name}")
+    lines = sum(g[1] for g in groups)
+    tokens = est_tokens(sum(g[2] for g in groups))
+    hits = []
+    if lines > ALWAYS_LOADED_CAP:
+        hits.append(f"context-cap: always-loaded context is {lines} lines, "
+                    f"over the {ALWAYS_LOADED_CAP}-line cap")
+    if tokens > ALWAYS_LOADED_TOKEN_CAP:
+        hits.append(f"context-cap: always-loaded context is ~{tokens} tokens, "
+                    f"over the {ALWAYS_LOADED_TOKEN_CAP}-token cap (issue #430)")
+    if not hits:
+        return []
+    for name, n, chars in sorted(groups, key=lambda g: (-g[2], g[0])):
+        hits.append(f"context-cap:   {n:4d} lines  ~{est_tokens(chars):5d} tokens  {name}")
     hits.append("context-cap: keep the operative lines in the rule and move the rest into the skill it "
                 "points at (see the harness-authoring skill)")
     return hits
@@ -1771,6 +1832,8 @@ def cmd_lint(args: argparse.Namespace) -> int:
                  for name in primitive_catalog.projection_drift(root)]
     for h in hits:
         say(h)
+    if not getattr(args, "staged", False) and always_loaded_groups(root):
+        say(context_summary(root))
     everywhere, _ = load_lint_terms()
     note = "" if everywhere else " (no personal lint-terms file; shapes and secrets only)"
     say(f"lint: {len(hits)} finding(s) in {scope}{note}")
