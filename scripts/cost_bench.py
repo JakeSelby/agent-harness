@@ -47,10 +47,26 @@ CHECK_TIMEOUT = 900
 KEPT_ENV = ("HOME", "USER", "PATH", "TERM")
 TOKEN_KINDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 MODEL_USAGE_KEYS = ("inputTokens", "outputTokens", "cacheCreationInputTokens", "cacheReadInputTokens")
-# Both arms get this fence: commands run sandboxed with no network and no credential reads.
-FENCE = {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
-                     "network": {"allowedDomains": [], "strictAllowlist": True},
-                     "filesystem": {"denyRead": ["~/.ssh", "~/.aws", "~/.config/gh"]}}}
+# Every arm is fenced the same way: no network, no credential reads. What differs is the profile
+# the fence admits, which is the arm's own; see `fence`.
+DENY_READ = ["~/.ssh", "~/.aws", "~/.config/gh"]
+DEFAULT_CONFIG_DIR = "~/.claude"
+# The sandbox matches resolved paths: on macOS `/tmp` is a link to `/private/tmp`, and a rule
+# naming the link does not admit the target. Admit both spellings, deduplicated.
+SCRATCH_DIRS = tuple(dict.fromkeys(["/tmp", os.path.realpath("/tmp")]))
+# The gate this repository's AGENTS.md names, run inside the fence and reported as its own last line.
+# The suite's own stdout is block-buffered under a pipe and lands after unittest's stderr summary,
+# so the last line of `2>&1` is noise, not the verdict. Filter to the verdict lines and judge the
+# tool's output directly rather than whatever the model chose to relay.
+# Keep the failure names and causes as well as the verdict, bounded, so a red gate can be read
+# from the saved stream without re-running it.
+PREFLIGHT_PROMPT = ("Run exactly this and reply with its output: `python3 bin/harness lint && "
+                    "python3 -m unittest discover -s tests 2>&1 | grep -E "
+                    "'^(OK|FAILED|Ran [0-9]+ tests|ERROR:|FAIL:)|Error:|Operation not permitted' | head -120`")
+PREFLIGHT_CAP_USD = 0.25
+PREFLIGHT_TURNS = 3
+PREFLIGHT_PASS = "OK"
+PREFLIGHT_RED = re.compile(r"^FAILED|PermissionError|Operation not permitted|^(ERROR|FAIL):", re.M)
 INHERITED = "inherited"
 # What an arm actually loads: the always-on layer, the listed layer, and the personal file.
 CONFIG_GLOBS = ("CLAUDE.md", "CLAUDE.personal.md", "rules/**/*.md", "skills/*/SKILL.md",
@@ -261,11 +277,27 @@ def config_fingerprint(config_dir, home=None):
             "personal_bytes": dict(listed).get("CLAUDE.personal.md", 0)}
 
 
-def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD):
-    """One command line for every arm: the arms differ by environment and by nothing else."""
+def fence(config_dir=None):
+    """The sandbox one arm runs under: no network, no credential reads, its own profile writable.
+
+    A fence that admits only the CLI's default `~/.claude` handicaps whichever arm was moved to a
+    bench profile, because this repository's own suite writes under the config directory and under
+    `/tmp`; the arm then fails its gate and spends turns on a block the runner imposed. Each arm
+    therefore gets its own directory, and the shared scratch directory, readable and writable.
+    `denyRead` is the same for every arm."""
+    admitted = [str(config_dir) if config_dir else DEFAULT_CONFIG_DIR] + list(SCRATCH_DIRS)
+    return {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+                        "network": {"allowedDomains": [], "strictAllowlist": True},
+                        "filesystem": {"denyRead": list(DENY_READ), "allowWrite": list(admitted),
+                                       "allowRead": list(admitted)}}}
+
+
+def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD, config_dir=None):
+    """One command line for every arm: the arms differ by environment and by their fence's
+    profile, which follows that environment, and by nothing else."""
     return [claude, "-p", prompt, "--model", model, "--output-format", "json", "--verbose",
             "--strict-mcp-config", "--no-session-persistence", "--max-budget-usd", "%g" % run_cap,
-            "--permission-mode", "acceptEdits", "--settings", json.dumps(FENCE)]
+            "--permission-mode", "acceptEdits", "--settings", json.dumps(fence(config_dir))]
 
 
 def _git(repo, *args):
@@ -471,7 +503,7 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
     row = dict(opts["stamp"], task=task["id"], arm=arm, tag=opts["tag"], rep=rep, passed=None, error=False,
                error_kind="", cost_usd=None, cost_normalised_usd=None, turns=None, wall_seconds=None,
                first_call_cache_write=None, tool_counts={}, spawns=None, hook_blocks=None,
-               change_note=opts.get("change_note", ""),
+               change_note=opts.get("change_note", ""), preflight=opts.get("preflight", "skipped"),
                arm_config_dir=config_label(config, opts.get("home")),
                arm_fingerprint=config_fingerprint(config, opts.get("home")),
                fingerprint_source="launch", **{kind: None for kind in TOKEN_KINDS})
@@ -484,7 +516,7 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
     try:
         snapshot(opts["repo"], task["parent_sha"], workdir)
         try:
-            done = launch(arm_command(opts["claude"], opts["model"], prompt_of(task), opts["run_cap"]),
+            done = launch(arm_command(opts["claude"], opts["model"], prompt_of(task), opts["run_cap"], config),
                           cwd=str(workdir), env=env,
                           timeout=RUN_TIMEOUT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           universal_newlines=True)
@@ -513,10 +545,102 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
         shutil.rmtree(str(workdir.parent), ignore_errors=True)  # removed, never reset
 
 
+def gate_output(stdout):
+    """Every tool result in a `-p` stream, joined: the gate's own output, not the model's relay."""
+    try:
+        data = json.loads(stdout)
+    except (TypeError, ValueError):
+        return ""
+    parts = []
+    for ev in data if isinstance(data, list) else [data]:
+        content = ((ev.get("message") or {}).get("content") if isinstance(ev, dict) else None) or []
+        for blk in content if isinstance(content, list) else []:
+            if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                text = blk.get("content")
+                parts.append(text if isinstance(text, str) else json.dumps(text))
+    return "\n".join(parts)
+
+
+def gate_passed(stdout):
+    """Green means lint reported no findings, unittest printed `OK`, and nothing was refused."""
+    out = gate_output(stdout)
+    return ("lint: 0 finding(s)" in out and re.search(r"^%s\b" % PREFLIGHT_PASS, out, re.M) is not None
+            and PREFLIGHT_RED.search(out) is None)
+
+
+def reply_text(stdout):
+    """The final text of a `-p` run: the `result` field of the CLI's last result message, or ""."""
+    try:
+        data = json.loads(stdout)
+    except (TypeError, ValueError):
+        return ""
+    messages = data if isinstance(data, list) else [data]
+    texts = [m.get("result") for m in messages if isinstance(m, dict) and m.get("type") == "result"]
+    return str(texts[-1] or "").strip() if texts else ""
+
+
+def preflight(tasks, opts, launch=subprocess.run):
+    """([{arm, passed, reply, cost_usd}], spent). One gate run per arm before anything is scored.
+
+    The fence and the profile are the arm's own, so this asks the question the scored runs depend
+    on: can an agent in this arm make the repository's own gate pass at all? An arm that cannot
+    spends its turns on that instead of on the task, and the comparison measures the runner rather
+    than the harness. The reply is the gate's last line, so an arm passes when it ends in `OK`."""
+    checks, spent = [], 0.0
+    for arm in ARMS:
+        env = arm_env(arm, opts["bare_config"], opts.get("stance_cost"),
+                      harness_config=opts.get("harness_config"))
+        config = env.get("CLAUDE_CONFIG_DIR")
+        workdir = Path(tempfile.mkdtemp(prefix="cost-preflight-", dir=opts.get("tmp"))) / "repo"
+        reason = unsafe_workdir(workdir, opts["home"])
+        if reason:
+            shutil.rmtree(str(workdir.parent), ignore_errors=True)
+            raise SystemExit("cost-bench: refusing to run: " + reason)
+        try:
+            snapshot(opts["repo"], tasks[0]["parent_sha"], workdir)
+            command = arm_command(opts["claude"], opts["model"], PREFLIGHT_PROMPT, PREFLIGHT_CAP_USD,
+                                  config) + ["--max-turns", str(PREFLIGHT_TURNS)]
+            try:
+                done = launch(command, cwd=str(workdir), env=env, timeout=RUN_TIMEOUT,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            except subprocess.TimeoutExpired:
+                spent += PREFLIGHT_CAP_USD
+                checks.append({"arm": arm, "passed": False, "reply": "timeout", "cost_usd": None})
+                continue
+            if opts.get("raw"):
+                raw = Path(opts["raw"]); raw.mkdir(parents=True, exist_ok=True)
+                (raw / ("preflight-%s.json" % arm)).write_text(done.stdout or "", encoding="utf-8")
+            reply = reply_text(done.stdout)
+            try:
+                cost = parse_result(done.stdout)["cost_usd"]
+            except ValueError:
+                cost = None
+            spent += PREFLIGHT_CAP_USD if cost is None else cost
+            checks.append({"arm": arm, "passed": gate_passed(done.stdout), "reply": reply,
+                           "cost_usd": cost})
+        finally:
+            shutil.rmtree(str(workdir.parent), ignore_errors=True)
+    return checks, spent
+
+
 def replay(tasks, opts, launch=subprocess.run, out=None):
     """(rows, stopped). Stops before a launch that could take reported spend past the cap; the
-    per-run cap is soft, so a run with no readable cost is counted at the full run cap."""
+    per-run cap is soft, so a run with no readable cost is counted at the full run cap.
+
+    A red pre-flight refuses the whole replay with exit 2 before any scored run launches, since
+    spending on arms that cannot pass the gate buys a number nobody can read. Its own cost counts
+    against the same cumulative cap."""
     rows, spent = [], 0.0
+    if not opts.get("skip_preflight"):
+        checks, spent = preflight(tasks, opts, launch)
+        red = [c for c in checks if not c["passed"]]
+        for check in red:
+            print("cost-bench: the %s arm's gate is red under its own fence: %s"
+                  % (check["arm"], check["reply"] or "no reply"), file=sys.stderr)
+        if red:
+            print("cost-bench: refusing the replay; no scored run launched", file=sys.stderr)
+            raise SystemExit(2)
+        opts = dict(opts, preflight="passed")
     for task, rep, arm in schedule(tasks, opts["reps"]):
         if spent + opts["run_cap"] > opts["spend_cap"]:
             return rows, True
@@ -763,6 +887,7 @@ def cmd_replay(args):
             "reps": args.reps, "run_cap": args.run_cap, "spend_cap": args.spend_cap, "prices": table,
             "bare_config": bare, "harness_config": harness_config, "stance_cost": args.stance_cost,
             "raw": args.raw, "tmp": args.tmp, "change_note": args.change_note or "",
+            "skip_preflight": args.skip_preflight,
             "stamp": {"date": datetime.date.today().isoformat(), "model": args.model,
                       "cli_version": _text([args.claude, "--version"], env=scrubbed_env()),
                       "bucket": args.bucket, "predicted_ratio": args.predicted_ratio,
@@ -823,6 +948,8 @@ def main(argv=None):
     run.add_argument("--raw", help="keep each run's raw CLI output here; never commit it")
     run.add_argument("--tmp", help="parent for the throwaway clones; must be outside the home directory")
     run.add_argument("--verify-tasks", action="store_true", help="prove every check; calls no model")
+    run.add_argument("--skip-preflight", action="store_true", help="do not run each arm's gate under "
+                     "its own fence first; rows then say preflight: skipped")
     run.add_argument("--dry-run", action="store_true", help="print the schedule and stop")
     back = sub.add_parser("backfill", help="derive the diagnostic fields for rows already written")
     back.add_argument("--results", required=True, help="directory holding %s" % RESULTS)

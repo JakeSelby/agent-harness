@@ -48,7 +48,14 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
 
 - **The arms differ by environment only.** Both get one command line: the same `--model`,
   `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network
-  access off. The bare arm adds `CLAUDE_CONFIG_DIR`, pointing at the empty profile.
+  access off. The bare arm adds `CLAUDE_CONFIG_DIR`, pointing at the empty profile. The fence
+  admits each arm's own config directory and `/tmp` for reading and writing, because the
+  repository's suite writes to both and a fence that admitted only the CLI's default would fail
+  the gate for whichever arm was moved to a bench profile.
+- **Each arm's gate runs under its own fence before anything is scored.** One capped `-p` run per
+  arm reports the gate's last line; an arm that does not answer `OK` refuses the whole replay with
+  exit 2, before any scored run launches, and its cost counts against `--spend-cap`. Every scored
+  row records `preflight`. `--skip-preflight` bypasses the check and stamps the rows `skipped`.
 - **Every run starts in a throwaway snapshot outside the home directory**, launched with a scrubbed
   environment. A folder under the home directory inherits the user's instruction files through the
   parent-folder walk, which would put the harness into the bare arm. The snapshot holds one commit,

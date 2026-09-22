@@ -6,9 +6,9 @@
   "next_ids": {
     "epic": 11,
     "story": 173,
-    "task": 3,
+    "task": 4,
     "bug": 52,
-    "chore": 35,
+    "chore": 36,
     "spike": 7,
     "decision": 7
   },
@@ -3650,6 +3650,32 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S172.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T003",
+      "github_number": 487,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/487",
+      "title": "Let the replay fence admit each arm's own profile directory, and prove the gate passes under it before spending",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T003.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C035",
+      "github_number": 501,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/501",
+      "title": "Record how a pull request is landed under the main ruleset",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C035.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     }
