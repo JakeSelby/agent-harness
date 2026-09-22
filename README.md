@@ -322,8 +322,8 @@ and the [sync model](docs/sync-model.md).
 - [How shared primitives and adapters work](docs/how-it-works.md)
 - [All preferences and stance rationale](docs/preferences.md)
 - [Author a custom stance, skill, role or workflow](docs/primitive-authoring.md)
-- [Runtime controls](docs/runtime-controls.md), [sandboxing](docs/sandboxing.md) and
-  [workspaces](docs/workspaces.md)
+- [Runtime controls](docs/runtime-controls.md), [sandboxing](docs/sandboxing.md),
+  [workspaces](docs/workspaces.md) and [always-on Remote Control servers](docs/remote-control.md)
 - [BMad integration and bidirectional task continuation](docs/bmad.md)
 - [Contributing](CONTRIBUTING.md) and the [public reference](https://agent-harness.jakeselby.com)
 

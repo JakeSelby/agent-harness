@@ -24,6 +24,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness integrations show|register|doctor [architecture-viewer]
     harness viewer validate|open|status|replace-document|close [OPTIONS]
     harness bmad    check|apply [REPO] [--force]
+    harness remote-control install [--dry-run] | status | uninstall
     harness --version
 """
 from __future__ import annotations
@@ -37,6 +38,7 @@ import platform
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -48,6 +50,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
+from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
 from harness_core import decision as decisions_provider
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
@@ -1829,6 +1832,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                     "`harness sync` and read what it reports")
         say("    a runtime named here attaches its own user and organization identifiers to what "
             "it sends; read docs/telemetry.md before pointing this at a hosted endpoint")
+    remote_control_doctor(cfg)
     stale = placeholder_identity(load_config())
     say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
                           if stale else "set"))
@@ -1846,6 +1850,59 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         except Exception as exc:
             say(f"    could not run: {exc}")
     return 0
+
+
+def remote_control_doctor(cfg: Dict[str, Any]) -> None:
+    """One line per configured host: is it running, on which environment, is its pointer live.
+
+    A pointer that names a dead environment or a live pid is the failure that strands every
+    session on the next outage, so it is reported before it costs anything.
+    """
+    try:
+        opts = remote_control.settings(cfg)
+    except ValueError as exc:
+        say(f"  remote-control: configuration rejected: {exc}")
+        return
+    if not opts["folders"]:
+        return
+    if platform.system() != "Darwin":
+        say("  remote-control: launchd agents are macOS only; nothing is serving here")
+        return
+    projects_root = home() / ".claude" / "projects"
+    token = claude_oauth_token()
+    rows = remote_control.fetch_sessions(token) if token else None
+    for folder in opts["folders"]:
+        name = remote_control.label(folder)
+        pid = host_pid(name)
+        if pid is None:
+            say(f"  remote-control {folder}: not running; `harness remote-control install`")
+            continue
+        log = remote_control_log_dir() / (name + ".log")
+        text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+        env = remote_control.environment_id(text) or "none yet"
+        pointer = remote_control.read_pointer(remote_control.pointer_path(projects_root, folder))
+        if pointer is None:
+            fresh = "pointer missing"
+        elif pointer.get("environmentId") != env:
+            fresh = f"pointer stale, names {pointer.get('environmentId')}"
+        elif pointer.get("pid") != pid:
+            fresh = f"pointer names pid {pointer.get('pid')}, host is {pid}"
+        else:
+            fresh = "pointer fresh"
+        stalled = remote_control.unreachable_seconds(text)
+        reach = "reachable" if not stalled else f"unreachable for {stalled}s"
+        mine = [r for r in (rows or []) if r.get("environment_id") == env and r.get("status") == "active"]
+        lost = len([r for r in mine if r.get("connection_status") == "disconnected"])
+        served = ("sessions not checked" if rows is None
+                  else f"{len(mine)} session(s), {lost} disconnected")
+        say(f"  remote-control {folder}: pid {pid}, env {env}, {fresh}, {reach}, {served}")
+    if rows is None:
+        say("  remote-control sessions: not checked; no claude.ai token, or the API call failed")
+        return
+    stranded = remote_control.disconnected_sessions(rows, host_environment_ids(opts["folders"]))
+    if stranded:
+        say(f"  remote-control sessions: {len(stranded)} active but disconnected on this Mac's "
+            "environments; `harness remote-control status` prints the reattach command for each")
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
@@ -3037,6 +3094,390 @@ def cmd_trust(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- remote control
+
+
+def launch_agents_dir() -> Path:
+    return home() / "Library" / "LaunchAgents"
+
+
+def remote_control_log_dir() -> Path:
+    return state_dir() / "remote-control"
+
+
+def claude_state_file() -> Path:
+    """Where Claude Code records per-folder workspace trust."""
+    override = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(override) if override else home()) / ".claude.json"
+
+
+def launchctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True)
+
+
+def launchd_domain() -> str:
+    return f"gui/{os.getuid()}"
+
+
+def remote_control_unload(name: str, path: Path) -> None:
+    launchctl("bootout", f"{launchd_domain()}/{name}")
+    if path.exists():
+        path.unlink()
+
+
+def cmd_remote_control(args: argparse.Namespace) -> int:
+    """Keep one `claude remote-control` server per configured folder running under launchd."""
+    if platform.system() != "Darwin":
+        say("remote-control: launchd agents are macOS only; nothing done")
+        return 1
+    agents = launch_agents_dir()
+    if args.action == "uninstall":
+        owned = remote_control.installed(agents)
+        heal_path = agents / (remote_control.HEAL_LABEL + ".plist")
+        if heal_path.exists() or launchctl("print", f"{launchd_domain()}/{remote_control.HEAL_LABEL}").returncode == 0:
+            remote_control_unload(remote_control.HEAL_LABEL, heal_path)
+            say(f"removed {remote_control.HEAL_LABEL}")
+        for name, path in owned.items():
+            remote_control_unload(name, path)
+            say(f"removed {name}")
+        say(f"remote-control: {len(owned)} agent(s) removed")
+        return 0
+    try:
+        opts = remote_control.settings(load_config())
+    except ValueError as exc:
+        raise SystemExit(f"remote-control: {exc}")
+    serve, skipped, stale = remote_control.plan(opts, agents, claude_state_file())
+    if args.action == "status":
+        for folder in serve:
+            name = remote_control.label(folder)
+            probe = launchctl("print", f"{launchd_domain()}/{name}")
+            found = re.search(r"^\s*state = (\S+)", probe.stdout, re.M) if probe.returncode == 0 else None
+            state = found.group(1) if found else "not loaded; run `harness remote-control install`"
+            say(f"{folder}: {state}")
+            say(f"  log: {remote_control_log_dir() / (name + '.log')}")
+        for folder, reason in skipped:
+            say(f"{folder}: skipped, {reason}")
+        for name in stale:
+            say(f"{name}: installed but no longer configured; `install` removes it")
+        lines = []
+        if heal_log_path().exists():
+            lines = [ln for ln in heal_log_path().read_text(encoding="utf-8").splitlines() if ln.strip()]
+        loaded = launchctl("print", f"{launchd_domain()}/{remote_control.HEAL_LABEL}").returncode == 0
+        state = "loaded" if loaded else "not loaded; see `harness remote-control install`"
+        say(f"heal: {state}, {len(lines)} action(s) logged"
+            + (f", last {lines[-1]}" if lines else ""))
+        report_lost_sessions(serve, opts)
+        if not (serve or skipped or stale):
+            say("remote-control: no folders configured; set remote_control.folders in " + str(config_path()))
+        return 0
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        raise SystemExit("remote-control: `claude` is not on PATH")
+    dry = getattr(args, "dry_run", False)
+    for name in stale:
+        say(("would remove " if dry else "removed ") + name)
+        if not dry:
+            remote_control_unload(name, agents / (name + ".plist"))
+    failed = 0
+    for folder in serve:
+        name = remote_control.label(folder)
+        path = agents / (name + ".plist")
+        body = remote_control.render(folder, opts, claude_bin, home(), remote_control_log_dir())
+        loaded = launchctl("print", f"{launchd_domain()}/{name}").returncode == 0
+        # Reloading an unchanged agent would cut off every session its server is carrying.
+        if loaded and path.exists() and path.read_bytes() == body:
+            say(f"unchanged {folder}")
+            continue
+        say(("would serve " if dry else "serving ") + str(folder))
+        if dry:
+            continue
+        agents.mkdir(parents=True, exist_ok=True)
+        remote_control_log_dir().mkdir(parents=True, exist_ok=True)
+        launchctl("bootout", f"{launchd_domain()}/{name}")
+        path.write_bytes(body)
+        result = launchctl("bootstrap", launchd_domain(), str(path))
+        if result.returncode != 0:
+            failed += 1
+            say(f"  launchctl bootstrap failed: {result.stderr.strip()}")
+    heal_path = agents / (remote_control.HEAL_LABEL + ".plist")
+    heal_body = remote_control.render_heal(Path(__file__).resolve(), home(),
+                                           remote_control_log_dir(), claude_bin)
+    heal_loaded = launchctl("print", f"{launchd_domain()}/{remote_control.HEAL_LABEL}").returncode == 0
+    if heal_loaded and heal_path.exists() and heal_path.read_bytes() == heal_body:
+        say("unchanged heal agent")
+    elif dry:
+        say("would install heal agent")
+    else:
+        agents.mkdir(parents=True, exist_ok=True)
+        launchctl("bootout", f"{launchd_domain()}/{remote_control.HEAL_LABEL}")
+        heal_path.write_bytes(heal_body)
+        result = launchctl("bootstrap", launchd_domain(), str(heal_path))
+        if result.returncode != 0:
+            failed += 1
+            say(f"  launchctl bootstrap failed for heal: {result.stderr.strip()}")
+        else:
+            say("installed heal agent")
+    for folder, reason in skipped:
+        # A folder Claude Code has not trusted is a refusal, not a note: launchd would restart
+        # the host's trust prompt every minute and nothing would ever serve it.
+        say(f"refusing {folder}: {reason}")
+        failed += 1
+    if not (serve or skipped):
+        say("remote-control: no folders configured; set remote_control.folders in " + str(config_path()))
+    return 1 if failed else 0
+
+
+def report_lost_sessions(folders: List[Path], opts: Dict[str, Any]) -> int:
+    """List sessions still active but disconnected, with the manual command that recovers each.
+
+    Reattaching is deliberately not automated: a `--session-id` host registers the lost
+    environment a second time as a single-session environment, and the client then routes new
+    chats to it. The count is returned so `doctor` can report it without asking twice.
+    """
+    rows = lost_sessions(folders)
+    if rows is None:
+        say("lost sessions: not checked; no claude.ai token in the keychain, or the API call failed")
+        return 0
+    if not rows:
+        say("lost sessions: none")
+        return 0
+    say(f"lost sessions: {len(rows)} active but disconnected; reattach by hand, one at a time")
+    say(f"  warning: {remote_control.REATTACH_WARNING}")
+    for row in rows:
+        say(f"  {row.get('id')} · {row.get('title') or 'untitled'} · env {row.get('environment_id')}")
+        say("    " + remote_control.reattach_command(row, opts["permission_mode"]))
+    return len(rows)
+
+
+def heal_log_path() -> Path:
+    return remote_control_log_dir() / "heal.log"
+
+
+def heal_say(line: str, dry: bool) -> None:
+    """One line per action, to the heal log and to the terminal."""
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+    record = f"{stamp} {'would ' if dry else ''}{line}"
+    say(record)
+    if dry:
+        return
+    path = heal_log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(record + "\n")
+
+
+def host_pid(name: str) -> Optional[int]:
+    """The live pid of a folder's launchd agent, or None when it is not running."""
+    probe = launchctl("print", f"{launchd_domain()}/{name}")
+    if probe.returncode != 0:
+        return None
+    found = re.search(r"^\s*pid = (\d+)", probe.stdout, re.M)
+    return int(found.group(1)) if found else None
+
+
+def proc_start(pid: int) -> Optional[str]:
+    """`ps -o lstart=`, the same string the client stores and compares against."""
+    probe = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True)
+    value = probe.stdout.strip()
+    return value or None
+
+
+def claude_host_pid(pid: int) -> Optional[int]:
+    """The `claude` process of a launchd job: the job pid, or the child caffeinate wraps."""
+    for candidate in [pid] + child_pids(pid):
+        probe = subprocess.run(["ps", "-o", "command=", "-p", str(candidate)],
+                               capture_output=True, text=True)
+        if remote_control.is_host_process(probe.stdout.strip()):
+            return candidate
+    return None
+
+
+def child_pids(pid: int) -> List[int]:
+    probe = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True)
+    return [int(line) for line in probe.stdout.split() if line.isdigit()]
+
+
+def supervisor_state_path() -> Path:
+    return remote_control_log_dir() / remote_control.STATE_NAME
+
+
+def host_environment_ids(folders: Iterable[Path]) -> List[str]:
+    """Every environment id this Mac's hosts have registered, newest last, from their logs."""
+    found: List[str] = []
+    for folder in folders:
+        log = remote_control_log_dir() / (remote_control.label(folder) + ".log")
+        try:
+            text = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for env in remote_control.ENV_ID.findall(text):
+            if env not in found:
+                found.append(env)
+    return found
+
+
+def claude_oauth_token() -> Optional[str]:
+    """The claude.ai token from the login keychain. Returned to the caller, never printed."""
+    probe = subprocess.run(["security", "find-generic-password", "-s",
+                            remote_control.KEYCHAIN_SERVICE, "-w"],
+                           capture_output=True, text=True)
+    return remote_control.oauth_token(probe.stdout) if probe.returncode == 0 else None
+
+
+def lost_sessions(folders: Iterable[Path]) -> Optional[List[Dict[str, Any]]]:
+    """Sessions still active but disconnected on an environment this Mac registered.
+
+    None means the question could not be asked — no token, or the call failed — which reads
+    differently from an empty list and is reported as such.
+    """
+    token = claude_oauth_token()
+    if not token:
+        return None
+    rows = remote_control.fetch_sessions(token)
+    if rows is None:
+        return None
+    return remote_control.disconnected_sessions(rows, host_environment_ids(folders))
+
+
+def default_base_branch(root: Path) -> str:
+    """The branch a recreated session worktree starts from: origin's HEAD, else `main`."""
+    probe = subprocess.run(["git", "-C", str(root), "symbolic-ref", "--short",
+                            "refs/remotes/origin/HEAD"], capture_output=True, text=True)
+    head = probe.stdout.strip()
+    return head.split("/", 1)[1] if probe.returncode == 0 and "/" in head else "main"
+
+
+def recreate_worktree(root: Path, path: Path, dry: bool) -> str:
+    """Put a worktree the give-up cleanup deleted back at its path and branch.
+
+    A lease-pickup worker needs its directory to exist; the branch is reattached when it
+    survived, so any commits the session made are still its history.
+    """
+    if Path(path).is_dir():
+        return "exists"
+    branch = remote_control.worktree_branch(path)
+    if dry:
+        return f"would recreate on {branch}"
+    subprocess.run(["git", "-C", str(root), "worktree", "prune"], capture_output=True, text=True)
+    exists = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "--quiet", branch],
+                            capture_output=True, text=True).returncode == 0
+    argv = remote_control.worktree_add_argv(root, path, branch, default_base_branch(root), exists)
+    done = subprocess.run(argv, capture_output=True, text=True)
+    return f"recreated on {branch}" if done.returncode == 0 else f"failed: {done.stderr.strip()}"
+
+
+def dirty_bridge_worktrees(folder: Path) -> List[Path]:
+    """Spawned session worktrees with uncommitted changes, which host cleanup would delete."""
+    out = []
+    for tree in sorted((folder / ".claude" / "worktrees").glob("bridge-cse_*")):
+        probe = subprocess.run(["git", "-C", str(tree), "status", "--porcelain"],
+                               capture_output=True, text=True)
+        if probe.returncode == 0 and probe.stdout.strip():
+            out.append(tree)
+    return out
+
+
+def wip_commit(tree: Path, dry: bool) -> bool:
+    """Commit a dirty session worktree in place. Never `git stash`: the stack is shared."""
+    if dry:
+        return True
+    add = subprocess.run(["git", "-C", str(tree), "add", "-A"], capture_output=True, text=True)
+    if add.returncode != 0:
+        return False
+    done = subprocess.run(["git", "-C", str(tree), "commit", "-m",
+                           "chore(wip): preserve work before reconnect"], capture_output=True, text=True)
+    return done.returncode == 0
+
+
+def cmd_remote_control_heal(args: argparse.Namespace) -> int:
+    """Keep each running host's bridge pointer live, so a relaunch re-adopts its environment.
+
+    Claude Code only asks the server to reuse an environment when the folder's
+    `bridge-pointer.json` is younger than its four-hour TTL and names a pid that is no longer
+    running. A host that started without a pointer never writes one, so the file expires and
+    every relaunch registers a fresh environment that adopts nothing.
+    """
+    if platform.system() != "Darwin":
+        say("remote-control heal: launchd agents are macOS only; nothing done")
+        return 0
+    dry = getattr(args, "dry_run", False)
+    try:
+        opts = remote_control.settings(load_config())
+    except ValueError as exc:
+        raise SystemExit(f"remote-control heal: {exc}")
+    projects_root = claude_state_file().parent / ".claude" / "projects"
+    if not projects_root.is_dir():
+        projects_root = home() / ".claude" / "projects"
+    state = remote_control.read_state(supervisor_state_path())
+    state_changed = False
+    for folder in opts["folders"]:
+        name = remote_control.label(folder)
+        pid = host_pid(name)
+        if pid is None:
+            heal_say(f"skip {folder}: host not running", dry)
+            continue
+        log = remote_control_log_dir() / (name + ".log")
+        try:
+            text = log.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            heal_say(f"skip {folder}: no log at {log}", dry)
+            continue
+        env = remote_control.environment_id(text)
+        if not env:
+            heal_say(f"skip {folder}: log names no environment yet", dry)
+            continue
+        started = proc_start(pid)
+        if started is None:
+            heal_say(f"skip {folder}: pid {pid} vanished", dry)
+            continue
+        path = remote_control.pointer_path(projects_root, folder)
+        previous = remote_control.read_pointer(path)
+        wanted = remote_control.pointer_payload(env, pid, started, previous)
+        # An unchanged pointer is not a reason to stop reading the log: the stop and the
+        # worktree recreation below matter most during the outage that leaves it unchanged.
+        if not remote_control.pointer_is_current(previous, wanted, path):
+            heal_say(f"pointer {path} -> {env} pid {pid}", dry)
+            if not dry:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write_json_atomic(path, wanted)
+        stalled = remote_control.unreachable_seconds(text)
+        if stalled and stalled < remote_control.STOP_AT_SECONDS:
+            heal_say(f"warn {folder}: unreachable for {stalled}s; stop at "
+                     f"{remote_control.STOP_AT_SECONDS}s, give-up at {remote_control.GIVE_UP_SECONDS}s", dry)
+        elif remote_control.stop_is_due(stalled, name, pid, state):
+            # The host's own give-up at ten minutes archives every session, deregisters the
+            # environment and deletes the worktrees. A SIGTERM before it takes the preserving
+            # branch instead, and launchd's KeepAlive relaunch reads the pointer just written.
+            host = claude_host_pid(pid)
+            if host is None:
+                heal_say(f"skip {folder}: no `claude` process under pid {pid} to stop", dry)
+            else:
+                if not dry:
+                    try:
+                        os.kill(host, signal.SIGTERM)
+                    except OSError as exc:
+                        heal_say(f"warn {folder}: SIGTERM to pid {host} failed: {exc}", dry)
+                        host = None
+                if host is not None:
+                    heal_say(f"stop {folder}: SIGTERM to claude pid {host} after {stalled}s "
+                             f"unreachable; launchd relaunches it", dry)
+                    remote_control.record_stop(state, name, pid)
+                    state_changed = True
+        for stamp, tree in remote_control.unseen_worktrees(remote_control.removed_worktrees(text), state):
+            outcome = recreate_worktree(Path(folder), Path(tree), dry)
+            heal_say(f"worktree {tree}: {outcome}", dry)
+            remote_control.record_worktree(state, stamp, tree)
+            state_changed = True
+        if getattr(args, "preserve_worktrees", False):
+            for tree in dirty_bridge_worktrees(Path(folder)):
+                ok = wip_commit(tree, dry)
+                heal_say(f"wip {tree}: {'committed' if ok else 'commit failed'}", dry)
+    if state_changed and not dry:
+        supervisor_state_path().parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(supervisor_state_path(), state)
+    return 0
+
+
 # A rule that trips in more than this share of sessions is prose the agent keeps walking past,
 # and wants to be a hook; one with no hit at all over a full window can leave the 200 lines.
 # Both need a window wide enough for the share to mean anything.
@@ -3992,6 +4433,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     remove.add_argument("--also-clear", action="append", metavar="NAME", default=[],
                         help="one more top-level ignored directory that does not block removal; repeatable")
     remove.set_defaults(func=cmd_worktree)
+
+    p = sub.add_parser("remote-control", help="keep a Claude Code Remote Control server running per configured folder (macOS)")
+    rc_sub = p.add_subparsers(dest="action", required=True)
+    rc_install = rc_sub.add_parser("install", help="write and load one launchd agent per remote_control.folders entry")
+    rc_install.add_argument("--dry-run", action="store_true")
+    rc_install.set_defaults(func=cmd_remote_control)
+    rc_sub.add_parser("status", help="report each configured folder's agent").set_defaults(func=cmd_remote_control)
+    rc_sub.add_parser("uninstall", help="unload and remove every agent").set_defaults(func=cmd_remote_control)
+    rc_heal = rc_sub.add_parser("heal", help="refresh each running host's bridge pointer so a relaunch re-adopts its sessions")
+    rc_heal.add_argument("--once", action="store_true", help="one pass and exit (what the launchd agent runs)")
+    rc_heal.add_argument("--dry-run", action="store_true", help="report what would change, write nothing")
+    rc_heal.add_argument("--preserve-worktrees", action="store_true",
+                         help="WIP-commit dirty bridge-cse_* worktrees so host cleanup cannot delete them")
+    rc_heal.set_defaults(func=cmd_remote_control_heal)
 
     p = sub.add_parser("init", help="write the config file by answering questions")
     p.add_argument("--force", action="store_true", help="replace an existing config file")
