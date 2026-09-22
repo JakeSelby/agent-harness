@@ -180,6 +180,19 @@ class ReplayArmTests(unittest.TestCase):
         self.assertNotIn("HARNESS_STANCE_COST", BENCH.arm_env("bare", "/bare", "frugal", base=base))
         self.assertEqual(BENCH.arm_env("harness", "/bare", "frugal", base=base)["HARNESS_STANCE_COST"], "frugal")
 
+    def test_a_named_harness_profile_is_the_only_thing_that_isolates_that_arm(self):
+        """Without one the harness arm inherits the live ~/.claude through HOME, so the owner's
+        personal layer joins the comparison. The profile cannot be a copy: the credential is keyed
+        on the directory's absolute path, so only a directory signed into directly is authenticated."""
+        base = {"HOME": "/h", "USER": "u", "PATH": "/bin"}
+        self.assertNotIn("CLAUDE_CONFIG_DIR", BENCH.arm_env("harness", "/bare", base=base))
+        isolated = BENCH.arm_env("harness", "/bare", base=base, harness_config="/harness")
+        self.assertEqual(isolated["CLAUDE_CONFIG_DIR"], "/harness")
+        self.assertEqual(BENCH.arm_env("bare", "/bare", base=base, harness_config="/harness")
+                         ["CLAUDE_CONFIG_DIR"], "/bare")
+        self.assertEqual(BENCH.arm_env("harness", "/bare", "frugal", base=base,
+                                       harness_config="/harness")["HARNESS_STANCE_COST"], "frugal")
+
     def test_every_arm_runs_one_command_with_the_required_flags(self):
         command = BENCH.arm_command("claude", "claude-test", "prompt")
         for flag in ("--strict-mcp-config", "--no-session-persistence", "--verbose"):
@@ -332,10 +345,11 @@ class ReplayRunTests(unittest.TestCase):
             self.assertEqual(launch.calls, [])
 
 
-def row(arm, rep, passed, cost, error=False):
+def row(arm, rep, passed, cost, error=False, bucket="", predicted=None):
     return {"arm": arm, "rep": rep, "passed": None if error else passed, "error": error, "cost_usd": cost,
             "cost_normalised_usd": cost, "date": "2026-01-01", "harness_version": "9.9.9", "harness_sha": "a" * 40,
-            "tag": "candidate", "model": "claude-test", "cli_version": "1.0"}
+            "tag": "candidate", "model": "claude-test", "cli_version": "1.0", "bucket": bucket,
+            "predicted_ratio": predicted}
 
 
 class FixtureGateTests(unittest.TestCase):
@@ -390,6 +404,33 @@ class ReplaySummaryTests(unittest.TestCase):
         text = BENCH.render_history(kept)
         self.assertIn("| 0.500 |", text)
         self.assertNotIn("\u2014", text)
+
+    def test_two_buckets_on_one_day_and_commit_are_two_rows_not_one(self):
+        """The programme changes one thing at a time, so several buckets share a day and a sha.
+        Before the bucket joined the key each row silently replaced the one before it."""
+        first = [row("bare", 1, True, 1.0, bucket="A"), row("harness", 1, True, 0.5, bucket="A")]
+        second = [row("bare", 1, True, 1.0, bucket="C"), row("harness", 1, True, 0.4, bucket="C")]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.jsonl"
+            BENCH.upsert_history(path, BENCH.history_row(first, "s1"))
+            kept = BENCH.upsert_history(path, BENCH.history_row(second, "s1"))
+            self.assertEqual([r["bucket"] for r in kept], ["A", "C"])
+            again = BENCH.upsert_history(path, BENCH.history_row(second, "s1"))
+            self.assertEqual(len(again), 2)
+
+    def test_a_row_carries_the_ratio_its_bucket_was_predicted_to_produce(self):
+        rows = [row("bare", 1, True, 1.0, bucket="A", predicted=1.03),
+                row("harness", 1, True, 0.5, bucket="A", predicted=1.03)]
+        built = BENCH.history_row(rows, "s1")
+        self.assertEqual((built["bucket"], built["predicted_ratio"], built["ratio"]), ("A", 1.03, 0.5))
+        text = BENCH.render_history([built])
+        self.assertIn("| A |", text)
+        self.assertIn("| 1.030 |", text)
+
+    def test_a_row_written_before_buckets_existed_still_renders(self):
+        legacy = BENCH.history_row([row("bare", 1, True, 1.0), row("harness", 1, True, 0.5)], "s1")
+        del legacy["bucket"], legacy["predicted_ratio"]
+        self.assertIn("| n/a |", BENCH.render_history([legacy]))
 
 
 class ManifestTests(unittest.TestCase):

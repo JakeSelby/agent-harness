@@ -6,7 +6,7 @@
   "next_ids": {
     "epic": 11,
     "story": 172,
-    "task": 1,
+    "task": 2,
     "bug": 52,
     "chore": 34,
     "spike": 7,
@@ -3284,6 +3284,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B051.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T001",
+      "github_number": 437,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/437",
+      "title": "Give each replay arm its own profile, and attribute history rows to a bucket",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T001.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
