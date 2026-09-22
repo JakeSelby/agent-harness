@@ -203,8 +203,16 @@ def scrubbed_env(extra=None, base=None):
     return env
 
 
-def arm_env(arm, bare_config, stance_cost=None, base=None):
-    extra = {"CLAUDE_CONFIG_DIR": str(bare_config)} if arm == "bare" else {}
+def arm_env(arm, bare_config, stance_cost=None, base=None, harness_config=None):
+    """Each arm points at its own profile directory.
+
+    A profile is authenticated by its absolute path: the CLI stores the credential in the keychain
+    under `Claude Code-credentials-<sha256(config dir)[:8]>`, so a copied directory is not signed in
+    and cannot be made so by copying files. The harness profile is therefore one the owner signed
+    into once, never a copy of the bare one. With none named the harness arm inherits the live
+    `~/.claude` through HOME, which carries the owner's personal layer into the comparison."""
+    config = bare_config if arm == "bare" else harness_config
+    extra = {"CLAUDE_CONFIG_DIR": str(config)} if config else {}
     if stance_cost and arm != "bare":
         extra["HARNESS_STANCE_COST"] = stance_cost
     return scrubbed_env(extra, base)
@@ -406,7 +414,8 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
         snapshot(opts["repo"], task["parent_sha"], workdir)
         try:
             done = launch(arm_command(opts["claude"], opts["model"], prompt_of(task), opts["run_cap"]),
-                          cwd=str(workdir), env=arm_env(arm, opts["bare_config"], opts.get("stance_cost")),
+                          cwd=str(workdir), env=arm_env(arm, opts["bare_config"], opts.get("stance_cost"),
+                                       harness_config=opts.get("harness_config")),
                           timeout=RUN_TIMEOUT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           universal_newlines=True)
         except subprocess.TimeoutExpired:
@@ -490,7 +499,9 @@ def history_row(rows, series):
     first = rows[0]
     reported, normalised = summarise(rows), summarise(rows, "cost_normalised_usd")
     ratio, status = verdict(reported)
-    return {"date": first["date"], "series": series, "harness_version": first["harness_version"],
+    return {"date": first["date"], "series": series, "bucket": first.get("bucket", ""),
+            "predicted_ratio": first.get("predicted_ratio"),
+            "harness_version": first["harness_version"],
             "harness_sha": first["harness_sha"], "tag": first["tag"], "model": first["model"],
             "cli_version": first["cli_version"], "reps": max(r["rep"] for r in rows), "runs": len(rows),
             "bare": reported["bare"], "harness": reported["harness"], "ratio": ratio,
@@ -498,9 +509,12 @@ def history_row(rows, series):
 
 
 def upsert_history(path, row):
-    """Append, replacing an earlier line for the same version, commit, day and series."""
+    """Append, replacing an earlier line for the same version, commit, day, series and bucket.
+
+    The bucket is part of the key: a programme that changes one thing at a time measures several
+    buckets at one sha on one day, and without it each row would overwrite the last."""
     path = Path(path)
-    key = lambda r: (r["date"], r["series"], r["harness_version"], r["harness_sha"])
+    key = lambda r: (r["date"], r["series"], r["harness_version"], r["harness_sha"], r.get("bucket", ""))
     old = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] \
         if path.is_file() else []
     kept = [r for r in old if key(r) != key(row)] + [row]
@@ -514,14 +528,16 @@ def render_history(rows):
     lines = ["# Cost per passed task, harness against bare Claude Code", "",
              "Dollars are list-price equivalents reported by the CLI, not money charged. Compare ratios"
              " across days, never dollars. A new series means the task set or the model changed.", "",
-             "| Date | Series | Harness | Model | Bare USD per pass | Harness USD per pass | Ratio |"
-             " Cache-normalised ratio | Passed, bare | Passed, harness | Errors | Threshold %.2f |" % THRESHOLD,
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+             "| Date | Series | Bucket | Harness | Model | Bare USD per pass | Harness USD per pass |"
+             " Ratio | Predicted | Cache-normalised ratio | Passed, bare | Passed, harness | Errors |"
+             " Threshold %.2f |" % THRESHOLD,
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in rows:
-        lines.append("| %s | %s | %s @ %s | %s | %s | %s | %s | %s | %s | %s | %d | %s |" % (
-            r["date"], r["series"], r["harness_version"], r["harness_sha"][:7], r["model"],
-            usd(r["bare"]["cost_per_passed"]), usd(r["harness"]["cost_per_passed"]), usd(r["ratio"]),
-            usd(r["ratio_cache_normalised"]), usd(r["bare"]["passed"]), usd(r["harness"]["passed"]),
+        lines.append("| %s | %s | %s | %s @ %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %s |" % (
+            r["date"], r["series"], r.get("bucket") or "n/a", r["harness_version"], r["harness_sha"][:7],
+            r["model"], usd(r["bare"]["cost_per_passed"]), usd(r["harness"]["cost_per_passed"]),
+            usd(r["ratio"]), usd(r.get("predicted_ratio")), usd(r["ratio_cache_normalised"]),
+            usd(r["bare"]["passed"]), usd(r["harness"]["passed"]),
             r["bare"]["errors"] + r["harness"]["errors"], r["status"]))
     return "\n".join(lines) + "\n"
 
@@ -571,13 +587,23 @@ def cmd_replay(args):
                          "installed one with --harness-repo")
     version = (harness / "VERSION").read_text(encoding="utf-8").strip()
     table = json.loads((ROOT / "policy" / "prices.json").read_text(encoding="utf-8")).get("models", {})
-    series = hashlib.sha256(Path(args.tasks).read_bytes() + args.model.encode()).hexdigest()[:8]
+    harness_config = Path(args.harness_config).expanduser() if args.harness_config else None
+    if harness_config and not harness_config.is_dir():
+        raise SystemExit("cost-bench: the harness profile %s does not exist; sign in to it once, then "
+                         "sync the harness into it" % harness_config)
+    # The arm profile is part of what is being compared, so it rotates the series: a run whose
+    # harness arm carries the owner's personal layer is not comparable to one whose arm does not.
+    profile = b"|isolated" if harness_config else b"|inherited"
+    series = hashlib.sha256(Path(args.tasks).read_bytes() + args.model.encode()
+                            + profile).hexdigest()[:8]
     out = Path(args.out) if args.out else ROOT / "benchmarks" / version
     opts = {"repo": ROOT, "home": home, "claude": args.claude, "model": args.model, "tag": tags[0],
             "reps": args.reps, "run_cap": args.run_cap, "spend_cap": args.spend_cap, "prices": table,
-            "bare_config": bare, "stance_cost": args.stance_cost, "raw": args.raw, "tmp": args.tmp,
+            "bare_config": bare, "harness_config": harness_config, "stance_cost": args.stance_cost,
+            "raw": args.raw, "tmp": args.tmp,
             "stamp": {"date": datetime.date.today().isoformat(), "model": args.model,
                       "cli_version": _text([args.claude, "--version"], env=scrubbed_env()),
+                      "bucket": args.bucket, "predicted_ratio": args.predicted_ratio,
                       "harness_version": version, "harness_sha": _text(["git", "-C", str(harness), "rev-parse", "HEAD"]),
                       "os": "%s %s" % (platform.system(), platform.release())}}
     plan = schedule(tasks, args.reps)
@@ -592,8 +618,10 @@ def cmd_replay(args):
     if stopped:
         print("cost-bench: stopped at the spend cap after %d of %d run(s)" % (len(rows), len(plan)), file=sys.stderr)
     if rows and len(tasks) == len(load_tasks(args.tasks)) and not stopped:
-        kept = upsert_history(ROOT / HISTORY, history_row(rows, series))
-        (ROOT / HISTORY_MD).write_text(render_history(kept), encoding="utf-8")
+        home_dir = Path(args.history_dir) if args.history_dir else ROOT / "benchmarks"
+        home_dir.mkdir(parents=True, exist_ok=True)
+        kept = upsert_history(home_dir / HISTORY.name, history_row(rows, series))
+        (home_dir / HISTORY_MD.name).write_text(render_history(kept), encoding="utf-8")
         print(json.dumps(kept[-1], indent=2))
     else:
         print("cost-bench: a partial set is not a history row; results are in %s" % out, file=sys.stderr)
@@ -617,6 +645,14 @@ def main(argv=None):
     run.add_argument("--spend-cap", type=float, default=SPEND_CAP_USD, help="stop before passing this")
     run.add_argument("--stance-cost", help="HARNESS_STANCE_COST for the harness arm")
     run.add_argument("--bare-config", default="~/.claude-bench-bare", help="the signed-in empty profile")
+    run.add_argument("--harness-config", help="the signed-in profile the harness is synced into; "
+                     "without it the harness arm inherits ~/.claude and the owner's personal layer")
+    run.add_argument("--bucket", default="", help="the one change this run measures, e.g. A; names the "
+                     "history row so several buckets can share a day and a commit")
+    run.add_argument("--predicted-ratio", type=float, help="the ratio the plan predicts for this bucket; "
+                     "stored beside the measured one so a miss is visible in the file")
+    run.add_argument("--history-dir", help="directory for history.jsonl and history.md; "
+                     "default benchmarks/")
     run.add_argument("--claude", default="claude", help="the CLI to launch")
     run.add_argument("--harness-repo", help="the installed harness checkout; default: follow ~/.claude")
     run.add_argument("--out", help="results directory; default benchmarks/<harness version>")
