@@ -6,7 +6,7 @@
   "next_ids": {
     "epic": 11,
     "story": 173,
-    "task": 6,
+    "task": 7,
     "bug": 54,
     "chore": 36,
     "spike": 7,
@@ -3271,6 +3271,19 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S150.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T006",
+      "github_number": 431,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/431",
+      "title": "Replay task set sits below the harness's break-even size",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T006.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
