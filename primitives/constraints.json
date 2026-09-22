@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "stances": [
+    {
+      "when": {"delegation": "tiered"},
+      "excludes_roles": {"tier": "frontier", "allow": ["designer", "design-judge"]},
+      "reason": "delegation/tiered refuses the frontier class by request, so a role contract declaring tier: frontier contradicts it unless it is one of the design roles the delegation-tiering skill exempts."
+    },
+    {
+      "when": {"cost": "max"},
+      "excludes": {"delegation": "off"},
+      "reason": "cost/max budgets a fan-out as wide as the task needs, and delegation/off denies outright every spawn the user did not ask for."
+    },
+    {
+      "when": {"commits": "as-you-go"},
+      "excludes": {"autonomy": "confirm-writes"},
+      "reason": "commits/as-you-go pushes as each logical unit finishes, and autonomy/confirm-writes names commits and pushes as changes that wait for a yes."
+    },
+    {
+      "when": {"commits": "as-you-go"},
+      "excludes": {"autonomy": "ask"},
+      "reason": "commits/as-you-go commits and pushes incrementally without prompting, and autonomy/ask waits for a go-ahead on each substantive step."
+    }
+  ]
+}
