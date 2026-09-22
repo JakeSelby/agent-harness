@@ -42,9 +42,13 @@ def lock(directory):
 
 
 def update_toml(text, wanted):
+    """Apply owned top-level keys; a `None` value means the harness no longer wants that key."""
     document = tomlkit.parse(text)
     for key, value in wanted.items():
-        document[key] = value
+        if value is None:
+            document.pop(key, None)
+        else:
+            document[key] = value
     return tomlkit.dumps(document)
 
 
@@ -95,12 +99,18 @@ class Store:
                 owned.pop("pending_from", None)
             self.save()
 
-    def generated(self, path, text, adopt=False):
+    def generated(self, path, text, adopt=False, over_link=False):
+        """Write a file the harness owns. `over_link` is a link the caller has already claimed.
+
+        A dry run reports what a real one would do, and a real one unlinks before writing, so a
+        claimed link is treated as an absent file rather than as content to compare against: the
+        alternative is a dry run that reports nothing wherever the previous release left a link.
+        """
         path = Path(path)
-        if path.is_symlink():
+        if path.is_symlink() and not over_link:
             self.conflicts.append(str(path) + ": symlink is not a generated-file target")
             return
-        current = path.read_text() if path.exists() else None
+        current = None if path.is_symlink() else (path.read_text() if path.exists() else None)
         record = self.data["files"].get(str(path))
         if record and current != record["applied"] and ("pending_from" not in record or current != record["pending_from"]):
             self.conflicts.append(str(path) + ": generated content changed; preserve and reconcile it first")
@@ -126,6 +136,18 @@ class Store:
             old = record["keys"].get(key)
             if old and current != old["applied"] and ("pending_from" not in old or current != old["pending_from"]):
                 self.conflicts.append(str(path) + ": owned key changed: " + key)
+                continue
+            if value is None:
+                # A key the harness wrote and no longer wants — a renamed setting, say. Only one
+                # it owns: a key of the same name the user set themselves has no record here and
+                # is left exactly as it is.
+                if old is None:
+                    continue
+                if old["prior"]["present"]:
+                    document[key] = old["prior"]["value"]
+                elif key in document:
+                    del document[key]
+                del record["keys"][key]
                 continue
             prior = old["prior"] if old else {"present": key in document, "value": current}
             record["keys"][key] = {"prior": prior, "applied": value, "pending_from": current}
@@ -154,6 +176,34 @@ class Store:
             assign(document, keys, wanted)
         if document != current or str(path) not in self.data["files"]:
             self._write(path, json.dumps(document, indent=2) + "\n", record)
+
+    def retire(self, path):
+        """Undo one generated file the harness no longer supplies; True when it is gone.
+
+        `uninstall`'s rule for a single path, because a role that is deleted or renamed would
+        otherwise leave its definition on every machine forever. Content the user changed is
+        preserved and reported, and a file that had a prior life is returned to it.
+        """
+        path = Path(path)
+        record = self.data["files"].get(str(path))
+        if record is None or record.get("kind") != "generated":
+            return False
+        if path.is_symlink():
+            self.conflicts.append(str(path) + ": redirected path preserved")
+            return False
+        current = path.read_text() if path.exists() else None
+        if current is not None and current != record["applied"] and (
+                "pending_from" not in record or current != record["pending_from"]):
+            self.conflicts.append(str(path) + ": user changes preserved")
+            return False
+        if not self.dry:
+            if record["prior"] is None:
+                path.unlink(missing_ok=True)
+            else:
+                atomic_text(path, record["prior"])
+        del self.data["files"][str(path)]
+        self.save()
+        return True
 
     def drift(self):
         findings = []

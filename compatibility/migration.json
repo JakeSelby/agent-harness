@@ -1,13 +1,16 @@
 {
   "schema_version": 1,
-  "harness_version": "0.10.0",
-  "summary": "Upgrade from v0.9.0 by reviewing the generated v0.10.0 projection before applying it; the architecture-viewer preview is inert until an external adapter is registered and selected.",
+  "harness_version": "0.11.1",
+  "summary": "Upgrade from v0.11.0 by reviewing the generated v0.11.1 projection before applying it: a patch release with no new files, hook events or roles. The spawn guard now refuses a constrained role's brief however the spawn is named, the builder role reports what produced any fixture it edits, and the `delegation: off` stance says that a spawn is denied; the architecture-viewer preview is inert until an external adapter is registered and selected.",
   "actions": [
-    "Run `harness sync --dry-run` from the v0.10.0 checkout and inspect every proposed write, ownership change and conflict.",
-    "Run `harness sync` only after resolving unmanaged-file and adoption conflicts; the default builtin architecture-viewer selection remains unavailable and sync never launches a viewer."
+    "Run `harness sync --dry-run` from the v0.11.1 checkout and inspect every proposed write, ownership change and conflict. Expect the `builder` agent definition and the `delegation` stance text to change and nothing to be added.",
+    "Run `harness sync` only after resolving unmanaged-file and adoption conflicts.",
+    "If you route BMad code review through the harness, run `harness bmad check <framework-root>` and then `harness bmad apply <framework-root>`: each review layer's brief now begins with a `harness-role:` line that the spawn guard enforces, and a framework checkout keeps the old layer text until you apply it.",
+    "Expect a session record under `~/.local/state/agent-harness/sessions/` to gain a bounded `denied_spawns` list once the guard has refused a constrained-role spawn in that session. It is pruned with the record and read by nothing else."
   ],
   "recovery": [
     "Preserve reported conflicts, adopted backups, external viewer adapter descriptors and external viewer installations.",
+    "To return to v0.11.0, check out that tag and run `harness sync` once; v0.11.0 ignores the `denied_spawns` key in a session record, and a BMad framework checkout keeps working with or without the marker line.",
     "Use `harness uninstall --dry-run` before uninstalling, and follow docs/runtime-installation.md for rollback and ownership recovery; use docs/bmad.md for task continuation."
   ]
 }

@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import isolate_home
+
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
 spec = importlib.util.spec_from_loader("harness", loader)
@@ -15,7 +17,7 @@ harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
 COMMANDS = REPO / "claude" / "commands"
-EXPECTED = ["build.md", "handoff.md", "plan.md", "research.md", "review.md"]
+EXPECTED = ["build.md", "close-out.md", "handoff.md", "land.md", "plan.md", "research.md", "review.md"]
 MAX_BODY_LINES = 35
 
 
@@ -42,11 +44,7 @@ class TempHome(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old_home = os.environ.get("HOME")
-        os.environ["HOME"] = str(self.home)
-        for k in list(os.environ):
-            if k.startswith("HARNESS_"):
-                del os.environ[k]
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def tearDown(self):
         if self._old_home is not None:
@@ -159,6 +157,66 @@ class CommandContentTests(unittest.TestCase):
     def test_the_sequence_commands_name_the_skill_they_run(self):
         self.assertIn("plan-authoring", split(COMMANDS / "plan.md")[1])
         self.assertIn("worktree-per-agent", split(COMMANDS / "build.md")[1])
+
+    def test_land_verifies_the_current_head_before_it_merges(self):
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("gh pr merge --squash --delete-branch", body)
+        self.assertIn("current head", body)
+        self.assertIn("issue-ownership", body)
+
+    def test_land_cleans_up_only_through_the_reversible_commands(self):
+        """The refusals are the safety check; a forced form would delete unreviewed work."""
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("harness worktree remove <name> --merged", body)
+        self.assertIn("harness worktree audit", body)
+        self.assertIn("Never force a removal", body)
+        self.assertIn("Never `git branch -D`", body)
+        self.assertIn("compound command", body)
+        self.assertNotIn("git branch -D <", body)
+
+    def test_land_gates_the_merge_and_defers_the_release_rule_to_the_repository(self):
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("approval-gated", body)
+        self.assertIn("never tags and never deploys", body)
+        self.assertIn("no release due", body)
+        self.assertIn("the repository's own agent instructions", body)
+
+    def test_close_out_sweeps_before_it_changes_anything(self):
+        """A close-out that opens with a merge has skipped the question it exists to ask."""
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Sweep before you change anything", body)
+        self.assertIn("harness worktree audit", body)
+        self.assertIn("an empty sweep is a result", body)
+
+    def test_close_out_delegates_to_the_workflows_that_already_own_their_steps(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("`land` workflow", body)
+        self.assertIn("`handoff` workflow", body)
+        self.assertIn("never by inlining its steps", body)
+        self.assertNotIn("gh pr merge", body)
+
+    def test_close_out_gates_the_issues_it_files_rather_than_fixing_them_in_place(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Batch the follow-ups", body)
+        self.assertIn("explicit go-ahead", body)
+        self.assertIn("never quietly fix one here", body)
+
+    def test_close_out_reaches_sibling_sessions_without_naming_one_client_tool(self):
+        """Workflows project to every runtime; a tool name here would be wrong on the others."""
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("where the client can list and message them", body)
+        self.assertIn("where the client cannot, use the handoff", body)
+
+    def test_close_out_never_clears_or_compacts_before_archiving(self):
+        """Archiving ends the session, so either one only burns context still in use."""
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Never clear or compact first", body)
+        self.assertIn("archiving ends the session", body)
+
+    def test_close_out_archives_only_when_the_invocation_asked_for_it(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("Archive when the invocation already asked for it", body)
+        self.assertIn("the checklist and wait", body)
 
     def test_ownership_records_the_commands_directory(self):
         ownership = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())

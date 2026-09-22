@@ -3,6 +3,12 @@
 Two kinds of preference exist, and they are configured differently because Claude Code reads
 rule text literally: there is no variable substitution inside a rule or CLAUDE.md.
 
+Nine stance axes ship, and only three of them bind to enforcement today: `autonomy` sets which
+shell-command grade stops and asks, `delegation` changes how a spawn is routed, and `cost`
+resolves a class, an effort and a soft budget per role. The other six are prose that swaps cleanly
+and acquires no enforced control by being switched. `harness usage --rules --by stance` groups rule
+hits by the variant in force, so a switch can be checked rather than assumed.
+
 ## Identity
 
 The `identity` block of `~/.config/agent-harness/config.json` (`name`, `pronouns`, `role`,
@@ -81,13 +87,52 @@ Every turn spends tokens against your plan's limit, and the ones that fan work o
 subagents spend several times as much: `/research` and `/build` are the expensive commands, and a
 wide review is the expensive habit.
 
-The `cost` stance is the dial. `frugal` keeps fan-out narrow and effort low, `balanced` is the
-default, `max` spends freely on hard problems. It sets how much; the `delegation` stance sets what
-gets delegated and to which model tier. `HARNESS_STANCE_COST=frugal claude` applies it to one
-session.
+The `cost` stance is the dial. It sets how much; the `delegation` stance sets what gets delegated
+and to which model tier.
+
+A variant controls more than the session's own habits. Its switches set the session's reasoning
+effort, the fan-out width, whether fast mode and compaction are available, and how much the usage
+feed says about spend; its rows set a model class, a reasoning effort and a soft budget in output
+tokens and tool calls for each role and for each of the A, B and C bands, and name the band an
+unnamed spawn is routed to. All of it is data in a JSON sidecar beside the variant's `.md`, and
+`harness stances --json` prints the resolved table with the sidecar each layer came from.
+
+- `frugal` runs the session at low effort, keeps the fan-out narrow, never turns fast mode on,
+  ends a task with `/clear`, drops the cheaper bands a class each, and scales every budget down.
+- `balanced` is the shipped default: medium effort, a moderate fan-out, fast mode off unless you
+  ask for it, `/clear` at task end, and the measured budgets unscaled.
+- `max` leaves effort at the model's default, fans out as widely as the task needs, allows fast
+  mode and compaction, and marks nothing as over budget.
+
+Select one with `harness config set stances.cost frugal`, or for a single session with
+`HARNESS_STANCE_COST=frugal claude`. To write your own, put a `.md` and a sidecar in your
+primitive root, `extends` a shipped variant and change only the cells you care about;
+[primitive-authoring.md](primitive-authoring.md) has the worked example and the schema.
+
+Two things a variant never wins against. A `role_bindings.<runtime>.<role>` entry in your config
+always beats the row, because you named the role yourself. And a role whose contract says
+`posture: fixed` — the verifiers — ignores a variant's class and effort entirely and takes only
+its budgets.
+
+A row's budget reaches the work as one sentence `brief-guard` appends to a brief that states no
+spend of its own. It is soft — finish if close, otherwise return — and a variant that prices
+nothing changes no brief. The shipped per-role budgets are the 90-day p75 from
+`harness usage --by role`; the A/B/C band budgets are provisional — the general-purpose
+distribution at p50, p75 and p90 — until rerouted spawns have measured each band, and the bands
+themselves are a first cut to be re-seeded the same way.
 
 `harness usage` summarises what sessions have actually spent, from a local file with no network
-call — see [usage.md](usage.md).
+call unless you opt into [exporting it](telemetry.md) — see [usage.md](usage.md). It reports
+dollars as well as tokens, from `policy/prices.json`.
+A `prices` block in `config.json` merges over that file per model id, so you can correct a rate
+your account is billed differently at, or add a model the table does not list:
+
+```json
+{ "prices": { "claude-opus-5": { "input": 4.0 }, "some-local-model": {
+    "input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0 } } }
+```
+
+An override that names one rate keeps the rest of the shipped entry; a new model needs all four.
 
 ## Other surfaces
 
@@ -109,6 +154,32 @@ VS Code, and `approval_policy` plus `sandbox_mode` in Codex. Session environment
 select it on a machine that touches regulated or customer data, and never carry it into an
 organisation's fork of this harness: leave `inherit` and let the organisation's managed settings
 decide. `auto` is the right choice for a supervised but low-friction setup.
+
+### What plan mode may do at that posture
+
+Plan mode exists to force a plan, its questions and a wait before anything is built. It is not a
+reason to investigate at a lower authority than you selected for every other mode, and natively it
+is: the allow rules and the read-only hook cover the commands the grammar can prove, so a script
+run, a `python3 -c`, a redirect into a scratch file or a test run still prompts.
+
+So under `bypass` or `auto`, in Claude Code, while `permission_mode` is `plan`, the PreToolUse
+coordinator answers what the native flow would prompt on:
+
+- Graded 0 or 1 — proved read-only, or writing only to this machine — is approved as investigation.
+- Graded 2 — a push, a release, an API call that mutates, anything a colleague would see — is
+  asked about, because that is execution rather than planning. Graded 3 is unchanged.
+- `manual` and `inherit` keep today's behaviour, and Codex is untouched: its client rejects an
+  `allow` decision outright.
+- The autonomy stance still wins where it is stricter. `confirm-writes` or `ask` asks about the
+  same grades in plan mode that it asks about everywhere else.
+
+**`plan_allow_tools`** is a list of tool-name globs (`fnmatch` syntax, for example
+`"mcp__notes__read_*"`) approved in plan mode under the same posture gate. It is empty by
+default and nothing is inferred: a PreToolUse payload says nothing about whether an MCP tool
+reads or writes, so only you can say which of them are research. Entries that are not non-empty
+strings are ignored, and a glob never reopens a tool the coordinator already governs — `Bash`
+keeps its grades, `Agent` its delegation guard, `WebFetch` its own plan-mode hook. Set it with
+`harness config set plan_allow_tools '["mcp__notes__read_*"]'`.
 
 ## The reasoning behind each stance
 
@@ -152,7 +223,7 @@ setup you can perform, pasting install or start instructions instead of running 
 scope does not extend to the next, so never widen your own permissions or record a governance rule
 for yourself unless the user asks. The `grade-bash` hook enforces the stance: it grades every
 shell command 0–3 and gates at grade 3 under `execute`, 2 and up under `confirm-writes`, 1 and up
-under `ask`; [how-it-works.md](how-it-works.md#command-grades) explains the grades and the modes.
+under `ask`; [`grade-bash.py`](../claude/hooks/grade-bash.py) documents the grades and the modes.
 
 **Plan ceremony.** `review-card` makes plan mode feel like a design review: the approach in chat, a
 link to the plan file, an explicit build gate, then autonomous implementation. The card is a review
@@ -165,15 +236,18 @@ the explicit go-ahead.
 code is cheap now, and an agent-assisted person can maintain custom code fine in three years.
 Capability ceilings are the argument class that decides.
 
-**Cost.** `cost` governs how much you spend, never which model: agent definitions carry model ids.
-`frugal` runs the session at low effort outside design and adversarial review, keeps subagents to
-gatherers with a fan-out of three, never turns on fast mode, and ends a task with `/clear`.
-`balanced` is the shipped default — medium effort, fan-out of six, fast mode off unless asked.
-`max` spends the model's default effort, fans out as widely as the task needs, and allows fast mode
-and compaction. How it meets the tier decision is in the `delegation-tiering` skill.
+**Cost.** `cost` governs how much you spend, never which model: a row names a capability class,
+the adapter's table resolves it, and agent definitions carry the result. Under `frugal` subagents
+are gatherers only and agent teams are off, so an up-class trigger is answered by raising the
+session's own effort rather than by spawning. What each variant sets is above, under
+[what a session costs](#what-a-session-costs); how it meets the tier decision is in the
+`delegation-tiering` skill.
 
 **Voice.** `voice` governs how a reply is laid out, and nothing about what the work is. `scannable`
-defers to the Scannable output style: verdict first, registers separated, at most one table.
+defers to the Scannable output style: verdict first, registers separated, at most one table. It is
+the only variant that carries presentation material, on either runtime; under `answer-card` and
+`off` a sync installs no output style and takes back out the one a previous selection left, while
+an output style you chose yourself is left exactly as it is, whatever it is called.
 `answer-card` is for reading on a phone — the answer in the first line, then why, the catch, and the
 alternatives, about 150 words, no tables, with the reasoning left in the file it links rather than
 re-argued in the message. It wins over the output style where the two differ. `off` imposes no shape
@@ -184,8 +258,17 @@ inherits no voice, so its brief has to carry the output shape itself.
 **Delegation.** The evidence for the tier bands, the cost-per-solved-task numbers and the
 boundaries where they stop holding are in the `delegation-tiering` skill, not here. The
 `tier-agent-spawns` hook enforces the chosen variant on spawns that name no agent definition:
-one tier down under `tiered` (the session model inside a framework repo), untouched under
+routed to the cost variant's default band worker under `tiered`, untouched under
 `session-model`, a prompt under `off`.
+
+**Band workers.** `worker-a`, `worker-b` and `worker-c` are the three roles the A/B/C bands
+render into, and they exist for one reason: the `Agent` tool takes no effort, so only an agent
+definition can carry the posture's effort to a spawn that named nothing. Such a spawn is
+rewritten to the variant's `default_band` worker — `B` under `balanced`, `A` under `frugal` —
+and an orchestrator that wants another band spawns that worker by name; their descriptions
+carry the band rule the `delegation-tiering` skill argues. A variant with no `default_band` routes
+nothing; so does a machine that has not synced the definitions, and so does a session that started
+before it did, which is why a sync that installs them wants a new session after it.
 
 ## Proposing a new stance or variant
 

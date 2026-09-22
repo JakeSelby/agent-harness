@@ -65,11 +65,46 @@ exact `type::*` label and primary parent. It never changes a title, state or com
 issue types are [organization-managed](https://docs.github.com/issues/tracking-your-work-with-issues/using-issues/managing-issue-types-in-an-organization)
 and cannot be assigned in this personal-account repository, so the manifest records `labels-only`
 projection explicitly rather than reporting permanent false drift.
-For new community issues, reserve an ID during maintainer triage before implementation ownership:
+File maintainer work already mapped, from the worktree that will deliver it, and reserve an ID
+for a community issue during triage before implementation ownership:
 
 ```sh
+python3 scripts/bmad_issue_sync.py new --title TITLE --kind story --body-file BODY.md --parent PARENT_NUMBER
 python3 scripts/bmad_issue_sync.py reserve --issue N --kind story --parent PARENT_NUMBER
 ```
+
+Both write the map and a new artifact in the current checkout; commit them in the pull request that
+delivers the issue. The required `issue-ownership` check refuses a pull request whose delivery
+issue is absent from the map, and `apply` adds the Planning block once the artifact is on `main`.
+
+### Live verification
+
+```sh
+python3 scripts/bmad_issue_sync.py audit --live
+python3 scripts/bmad_issue_sync.py refresh
+```
+
+`audit --live` is read-only. It fails when a mapped issue's title or open/closed state differs from
+the manifest, when a mapped issue is missing or lacks its Planning block, label or parent, and when
+an issue a maintainer has accepted — filed by a maintainer, or carrying a milestone or a `type::*`
+label — has no BMad ID. A community issue still waiting for triage is a notice, not a finding, and
+so is an unmapped issue closed as not planned or as a duplicate.
+
+The manifest owns the primary parent and `apply` projects it, so `audit --live` never tells you to
+apply a parent GitHub already records: it reports a mapped parent the manifest lacks as `run
+refresh`, an unmapped one as `run reserve for it first`, and a parent that differs on both sides as
+a conflict for you to settle.
+
+`refresh` copies GitHub's title and state into the manifest and its generated artifacts, and adopts
+a mapped parent the manifest records as none. It checks
+every drifted artifact before writing any of them and refuses the whole run when one carries
+amendments; it never touches GitHub, and it leaves an issue GitHub no longer returns for the audit
+to report as missing.
+
+Run the full live audit before a release and after any triage pass. The `bmad traceability`
+workflow runs it daily, on issue events and when the map changes, with `--ignore-lifecycle` and
+`--grace-days 2`: an issue closes before its map entry can follow it through a pull request, and a
+new issue gets two days to receive its ID. That workflow is not a required check.
 
 IDs are never reused and never encode hierarchy. Reparent the metadata rather than renaming the ID.
 Completed historical issues are marked `reconstructed`; the record never claims those artifacts
@@ -108,7 +143,13 @@ existed during the original delivery.
 
 `templates/bmad/custom/` names harness roles: `builder`, `reviewer`, and `spec-reviewer`.
 The active runtime adapter supplies their model and effort; the framework's own skill text does
-not, and the spawn hook tiers a framework repository like any other. Constrained review roles use
+not, and the spawn hook tiers a framework repository like any other.
+
+A framework spawn that names one of those roles is priced from that role's row in the active cost
+variant. A framework spawn that names no role at all — the "launch a subagent" a step file writes,
+which no override template reaches — is routed to the variant's default band worker and priced
+from that band's row instead, so its class, effort and soft budget come from the posture rather
+than from the recipe. Nothing in the framework's own templates changes. Constrained review roles use
 `harness role run` with explicit input roots; builders retain their normal
 workflow. See [isolated role workers](role-workers.md). Recipes retain
 complete keyed review-layer records so BMad's replacement merge does not discard required fields.

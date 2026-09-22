@@ -12,6 +12,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "brief-guard.py"
 
@@ -38,7 +40,7 @@ class HookRun(unittest.TestCase):
         (d / "config.json").write_text(json.dumps({"stances": {"delegation": delegation}}))
 
     def run_hook(self, payload, env_extra=None):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         env.update(env_extra or {})
         out = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload),
@@ -91,10 +93,14 @@ class LeavesAlone(HookRun):
                 self.assertIsNone(self.run_hook(self.spawn(prompt)))
 
     def test_an_agent_whose_definition_carries_a_cap(self):
+        # The definition states the bound, so the brief never repeats it. A budget is a separate
+        # question: a priced role still gets its spend sentence, which `test_brief_budget` holds.
         self.write_config("tiered")
         for kind in sorted(detectors().CAPPED_AGENTS):
             with self.subTest(agent=kind):
-                self.assertIsNone(self.run_hook(self.spawn("do a thing", kind)))
+                out = self.run_hook(self.spawn("do a thing", kind))
+                prompt = "" if out is None else out["hookSpecificOutput"]["updatedInput"]["prompt"]
+                self.assertNotIn("400 words", prompt)
 
     def test_delegation_off_is_a_no_op(self):
         self.write_config("off")
@@ -121,7 +127,7 @@ class LeavesAlone(HookRun):
 class MalformedInput(HookRun):
     def test_garbage_does_not_raise(self):
         self.write_config("tiered")
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         for payload in ("", "not json", "[]", '{"tool_name": "Agent", "tool_input": []}'):
             with self.subTest(payload=payload):

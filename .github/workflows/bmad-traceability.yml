@@ -1,0 +1,28 @@
+name: bmad traceability
+
+# Read-only comparison of the committed issue map with GitHub. It is not a required check: a red
+# run means the map needs a reserve, refresh or apply, not that a pull request is wrong.
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  issues:
+    types: [opened, reopened, labeled, milestoned]
+  push:
+    branches: [main]
+    paths: ["_bmad-output/**", "scripts/bmad_issue_sync.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  live-audit:
+    name: live-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare the issue map with GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/bmad_issue_sync.py audit --live --ignore-lifecycle --grace-days 2

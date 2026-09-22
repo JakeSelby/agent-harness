@@ -76,6 +76,30 @@ Agent count correlates **−0.021** with quality. Information-transfer coverage 
 A vague brief to a frontier model beats a sharp brief to a cheap one far less often than the
 reverse.
 
+## Checks travel with the work
+
+A check that lives outside the model — a governance or trust call hosted by an MCP server, an
+approval gate, a licence or secret scan — binds the delegated path exactly as it binds the
+supervised one. A subagent's tool list is usually narrower than its spawner's, so a check the
+spawner runs by habit is silently skipped the moment the action moves into a subagent.
+
+- **Name the checks in the brief.** Every check the spawner would have to run before an action the
+  brief asks for — commit, push, send, deploy — is listed with the action it guards.
+- **The subagent makes the call itself when it holds the tool**, and obeys the answer as the
+  spawner would: a clear go proceeds, anything else stops.
+- **When it cannot make the call, or the answer is not a clear go, it does not act.** It finishes
+  the work that needs no check, leaves the guarded action undone, and returns it as a pending
+  action: the exact command, the check it could not run, and why.
+- **Each level repeats this.** The spawner makes the call if it can and then performs or re-dispatches
+  the action; if it cannot, it passes the pending action to its own spawner. Only the top session
+  prompts the user, so the user sees one question, from the session they are talking to.
+- **Pre-clearing is the same chain run early.** A spawner that can run the check before dispatch
+  may do so, and says in the brief which action was cleared, at what level, and for which branch
+  or target. A clearance covers that action only; anything wider goes back up.
+- **An unreachable check is reported, never assumed passed.** Where the check's own policy says a
+  failed server must not block work, the level that holds that policy applies it — not a subagent
+  that never had the tool.
+
 ## The axes that decide tier
 
 Ranked by evidential strength.
@@ -330,7 +354,7 @@ reviewer's cost and capability a side effect of whatever the session ran, and fr
 the scarcest tier it did the very thing the next rule forbids. A reviewer's value is fresh
 context first and tier third, so `strong` keeps most of it. The inherited model was also a crude
 difficulty signal — *this session was escalated, so review it hard* — and that signal now has to
-be a decision: a role that declares `frontier`, as `design-judge` does.
+be a decision: a role that declares `frontier`, as `design-judge` and `designer` do.
 
 **Never spawn subagents on the orchestrator's own tier when that tier is rate-limited or
 capacity-gated.** One notch down costs a few points; two notches costs many. Step once.
@@ -339,17 +363,20 @@ capacity-gated.** One notch down costs a few points; two notches costs many. Ste
 selection and silently downgrades reviewers. Use per-agent model settings and explicit model
 options in workflow scripts.
 
-**A spawn that names no agent and no model** is tiered by the `tier-agent-spawns` hook: one
-tier below the session under this stance. That is right for gathering and wrong for judgment,
-so a framework skill whose spawn is a reviewer names `reviewer` in its override instead of
-leaving the spawn bare; `docs/bmad.md` shows the pattern.
+**A spawn that names no agent and no model** is taken by the `tier-agent-spawns` hook: routed to
+the cost variant's default band worker under this stance, and left one tier below the session
+where nothing routes it. A default band is right for gathering and wrong for judgment, so a
+framework skill whose spawn is a reviewer names `reviewer` in its override instead of leaving the
+spawn bare; `docs/bmad.md` shows the pattern.
 
 **A framework does not choose model or effort.** Planning frameworks hard-code lines such as
 "review subagents run at the session's capability" in step files their override contract cannot
 reach. The hook therefore tiers a framework repository like any other and drops a request for
 the top class, which leaves the framework its personas, prompts and review structure and takes
 only the two dials. Where a recipe exposes a key, the override names a harness role, and the
-role carries tools and effort with it.
+role carries tools and effort with it. A framework's spawn that names no role is routed to a band
+worker like any other unnamed spawn, and a model its step file states for such a spawn never beats
+the band's class.
 
 **Session model everywhere**, the alternative stance, keeps subagents on the session model and
 spends the effort dial instead, with the number of agents kept small.
@@ -357,15 +384,57 @@ spends the effort dial instead, with the number of agents kept small.
 ## Cost posture
 
 The `cost` stance is the other half of a delegation decision: `delegation` picks the tier, `cost`
-picks how much you spend at it.
+picks how much you spend at it. A variant is a table rather than a paragraph, and `harness stances
+--json` prints the resolved one — every switch, every row, the sidecar each layer came from, and
+any warning. Read it there instead of remembering it: the figures are data, and they are re-seeded
+from measurement as the roles change.
 
-| | `frugal` | `balanced` | `max` |
-| --- | --- | --- | --- |
-| Session effort | low, except design and adversarial review | medium | model default |
-| Parallel fan-out | 3 | 6 | as the task needs |
-| Fast mode | never | off unless asked | allowed |
-| Compaction | `/clear` only | `/clear` at task end | `/compact` allowed |
+The switches set the session's own habits — the reasoning dial it runs at, how wide a fan-out may
+go, whether fast mode is available, whether a long task may compact or must clear, how much the
+usage feed says about spend, and one multiplier that scales every budget in the table at once.
+The rows are the delegation half: one per role, and one per band, each naming a capability class,
+a reasoning effort and a soft budget in output tokens and tool calls. A role whose contract fixes
+its posture — the verifiers — keeps its own class and effort and takes only the budget, because a
+reviewer that a variant could down-class is not a reviewer.
 
-Under `frugal`, subagents are gatherers only and agent teams are off, so an up-class trigger is
-answered by raising the session's own effort rather than by spawning. Neither stance names a
-model id; agent definitions carry those. Cache costs: `cache-hygiene.md`.
+A variant may `extends` a shipped one and change a single cell, so your own posture is usually
+three lines over `balanced` rather than a table you maintain; `docs/primitive-authoring.md` is the
+authoring contract. Under `frugal`, subagents are gatherers only and agent teams are off, so an
+up-class trigger is answered by raising the session's own effort rather than by spawning. Neither
+stance names a model id: a row names a class, the adapter's table resolves it, and agent
+definitions carry the result. Cache costs: `cache-hygiene.md`.
+
+## Delegating unnamed work
+
+Never spawn bare, and never as `general-purpose`, when you can band the work instead. Band it by
+[the rules above](#the-bands) and spawn `worker-a`, `worker-b` or `worker-c` by name — that is the
+whole of the choice, because only an agent definition can carry a band's class and effort into a
+spawn and the `Agent` tool takes no effort at all. A spawn that still names nothing is routed to
+the variant's default band, which is a default and not a reading of your task.
+
+The three workers exist for you only in a session that started after they were installed, because
+the runtime loads its agent list once and rejects a type that is not on it. So if `worker-a`,
+`worker-b` and `worker-c` are not in your agent list, do not name them: spawn unnamed, which falls
+back to one class below the session model, and expect band routing from your next new session.
+
+You do not choose model or effort for a banded spawn; the worker definition carries both. You may
+pass an explicit `model` — never the top class, which is reached only through a role that declares
+it — and when you do, say in the brief why this work needs it, since the row that would have
+priced the spawn no longer describes it.
+
+## Budgets
+
+Every brief leaves with an `Expected spend` sentence appended from the row that prices the spawn,
+in output tokens and tool calls — unless the brief already states a spend of its own. So when the
+task is unusually large or small for its role, write your own budget in those same units and it is
+left alone: a figure you chose for this task beats a percentile that knows nothing about it.
+
+Budgets are soft by construction. A subagent past its budget finishes if it is close, and otherwise
+returns what it has and says why, so the work stops at a seam rather than mid-edit. An over-budget
+return is a signal to re-scope the brief or move the work up a band, never a failure to punish.
+The usage feed reports actual against budget as each subagent returns and once a turn, which is
+where the pattern shows up rather than the instance.
+
+Under-spending is the failure that does not announce itself. Token usage explains 80% of the
+variance in the multi-agent result this skill cites above, so a subagent back at a fifth of its
+budget has usually skipped work, and the brief — not the budget — is what to fix.

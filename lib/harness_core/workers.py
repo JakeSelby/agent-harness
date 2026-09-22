@@ -12,10 +12,18 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from . import catalog, reconcile
+from . import catalog, keychain, reconcile
 
 LIMIT = 1024 * 1024
 RUNTIMES = {"codex": "codex", "claude-code": "claude"}
+
+
+def harness_version(root):
+    """The checkout's version, the one string `harness --version` prints, or None."""
+    try:
+        return (Path(root) / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
 
 
 def adapter(root, runtime):
@@ -28,7 +36,35 @@ def adapter(root, runtime):
     return module
 
 
-def resolve(root, config, runtime, name, model=None):
+def posture_record(root, runtime, fields, table, row, binding, overrides, model):
+    """What the selected cost variant did to this worker, for `status.json`.
+
+    Where each half came from, never how it was worded: a status record carries no prompt text.
+    `"role"` is the role's own contract and the adapter's entry, `"cost-row"` the variant's row
+    for it, `"role-binding"` the user's `role_bindings`, `"cli"` an explicit `--model`.
+    """
+    effort_key = "model_reasoning_effort" if runtime == "codex" else "effort"
+    classed = bool(table.get("class_applies")) and (row or {}).get("class") in catalog.TIER_CLASSES
+    return {"cost_variant": table.get("cost_variant"),
+            "class": row["class"] if classed else fields["tier"],
+            "class_source": "cost-row" if classed else "role",
+            "model_source": ("cli" if model else "role-binding" if "model" in binding
+                             else "cost-row" if classed and "model" in overrides else "role"),
+            "effort_source": ("role-binding" if effort_key in binding
+                              else "cost-row" if effort_key in overrides else "role")}
+
+
+def resolution(root, config, runtime, name, model=None, prompt=None):
+    """Everything a run resolves before it launches: contract, binding, instructions, posture.
+
+    The cost variant reaches a worker through the same function and the same precedence the sync
+    path renders a native definition with — role defaults, then the variant's row, then
+    `role_bindings`, then an explicit `--model` — because the constrained roles are denied as
+    native spawns and only ever run here. The table is built non-strict: a variant with no row
+    for this role, or one that will not build at all, leaves the worker exactly as it was before
+    cost variants had rows. `prompt` is the caller's brief, priced when it states no budget of
+    its own; without one there is nothing to price.
+    """
     if runtime not in RUNTIMES:
         raise ValueError("unsupported worker runtime")
     stances = catalog.resolve_stances(root, config)
@@ -37,7 +73,10 @@ def resolve(root, config, runtime, name, model=None):
     fields, body = catalog.role_contract(root, name)
     if fields["authority"] not in ("read-only", "artifact-write"):
         raise ValueError("workspace-write roles use their normal workflow, not a constrained worker")
-    overrides = config.get("role_bindings", {}).get(runtime, {}).get(name, {})
+    table = catalog.cost_table(root, config)
+    row = catalog.cost_row(root, table, name)
+    binding = config.get("role_bindings", {}).get(runtime, {}).get(name, {})
+    overrides = catalog.cost_overrides(root, config, table, runtime, name)
     bindings = catalog.role_binding(root, runtime, fields, overrides, config.get("tiers", {}).get(runtime))
     chosen = model or bindings.get("model")
     if not isinstance(chosen, str) or not chosen.strip() or chosen == "inherit":
@@ -54,7 +93,37 @@ def resolve(root, config, runtime, name, model=None):
     if fields["authority"] == "artifact-write":
         parts += ["Return only the complete plan Markdown, without a surrounding code fence or chat response. "
                   "Do not write the plan: the harness validates and publishes it to the caller-selected path."]
-    return fields, bindings, "\n\n---\n\n".join(parts)
+    record = posture_record(root, runtime, fields, table, row, binding, overrides, model)
+    sentence = budget(root, row, prompt)
+    if sentence:
+        record["budget"] = posture_figures(root, row)
+    return {"fields": fields, "bindings": bindings, "instructions": "\n\n---\n\n".join(parts),
+            "posture": record, "budget_sentence": sentence}
+
+
+def posture_figures(root, row):
+    """The budget figures the sentence states, as the shared resolver counts them."""
+    module = catalog.posture_module(root)
+    return module.budget_figures(row) if hasattr(module, "budget_figures") else {}
+
+
+def budget(root, row, prompt):
+    """The soft-budget sentence this brief is missing, or None; the same one a native brief gets.
+
+    The wording and the "already priced" test are `policy/hooks/posture.py`'s, loaded by file the
+    way `lifecycle.py` loads a policy, so a role worker's brief and a native spawn's cannot state
+    a spend two different ways. A resolver this checkout does not carry appends nothing.
+    """
+    module = catalog.posture_module(root)
+    if prompt is None or not hasattr(module, "budget_sentence"):
+        return None
+    return None if module.budget_stated(prompt) else module.budget_sentence(row)
+
+
+def resolve(root, config, runtime, name, model=None):
+    """The contract, native binding and shared instructions of one role worker."""
+    ready = resolution(root, config, runtime, name, model)
+    return ready["fields"], ready["bindings"], ready["instructions"]
 
 
 def environment(original, work):
@@ -69,6 +138,10 @@ def environment(original, work):
     env.update(HOME=str(work / "home"), XDG_CONFIG_HOME=str(work / "home/.config"),
                XDG_STATE_HOME=str(work / "home/.local/state"), XDG_CACHE_HOME=str(work / "home/.cache"))
     Path(env["HOME"]).mkdir(mode=0o700)
+    try:
+        keychain.provision(env["HOME"])
+    except OSError as exc:
+        raise ValueError(str(exc))
     return env
 
 
@@ -158,7 +231,10 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     read_roots = [Path(path).resolve(strict=True) for path in read_dirs]
     if any(not path.is_dir() for path in read_roots):
         raise ValueError("--read-dir must name an existing directory")
-    fields, bindings, instructions = resolve(root, config, runtime, name, model)
+    ready = resolution(root, config, runtime, name, model, prompt)
+    fields, bindings, instructions = ready["fields"], ready["bindings"], ready["instructions"]
+    if ready["budget_sentence"]:
+        prompt = prompt.rstrip() + ready["budget_sentence"]
     if bool(artifact) != (fields["authority"] == "artifact-write"):
         raise ValueError("only artifact-write roles require --artifact")
     native = adapter(root, runtime)
@@ -173,11 +249,19 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     run_dir = state_root / uuid.uuid4().hex
     run_dir.mkdir(mode=0o700)
     record = {"schema_version": 1, "id": run_dir.name, "role": name, "runtime": runtime,
-              "runtime_version": version, "model": bindings["model"], "workspace": str(workspace),
+              "runtime_version": version,
+              # The harness that launched this run, stamped now: the usage sweep that turns the
+              # status file into a ledger row may run long after this version was replaced.
+              "harness_version": harness_version(root),
+              "model": bindings["model"], "workspace": str(workspace),
               "effort": bindings.get("model_reasoning_effort", bindings.get("effort")),
               "read_roots": [str(workspace), str(root)] + list(map(str, read_roots)),
               "mode": "isolated-cli", "status": "starting", "started_at": time.time(),
-              "stances": config["stances"], "policy_sha256": hashlib.sha256(instructions.encode()).hexdigest(),
+              # The runner supervising this worker, so a reader can tell a live run from one whose
+              # process died mid-flight; `orphaned()` decides, and never without the start token.
+              "pid": os.getpid(), "pid_start": process_start(os.getpid()),
+              "stances": config["stances"], "posture": ready["posture"],
+              "policy_sha256": hashlib.sha256(instructions.encode()).hexdigest(),
               "qualification": "unqualified", "authority": "result data only; no transferred approvals"}
     status_path = run_dir / "status.json"
     reconcile.atomic_text(status_path, json.dumps(record, indent=2) + "\n")
@@ -207,6 +291,15 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
                 record["artifact"] = str(workspace / ".agent-harness/plans" / artifact)
             reconcile.atomic_text(run_dir / "result.md", content)
             record["result_path"] = str(run_dir / "result.md")
+            # What the run cost, as its own runtime reported it, so `usage --by role` counts a
+            # worker beside a subagent. An adapter that reports nothing leaves the key absent
+            # rather than a zero, which a report would read as a measured run that spent none.
+            try:
+                counts = getattr(native, "usage", lambda *_: {})(work, run_dir)
+            except Exception:
+                counts = {}
+            if isinstance(counts, dict) and counts:
+                record["usage"] = counts
         record["status"] = "completed"
     except subprocess.TimeoutExpired:
         record.update(status="timed-out", error="native worker exceeded its timeout")
@@ -220,8 +313,79 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     return record
 
 
+LIVE = ("starting", "running")
+ORPHANED = "the worker process ended without reporting a result"
+
+
+def process_start(pid):
+    """A token naming this pid's incarnation, or None when the platform will not say.
+
+    Recorded beside the pid so a recycled pid cannot be mistaken for the original process: a
+    reused number carries a different start time. Linux reads field 22 of `/proc/<pid>/stat`,
+    counted after the comm field's closing parenthesis, which may itself contain spaces; every
+    other POSIX platform asks `ps`, whose second-resolution timestamp is enough to separate two
+    processes that happened to receive the same number.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        stat = Path("/proc/" + str(pid) + "/stat")
+        if stat.exists():
+            return stat.read_text().rsplit(")", 1)[1].split()[19]
+        # A fixed locale, so a reader under different LC_TIME settings prints the same token.
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, text=True, timeout=10,
+                             env=dict(os.environ, LC_ALL="C"))
+    except (OSError, IndexError, ValueError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None if out.returncode == 0 else None
+
+
+def running(pid, token):
+    """True if the recorded process still runs, False if it is gone, None if it cannot be told.
+
+    None is every case the harness cannot decide — a record from a release that stored no pid, a
+    platform that reports no start time, a stat call refused — and the caller must read it as the
+    status already on file rather than as a terminal state.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    except OSError:
+        return None
+    current = process_start(pid)
+    if token is None or current is None:
+        return True
+    return current == token
+
+
+def orphaned(record, run_dir):
+    """Report a run whose supervising process died without a result as the terminal `orphaned`.
+
+    Only the live statuses are reclassified, and only when nothing was reported: a result on disk
+    means the run spoke for itself even if the process died before its final write. The new state
+    is persisted into `status.json` alone, every other key and every other file left as they are,
+    and a state directory that cannot be written still reports honestly to this caller.
+    """
+    if record.get("status") not in LIVE:
+        return record
+    if record.get("result_path") or (run_dir / "result.md").exists():
+        return record
+    if running(record.get("pid"), record.get("pid_start")) is not False:
+        return record
+    updated = dict(record, status="orphaned", error=ORPHANED)
+    with contextlib.suppress(OSError):
+        reconcile.atomic_text(run_dir / "status.json", json.dumps(updated, indent=2) + "\n")
+    return updated
+
+
 def status(state_root, worker_id=None):
     if worker_id and not re.fullmatch(r"[a-f0-9]{32}", worker_id):
         raise ValueError("invalid worker id")
     paths = [Path(state_root) / worker_id / "status.json"] if worker_id else sorted(Path(state_root).glob("*/status.json"))
-    return [json.loads(path.read_text()) for path in paths]
+    return [orphaned(json.loads(path.read_text()), path.parent) for path in paths]

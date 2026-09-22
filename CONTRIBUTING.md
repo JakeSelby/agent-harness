@@ -113,6 +113,27 @@ Every instruction has one right home. First match wins:
 - A rule that restates something already in the repo. Grep first.
 - A change to `bin/harness` or a hook without a test.
 
+## Landing a pull request (maintainers)
+
+The `main` ruleset requires linear history and an up-to-date branch, so a landing follows one
+shape. Each line here cost a broken landing before it was written down.
+
+- Bring the branch up to date with `git merge --no-edit origin/main`, never a rebase or a
+  force-push; squash-merging keeps history linear regardless of merge commits on the branch.
+- Run the gate and read its exit code directly. `python3 -m unittest discover -s tests | tail -1`
+  hides a red suite behind `tail`'s exit code; redirect to a log and test for `^OK`.
+- `gh pr checks <n> --watch` returns at once when no check has registered yet, and a merge right
+  after is refused. Wait until `gh pr checks <n>` lists every required check, then watch, then
+  `gh pr merge --squash`. Never `--admin`.
+- `scripts/bmad_issue_sync.py new` files the issue and then races the list endpoint. When it prints
+  "not reserved", wait a few seconds and run `reserve --issue N --kind K --parent P`. Two worktrees
+  reserving at once can take the same ID; keep `main`'s entry and re-reserve the other issue.
+- The personal-data lint reads a scoped npm spec with a pinned version (at-sign, scope, slash,
+  name, at-sign, version) as an email address, and flags third-party contact addresses quoted from
+  READMEs. Write "version 1.2.3 of the npm package" instead, and scrub imports before staging.
+- Never bypass the pre-commit hook, not even for a first attempt you intend to redo; a commit that
+  skipped the lint is still a commit.
+
 ## Review
 
 One maintainer reviews every PR, usually within a week. Expect questions about which rung the

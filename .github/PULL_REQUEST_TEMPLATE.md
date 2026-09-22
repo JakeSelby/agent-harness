@@ -15,3 +15,4 @@ Closes #N
 - [ ] Nothing personal, project-specific, or credential-shaped
 - [ ] Written in second person; no names, no home-directory paths
 - [ ] Conventional Commit title (it becomes the squash commit message)
+- [ ] `product.json` updated for a user-visible capability, or a `Landing copy:` line above says why not

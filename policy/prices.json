@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "_read_me": [
+    "USD per million tokens, per model id. Every entry was read from the `source` URL on its",
+    "`as_of` date; nothing here is written from memory, and a model whose price could not be",
+    "confirmed from the provider's own pricing page is absent rather than guessed.",
+    "`harness usage` prices a ledger row with this table; `doctor` warns when the newest",
+    "`as_of` is over 90 days old. Override or extend it under `prices` in config.json, which",
+    "merges over the shipped entry field by field. Full reading: docs/usage.md."
+  ],
+  "_mapping": [
+    "Four columns, and how each runtime's fields land on them.",
+    "input: tokens billed at the base input rate, cache excluded. Codex reports",
+    "  `input_tokens` inclusive of `cached_input_tokens`, so the ledger row already holds the",
+    "  difference and the cached part is never charged twice.",
+    "output: every token the model generated. Codex's `reasoning_output_tokens` is part of",
+    "  `output_tokens` rather than beside it, so it is inside this column and is not added again.",
+    "cache_read: a cache hit or refresh.",
+    "cache_write: content stored in the cache. Anthropic prices a write by its TTL, so an entry",
+    "  carries `cache_write_5m` and `cache_write_1h` as well; a row that reports the split is",
+    "  priced tier by tier, and one that does not is priced at `cache_write`. OpenAI publishes no",
+    "  cache-write rate — caching is automatic and the uncached first read is billed as input,",
+    "  which the ledger already counts under `input` — so a gpt entry prices this column at 0."
+  ],
+  "_limitations": [
+    "A model id resolves by longest prefix after normalisation, so `anthropic.claude-haiku-4-5-`",
+    "  `20251001-v1:0` and `claude-haiku-4-5` reach one entry. An unlisted variant of a listed",
+    "  family inherits the family's rate, which is wrong when the variant is priced differently",
+    "  (`gpt-5.5-pro` is $30/$180, not `gpt-5.5`'s $5/$30); list it here or override it in config.",
+    "Long context is not a separate rate: Anthropic's pricing page states that Claude 4.6 and",
+    "  later carry the full 1M-token window at standard pricing, so a `[1m]` suffix is stripped",
+    "  and the family rate applies."
+  ],
+  "models": {
+    "claude-fable-5-1": {
+      "input": 10.0, "output": 50.0, "cache_read": 0.25,
+      "cache_write": 12.5, "cache_write_5m": 12.5, "cache_write_1h": 20.0,
+      "as_of": "2026-09-21",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-fable-5": {
+      "input": 10.0, "output": 50.0, "cache_read": 1.0,
+      "cache_write": 12.5, "cache_write_5m": 12.5, "cache_write_1h": 20.0,
+      "as_of": "2026-09-21",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-opus-5": {
+      "input": 5.0, "output": 25.0, "cache_read": 0.5,
+      "cache_write": 6.25, "cache_write_5m": 6.25, "cache_write_1h": 10.0,
+      "as_of": "2026-09-21",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-opus-4-8": {
+      "input": 5.0, "output": 25.0, "cache_read": 0.5,
+      "cache_write": 6.25, "cache_write_5m": 6.25, "cache_write_1h": 10.0,
+      "as_of": "2026-09-21",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-opus-4-6": {
+      "input": 5.0, "output": 25.0, "cache_read": 0.5,
+      "cache_write": 6.25, "cache_write_5m": 6.25, "cache_write_1h": 10.0,
+      "as_of": "2026-09-21",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-sonnet-5": {
+      "input": 2.0, "output": 10.0, "cache_read": 0.2,
+      "cache_write": 2.5, "cache_write_5m": 2.5, "cache_write_1h": 4.0,
+      "as_of": "2026-09-21",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "claude-haiku-4-5": {
+      "input": 1.0, "output": 5.0, "cache_read": 0.1,
+      "cache_write": 1.25, "cache_write_5m": 1.25, "cache_write_1h": 2.0,
+      "as_of": "2026-09-21",
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing"
+    },
+    "gpt-6-astra": {
+      "input": 10.0, "output": 50.0, "cache_read": 1.0, "cache_write": 0.0,
+      "as_of": "2026-09-21",
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-5.6-sol": {
+      "input": 4.0, "output": 20.0, "cache_read": 0.4, "cache_write": 0.0,
+      "as_of": "2026-09-21",
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-5.6-terra": {
+      "input": 2.0, "output": 12.0, "cache_read": 0.2, "cache_write": 0.0,
+      "as_of": "2026-09-21",
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-5.6-luna": {
+      "input": 0.2, "output": 1.2, "cache_read": 0.02, "cache_write": 0.0,
+      "as_of": "2026-09-21",
+      "source": "https://developers.openai.com/api/docs/pricing"
+    },
+    "gpt-5.5": {
+      "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 0.0,
+      "as_of": "2026-09-21",
+      "source": "https://developers.openai.com/api/docs/pricing"
+    }
+  }
+}

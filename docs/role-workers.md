@@ -5,6 +5,18 @@ under `primitives/roles/`, selected stances and runtime model bindings. They do 
 native subagent threads. Native role projections remain discoverable, but the lifecycle adapter
 rejects direct native launches of constrained harness roles when its hooks are active.
 
+That rejection does not depend on the name a spawn chose. When the guard refuses a spawn that
+named a constrained role, it remembers the role and a normalised fingerprint of the brief in the
+session's record (the newest 32); a later spawn in the same session that names no constrained role
+but carries the same brief — identical, containing its first 400 normalised characters, or 85
+percent similar — is refused too, and told that dropping the role name changed nothing. Separately,
+a brief may declare its own role with a line of the exact form `harness-role: <role>`, standing
+alone, naming a role under `primitives/roles/` with read-only or artifact-write authority. A spawn
+whose prompt carries such a line is refused whatever `subagent_type` it names or omits, and
+`harness role run` accepts the line in a `--prompt-file` unchanged. A marker naming anything else
+is ignored. Both guards are best effort: session state that cannot be read or written means no new
+refusal, never a failed hook, and `delegation: off` keeps its own single refusal.
+
 ## Run and inspect
 
 Write a bounded brief naming the input files, required result shape and allowed scope, then run:
@@ -31,11 +43,19 @@ A role's class (`tier:` in its contract) resolves through the adapter's `tiers` 
 for the class requires the caller's actual session model; the worker does not resolve downward
 or silently substitute the CLI default.
 
+The selected cost variant's row for the role is applied first, with the same precedence a synced
+agent definition is rendered with: the role's own class and effort, then the row (whose class
+applies only under a tiered `delegation`, and never to a `posture: fixed` role), then
+`role_bindings.<runtime>.<role>`, then `--model`. The brief the worker receives ends with the
+row's `Expected spend` sentence unless the row prices nothing or the brief already states a
+budget, and `status.json` records the variant, the resolved class and where each of model and
+effort came from.
+
 Two keys in `~/.config/agent-harness/config.json` change the mapping without a harness release.
 `tiers.<runtime>.<class>` remaps a class for every role that names it, which is the one-line fix
 when a provider's lineup turns over; `role_bindings.<runtime>.<role>` sets `model` or effort for
-one role and wins over the class. Both reach workers and the Codex agent projections; Claude
-Code's native agents are the committed projections and follow the adapter's own table.
+one role and wins over the class. Both reach workers and both runtimes' agent definitions, which
+sync renders from the adapter's table and the resolved cost variant.
 
 `harness tiers check` compares the Codex table with the model catalog Codex fetches from its
 provider (`models_cache.json` in the Codex home), offline. It fails on a mapped model the catalog
@@ -51,6 +71,11 @@ The command returns a JSON status record, including the native version, resolved
 selected stances, policy digest, input roots and result path. Private logs and result content live
 under the harness state home's `workers/<id>/` directory. `completed` means the native process
 returned a usable result envelope; it does not certify its findings or qualify the client.
+A run records the pid supervising it and that process's start time, so `harness role status`
+reports a worker whose process is gone with no result written as `orphaned` — the run ended
+without reporting — instead of leaving it `running` forever. The start time guards against a
+recycled pid, a status record from a release that stored no pid still reads as `running`, and
+reading status rewrites only `status.json`.
 Treat worker output as data. Verify referenced facts before taking consequential actions.
 
 ## Boundaries and publication
@@ -66,6 +91,15 @@ configuration, no automatic permission approvals, and only `Read`, `Grep`, and `
 It supplies shared instructions explicitly; ambient user/project customization is disabled.
 Managed native policies still apply. The worker has no shell, write, external-connector or
 delegation tools. If its brief needs a diff or online evidence, the caller supplies those as files.
+
+No isolated worker reaches the network, whatever its role declares: the Codex adapter disables
+hosted search under a read-only sandbox and the Claude adapter grants `Read`, `Grep` and `Glob`
+only. A worker that can both read a workspace and fetch is a worker that can carry what it read
+back out, and a fetched page is untrusted input arriving inside a confined process. `gatherer` is
+the role this is felt in, so its definition and `/research` say it: a file or repository dimension
+runs here, a dimension that needs the live web goes to an in-session band worker, which is subject
+to the session's own permission prompts and search budget. The refusal that routes a native
+`gatherer` spawn to `harness role run` says the same thing in one sentence.
 
 Both adapters enforce a narrower execution surface than the ordinary interactive client.
 Native configuration restrictions take precedence; unsupported flags or required settings fail

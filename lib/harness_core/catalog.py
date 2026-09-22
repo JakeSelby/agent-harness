@@ -1,5 +1,6 @@
 """The shared authoring catalog; runtime files are reproducible projections."""
 import hashlib
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -11,6 +12,18 @@ KINDS = {"rules": "rules", "stances": "stances", "skills": "skills",
 # adapter's bindings.json maps the classes it has qualified onto its own native models.
 TIER_CLASSES = ("frontier", "strong", "standard", "light")
 EFFORTS = ("low", "medium", "high")
+# What a `constraints.json` rule may hold. `excludes_roles` is the only condition that reads
+# something other than the selection: a role contract's frontmatter, with `allow` naming the
+# roles a skill exempts. Authoring contract: docs/primitive-authoring.md.
+CONSTRAINT_KEYS = {"when", "requires", "excludes", "excludes_roles", "reason"}
+# What an adapter's `roles.<name>` entry may hold, beside the `model` an override may add.
+# `tools` is optional: a role that omits it inherits every tool the session has, which is the
+# only way a rerouted spawn keeps the MCP tools a `general-purpose` spawn would have had, and
+# `disallowed_tools` is then how it gives back the one tool it must not hold.
+BINDING_KEYS = {"claude-code": ("tools", "disallowed_tools", "effort"),
+                "codex": ("model_reasoning_effort",)}
+# The spelling each key takes in the native file; anything absent here is already native.
+NATIVE_KEYS = {"disallowed_tools": "disallowedTools"}
 
 
 def identifier(value):
@@ -33,17 +46,102 @@ def frontmatter(path):
     return fields, body.lstrip("\n")
 
 
-def resolve_stances(root, config):
-    """Resolve built-in and user-authored choices without accepting path traversal."""
+def stance_roots(root, config):
+    """The built-in stance directory and every configured primitive root's, in load order."""
     roots = [root / "primitives" / "stances"]
     for entry in config.get("primitive_roots", []):
         custom = Path(entry).expanduser()
         if not custom.is_absolute():
             raise ValueError("primitive_roots must be absolute directories")
         roots.append(custom / "stances")
+    return roots
+
+
+def stance_constraints(root, config):
+    """Every constraint a configured root ships, as (file, rule) pairs, validated on the way.
+
+    A rule states a nonempty `when` selection, a `reason`, and at least one of `requires`,
+    `excludes` and `excludes_roles`; anything else in it is an authoring mistake rather than a
+    key a future version might mean, so it is rejected here instead of being ignored.
+    """
+    rules = []
+    for source in stance_roots(root, config):
+        path = source.parent / "constraints.json"
+        if not path.exists():
+            continue
+        for rule in json.loads(path.read_text()).get("stances", []):
+            unknown = set(rule) - CONSTRAINT_KEYS
+            if unknown:
+                raise ValueError("unknown stance constraint field(s): " + ", ".join(sorted(unknown)))
+            if not isinstance(rule.get("when"), dict) or not rule["when"]:
+                raise ValueError("stance constraints require a nonempty when selection")
+            if not str(rule.get("reason", "")).strip():
+                raise ValueError("a stance constraint states its reason: " + json.dumps(rule["when"]))
+            if not any(rule.get(key) for key in ("requires", "excludes", "excludes_roles")):
+                raise ValueError("a stance constraint rules something out: " + json.dumps(rule["when"]))
+            rules.append((path, rule))
+    return rules
+
+
+def excluded_roles(root, condition):
+    """Shipped roles whose frontmatter matches `condition`, minus the ones it allows by name.
+
+    The stance layer chooses variants, but a variant's text can also contradict a role contract:
+    `delegation/tiered` refuses the frontier class while two design roles declare it. `allow` is
+    how a constraint carries the skill-level exception instead of leaving it in prose only.
+    """
+    if not condition:
+        return []
+    allowed = set(condition.get("allow", []))
+    fields = {k: v for k, v in condition.items() if k != "allow"}
+    if not fields:
+        raise ValueError("excludes_roles names at least one frontmatter field")
+    hits = []
+    for path in sorted((root / "primitives" / "roles").glob("*.md")):
+        if path.stem in allowed:
+            continue
+        header, _ = frontmatter(path)
+        if all(header.get(key) == value for key, value in fields.items()):
+            hits.append(path.stem)
+    return hits
+
+
+def stance_conflicts(root, config):
+    """One message per constraint the selection violates, each ending in the rule's reason.
+
+    A conflict is a finding before it is anything else — `harness stances` and `harness lint`
+    print these — and `resolve_stances` is the one caller that turns the first of them into the
+    hard error a sync has always raised, so no projection is written from a contradiction.
+    """
+    selected = config.get("stances", {})
+    if not isinstance(selected, dict):
+        raise ValueError("stances must be an object")
+    findings = []
+    for _, rule in stance_constraints(root, config):
+        if not all(selected.get(key) == value for key, value in rule["when"].items()):
+            continue
+        when = ", ".join(k + ": " + v for k, v in sorted(rule["when"].items()))
+        for key, value in sorted(rule.get("requires", {}).items()):
+            if selected.get(key) != value:
+                findings.append(when + " requires " + key + ": " + value + " — " + rule["reason"])
+        for key, value in sorted(rule.get("excludes", {}).items()):
+            if selected.get(key) == value:
+                findings.append(when + " excludes " + key + ": " + value + " — " + rule["reason"])
+        for name in excluded_roles(root, rule.get("excludes_roles")):
+            findings.append(when + " excludes the role " + name + " — " + rule["reason"])
+    return findings
+
+
+def resolve_stances(root, config, strict=True):
+    """Resolve built-in and user-authored choices without accepting path traversal."""
+    roots = stance_roots(root, config)
     available = {}
-    for source in roots:
+    for index, source in enumerate(roots):
         if not source.is_dir():
+            # A custom root may carry rules and skills only — `harness import` writes one — so a
+            # root with no `stances/` contributes nothing rather than breaking every sync.
+            if index:
+                continue
             raise ValueError("missing stance source: " + str(source))
         for dimension in sorted(source.iterdir()):
             if dimension.is_dir():
@@ -70,18 +168,9 @@ def resolve_stances(root, config):
     for name in defaults:
         if name not in result:
             raise ValueError("config has no variant for stance '" + name + "'")
-    for source in roots:
-        constraints = source.parent / "constraints.json"
-        if not constraints.exists():
-            continue
-        for rule in json.loads(constraints.read_text()).get("stances", []):
-            if not isinstance(rule.get("when"), dict) or not rule["when"]:
-                raise ValueError("stance constraints require a nonempty when selection")
-            if all(selected.get(k) == v for k, v in rule["when"].items()):
-                if any(selected.get(k) != v for k, v in rule.get("requires", {}).items()):
-                    raise ValueError("stance conflict: " + rule.get("reason", "required selection missing"))
-                if any(selected.get(k) == v for k, v in rule.get("excludes", {}).items()):
-                    raise ValueError("stance conflict: " + rule.get("reason", "excluded selection active"))
+    conflicts = stance_conflicts(root, config)
+    if strict and conflicts:
+        raise ValueError("stance conflict: " + conflicts[0])
     return result
 
 
@@ -112,6 +201,10 @@ def role_contract(root, name):
         raise ValueError("unsupported role context or delegation contract: " + name)
     if fields.get("tier") not in TIER_CLASSES:
         raise ValueError("shared role tier must be one of " + ", ".join(TIER_CLASSES) + ": " + name)
+    # `posture: fixed` is the role's refusal of a cost variant's class and effort; its budgets
+    # still apply. Absent means the variant decides, which is the default for every other role.
+    if fields.get("posture", "fixed") != "fixed":
+        raise ValueError("shared role posture, when present, must be 'fixed': " + name)
     return fields, body
 
 
@@ -167,6 +260,102 @@ def tier_findings(tiers, models):
     return findings
 
 
+def role_overrides(root, runtime, row=None, class_applies=True, tiers=None, binding=None):
+    """One role's binding overrides: the active cost row, then the user's explicit binding.
+
+    Precedence, lowest first: the role's own `tier` and the adapter's effort, which are not
+    overrides at all and reach `role_binding` by themselves; then the resolved cost row; then
+    `role_bindings.<runtime>.<role>`, which always wins because the user named it. A row carries
+    a capability class and never a model, so the adapter's table stays the only place a native
+    model is written; a `posture: fixed` role arrives with no class and no effort, because the
+    resolver has already stripped them.
+    """
+    effort_key = "model_reasoning_effort" if runtime == "codex" else "effort"
+    out = {}
+    if row:
+        if class_applies and row.get("class") in TIER_CLASSES:
+            model = native_model(adapter_tiers(root, runtime, tiers)[1], row["class"])
+            if model:
+                out["model"] = model
+        if row.get("effort") in EFFORTS:
+            out[effort_key] = row["effort"]
+    out.update(binding or {})
+    return out
+
+
+_POSTURE_MODULES = {}
+
+
+def posture_module(root):
+    """The stance and cost resolver the policy hooks run, loaded by file, or None when missing.
+
+    Loading the same file the hooks load is what keeps one answer to "what does this variant
+    say": a sync, a lint and an isolated role worker read the resolver, never a second copy of
+    it. Loaded once per root, because a sync asks it a question per role per runtime.
+    """
+    key = str(root)
+    if key in _POSTURE_MODULES:
+        return _POSTURE_MODULES[key]
+    # One file under two names: `claude/hooks` is a symlink to `policy/hooks`. The second name is
+    # how a tree that carries only the projected side still resolves its own variants.
+    path = next((p for p in (Path(root) / "policy" / "hooks" / "posture.py",
+                             Path(root) / "claude" / "hooks" / "posture.py") if p.is_file()), None)
+    if path is None:
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("harness_posture", str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    _POSTURE_MODULES[key] = module
+    return module
+
+
+def cost_table(root, config):
+    """The configured cost variant's resolved table; never a reason for the work in hand to fail.
+
+    Built from the configuration the caller resolved, so the whole stance ladder it already
+    walked — user file, project file, session variables — reaches the rows. A resolver this
+    checkout does not carry, or a sidecar it cannot use, yields an empty table: everything then
+    resolves exactly as it did before cost variants had rows.
+    """
+    module = posture_module(root)
+    if module is None:
+        return {"rows": {}, "class_applies": False,
+                "warnings": ["no posture resolver in this checkout; rendering without cost rows"]}
+    try:
+        return module.table_for(dict(config.get("stances", {})), config, strict=False, root=root)
+    except Exception as exc:
+        return {"rows": {}, "class_applies": False,
+                "warnings": ["cost table unusable, rendering without cost rows: " + str(exc)]}
+
+
+def cost_row(root, table, role):
+    """The cost row that governs one role, band rows included; the resolver decides which.
+
+    One lookup for every caller, so a band worker is priced from the row the spawn hook reroutes
+    to. A checkout with no resolver falls back to the role's own row.
+    """
+    module = posture_module(root)
+    if module is None or not hasattr(module, "row_for"):
+        return (table.get("rows") or {}).get(role)
+    return module.row_for(table, role)
+
+
+def cost_overrides(root, config, table, runtime, role):
+    """The overrides one role is bound with under `table`, for either runtime.
+
+    The sync path renders a native agent definition with these, and `workers.resolve` binds an
+    isolated worker with them, so a role cannot run on one class as a definition and another as
+    a worker.
+    """
+    return role_overrides(root, runtime, cost_row(root, table, role),
+                          class_applies=bool(table.get("class_applies")),
+                          tiers=config.get("tiers", {}).get(runtime),
+                          binding=config.get("role_bindings", {}).get(runtime, {}).get(role, {}))
+
+
 def role_binding(root, runtime, fields, overrides=None, tiers=None):
     """A role's native binding: the adapter's entry, its class resolved to a model, then overrides."""
     data, tiers = adapter_tiers(root, runtime, tiers)
@@ -174,10 +363,15 @@ def role_binding(root, runtime, fields, overrides=None, tiers=None):
     if set(overrides or {}) - {"model", effort_key}:
         raise ValueError("role bindings may change model and effort only")
     binding = dict(data["roles"][fields["name"]], **(overrides or {}))
+    unknown = set(binding) - set(BINDING_KEYS.get(runtime, ())) - {"model"}
+    if unknown or not all(isinstance(v, str) and v.strip() for v in binding.values()):
+        raise ValueError("an adapter role entry holds " + ", ".join(BINDING_KEYS.get(runtime, ()))
+                         + " as non-empty strings: " + fields["name"])
     if binding.get(effort_key, EFFORTS[0]) not in EFFORTS:
         raise ValueError("role effort must be one of " + ", ".join(EFFORTS) + ": " + fields["name"])
     model = binding.pop("model", None) or native_model(tiers, fields["tier"])
     # An `inherit` override is the way back to the session model, for a provider without these ids.
+    binding = {NATIVE_KEYS.get(key, key): value for key, value in binding.items()}
     return dict({"model": model} if model and model != "inherit" else {}, **binding)
 
 
@@ -218,9 +412,32 @@ def projections(root):
             clients = [row["id"] for row in data["clients"] if row["status"] == status]
             if clients:
                 lines.append("**" + status.capitalize() + ":** " + ", ".join("`" + name + "`" for name in clients) + ".")
+        lines.extend(compatibility_capability_table(root, data))
         block = "<!-- harness:compatibility:start -->\n" + "\n\n".join(lines) + "\n<!-- harness:compatibility:end -->"
         files[name] = re.sub(r"<!-- harness:compatibility:start -->.*?<!-- harness:compatibility:end -->", block, path.read_text(), flags=re.S)
     return files
+
+
+def compatibility_capability_table(root, data):
+    """The capability-by-client rows rendered beside the client statuses.
+
+    A capability's state is derived at generation time from the runtime's adapter, never written
+    here or in the catalog by hand. The layout follows the generated capability matrix in
+    wshobson/agents' `docs/harnesses.md`.
+    """
+    from . import compatibility
+    states = {row["id"]: compatibility.capability_states(root, data, row) for row in data["clients"]}
+    columns = [row["id"] for row in data["clients"] if states[row["id"]]]
+    names = sorted({name for row in columns for name in states[row]})
+    if not columns or not names:
+        return []
+    rows = ["| Capability | " + " | ".join("`" + name + "`" for name in columns) + " |",
+            "|---|" + "---|" * len(columns)]
+    for name in names:
+        rows.append("| `" + name + "` | "
+                    + " | ".join(states[client][name]["state"] for client in columns) + " |")
+    return ["A client's status is not a capability's status. Each cell is derived from that "
+            "runtime's `adapters/<runtime>/capabilities.json` at generation time:", "\n".join(rows)]
 
 
 def projection_drift(root):

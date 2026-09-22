@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "harness_version": "0.10.0",
+  "harness_version": "0.11.1",
   "release_state": "released",
-  "qualification_source_commit": "8b776064db3d662c17c197b9bca0968225beea27",
+  "qualification_source_commit": "29f17996caffb5cbff7435b3a5270d08c3f0deb4",
   "required_cases": [
     "installation",
     "stance-switch",
@@ -10,6 +10,7 @@
     "permission-controls",
     "hook-composition",
     "role-confinement",
+    "cost-posture",
     "gate-invalidation",
     "bmad-workflow",
     "bidirectional-handoff",
@@ -26,8 +27,8 @@
       "required_for_release": true,
       "evidence": [
         {
-          "path": "compatibility/evidence/claude-code-cli-macos-0.10.0.json",
-          "sha256": "d757d831f1a1c1640b8b4f9bf9c72142f8921454c97d222fdb6e62971a919aa4"
+          "path": "compatibility/evidence/claude-code-cli-macos-0.11.1.json",
+          "sha256": "b8c72c9e2f22a79f58db764b12656f8a8892336e810506ea033515e61edadff8"
         }
       ],
       "runtime_version": "2.1.273",
@@ -53,12 +54,22 @@
       "required_for_release": true,
       "evidence": [
         {
-          "path": "compatibility/evidence/claude-code-cli-linux-0.10.0.json",
-          "sha256": "5e64d4a4bd11452d0d047187e93881be79f905763a6ecbc6f49c242febc1bed9"
+          "path": "compatibility/evidence/claude-code-cli-linux-0.11.1.json",
+          "sha256": "0d050d7939656554c4053dd3e81e2d71559aec0acc3fb2dbfc86d7812ad32212"
         }
       ],
       "runtime_version": "2.1.278",
       "client_version": "2.1.278"
+    },
+    {
+      "id": "claude-code-plugin-marketplace",
+      "runtime": "claude-code",
+      "provider": "anthropic",
+      "client": "plugin-marketplace",
+      "platform": "unspecified",
+      "status": "unqualified",
+      "required_for_release": false,
+      "evidence": []
     },
     {
       "id": "codex-cli-macos",
@@ -70,12 +81,12 @@
       "required_for_release": true,
       "evidence": [
         {
-          "path": "compatibility/evidence/codex-cli-macos-0.10.0.json",
-          "sha256": "79789bdbff33c7eb6acd672bfb4801de988256925e24aad3caa59ed3f60d2bde"
+          "path": "compatibility/evidence/codex-cli-macos-0.11.1.json",
+          "sha256": "d3de56b0e488e76867c2400fd4ce7dbb718ca9daa5151fb87d83f59713dfab43"
         }
       ],
-      "runtime_version": "0.155.0-alpha.9",
-      "client_version": "0.155.0-alpha.9"
+      "runtime_version": "0.154.0-alpha.6.2",
+      "client_version": "0.154.0-alpha.6.2"
     },
     {
       "id": "codex-vscode-macos",
@@ -107,8 +118,8 @@
       "required_for_release": true,
       "evidence": [
         {
-          "path": "compatibility/evidence/codex-cli-linux-0.10.0.json",
-          "sha256": "07a75bf886cdb18f4de977a995ce1c5a8d42ca8f021adaadeb18608344432f4b"
+          "path": "compatibility/evidence/codex-cli-linux-0.11.1.json",
+          "sha256": "47b0083d34b8c7fa5e337bf7a7594f75d55571f8825aef5620f422a5bf4d2b09"
         }
       ],
       "runtime_version": "0.155.1",
@@ -140,6 +151,12 @@
     "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
     "Planner publication is mediated by the harness after constrained workers return result data.",
     "The architecture-viewer integration is a preview for a separately installed implementation. A local protocol 1 candidate passed process-level harness acceptance; no viewer is bundled, and native viewer interaction and distribution/license clearance remain unverified.",
-    "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred."
+    "The usage feed is a Claude Code capability: Codex raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back there and no such event is registered.",
+    "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred.",
+    "BMad review confinement is requested in the routed layer text rather than enforced at the spawn hook: a client can run a review layer as an unnamed native subagent, unconfined, and still report a result. Observed on Claude Code; a confined run writes isolated-worker state. Tracked in #291.",
+    "On Codex, output-filter rewrites are never applied: a rewrite travels only with an allow, and the filtered commands are not auto-allowed. Tracked in #292.",
+    "Under Codex auto permissions an isolated role worker launched from inside a sandboxed turn has no network access and stalls until its deadline; it completes under an acknowledged bypass. Tracked in #293.",
+    "harness sync links user-level stance selections only; a HARNESS_STANCE_ variable or a project selection changes what harness stances and the hooks resolve, not the linked stance text. Tracked in #276 and #294.",
+    "The 0.11.1 spawn guards refuse a constrained role's brief re-issued verbatim under another name, or carrying a `harness-role:` line; a client that paraphrases the brief and names no role is not caught, so BMad review confinement still depends on the client following the routed instructions. Tracked in #291 and #300."
   ]
 }

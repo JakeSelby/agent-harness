@@ -20,6 +20,7 @@
   },
   "permissions": "inherit",
   "permissions_bypass_acknowledged": false,
+  "plan_allow_tools": [],
   "vscode": {
     "manage": true
   },
@@ -28,6 +29,12 @@
   },
   "claude": {
     "manage": true
+  },
+  "telemetry": {
+    "export": "off"
+  },
+  "governance": {
+    "provider": "none"
   },
   "primitive_roots": [],
   "remote_control": {

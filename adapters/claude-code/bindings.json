@@ -15,8 +15,12 @@
       "tools": "Read, Grep, Glob",
       "effort": "high"
     },
+    "designer": {
+      "tools": "Read, Edit, Write, Grep, Glob, Bash, WebFetch, WebSearch",
+      "effort": "high"
+    },
     "gatherer": {
-      "tools": "Read, Grep, Glob, WebFetch, WebSearch",
+      "tools": "Read, Grep, Glob",
       "effort": "low"
     },
     "log-compressor": {
@@ -33,6 +37,18 @@
     },
     "spec-reviewer": {
       "tools": "Read, Grep, Glob",
+      "effort": "high"
+    },
+    "worker-a": {
+      "disallowed_tools": "Agent",
+      "effort": "low"
+    },
+    "worker-b": {
+      "disallowed_tools": "Agent",
+      "effort": "low"
+    },
+    "worker-c": {
+      "disallowed_tools": "Agent",
       "effort": "high"
     }
   }

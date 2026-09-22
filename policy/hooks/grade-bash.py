@@ -20,7 +20,10 @@ Behaviour:
   - `bash -c`, `sh -c`, `eval`, `xargs`, `find -exec` and command-substitution bodies grade 3 when
     their inner text carries a grade-3 verb, else 1; the read-only hook refuses them all anyway.
   - The autonomy stance sets the threshold: `execute` gates grade 3, `confirm-writes` grade 2 and
-    up, `ask` grade 1 and up. Below the threshold the hook prints nothing.
+    up, `ask` grade 1 and up. Below the threshold the hook prints nothing. The stance comes from
+    `posture.py`; when that cannot answer the hook grades under the strictest variant it knows
+    and says the selection is unresolved, because guessing the permissive one would drop a
+    prompt the user asked for.
   - At or above it, prompting modes get `ask` and the non-prompting modes get `deny` with the
     confirm marker in the reason, because per the Claude Code hooks reference, in
     `bypassPermissions` and in `auto` mode 'The "ask" decision is ignored', while 'A hook that
@@ -29,9 +32,9 @@ Behaviour:
     confirmation channel: the marker is stripped and the command passes silently at any grade.
     The marker is leading and confirms the whole command line, compounds included, because that
     is the text the user was shown and said yes to; a marker in the middle confirms nothing.
-  - Never raises and never blocks on a bug: a missing sibling grammar, a malformed config and any
-    other error are all a silent exit 0, so a fault here can only cost a prompt that native would
-    not have shown either.
+  - Never raises: a missing sibling grammar and any unexpected error are a silent exit 0, so a
+    fault here can only cost a prompt that native would not have shown either. The one thing it
+    will not guess at is the stance, above.
 
 Test: echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' | python3 grade-bash.py
 """
@@ -43,11 +46,12 @@ import shlex
 import sys
 from pathlib import Path
 
-CONFIG = Path.home() / ".config" / "agent-harness" / "config.json"
 HOOK = "grade-bash hook"
 MARKER = "HARNESS_CONFIRMED=1"
 DEFAULT_STANCE = "execute"
 THRESHOLDS = {"execute": 3, "confirm-writes": 2, "ask": 1}
+# What to grade under when the stance cannot be resolved: the variant that gates the most.
+STRICTEST = min(THRESHOLDS, key=THRESHOLDS.get)
 DENY_MODES = {"auto", "bypassPermissions"}
 DENY_TAIL = (" Nothing can prompt in this permission mode, so the command was refused rather than"
              " asked about. Say in chat what it would change and why that is hard to undo; if the"
@@ -60,13 +64,19 @@ PLAIN = {1: "this changes files on this machine",
 PLACEHOLDER = "__GRADESUB__"
 MAX_DEPTH = 4
 
-try:  # a missing or broken sibling grammar leaves the hook silent, never crashing the tool call
-    _spec = importlib.util.spec_from_file_location(
-        "grade_bash_readonly", Path(__file__).resolve().with_name("allow-readonly-bash.py"))
-    ro = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(ro)
-except Exception:
-    ro = None
+
+def _sibling(name, alias):
+    """A module beside this hook, or None: a broken sibling leaves the hook silent, never crashing."""
+    try:
+        spec = importlib.util.spec_from_file_location(alias, Path(__file__).resolve().with_name(name))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+ro = _sibling("allow-readonly-bash.py", "grade_bash_readonly")
 
 # One consequence clause per verb family, plus a generic fallback per grade. The clause is the
 # whole preview: the reason line is verb, target, clause.
@@ -184,28 +194,21 @@ SCAN = [
 SCAN_SPLIT = re.compile(r"[\n;&|]+")
 
 
-def _load(path):
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    except Exception:
-        return None
-
-
 def stance():
-    """The autonomy variant, from the environment, then the config, then the default. Anything
-    malformed in the config falls back rather than turning grading off."""
-    value = os.environ.get("HARNESS_STANCE_AUTONOMY")
-    if value:
-        return value
-    config = _load(CONFIG)
-    if not isinstance(config, dict):
-        return DEFAULT_STANCE
-    stances = config.get("stances")
-    if not isinstance(stances, dict):
-        return DEFAULT_STANCE
-    value = stances.get("autonomy")
-    return value if isinstance(value, str) and value else DEFAULT_STANCE
+    """The autonomy variant to grade under, and the label the notice carries.
+
+    Resolved by `posture.py`, so one file answers for every hook. This one gates commands, so
+    it fails closed: a resolver that cannot be loaded or cannot answer means the strictest
+    variant the hook knows, not the permissive default, and the notice says the selection is
+    unresolved so the user can see why a familiar command suddenly asks."""
+    module = _sibling("posture.py", "harness_posture")
+    try:
+        if module is None:
+            raise ImportError("posture.py is not beside this hook")
+        variant = module.selected("autonomy", DEFAULT_STANCE)
+    except Exception:
+        return STRICTEST, STRICTEST + ", unresolved: the stance resolver did not answer"
+    return variant, variant
 
 
 def emit(decision, reason):
@@ -921,12 +924,12 @@ def main():
     command, confirmed = strip_marker(command)
     if confirmed:
         return
-    variant = stance()
+    variant, label = stance()
     threshold = THRESHOLDS.get(variant, THRESHOLDS[DEFAULT_STANCE])
     grade, verb, target, family = grade_text(command, payload.get("cwd") or "")
     if grade < threshold or grade == 0:
         return
-    text = reason(grade, verb, target, family, variant)
+    text = reason(grade, verb, target, family, label)
     if payload.get("permission_mode") in DENY_MODES:
         emit("deny", text + DENY_TAIL)
     else:

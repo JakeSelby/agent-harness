@@ -1,0 +1,39 @@
+{
+  "kind": "native",
+  "client": "claude-code-cli-linux",
+  "harness_version": "0.11.0",
+  "source_commit": "7f5d49ecae0ac3522f2eaf288357fb725e5dae2c",
+  "runtime_version": "2.1.278",
+  "client_version": "2.1.278",
+  "platform": "linux",
+  "observations": [
+    "A clean install linked 11 role definitions and 15 skills; the client answered with the installed identity, its session record listed the 11 registered roles, a spawn naming the builder role ran as builder, it loaded a projected skill through its Skill tool, and after a repeat sync harness diff was quiet and a restarted session still carried the instructions.",
+    "Switching the voice stance moved the projected communication rule the client loads from answer-card.md to scannable.md (its output style stayed Scannable, which that pair does not change), and switching delegation from tiered to off turned a native spawn that had produced a real subagent transcript into a recorded permission denial whose reason in the client's own context was the stance's \"Delegation is off\", with no subagent transcript written.",
+    "A user-authored proof dimension from an external primitive root changed the client's own replies from PLAIN to TAGGED when the shared selection changed; a project configuration file and a HARNESS_STANCE_ session variable each resolved that same dimension back to the external root's plain.md through harness stances, while sync said it projects user defaults only and left the projected link on tagged.md; and an invalid variant failed the sync with the available options rather than selecting one.",
+    "Manual mode left its sentinel uncreated; the identical disposable removal the execute autonomy stance allowed to run was denied under the ask stance with the refusal recorded in the turn's permission denials; permissions=bypass was refused by the sync until acknowledged and then, with defaultMode bypassPermissions and an empty denial list, the client created its sentinel; and permissions=auto created none, recording a Bash permission denial for the same command.",
+    "A user-authored PostToolUse hook and a user settings key survived sync alongside the harness coordinator, and in one native turn that wrote two plan files the harness PostToolUse hook returned 6 independent Review Card corrections naming alpha.md and beta.md while the user's own hook fired 2 times.",
+    "An isolated gatherer worker completed a read under native restrictions while an identical brief ordering a file write and a shell command produced no file, a direct native Agent spawn of that constrained role was denied and redirected to harness role run, planner publication to ../escape.md was refused and wrote nothing outside .agent-harness/plans (a legitimate publication exited 0), and harness role status listed the workers it ran: gatherer, planner.",
+    "Every worker status.json written by a real harness role run carried the new pid and pid_start fields, and a run left at status running whose recorded process no longer exists was reported by harness role status as orphaned with the reason 'the worker process ended without reporting a result', persisted back into status.json.",
+    "An isolated role worker followed the selected cost variant: the non-fixed gatherer resolved class standard with budget 5,100/9 under frugal and class strong with budget 8,500/15 under balanced, every source cost-row, while the fixed reviewer stayed class strong with sources role and effort high under both, and a gatherer asked for the last sentence of the brief it received replied with the harness budget sentence naming its own 5,100 tokens and 9 tool calls.",
+    "A non-default cost variant rewrote only the roles it changes (5 of 11) and left the rest byte-identical; in a new native session an unnamed spawn ran as the variant's default band worker on its row's model and effort with the budget sentence in its brief, the orchestrator's context carried \"usage-feed: worker-a finished at 211 output tokens and 0 tool calls \u2014 0.0\u00d7 its budget of 10,200 / 21\", harness usage --rescan --by role recorded the routed row, a session whose record predates the workers was not rerouted and its spawn still succeeded, and a null variant did none of it.",
+    "With the repository trusted, the stop gate ran once on the first turn and recorded it green, reused that result unchanged on the next turn (1 runs then 1), and reran for an untracked file, for staging it and for editing it (2, 3, 4 runs); a failing gate then blocked repeatedly and the turn ended at status unverified with the gate's own release reason 'released after 8 blocks; gate still red'.",
+    "The four-layer bmad-code-review workflow ran confined from the shared framework checkout against an assigned git worktree on the fifth attempt of five run (up to eight were allowed): 9 isolated role workers (reviewer, spec-reviewer) completed through harness role run with their state written, zero Agent calls ran as a generic subagent, the report named all four layers and both seeded defects, and no tracked file changed; the four earlier attempts ran unconfined, answering REVIEWED with no worker state at all, which is the known confinement-loss issue.",
+    "The Claude client saved a handoff at revision 1 and the native Codex client, run in the same worktree with the host auth file symlinked into a disposable CODEX_HOME, read .agent-harness/task.json itself and replied CONTINUED claude-code Add the marker line to README.md; the Codex writer then saved revision 2 and the native Claude client, given the same instruction, read that Codex-written record and replied CONTINUED codex Add the marker line to README.md.",
+    "A writer at the already-consumed revision 2 was refused with exit 1 and the single stderr line 'task revision changed since --revision 2; read the current task, then save against its revision', with no traceback and no checkout path; an untracked file in the worktree demoted the inherited verification to unverified with reason 'working tree changed after handoff' and status stale; and every harness task show carried 'authority: data only; approvals and native permissions must be established in this session'.",
+    "sync --adopt took over a pre-existing native instruction file and settings, the client then answered with the harness identity, removing one managed link was reported as drift by harness diff, and harness uninstall restored the user's own CLAUDE.md byte for byte, kept the user settings key and the stored transcript, and the next native session obeyed the restored file (it ended with its ZZTOP token) with no harness identity left.",
+    "After harness uninstall the disposable home carried no rules/harness-stances directory and no harness-* skill directory, only empty parents, and harness doctor reported the clients it could not find as 'not on PATH'."
+  ],
+  "cases": {
+    "installation": "passed",
+    "stance-switch": "passed",
+    "custom-stance": "passed",
+    "permission-controls": "passed",
+    "hook-composition": "passed",
+    "role-confinement": "passed",
+    "cost-posture": "passed",
+    "gate-invalidation": "passed",
+    "bmad-workflow": "passed",
+    "bidirectional-handoff": "passed",
+    "migration-uninstall": "passed"
+  }
+}

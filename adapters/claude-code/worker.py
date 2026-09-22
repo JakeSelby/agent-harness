@@ -24,6 +24,25 @@ def prepare(executable, work, root, workspace, read_roots, instructions, binding
     return command
 
 
+def usage(work, run_dir):
+    """The run's token totals, from the result envelope `--output-format json` already writes.
+
+    `--no-session-persistence` leaves no transcript to read, so the envelope is the only source;
+    it reports no tool-call count, which the record therefore leaves unknown.
+    """
+    try:
+        envelope = json.loads((run_dir / "stdout.log").read_text())
+        counts = envelope["usage"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    if not isinstance(counts, dict):
+        return {}
+    fields = {"input": "input_tokens", "output": "output_tokens",
+              "cache_read": "cache_read_input_tokens", "cache_write": "cache_creation_input_tokens"}
+    return {name: int(counts[key]) for name, key in fields.items()
+            if isinstance(counts.get(key), int)}
+
+
 def result(work, run_dir):
     path = run_dir / "stdout.log"
     if path.stat().st_size > 1024 * 1024:

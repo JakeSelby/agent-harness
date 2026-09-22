@@ -19,7 +19,12 @@ Runtime qualification is reported separately.
 The permission choices express intent through different native controls. Codex `manual` uses
 `on-request`, `read-only`, and the user reviewer. `auto` uses `on-request`, `workspace-write`,
 and automatic approval review. `bypass` uses `never` with full access and requires the existing
-explicit acknowledgement. `inherit` preserves native choices. Native requirements and live
+explicit acknowledgement. `inherit` preserves native choices. Codex renamed the reviewer field to
+`approvals_reviewer`, and a client drops a spelling it does not know without a word, so sync asks
+the installed client which name it accepts — from its own protocol schema, or `--strict-config`,
+neither of which starts a model turn — writes that one, and removes the other. A client that
+accepts neither gets no reviewer key, a sync notice and a `harness doctor` finding. Native
+requirements and live
 permission overrides can restrict or supersede defaults; these mappings are not an assertion
 that Claude and Codex permission modes are equivalent.
 
@@ -48,3 +53,63 @@ Link and adoption intent is journaled before filesystem changes, so an interrupt
 its recovery path. Malformed native JSON/TOML is rejected during preflight. Uninstall preserves
 redirected links and occupied restoration destinations, returning a conflict status and retaining
 the recovery manifest. It does not overwrite even a dangling user symlink to restore a backup.
+
+## The one-line installer
+
+`scripts/install.sh` is POSIX `sh`, collapses the first eight commands of the clone path into one,
+and is safe to run twice. Its shape is borrowed from pmstack's `install.sh`.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+```
+
+1. **Requirements.** `git`, `python3` 3.9 or newer, macOS or Linux. A missing one is a single line
+   naming what to install, and nothing else runs.
+2. **Checkout.** Clones `--branch stable` into `~/repos/agent-harness`. An existing checkout there
+   is fetched and fast-forwarded instead of re-cloned; one that cannot fast-forward, and a
+   destination that is occupied by something that is not a git checkout, both stop the script
+   rather than being reconciled for you.
+3. **Configuration.** `bin/harness init --yes` writes `~/.config/agent-harness/config.json` from
+   the example, taking the name from `git config user.name`, the handle from a signed-in `gh` and
+   the timezone from the system. Any field it cannot answer keeps its example value and is listed
+   on the way out for `harness config set`. An existing config is never rewritten.
+4. **Preview.** `bin/harness install --dry-run`, which writes nothing.
+5. **Next command.** It prints `bin/harness install` and `bin/harness uninstall` and stops. The
+   script never runs `install` without `--dry-run`.
+
+Any failure exits non-zero with one line naming the step. `HARNESS_CHECKOUT` moves the checkout,
+`HARNESS_BRANCH` tracks another branch, `HARNESS_INSTALL_NO_HOMEBREW=1` and
+`HARNESS_INSTALL_NO_APPS=1` pass `--no-brew` and `--no-apps` to the preview, and anything after
+`sh -s --` is passed to it too.
+
+There is no PyPI package, and one is not planned. The harness runs *from its checkout*: every hook
+in `~/.claude/settings.json` runs a script under `~/.claude/hooks/harness`, which is a link into
+the checkout; the rules, stances and skills in `~/.claude` are links into it too; and the vendored
+TOML parser is imported relative to it. A copy installed into a `site-packages` directory would
+have to become that checkout, so the script clones one instead.
+[The sync model](sync-model.md) has the detail.
+
+## Install from the plugin marketplace
+
+Claude Code can load the projected primitives without a checkout. In a session:
+
+```
+/plugin marketplace add JakeSelby/agent-harness
+/plugin install agent-harness@agent-harness
+```
+
+`.claude-plugin/marketplace.json` lists one plugin whose source is the repository root, so the
+install reads `.claude-plugin/plugin.json` and nothing is duplicated between the two manifests.
+That manifest carries the skills, the eleven subagent roles, the slash commands and the output
+style. Claude Code namespaces them: a plugin skill is `/agent-harness:<name>`.
+
+A marketplace install is a strict subset of `bin/harness install`. It does not give you:
+
+- the ownership journal, `harness diff`, or a restoring `harness uninstall`;
+- stance selection — no rules, no `CLAUDE.md` projection, no personal file;
+- the Codex projection under `~/.agents/skills` and `~/.codex`;
+- hooks, so command grading, the stop gate and the usage feed are all off.
+
+The marketplace path is its own client surface in
+[the compatibility catalog](compatibility.md) and is **unqualified**: no native evidence has been
+recorded for it. `harness doctor` reports which of the two paths is active.

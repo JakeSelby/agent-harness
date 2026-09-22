@@ -1,3 +1,5 @@
+<img src="docs/assets/brand/mark.svg" width="48" height="48" alt="The Agent Harness mark: an amber pointer on a dark dial, turned to one position on a warm background.">
+
 # Agent Harness
 
 [![CI](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml)
@@ -5,26 +7,111 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
 
-## Define your working preferences once. Apply them to Claude Code and Codex.
+## Find out which of your agent rules actually fire.
 
-Agent Harness keeps shared instructions, skills, roles, workflows and personal preferences in one
-place, then projects them into the native formats each runtime understands. You do not have to
-maintain one working agreement for Claude Code and another for Codex.
+![Terminal output of `bin/harness sync --dry-run` on a fresh home: the resolved personal stances, then every link, rendered file and setting the sync would create for Claude Code and Codex, ending in "sync complete". Nothing is written.](docs/assets/sync-dry-run.svg)
 
-**Release status:** `0.10.0` is the current stable release. Its shared engine, adapters,
-configuration and hook decisions are qualified on the four required Claude Code and Codex CLI
-targets listed below.
+Every project in this field writes instructions and hopes. Here every rule names a deterministic
+detector over the agent's own transcript, or says in one line why nothing in a transcript can decide it,
+and lint fails the commit otherwise. `harness usage --rules` then reports how often each rule fired,
+grouped by repository and by the preference variant you had selected at the time.
 
-<!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
-
-**Unqualified:** `claude-code-vscode-macos`, `codex-vscode-macos`, `codex-desktop-macos`.
-
-**Planned:** `cursor`, `grok`.
-<!-- harness:compatibility:end -->
+Around that loop, Agent Harness keeps rules, skills, roles and workflows in one place and projects
+them into Claude Code and Codex, with an ownership journal for every file it touches and an uninstall
+that puts things back. The same ledger exports over OTLP to Langfuse, Phoenix or Opik, off by default.
 
 Agent Harness is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
 Code and Codex remain responsible for model access, native permissions and client behavior.
+
+## What it does for you
+
+The same six groups are held as data in [`product.json`](product.json), so this list, the reference
+site and the GitHub description cannot drift apart.
+
+### Rules you can measure, and prune
+
+Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.
+
+- [Detector or reason](primitives/rules): Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.
+- [Hit rate per rule](docs/usage.md): harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.
+- [Cache prefix held](docs/usage.md): harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.
+- [What is detected](claude/hooks/rule-detectors.py): Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
+- [Caught in the act](docs/field-scan.md): The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.
+- [Exports where you already look](docs/telemetry.md): The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.
+
+### Guardrails that leave room for judgment
+
+Hooks handle the few things that should be deterministic. Everything else stays the agent's call.
+
+- [Graded shell commands](claude/hooks/grade-bash.py): Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.
+- [Stop gate](claude/hooks/stop-gate.py): The turn doesn't end while your repo's own gate is red.
+- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code being written.
+- [Secrets and personal data](primitives/rules/secrets.md): Lint catches tokens, keys and personal strings before they're committed.
+- [Untrusted tool output](claude/hooks/neutralize-tool-output.py): Text that comes back from a tool is data, never instructions.
+- [Sandboxing](docs/sandboxing.md): Fence the filesystem and network before you leave a loop unattended.
+
+### Settings you own, on every runtime you run
+
+Sync keeps a journal of what it changed and refuses to overwrite what it does not own. Uninstall puts it back. The same rules then go to both runtimes.
+
+- [Reversible](docs/settings-ownership.md): Sync has a dry run, diff shows drift, an ownership journal records prior and applied values, and uninstall restores what it adopted.
+- [Shared primitives](docs/sync-model.md): Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.
+- [Same policy on both](docs/runtime-controls.md): A Claude Code spawn and a Codex spawn resolve to the same delegation policy.
+- [Capability classes](docs/role-workers.md): frontier, strong, standard, light. Each adapter maps them to its own models.
+- [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.
+- [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents do not step on your checkout or on each other.
+
+### Spend less without capping your agents
+
+A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things cost and let it pace itself.
+
+- [Cost postures](primitives/stances/cost): Pick frugal, balanced or max, or write your own. One table sets model, effort and a soft budget per role.
+- [Model tiering](primitives/stances/delegation): Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.
+- [Band workers](claude/agents/worker-a.md): A spawn that names no role gets a right-sized worker instead of your most expensive model.
+- [A budget in every brief](claude/hooks/brief-guard.py): Each subagent is told its expected tokens and tool calls. Finish if you're close, otherwise return what you have.
+- [Live usage feed](docs/usage.md): The orchestrator sees what each turn and each subagent cost. A decision log on this machine records what a hook decided and what settled it; only harness usage reads it.
+- [Lean context](docs/how-it-works.md): Always-loaded instructions are capped at 200 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.
+
+### Answers and plans you can actually read
+
+Most agent output is a wall of text. This puts the verdict first and the ask where you can find it.
+
+- [Voice stances](primitives/stances/voice): Choose answer-card or scannable. Same content, shaped for how you read.
+- [Scannable output style](claude/output-styles/scannable.md): Verdict first, action items in one place, and status in plain words: Fixed, Partially fixed, Not fixed, Unverified.
+- [Review Card plans](primitives/skills/plan-authoring): Every plan opens with a one-screen card and stops at a build gate until you say build.
+- [Bounded subagent returns](primitives/skills/transcript-hygiene): Subagents come back with findings and a word cap, not their whole transcript.
+- [Conciseness rules](primitives/rules/conciseness.md): Explain a decision once. Comments say why, not what.
+
+### Your preferences, as switches
+
+Reasonable developers disagree about testing, autonomy and how much to delegate. Nine axes, each a named choice: three bind to enforcement today, the rest are prose that swaps cleanly.
+
+- [Stance dimensions and variants](primitives/stances): Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.
+- [User, project, session](docs/preferences.md): Set a default, override it for one repo, override that for one session.
+- [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
+- [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
+- [Autonomy stances](primitives/stances/autonomy): Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.
+
+### On the way
+
+Planned, not promised.
+
+- **Grok and Cursor adapters:** Six runtimes at equal depth is the target, after the measurement loop closes. Cursor and Grok are the next two.
+- **Fresh-session nudge:** A heads-up when the orchestrator's context has become expensive to keep dragging forward.
+- **Budget nudges mid-run:** Today a subagent learns its budget in the brief. Next it hears about it while it works.
+- **Close the loop:** Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.
+- **The instrument, standalone:** The measurement engine as its own package: run it on your own transcripts and your own rules with no harness installed.
+
+## The delivery loop
+
+Seven commands carry a piece of work from a question to a merged pull request and a closed-out
+session, with fresh eyes at the review step: `/research`, `/plan`, `/build`, `/review`, `/land`,
+`/handoff`, `/close-out` ([workflows](primitives/workflows)). Named roles ([builder, planner, reviewer,
+gatherer, designer and more](claude/agents)) each carry a model class and tool limits; the review is done
+by agents that never saw the code being written; the testing and commit stances
+([required tests, Conventional Commits, gated pushes, or switch them](primitives/stances/testing)) decide
+how strict that loop is; and the brief, architecture and stories are [planned in public](docs/bmad.md).
+Every project in this field ships a loop like it, which is why it is a section and not a claim.
 
 ## Preferences you can switch
 
@@ -55,11 +142,24 @@ You need `git`, Python 3.9+, and your own account for every runtime you enable. 
 integration targets. Native Windows is unsupported; WSL2 is unqualified. The harness does not
 provide model access.
 
-Clone the repository, explicitly select the runtimes and editor surface you want managed, then
-preview every change:
+One command clones the `stable` branch to `~/repos/agent-harness`, writes a default configuration
+and previews the install. It installs nothing itself; the last thing it prints is the command that
+does:
 
 ```sh
-git clone https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
+curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+```
+
+Read [the script](scripts/install.sh) before you pipe it, and
+[what each step does](docs/runtime-installation.md#the-one-line-installer) after. `HARNESS_CHECKOUT`
+puts the checkout somewhere else.
+
+The same path by hand, which is also the contributor's path. `stable` is always the latest release
+and a `git pull` on it moves you to the next one; `main`, which this page shows, is the development
+trunk and can be ahead of any release:
+
+```sh
+git clone --branch stable https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
 cd ~/repos/agent-harness
 
 bin/harness config set claude.manage true
@@ -80,6 +180,35 @@ with that invocation and are not persisted into global projections.
 If the preview reports an existing unmanaged file, stop and read the conflict. The harness does
 not recommend `--adopt` by default. After syncing, start a new client session and accept native hook
 trust if prompted. [Start with the full guide](docs/getting-started.md).
+
+## Release status
+
+**Release status:** `0.11.1` is the current stable release. Its shared engine, adapters,
+configuration and hook decisions are qualified on the four required Claude Code and Codex CLI
+targets listed below.
+
+<!-- harness:compatibility:start -->
+**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
+
+**Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-vscode-macos`, `codex-desktop-macos`.
+
+**Planned:** `cursor`, `grok`.
+
+A client's status is not a capability's status. Each cell is derived from that runtime's `adapters/<runtime>/capabilities.json` at generation time:
+
+| Capability | `claude-code-cli-macos` | `claude-code-vscode-macos` | `claude-code-cli-linux` | `claude-code-plugin-marketplace` | `codex-cli-macos` | `codex-vscode-macos` | `codex-desktop-macos` | `codex-cli-linux` |
+|---|---|---|---|---|---|---|---|---|
+| `autonomy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `build-vs-buy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `commits` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `cost` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `delegation` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `licensing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `plan-ceremony` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+<!-- harness:compatibility:end -->
 
 ## See one switch reach both adapters
 
@@ -158,6 +287,14 @@ Model access remains billed by the provider or covered by a subscription, and th
 savings benchmark. `bin/harness usage` summarizes available local session measurements, labels
 partial data and leaves unavailable metrics unknown. It does not send telemetry to a service.
 Read [usage and its limits](docs/usage.md).
+
+Each variant also carries a resolved table—a model class, a reasoning effort and a soft budget for
+each shared role and for each of the three work bands—which `bin/harness stances --json` prints.
+A subagent brief states the budget its row expects; a subagent past it finishes or returns and says
+why, and nothing is truncated. A spawn that names no role is routed to the variant's default band
+worker, which is the only way a posture's effort reaches a spawn that named nothing. While a
+session runs, a usage feed reports the turn's and each subagent's measured spend against those
+budgets. All of it is a working posture and local measurement; none of it is a savings claim.
 
 ## Full installation and ownership
 

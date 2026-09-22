@@ -10,4 +10,21 @@ project_doc_fallback_filenames = ["CLAUDE.md"]
 #   auto   -> approval_policy = "on-request",  sandbox_mode = "workspace-write"
 #   manual -> approval_policy = "on-request",   sandbox_mode = "read-only"
 
-# auto uses approval_reviewer = "auto_review"; manual uses "user".
+# Written only when `telemetry.native` in ~/.config/agent-harness/config.json is true. Both
+# exporters are set: `metrics_exporter` defaults to Codex's own sink, which drops token, cost,
+# tool and API metrics client-side, so `exporter` alone sends no token metrics anywhere. No
+# header is written — `[otel]` takes a literal header map and a credential does not belong in a
+# configuration file — so the endpoint must accept this machine unauthenticated. Other keys you
+# set in `[otel]`, such as `environment`, are carried through. See docs/telemetry.md.
+#
+# [otel.exporter.otlp-http]
+# endpoint = "http://localhost:4318/v1/logs"
+# protocol = "binary"
+#
+# [otel.metrics_exporter.otlp-http]
+# endpoint = "http://localhost:4318/v1/metrics"
+# protocol = "binary"
+
+# auto uses approvals_reviewer = "auto_review"; manual uses "user". The spelling is read from the
+# installed client — Codex rejects the older `approval_reviewer` under `--strict-config` and drops
+# it silently otherwise — and a client that accepts neither gets no reviewer key and a notice.

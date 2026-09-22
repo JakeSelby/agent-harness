@@ -14,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "tier-agent-spawns.py"
 TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
@@ -52,7 +54,7 @@ class TierSpawnsTests(unittest.TestCase):
         self.transcript.write_text("\n".join(lines) + "\n")
 
     def run_hook(self, payload, env=None):
-        merged = dict(os.environ)
+        merged = without_config_dir()
         merged.pop("HARNESS_STANCE_DELEGATION", None)
         merged["HOME"] = str(self.home)
         merged.update(env or {})
@@ -146,13 +148,14 @@ class TierSpawnsTests(unittest.TestCase):
 
     def test_the_ladder_is_the_claude_adapters_tier_table(self):
         import importlib.util
-        spec = importlib.util.spec_from_file_location("tier_agent_spawns", HOOK)
-        hook = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(hook)
+        spec = importlib.util.spec_from_file_location(
+            "harness_posture", REPO / "claude" / "hooks" / "posture.py")
+        posture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(posture)
         sys.path.insert(0, str(REPO / "lib"))
         from harness_core import catalog
         tiers = json.loads((REPO / "adapters" / "claude-code" / "bindings.json").read_text())["tiers"]
-        self.assertEqual(hook.LADDER, [tiers[name] for name in catalog.TIER_CLASSES])
+        self.assertEqual(posture.ladder(), [tiers[name] for name in catalog.TIER_CLASSES])
 
     def test_a_session_model_off_the_ladder_is_left_alone_out_loud(self):
         self.write_transcript(record("assistant", "claude-opus-5"), record("assistant", "claude-nova-7"))

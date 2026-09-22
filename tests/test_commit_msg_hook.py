@@ -15,6 +15,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "templates" / "repo" / "hooks" / "commit-msg"
 
@@ -35,7 +37,7 @@ class CommitMsgHookTests(unittest.TestCase):
     def run_hook(self, message, env_extra=None, pass_path=True):
         msg = self.home / "COMMIT_EDITMSG"
         msg.write_text(message, encoding="utf-8")
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         env.update(env_extra or {})
         args = [sys.executable, str(HOOK)] + ([str(msg)] if pass_path else [])

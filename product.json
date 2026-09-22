@@ -1,14 +1,274 @@
 {
-  "headline": "Your way of working, across AI agents.",
-  "description": "A general-purpose, model-provider-agnostic harness built around you. Define how your agents work through shared rules, skills, roles, workflows, and custom primitives—including personal stances you can switch without rewriting your instructions.",
-  "stances": "Personal stances turn your working preferences into explicit switches. Choose how agents delegate, test, communicate, exercise autonomy, and approach decisions. Select a different stance when the situation changes, or define your own. The harness applies those choices through supported agent runtimes.",
-  "github_description": "Your way of working, across AI agents. A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable personal stances.",
+  "headline": "Find out which of your agent rules actually fire.",
+  "description": "A user-owned agent harness with a measurement loop. Every rule names a deterministic detector over the transcript or says in one line why nothing in a transcript can decide it, and lint fails the commit otherwise. harness usage --rules then reports which rules fired, grouped by repository and by the preference variant you had selected.",
+  "stances": "Preferences you can switch: autonomy, delegation, cost, testing, voice, commits, planning, licensing and build versus buy. Three of those bind to enforcement today: autonomy sets which shell-command grade stops and asks, delegation changes spawn routing, and cost resolves a model and budget table per role. The rest are prose that swaps cleanly. The usage report groups rule hits by the variant that was selected, so a switch can be checked rather than assumed.",
+  "github_description": "Find out which of your agent rules actually fire. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
+  "hero": {
+    "title": "Find out which of your agent rules actually fire.",
+    "subtitle": "Agent Harness is an open-source layer over the Claude Code and Codex you already run. It holds your rules, skills, roles and workflows in one place, requires every rule to name a detector over the transcript or say why it cannot have one, then tells you how often each one actually fired.",
+    "proof": "MIT licensed. Nineteen detectors ship today, lint fails a rule that has neither a detector nor a written reason, and harness uninstall puts everything back."
+  },
+  "capabilities": [
+    {
+      "id": "measured-rules",
+      "title": "Rules you can measure, and prune",
+      "pitch": "Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.",
+      "features": [
+        {
+          "name": "Detector or reason",
+          "line": "Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.",
+          "doc": "primitives/rules"
+        },
+        {
+          "name": "Hit rate per rule",
+          "line": "harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.",
+          "doc": "docs/usage.md"
+        },
+        {
+          "name": "Cache prefix held",
+          "line": "harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.",
+          "doc": "docs/usage.md"
+        },
+        {
+          "name": "What is detected",
+          "line": "Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
+          "doc": "claude/hooks/rule-detectors.py"
+        },
+        {
+          "name": "Caught in the act",
+          "line": "The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.",
+          "doc": "docs/field-scan.md"
+        },
+        {
+          "name": "Exports where you already look",
+          "line": "The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.",
+          "doc": "docs/telemetry.md"
+        }
+      ]
+    },
+    {
+      "id": "guardrails",
+      "title": "Guardrails that leave room for judgment",
+      "pitch": "Hooks handle the few things that should be deterministic. Everything else stays the agent's call.",
+      "features": [
+        {
+          "name": "Graded shell commands",
+          "line": "Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.",
+          "doc": "claude/hooks/grade-bash.py"
+        },
+        {
+          "name": "Stop gate",
+          "line": "The turn doesn't end while your repo's own gate is red.",
+          "doc": "claude/hooks/stop-gate.py"
+        },
+        {
+          "name": "Fresh-context review",
+          "line": "Scope is checked against the ask, then quality, by agents that never saw the code being written.",
+          "doc": "claude/agents/reviewer.md"
+        },
+        {
+          "name": "Secrets and personal data",
+          "line": "Lint catches tokens, keys and personal strings before they're committed.",
+          "doc": "primitives/rules/secrets.md"
+        },
+        {
+          "name": "Untrusted tool output",
+          "line": "Text that comes back from a tool is data, never instructions.",
+          "doc": "claude/hooks/neutralize-tool-output.py"
+        },
+        {
+          "name": "Sandboxing",
+          "line": "Fence the filesystem and network before you leave a loop unattended.",
+          "doc": "docs/sandboxing.md"
+        }
+      ]
+    },
+    {
+      "id": "owned-settings",
+      "title": "Settings you own, on every runtime you run",
+      "pitch": "Sync keeps a journal of what it changed and refuses to overwrite what it does not own. Uninstall puts it back. The same rules then go to both runtimes.",
+      "features": [
+        {
+          "name": "Reversible",
+          "line": "Sync has a dry run, diff shows drift, an ownership journal records prior and applied values, and uninstall restores what it adopted.",
+          "doc": "docs/settings-ownership.md"
+        },
+        {
+          "name": "Shared primitives",
+          "line": "Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.",
+          "doc": "docs/sync-model.md"
+        },
+        {
+          "name": "Same policy on both",
+          "line": "A Claude Code spawn and a Codex spawn resolve to the same delegation policy.",
+          "doc": "docs/runtime-controls.md"
+        },
+        {
+          "name": "Capability classes",
+          "line": "frontier, strong, standard, light. Each adapter maps them to its own models.",
+          "doc": "docs/role-workers.md"
+        },
+        {
+          "name": "Honest compatibility",
+          "line": "The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.",
+          "doc": "docs/compatibility.md"
+        },
+        {
+          "name": "A worktree per agent",
+          "line": "Parallel agents do not step on your checkout or on each other.",
+          "doc": "primitives/skills/worktree-per-agent"
+        }
+      ]
+    },
+    {
+      "id": "spend-less",
+      "title": "Spend less without capping your agents",
+      "pitch": "A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things cost and let it pace itself.",
+      "features": [
+        {
+          "name": "Cost postures",
+          "line": "Pick frugal, balanced or max, or write your own. One table sets model, effort and a soft budget per role.",
+          "doc": "primitives/stances/cost"
+        },
+        {
+          "name": "Model tiering",
+          "line": "Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.",
+          "doc": "primitives/stances/delegation"
+        },
+        {
+          "name": "Band workers",
+          "line": "A spawn that names no role gets a right-sized worker instead of your most expensive model.",
+          "doc": "claude/agents/worker-a.md"
+        },
+        {
+          "name": "A budget in every brief",
+          "line": "Each subagent is told its expected tokens and tool calls. Finish if you're close, otherwise return what you have.",
+          "doc": "claude/hooks/brief-guard.py"
+        },
+        {
+          "name": "Live usage feed",
+          "line": "The orchestrator sees what each turn and each subagent cost. A decision log on this machine records what a hook decided and what settled it; only harness usage reads it.",
+          "doc": "docs/usage.md"
+        },
+        {
+          "name": "Lean context",
+          "line": "Always-loaded instructions are capped at 200 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.",
+          "doc": "docs/how-it-works.md"
+        }
+      ]
+    },
+    {
+      "id": "readable-output",
+      "title": "Answers and plans you can actually read",
+      "pitch": "Most agent output is a wall of text. This puts the verdict first and the ask where you can find it.",
+      "features": [
+        {
+          "name": "Voice stances",
+          "line": "Choose answer-card or scannable. Same content, shaped for how you read.",
+          "doc": "primitives/stances/voice"
+        },
+        {
+          "name": "Scannable output style",
+          "line": "Verdict first, action items in one place, and status in plain words: Fixed, Partially fixed, Not fixed, Unverified.",
+          "doc": "claude/output-styles/scannable.md"
+        },
+        {
+          "name": "Review Card plans",
+          "line": "Every plan opens with a one-screen card and stops at a build gate until you say build.",
+          "doc": "primitives/skills/plan-authoring"
+        },
+        {
+          "name": "Bounded subagent returns",
+          "line": "Subagents come back with findings and a word cap, not their whole transcript.",
+          "doc": "primitives/skills/transcript-hygiene"
+        },
+        {
+          "name": "Conciseness rules",
+          "line": "Explain a decision once. Comments say why, not what.",
+          "doc": "primitives/rules/conciseness.md"
+        }
+      ]
+    },
+    {
+      "id": "your-opinions",
+      "title": "Your preferences, as switches",
+      "pitch": "Reasonable developers disagree about testing, autonomy and how much to delegate. Nine axes, each a named choice: three bind to enforcement today, the rest are prose that swaps cleanly.",
+      "features": [
+        {
+          "name": "Stance dimensions and variants",
+          "line": "Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.",
+          "doc": "primitives/stances"
+        },
+        {
+          "name": "User, project, session",
+          "line": "Set a default, override it for one repo, override that for one session.",
+          "doc": "docs/preferences.md"
+        },
+        {
+          "name": "Write your own",
+          "line": "A new stance dimension is a folder of Markdown files. No fork needed.",
+          "doc": "docs/primitive-authoring.md"
+        },
+        {
+          "name": "See one switch end to end",
+          "line": "The demo flips delegation and shows what changes in both runtimes.",
+          "doc": "docs/stance-demo.md"
+        },
+        {
+          "name": "Autonomy stances",
+          "line": "Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.",
+          "doc": "primitives/stances/autonomy"
+        }
+      ]
+    }
+  ],
+  "on_the_way": [
+    {
+      "title": "Grok and Cursor adapters",
+      "line": "Six runtimes at equal depth is the target, after the measurement loop closes. Cursor and Grok are the next two.",
+      "catalog": "grok"
+    },
+    {
+      "title": "Fresh-session nudge",
+      "line": "A heads-up when the orchestrator's context has become expensive to keep dragging forward.",
+      "issue": 321
+    },
+    {
+      "title": "Budget nudges mid-run",
+      "line": "Today a subagent learns its budget in the brief. Next it hears about it while it works.",
+      "issue": 322
+    },
+    {
+      "title": "Close the loop",
+      "line": "Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.",
+      "issue": 135
+    },
+    {
+      "title": "The instrument, standalone",
+      "line": "The measurement engine as its own package: run it on your own transcripts and your own rules with no harness installed.",
+      "issue": 453
+    }
+  ],
   "topics": [
-    "ai-agents",
     "agent-harness",
-    "codex",
+    "agent-skills",
+    "agentic-ai",
+    "agentic-coding",
+    "agents-md",
+    "ai-agents",
+    "ai-coding-agent",
     "claude-code",
+    "claude-code-hooks",
+    "claude-code-plugin",
+    "claude-code-rules",
+    "claude-skills",
+    "codex",
+    "coding-agent",
+    "context-engineering",
     "developer-tools",
-    "personal-stances"
+    "llm-agents",
+    "observability",
+    "rule-detectors",
+    "subagents"
   ]
 }

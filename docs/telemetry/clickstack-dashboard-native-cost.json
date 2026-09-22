@@ -1,0 +1,139 @@
+{
+  "name": "Claude Code — native cost",
+  "tags": [
+    "agent-harness",
+    "claude-code"
+  ],
+  "tiles": [
+    {
+      "name": "Spend (USD)",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 3,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "number",
+        "sqlTemplate": "SELECT sum(Value) AS usd FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix)"
+      }
+    },
+    {
+      "name": "Sessions",
+      "x": 6,
+      "y": 0,
+      "w": 6,
+      "h": 3,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "number",
+        "sqlTemplate": "SELECT uniqExact(Attributes['session.id']) AS sessions FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix)"
+      }
+    },
+    {
+      "name": "Subagent share of spend",
+      "x": 12,
+      "y": 0,
+      "w": 6,
+      "h": 3,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "number",
+        "sqlTemplate": "SELECT round(100 * sumIf(Value, Attributes['query_source'] = 'subagent') / sum(Value), 1) AS pct FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix)"
+      }
+    },
+    {
+      "name": "Cache hit rate (%)",
+      "x": 18,
+      "y": 0,
+      "w": 6,
+      "h": 3,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "number",
+        "sqlTemplate": "SELECT round(100 * sumIf(Value, Attributes['type'] = 'cacheRead') / sumIf(Value, Attributes['type'] IN ('cacheRead','cacheCreation','input')), 1) AS pct FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.token.usage' AND $__timeFilter(TimeUnix)"
+      }
+    },
+    {
+      "name": "Spend over time by model",
+      "x": 0,
+      "y": 3,
+      "w": 12,
+      "h": 6,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "line",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) AS ts, Attributes['model'] AS model, sum(Value) AS usd FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix) GROUP BY ts, model ORDER BY ts"
+      }
+    },
+    {
+      "name": "Spend over time by harness version",
+      "x": 12,
+      "y": 3,
+      "w": 12,
+      "h": 6,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "stacked_bar",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) AS ts, Attributes['harness.version'] AS harness_version, sum(Value) AS usd FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix) GROUP BY ts, harness_version ORDER BY ts"
+      }
+    },
+    {
+      "name": "Spend by agent, model and effort",
+      "x": 0,
+      "y": 9,
+      "w": 12,
+      "h": 7,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "table",
+        "sqlTemplate": "SELECT if(Attributes['agent.name'] = '', '(main)', Attributes['agent.name']) AS agent, Attributes['model'] AS model, Attributes['effort'] AS effort, round(sum(Value), 4) AS usd, uniqExact(Attributes['session.id']) AS sessions FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix) GROUP BY agent, model, effort ORDER BY usd DESC LIMIT 50"
+      }
+    },
+    {
+      "name": "Spend by cost variant and delegation stance",
+      "x": 12,
+      "y": 9,
+      "w": 12,
+      "h": 7,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "table",
+        "sqlTemplate": "SELECT Attributes['harness.version'] AS harness_version, Attributes['harness.cost'] AS cost_variant, Attributes['harness.delegation'] AS delegation, round(sum(Value), 4) AS usd, uniqExact(Attributes['session.id']) AS sessions, round(sum(Value) / uniqExact(Attributes['session.id']), 4) AS usd_per_session FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix) GROUP BY harness_version, cost_variant, delegation ORDER BY usd DESC"
+      }
+    },
+    {
+      "name": "Tokens over time by type",
+      "x": 0,
+      "y": 16,
+      "w": 12,
+      "h": 6,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "stacked_bar",
+        "sqlTemplate": "SELECT $__timeInterval(TimeUnix) AS ts, Attributes['type'] AS token_type, sum(Value) AS tokens FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.token.usage' AND $__timeFilter(TimeUnix) GROUP BY ts, token_type ORDER BY ts"
+      }
+    },
+    {
+      "name": "Most expensive sessions",
+      "x": 12,
+      "y": 16,
+      "w": 12,
+      "h": 6,
+      "config": {
+        "configType": "sql",
+        "connectionId": "REPLACE_WITH_CONNECTION_ID",
+        "displayType": "table",
+        "sqlTemplate": "SELECT Attributes['session.id'] AS session, min(TimeUnix) AS first_seen, round(sum(Value), 4) AS usd, round(sumIf(Value, Attributes['query_source'] = 'subagent'), 4) AS subagent_usd FROM default.otel_metrics_sum WHERE MetricName = 'claude_code.cost.usage' AND $__timeFilter(TimeUnix) GROUP BY session ORDER BY usd DESC LIMIT 25"
+      }
+    }
+  ]
+}

@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import isolate_home
+
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
 spec = importlib.util.spec_from_loader("harness", loader)
@@ -113,6 +115,33 @@ class PlannerBodyTests(unittest.TestCase):
             self.assertFalse(line.lstrip().startswith("|"), msg=line)
             self.assertFalse(line.startswith("###"), msg=line)
 
+    def test_it_tells_the_planner_to_draw_the_card_diagram_as_text(self):
+        self.assertIn("`text` fence, never mermaid", self.text)
+
+
+def system_design(path):
+    """The lines of a card's `## System design` section."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return lines[lines.index("## System design"):lines.index("## Steps")]
+
+
+class CardDiagramTests(unittest.TestCase):
+    """The review pane shows a mermaid fence as raw source, so the card never carries one."""
+
+    def test_the_template_and_example_cards_draw_the_diagram_as_text(self):
+        for name in ("TEMPLATE.md", "EXAMPLE.md"):
+            design = system_design(SKILL.parent / name)
+            fences = [l.strip() for l in design if l.strip().startswith("```") and l.strip() != "```"]
+            self.assertEqual(fences, ["```text"], msg=name)
+            self.assertTrue(any("*" in l for l in design if not l.startswith("```")), msg=name)
+
+    def test_a_card_diagram_line_never_wraps(self):
+        for name in ("TEMPLATE.md", "EXAMPLE.md"):
+            lines = system_design(SKILL.parent / name)
+            start = lines.index("```text")
+            for line in lines[start + 1:lines.index("```", start)]:
+                self.assertLessEqual(len(line), 80, msg=line)
+
 
 class PlannerCallerTests(unittest.TestCase):
     def test_the_plan_command_names_the_agent_and_stays_short(self):
@@ -133,11 +162,7 @@ class PlannerSyncTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old_environ = dict(os.environ)
-        os.environ["HOME"] = str(self.home)
-        for k in list(os.environ):
-            if k.startswith("HARNESS_"):
-                del os.environ[k]
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def tearDown(self):
         os.environ.clear()

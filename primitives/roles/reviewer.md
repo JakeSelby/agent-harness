@@ -5,6 +5,7 @@ tier: strong
 authority: read-only
 context: fresh
 delegation: none
+posture: fixed
 ---
 
 # Reviewer

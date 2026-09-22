@@ -22,6 +22,9 @@ loader.exec_module(harness)
 TEMPLATES = {p.name[: -len(".user.toml")]: p for p in (REPO / "templates" / "bmad" / "custom").glob("*.user.toml")}
 AGENTS = {p.stem for p in (REPO / "claude" / "agents").glob("*.md")}
 SPAWN = re.compile(r"Launch harness role `([\w-]+)`")
+# The brief's own declaration of the role it belongs to, which the spawn hook enforces whatever
+# `subagent_type` a native spawn carrying the brief names. `lib/harness_core/lifecycle.py`.
+MARKER = re.compile(r"^harness-role: ([\w-]+)$", re.M)
 LAYERS = ("blind-hunter", "edge-case-hunter", "verification-gap")
 SURFACE = {
     "bmad-build": (
@@ -97,6 +100,11 @@ class TemplateTests(unittest.TestCase):
                 self.assertEqual(text.count("[[workflow."), text.count("\nname = "))
                 self.assertEqual(text.count("[[workflow.") - text.count("[[workflow.oneshot"), text.count("{diff_file}"))
                 self.assertIn("{claims_file}", text)
+
+    def test_every_review_brief_declares_the_role_its_launch_sentence_names(self):
+        text = TEMPLATES["bmad-code-review"].read_text(encoding="utf-8")
+        self.assertEqual(MARKER.findall(text), SPAWN.findall(text))
+        self.assertEqual(text.count("keep the brief's first line unchanged"), len(SPAWN.findall(text)))
 
     def test_the_handoff_names_the_shared_builder_role(self):
         for skill in ("bmad-build", "bmad-build-auto"):

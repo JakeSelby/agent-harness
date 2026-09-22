@@ -1,18 +1,36 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""PreToolUse on `Agent`: append a return bound to a brief that states none.
+"""PreToolUse on `Agent`: append a return bound, and the posture's soft budget, to a brief
+that states neither.
 
-`delegation.md` says to bound the brief, and `transcript-hygiene/brief-without-cap` measures
+`delegation.md` says to bound the brief, and `transcript-hygiene/model-wrote-no-cap` measures
 that it is not: 536 hits across 30 percent of sessions. Asking the orchestrator to write the
 cap does not work, so the hook writes it instead.
+
+That detector counts briefs as the model wrote them, and goes on counting them after this hook
+caps them: a transcript records the model's `tool_use` input, not the `updatedInput` this hook
+returns (#324). Its number says whether the orchestrator still needs the hook, and is not
+evidence that an uncapped brief reached a subagent.
 
 Adapted from unclebob/swarm-forge, whose handoff helper fills the commit SHA from the sender's
 HEAD while the constitution says "do not type a SHA". The agent cannot get a field wrong that
 it never writes.
 
 What counts as a bound, and which agents are exempt, come from `rule-detectors.py` rather than
-a second copy here. If the hook and the detector disagreed, the hook would append text the
-detector still counts as missing and the number would never move.
+a second copy here, so the hook adds a cap to exactly the briefs the detector counts. A second
+copy would drift, and the two would then disagree about which briefs the orchestrator bounded —
+the hook appending to a brief that already states a cap, or leaving one the detector counts.
+
+The budget is the same argument for spend. A subagent cannot see the cost variant that priced
+it, so the row's expected output tokens and tool calls are stated in the brief, once, in the
+wording `posture.py` fixes for every brief the harness writes, an isolated role worker's included.
+A row with no budgets, a table that will not build, and a brief that already prices itself all
+mean no sentence, which is what keeps a null variant byte-identical.
+
+A spawn that named a role is priced on every runtime. A spawn that named none is priced by the
+band worker it is about to be routed to, so it is priced only where that reroute happens — Claude
+Code, whose hook rewrites `subagent_type`. On any other runtime nothing routes such a spawn, and
+a budget naming a band it will not run in is worse than none.
 """
 import importlib.util
 import json
@@ -21,18 +39,30 @@ import sys
 from pathlib import Path
 
 HOOK = "harness:brief-guard"
-DETECTORS = Path(__file__).resolve().parent / "rule-detectors.py"
+HOOKS = Path(__file__).resolve().parent
+# The runtime whose spawn hook reroutes an unnamed spawn to a band worker. The coordinator sets
+# `HARNESS_RUNTIME`; a hook run by hand has no coordinator and is this one.
+ROUTING_RUNTIME = "claude-code"
 
 # Written so it matches the detector's own cap pattern; a bound the detector cannot see is
 # not a bound. `tests/test_brief_guard.py` asserts that parity.
 BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
          "decision. Write anything longer to a file and return its path, not its contents.")
+CAP_NOTE = "the brief stated no return bound, so a 400-word cap was added"
+# The budget sentence carries no notice of its own. Stating the variant's spend is what this hook
+# does on almost every spawn, and an alert on the ordinary case is noise a reader learns to
+# ignore; the cap keeps its notice because a brief that states no bound is the exception.
+#
+# Its wording, and what counts as a brief that already prices itself, are `posture.py`'s
+# `budget_sentence` and `budget_stated`: an isolated role worker's brief carries the same
+# sentence, and two copies of it would drift.
 
 
-def detectors():
-    """The detector module, or None. A hook must never block a spawn because an import failed."""
+def sibling(name):
+    """A module beside this hook, or None. A hook must never block a spawn because an import failed."""
     try:
-        spec = importlib.util.spec_from_file_location("harness_rule_detectors", str(DETECTORS))
+        spec = importlib.util.spec_from_file_location(
+            "harness_" + name.replace("-", "_"), str(HOOKS / (name + ".py")))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -40,17 +70,15 @@ def detectors():
         return None
 
 
+def detectors():
+    """The detector module, or None."""
+    return sibling("rule-detectors")
+
+
 def stance():
-    """The selected `delegation` stance: session override, then config, then the default."""
-    override = (os.environ.get("HARNESS_STANCE_DELEGATION") or "").strip()
-    if override:
-        return override
-    path = Path(os.path.expanduser("~")) / ".config" / "agent-harness" / "config.json"
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return (json.load(fh).get("stances") or {}).get("delegation") or "tiered"
-    except (OSError, ValueError):
-        return "tiered"
+    """The selected `delegation` stance, resolved by `posture.py` for every hook alike."""
+    module = sibling("posture")
+    return module.selected("delegation", "tiered", strict=False) if module else "tiered"
 
 
 def needs_bound(module, tool_input):
@@ -64,6 +92,65 @@ def needs_bound(module, tool_input):
     return not module.WORD_CAP_RE.search(prompt)
 
 
+def effective_role(payload, tool_input, posture, router, table, variant):
+    """The role whose row prices this spawn, or None when nothing prices it.
+
+    A spawn that named a definition is priced by that role. A spawn that named none is priced
+    by the band worker it is about to be routed to — which this hook cannot read off the event,
+    because the coordinator hands both hooks the original call and not each other's rewrite. So
+    the route is computed by calling `tier-agent-spawns`' own `band_route`, on the one table
+    `table()` builds: a second answer to "where does an unnamed spawn go", or a second table,
+    would sooner or later price the wrong band. Which spawns count as unnamed is that hook's
+    predicate too, so a `subagent_type` of whitespace cannot be priced here and routed nowhere.
+
+    A spawn nothing routes — another runtime, no default band, a worker that is not installed
+    or not in this session's registry, a repository that ships its own, a delegation stance
+    that is not `tiered` — is priced by nothing, as it was before.
+    """
+    if router is None:
+        return None
+    if not router.is_unnamed(tool_input):
+        return tool_input.get("subagent_type")
+    if variant != "tiered" or os.environ.get("HARNESS_RUNTIME", ROUTING_RUNTIME) != ROUTING_RUNTIME:
+        return None
+    models = posture.tier_models()
+    if len(models) < 2:
+        return None
+    route, _ = router.band_route(posture, models, payload.get("cwd"), table(),
+                                 payload.get("session_id"))
+    return route["worker"] if route else None
+
+
+def budget_for(payload, tool_input, module, variant):
+    """The budget sentence this brief is missing, or None. Never raises: a spawn outranks a row.
+
+    The cost table is read here and nowhere else in this hook, at most once, and never for a
+    spawn nothing would price: a table is a walk of every sidecar on the `extends` chain, and
+    this hook runs on a tool call. Any failure building it is simply no sentence — as is any
+    failure asking where the spawn goes, including an older `posture.py` beside a newer spawn
+    hook, whose missing functions would otherwise raise into the coordinator and deny the call.
+    """
+    posture, router = sibling("posture"), sibling("tier-agent-spawns")
+    if posture is None or router is None or not hasattr(posture, "budget_stated"):
+        return None
+    if posture.budget_stated(tool_input.get("prompt"), module):
+        return None
+    built = []
+
+    def table():
+        if not built:
+            built.append(posture.cost_table())
+        return built[0]
+
+    try:
+        role = effective_role(payload, tool_input, posture, router, table, variant)
+        if not role:
+            return None
+        return posture.budget_sentence(posture.row_for(table(), role))
+    except Exception:
+        return None
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -74,19 +161,36 @@ def main():
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict):
         return
-    if stance() == "off":
-        # `tier-agent-spawns` already asks before any spawn here; two hooks answering one
-        # event is worse than one.
+    variant = stance()
+    if variant == "off":
+        # The lifecycle already denies every spawn here; a second hook adding a brief to an
+        # event that is refused anyway is noise.
         return
     module = detectors()
-    if module is None or not needs_bound(module, tool_input):
+    prompt = tool_input.get("prompt")
+    if module is None or not isinstance(prompt, str) or not prompt.strip():
         return
+    # The bound first and the budget after it, so a brief that is missing both reads as the
+    # shape of the return and then what it may spend getting there.
+    added, notes = "", []
+    if needs_bound(module, tool_input):
+        added, notes = BOUND, [CAP_NOTE]
+    budget = budget_for(payload, tool_input, module, variant)
+    if budget:
+        added += budget
+    if not added:
+        return
+    # What this hook wrote into the brief, against the brief it was given. See `decisions.py`.
+    log = sibling("decisions")
+    if log is not None:
+        log.record("brief-guard", "cap+budget" if notes and budget else ("cap" if notes else "budget"),
+                   prompt, payload)
     updated = dict(tool_input)
-    updated["prompt"] = tool_input["prompt"].rstrip() + BOUND
-    print(json.dumps({
-        "hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated},
-        "systemMessage": f"{HOOK}: the brief stated no return bound, so a 400-word cap was added",
-    }))
+    updated["prompt"] = prompt.rstrip() + added
+    out = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated}}
+    if notes:
+        out["systemMessage"] = f"{HOOK}: " + " · ".join(notes)
+    print(json.dumps(out))
 
 
 if __name__ == "__main__":

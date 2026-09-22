@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "tasks": [
+    {
+      "id": "link-alias",
+      "kind": "issue",
+      "source": "issue 237, solved by pull request 238",
+      "parent_sha": "29a9b7844a8f64cb509a6282503ce900eecdc468",
+      "good_sha": "b8f1b36c5cf74cc445221ee9d030cadcafa93ade",
+      "max_turns": 60,
+      "prompt": [
+        "Fix this issue in the repository you are in. Do not commit; leave the change in the working tree.",
+        "",
+        "# Stop reporting a managed link as redirected when it reaches its file through an alias",
+        "",
+        "## Outcome",
+        "",
+        "`harness diff` and `harness doctor` report no drift for a managed link that leads to its recorded target through an alias of the checkout, and `harness uninstall` removes that link.",
+        "",
+        "## Why",
+        "",
+        "`claude/stances` is a link to `primitives/stances`. `ensure_link` accepts an existing link that reaches the wanted file through the other spelling, and records the new spelling in the manifest while the old one stays on disk. The drift report, uninstall and both link-retirement paths compare the two as text. The result is a permanent \"redirected link\" report for every selected stance, and an uninstall that leaves those links behind as if the user had changed them.",
+        "",
+        "A link pointed at a different file is still reported and still preserved.",
+        "",
+        "## Exit",
+        "",
+        "`bin/harness lint` clean, the tests you add or change passing, and a link re-pointed to the alias spelling produces no drift and is removed by uninstall."
+      ],
+      "tests": {
+        "copy": [
+          "tests/test_harness.py"
+        ],
+        "pattern": "test_harness.py",
+        "select": [
+          "LinkAliasTests"
+        ],
+        "pythonpath": [
+          "lib"
+        ]
+      }
+    },
+    {
+      "id": "codex-pre-allow",
+      "kind": "issue",
+      "source": "issue 285, solved by pull request 288",
+      "parent_sha": "0e0d446243723e5bb049e85181339800c1f65255",
+      "good_sha": "ba7441f775b5bd15f056a5f9bc521dc96b47b595",
+      "max_turns": 60,
+      "prompt": [
+        "Fix this issue in the repository you are in. Do not commit; leave the change in the working tree.",
+        "",
+        "# Codex rejects the PreToolUse hook's allow decision",
+        "",
+        "## Problem",
+        "",
+        "The harness emits `permissionDecision: \"allow\"` for every non-gated PreToolUse call. codex-cli 0.154.0-alpha.6.2 lists `allow` as an unsupported value, reports `hook: PreToolUse Failed` and discards the hook output. It fails open, so nothing is blocked wrongly, but every allowed call shows a hook failure, real failures are masked, and an `updatedInput` rewrite cannot take effect. codex-cli 0.155.1 accepts the value.",
+        "",
+        "## Wanted",
+        "",
+        "On Codex, say nothing for a plain approval (absence of a decision is the client's default allow) and send `allow` only alongside an `updatedInput` rewrite, where it is required. `deny` and the Codex ask-to-deny narrowing are unchanged; Claude Code output is unchanged.",
+        "",
+        "## Done when",
+        "",
+        "Codex non-gated call: no `permissionDecision`. Deny unchanged. Rewrite: `allow` plus `updatedInput`. Claude Code unchanged.",
+        "",
+        "## Not in scope",
+        "",
+        "A `doctor` notice for a client that cannot apply rewrites under any decision value."
+      ],
+      "tests": {
+        "copy": [
+          "tests/test_codex_pre_allow.py"
+        ],
+        "pattern": "test_codex_pre_allow.py",
+        "pythonpath": [
+          "lib"
+        ]
+      }
+    },
+    {
+      "id": "hook-inventory",
+      "kind": "synthetic",
+      "source": "written for this benchmark: many-file read and summarize",
+      "parent_sha": "bd488ee764b6ca98f88b9844d3045b1960d8402d",
+      "good_sha": null,
+      "max_turns": 60,
+      "prompt": [
+        "Read every Python module in `policy/hooks/` and write `hook-inventory.json` at the repository root.",
+        "",
+        "It is one JSON object keyed by file name, for example `stop-gate.py`, with one entry per module and no other keys. Each value is an object with two fields: `summary`, exactly the first line of the module's docstring, and `top_level_functions`, the number of functions defined at module level, not counting methods or nested functions.",
+        "",
+        "Change no other file."
+      ],
+      "tests": {
+        "oracle": "hook_inventory"
+      }
+    },
+    {
+      "id": "hook-ids",
+      "kind": "synthetic",
+      "source": "written for this benchmark: multi-module mechanical edit",
+      "parent_sha": "bd488ee764b6ca98f88b9844d3045b1960d8402d",
+      "good_sha": null,
+      "max_turns": 60,
+      "prompt": [
+        "Give every Python module in `policy/hooks/` a module-level constant `HOOK_ID` whose value is that file's name without the `.py` extension, for example `HOOK_ID = \"stop-gate\"` in `stop-gate.py`.",
+        "",
+        "Put it after the module's docstring and imports. Every module must still compile and behave as before. Add exactly one such constant per module, touch no other file, and do not commit."
+      ],
+      "tests": {
+        "oracle": "hook_ids"
+      }
+    }
+  ]
+}
