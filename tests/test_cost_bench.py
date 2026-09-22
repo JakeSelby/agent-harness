@@ -187,7 +187,8 @@ def options(tmp, **over):
     opts = {"repo": git_repo(Path(tmp) / "source"), "home": Path(tmp) / "home", "claude": "claude",
             "model": "claude-test", "tag": "candidate", "reps": 2, "run_cap": 2.0, "spend_cap": 25.0,
             "prices": PRICES, "bare_config": Path(tmp) / "bare", "tmp": str(Path(tmp) / "runs"),
-            "scorer": lambda task, workdir, repo: (True, ""), "stamp": {"date": "2026-01-01"}}
+            "scorer": lambda task, workdir, repo: (True, ""), "stamp": {"date": "2026-01-01"},
+            "skip_preflight": True}  # the pre-flight has its own tests; these count scored launches
     (Path(tmp) / "runs").mkdir()
     opts["repo"].parent.joinpath("home").mkdir()
     opts.update(over)
@@ -225,6 +226,22 @@ class ReplayArmTests(unittest.TestCase):
         fence = json.loads(command[command.index("--settings") + 1])["sandbox"]
         self.assertTrue(fence["enabled"] and fence["network"]["strictAllowlist"])
         self.assertFalse(fence["allowUnsandboxedCommands"])
+
+    def test_the_fence_admits_the_arms_own_profile_and_the_scratch_directory(self):
+        """An arm on a bench profile has to be able to write it: this repository's own suite writes
+        under the config directory and under /tmp, and a fence that admits neither fails the gate
+        for that arm alone."""
+        bench = json.loads(BENCH.arm_command("claude", "claude-test", "p", 2.0,
+                                             "/b/.claude-bench-harness")[-1])["sandbox"]["filesystem"]
+        for key in ("allowWrite", "allowRead"):
+            self.assertEqual(sorted(bench[key]), sorted(["/b/.claude-bench-harness"] + list(BENCH.SCRATCH_DIRS)))
+        self.assertEqual(bench["denyRead"], BENCH.DENY_READ)
+
+    def test_an_arm_with_no_profile_of_its_own_gets_the_clis_default_one(self):
+        inherited = BENCH.fence()["sandbox"]["filesystem"]
+        self.assertEqual(sorted(inherited["allowWrite"]), sorted(list(BENCH.SCRATCH_DIRS) + ["~/.claude"]))
+        self.assertEqual(inherited["allowWrite"], inherited["allowRead"])
+        self.assertEqual(BENCH.fence("")["sandbox"]["filesystem"]["allowRead"], ["~/.claude"] + list(BENCH.SCRATCH_DIRS))
 
     def test_a_workdir_under_home_in_a_checkout_or_below_instructions_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -422,6 +439,106 @@ class ReplayRunTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 BENCH.replay([TASK], options(tmp, home=Path(tmp)), launch)
             self.assertEqual(launch.calls, [])
+
+
+def gate_reply(text, cost=0.1):
+    """The CLI's JSON stream for a `-p` run in which one Bash call returned `text`: the gate's
+    output as the tool saw it, which is what the pre-flight judges, plus a relay in `result`."""
+    call = {"type": "assistant", "message": {"role": "assistant", "id": "m1", "content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "gate"}}]}}
+    back = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t1", "content": text}]}}
+    return json.dumps([call, back, dict(result(cost=cost), result=text.strip().splitlines()[-1] if text.strip() else "")])
+
+
+GREEN = "lint: 0 finding(s) in /repo\n"
+RED = "tests/test_x.py:1: home-directory path\nlint: 1 finding(s) in /repo\n"
+
+
+class ReplayPreflightTests(unittest.TestCase):
+    """The gate runs once per arm, in that arm's own profile and fence, before anything is scored."""
+    def preflight_calls(self, launch):
+        return [c for c in launch.calls if BENCH.PREFLIGHT_PROMPT in c[0]]
+
+    def test_a_red_gate_refuses_the_replay_before_any_scored_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = Launch([gate_reply(GREEN), gate_reply(RED)])
+            with self.assertRaises(SystemExit) as caught:
+                BENCH.replay([TASK], options(tmp, reps=1, skip_preflight=False), launch)
+            self.assertEqual(caught.exception.code, 2)
+            self.assertEqual(len(self.preflight_calls(launch)), 2)
+            self.assertEqual(len(launch.calls), 2)  # the scored schedule never launched
+
+    def test_the_bar_is_lint_and_a_red_suite_does_not_refuse(self):
+        """The full suite is profile-dependent at every snapshot commit, so a suite verdict in the
+        output, or worktree-path noise after it, is neither the bar nor a refusal."""
+        noisy = GREEN + "Ran 704 tests in 35s\n\nFAILED (failures=22)\n/private/tmp/x/worktrees/project/task-one\n"
+        self.assertTrue(BENCH.gate_passed(gate_reply(noisy)))
+        self.assertNotIn("unittest", BENCH.PREFLIGHT_PROMPT)
+        self.assertFalse(BENCH.gate_passed(gate_reply("/private/tmp/x/task-one\n")))
+
+    def test_a_red_gate_keeps_its_failure_lines_in_the_saved_stream(self):
+        """A refusal has to be readable from the saved stream: the lint findings and any refused read."""
+        self.assertIn("harness lint", BENCH.PREFLIGHT_PROMPT)
+        with tempfile.TemporaryDirectory() as tmp:
+            red = RED + "PermissionError: [Errno 1] Operation not permitted: '/x/rules'\n"
+            launch = Launch([gate_reply(red), gate_reply(red)])
+            opts = options(tmp, reps=1, skip_preflight=False); opts["raw"] = tmp
+            with self.assertRaises(SystemExit):
+                BENCH.replay([TASK], opts, launch)
+            saved = (Path(tmp) / "preflight-bare.json").read_text(encoding="utf-8")
+            self.assertIn("home-directory path", BENCH.gate_output(saved))
+            self.assertIn("Operation not permitted", BENCH.gate_output(saved))
+
+    def test_a_refused_read_is_red_even_when_lint_is_clean(self):
+        blocked = GREEN + "PermissionError: [Errno 1] Operation not permitted: '/x/plans'\n"
+        self.assertFalse(BENCH.gate_passed(gate_reply(blocked)))
+        self.assertFalse(BENCH.gate_passed(gate_reply(GREEN.replace("lint: 0 finding(s)", "lint: 2 finding(s)"))))
+
+    def test_unreadable_output_is_a_red_gate_and_never_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = Launch(["garbage", subprocess.TimeoutExpired("claude", 1)])
+            checks, spent = BENCH.preflight([TASK], options(tmp), launch)
+            self.assertEqual([c["passed"] for c in checks], [False, False])
+            self.assertEqual([c["reply"] for c in checks], ["", "timeout"])
+            self.assertEqual(spent, 0.5)  # a run with no readable cost is counted at its own cap
+
+    def test_a_green_gate_stamps_every_scored_row_and_runs_each_arms_own_fence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = options(tmp, reps=1, skip_preflight=False)
+            launch = Launch([gate_reply(GREEN)] * 2 + [json.dumps(result())] * 2)
+            rows, stopped = BENCH.replay([TASK], opts, launch)
+            self.assertEqual((stopped, len(rows)), (False, 2))
+            self.assertEqual([r["preflight"] for r in rows], ["passed"] * 2)
+            checks = self.preflight_calls(launch)
+            self.assertEqual(len(checks), 2)
+            for command, kwargs in checks:
+                self.assertEqual(command[command.index("--max-turns") + 1], "3")
+                self.assertEqual(command[command.index("--max-budget-usd") + 1], "0.25")
+                self.assertEqual(command[command.index("--model") + 1], "claude-test")
+                fence = json.loads(command[command.index("--settings") + 1])["sandbox"]["filesystem"]
+                self.assertEqual(sorted(fence["allowWrite"]),
+                                 sorted([kwargs["env"].get("CLAUDE_CONFIG_DIR", "~/.claude")] + list(BENCH.SCRATCH_DIRS)))
+            self.assertEqual(checks[0][1]["env"]["CLAUDE_CONFIG_DIR"], str(opts["bare_config"]))
+            self.assertNotIn("CLAUDE_CONFIG_DIR", checks[1][1]["env"])
+
+    def test_the_pre_flight_spends_against_the_same_cumulative_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = Launch([gate_reply(GREEN, cost=0.5)] * 2)
+            rows, stopped = BENCH.replay([TASK], options(tmp, reps=1, skip_preflight=False,
+                                                         spend_cap=2.5), launch)
+            self.assertEqual((rows, stopped), ([], True))  # 1.0 spent, and 1.0 + 2.0 passes 2.5
+            self.assertEqual(len(launch.calls), 2)
+
+    def test_skipping_the_pre_flight_stamps_the_rows_and_launches_nothing_extra(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = options(tmp, reps=1)
+            launch = Launch([json.dumps(result())] * 2)
+            rows, _ = BENCH.replay([TASK], opts, launch)
+            self.assertEqual([r["preflight"] for r in rows], ["skipped"] * 2)
+            self.assertEqual(self.preflight_calls(launch), [])
+            scored = json.loads(launch.calls[0][0][launch.calls[0][0].index("--settings") + 1])
+            self.assertIn(str(opts["bare_config"]), scored["sandbox"]["filesystem"]["allowWrite"])
 
 
 def row(arm, rep, passed, cost, error=False, bucket="", predicted=None, task="demo", note=""):

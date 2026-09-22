@@ -25,7 +25,7 @@
         "",
         "## Exit",
         "",
-        "`bin/harness lint` clean, the suite passes, and a link re-pointed to the alias spelling produces no drift and is removed by uninstall."
+        "`bin/harness lint` clean, the tests you add or change passing, and a link re-pointed to the alias spelling produces no drift and is removed by uninstall."
       ],
       "tests": {
         "copy": [

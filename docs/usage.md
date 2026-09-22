@@ -193,6 +193,24 @@ reports only the agent's **last** response: measured at 3,143 output tokens agai
 actually spent. Each line names the agent type, what it spent and, when its row carries budgets,
 the larger of the two ratios against them, prefixed `over budget` past a `nudge_at` multiple.
 
+The first line that carries a figure is followed, once per session, by what the figures are:
+output tokens and tool calls summed from each agent's own transcript, which is not the task
+notification's `subagent_tokens`. Measured live, one agent's line said 31,121 output tokens
+beside a notification's `subagent_tokens 102398`; both were right about different things.
+
+An agent resumed with a follow-up message stops once per round, against one agent id and one
+transcript. Every round is fed a line — `gatherer finished round 2 at 800 output tokens and
+2 tool calls (cumulative)` — because the transcript is the agent's whole life and a later
+round's figure covers the earlier ones. It stays one subagent in the session count, and only
+the rise reaches the session totals.
+
+A resumed agent's stop can fire before that round's responses are flushed, and the transcript
+ends on the previous round's finished response either way — so nothing about the file says the
+round is incomplete. What says it is the figure: a sum that has not passed the one already
+reported is a round that has not landed. Such a round is re-summed at each following event and
+nothing is said about it meanwhile, rather than a line repeating the previous round's number;
+after three tries, or a transcript that has gone, it is dropped unsaid.
+
 That sum is capped at 8 MiB from the end of the agent's transcript and at four seconds, because
 it runs inside a hook's timeout. When a cap bites, the line says `(partial)`; when the sum could
 not be made at all, it says `spend unknown` rather than reporting the agent at zero. Either way
@@ -208,6 +226,11 @@ budget shared by every agent that event reports. Agents that budget does not rea
 place and are summed at the next event. `spend unknown` therefore means a transcript that is not
 there; a transcript that is there and still holds no response says `spend not yet recorded`, and
 the figure it gains later reaches the session totals without the agent being named twice.
+
+`spend unknown` names the agent it is about — `unknown finished, spend unknown, no transcript
+found for agent a1b2c3` — and is fed once a session for that agent. It carries no figure and
+nothing will ever reconcile it, so repeating it turn after turn, which a session whose reader
+state was rebuilt used to do, only spends the orchestrator's context on a fact it has read.
 
 A synchronous return can also arrive before the agent's last response is on disk: one API
 response is written as several records, the early ones carrying a partial streaming count and
@@ -460,6 +483,56 @@ delegation twice; check the return caps before you reach for a different tier. T
 show up in the only corpus it has been measured against: across 137 sessions on one machine the
 hit rate was 97.0% at zero subagents, 97.2% at 1–6, 97.3% at 7–50 and 97.1% at 51 or more — so
 treat the sentence above as a thing to check in your own data rather than as an expectation.
+
+### Whether the prefix held
+
+`hit` says how much of the prompt was served from cache. It does not say whether the cached
+prefix survived the session, and that is the thing `primitives/rules/cache-hygiene.md` actually
+asks for: a mid-task change to the tool set, the MCP server list, the model or the effort dial
+turns the next turn's cache reads into cache writes, and the only visible symptom is a larger
+bill. `bin/harness usage --by prefix` reports the miss ratio per session:
+
+```
+miss = cache_write / (cache_read + cache_write)
+```
+
+The share of the prefix the provider had to re-write rather than serve, computed from the two
+fields every row already carries. No new hook, no new event, nothing recorded that was not
+recorded before. A low ratio is a session that kept one prefix; a high one is a session that
+bought its context again.
+
+**What the figure excludes: its subagents.** A Claude Code session row folds its subagents'
+tokens into its own, and every spawn writes a fresh prefix that shares nothing with its parent,
+so a session that held its context perfectly across six fan-outs would read as one that re-bought
+a quarter of it. The subagent rows' own `cache_read` and `cache_write` are subtracted from the
+session's before the ratio is taken, and the report's columns are headed `own_read` and
+`own_write` for that reason. A session whose `subagents` count is higher than the subagent rows
+found for it, or whose subtraction goes negative, reports `unknown`: the remainder would not be
+its prefix. A Codex session folds nothing in and nothing is subtracted.
+
+The report also names where the ratio stepped. A row's `days` slices carry the same cache
+fields and that day's turn count, so the ratio is recomputed per slice and the first turn of a
+slice that rose by twenty points or more is printed as `turn 7 (2026-09-19): 2% -> 80%`. A
+session that stepped twice reports the sharpest rise, not the first. A slice that cannot state a
+ratio breaks the chain rather than being compared through, so `before -> after` is always one
+slice against the slice before it. That is the finest index the ledger can support honestly:
+turn-level cache figures are not recorded, and inventing an event to record them was out of
+scope. A session with a single day of slices, or none, reports its ratio and no step.
+
+**A session that spawned anything reports no step at all**, printed as `not measurable
+(subagents)`. Its slices fold the same subagent tokens in per day, a subagent row carries no
+`days` map to subtract, and the only step those slices could show is the fan-out day.
+
+**It measures, it does not enforce.** Nothing denies, warns on or blocks a prefix change, here or
+anywhere else in the harness; the figure is retrospective and read-only, and what to do about a
+step is the session's call.
+
+A session whose rows carry no cache fields reports `unknown`, never zero, and so does every
+Codex session: that runtime reports a cached-read figure and no cache-write figure at all
+(`adapters/codex/capabilities.json`), so no ratio over its pair means anything. A zero would read
+as a perfectly held prefix, which is the opposite of what the row knows. On a runtime that does
+report writes, cached reads against zero writes are not unknown but the best case there is: a day
+that served its whole prefix. The footer counts the unknown sessions separately.
 
 ## Rule telemetry
 
