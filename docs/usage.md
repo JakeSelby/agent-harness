@@ -13,6 +13,35 @@ the branch, model ids and token counts. Sending those rows to an observability b
 opt-in, off by default and described in [telemetry.md](telemetry.md); the ledger stays the
 record and the backend is a copy that `harness usage export --since` can rebuild.
 
+## Which rules fired
+
+The same report that sums the tokens scores the rules. `bin/harness usage --rules` counts
+detector hits per rule over the window instead of tokens, and `harness --help` lists it beside
+the token groupings.
+
+```sh
+bin/harness usage --rules                      # hits per detector over the last 30 days
+bin/harness usage --rules --by repo            # sessions, hits and the top three per repo
+bin/harness usage --rules --by stance          # the same, per dimension=variant
+```
+
+Three groupings and no more: `rule`, the default, one line per registry id; `repo`, one line
+per repository directory name; `stance`, one line per `dimension=variant` in force. `--by
+model` is refused rather than quietly regrouped, since a session's hits belong to no one of its
+models.
+
+Two annotations come from the numbers alone, and their thresholds are `RULE_PROMOTE_SHARE` and
+`RULE_MIN_SESSIONS` in `bin/harness`. `promote?` marks a detector that hit in more than 30
+percent (`RULE_PROMOTE_SHARE = 0.30`) of the sessions in the window; `unobserved` marks one
+that hit in none of them. Neither is printed below 20 measured sessions
+(`RULE_MIN_SESSIONS = 20`), because a share over three sessions says little. Only a record
+carrying a `rules` map counts toward either, so the denominator is measured sessions and not
+rows.
+
+What each detector looks for, how a rename folds and why a rescanned session is excluded from
+the stance grouping are under [rule telemetry](#rule-telemetry) below. Running the measurement
+without the rest of the harness is [standalone measurement](standalone-measurement.md).
+
 ## What is recorded
 
 Every row names its `kind`: `session`, `subagent` or `worker`. A row written before the field
@@ -501,12 +530,9 @@ bin/harness usage --rules --by stance          # the same, per dimension=variant
 bin/harness usage --rescan --days 30 --rules   # backfill from the transcripts, then report
 ```
 
-`--rules` groups by rule, repo or stance; `--by model` is refused rather than quietly regrouped,
-since a session's hits belong to no one of its models. Every registry id gets a line, including
-the ones with no hit, and two annotations are printed
-from the numbers alone. `promote?` means the detector hit in more than 30 percent of the
-sessions in a window of at least 20; `unobserved` means it hit in none of at least 20. A window
-narrower than 20 sessions is annotated nothing, because a share over three sessions says little.
+The groupings and the two annotations are in [which rules fired](#which-rules-fired) above.
+Every registry id gets a line, including the ones with no hit, so an unobserved rule is visible
+rather than absent.
 
 Those two are the ends of one ladder. A rule that trips in most sessions is prose that failed:
 the agent read it and walked past it anyway, so it wants to be a hook, where the decision is
