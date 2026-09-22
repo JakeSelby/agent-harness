@@ -1345,6 +1345,65 @@ def _diff_lines() -> List[str]:
     return lines
 
 
+def _plugin_names() -> Tuple[str, str, str]:
+    """This checkout's plugin name, marketplace name and source repository, from its manifests.
+
+    The repository comes from the manifest rather than the directory name, because a worktree
+    is named for its branch.
+    """
+    manifest = read_json(REPO / ".claude-plugin" / "plugin.json") or {}
+    plugin = manifest.get("name", "agent-harness")
+    market = (read_json(REPO / ".claude-plugin" / "marketplace.json") or {}).get("name", plugin)
+    slug = str(manifest.get("repository", "")).rstrip("/").rsplit("/", 1)[-1]
+    return plugin, market, slug[:-4] if slug.endswith(".git") else slug
+
+
+def plugin_install_state() -> Dict[str, Any]:
+    """Which of the two install paths is live: the marketplace plugin, the synced home, or both.
+
+    They are independent. A marketplace install lands in Claude Code's own plugin cache and is
+    recorded in `enabledPlugins`; `bin/harness install` writes the ownership manifest instead.
+    See docs/runtime-installation.md for what each one covers.
+    """
+    plugin, market, slug = _plugin_names()
+    state = {"plugin": plugin, "marketplace": market, "registered": [], "enabled": [],
+             "cached": [], "synced": manifest_path().is_file()}
+    plugins = claude_dir() / "plugins"
+    try:
+        known = read_json(plugins / "known_marketplaces.json") or {}
+        settings = read_json(claude_dir() / "settings.json") or {}
+    except (SystemExit, OSError):
+        return state
+    state["registered"] = sorted(
+        name for name, entry in known.items() if isinstance(entry, dict)
+        and bool(slug) and str((entry.get("source") or {}).get("repo", "")).split("/")[-1] == slug)
+    state["enabled"] = sorted(
+        key for key, value in (settings.get("enabledPlugins") or {}).items()
+        if value is not False and str(key).split("@")[0] == plugin)
+    cache = plugins / "cache"
+    if cache.is_dir():
+        state["cached"] = sorted(str(path.relative_to(cache))
+                                 for path in cache.glob("*/" + plugin) if path.is_dir())
+    return state
+
+
+def _plugin_install_line() -> str:
+    state = plugin_install_state()
+    live = []
+    if state["enabled"] or state["cached"]:
+        live.append("marketplace plugin " + (state["enabled"] or state["cached"])[0])
+    if state["synced"]:
+        live.append("synced home (" + str(manifest_path()) + ")")
+    if not live:
+        detail = "neither; run `bin/harness install` or `/plugin install %s@%s`" % (
+            state["plugin"], state["marketplace"])
+    else:
+        detail = " and ".join(live)
+    if state["registered"] and not (state["enabled"] or state["cached"]):
+        detail += "; marketplace registered, plugin not installed"
+    return "  install path: " + detail
+
+
 def _checkout_state() -> str:
     try:
         ref = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=5).stdout.strip()
@@ -1435,6 +1494,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"agent-harness {VERSION}")
     say(f"  repo: {REPO}")
     say(f"  checkout: {_checkout_state()}")
+    say(_plugin_install_line())
     for name, cmd in (("claude", ["claude", "--version"]), ("code", ["code", "--version"]), ("codex", ["codex", "--version"]), ("gh", ["gh", "--version"]), ("python3", [sys.executable, "--version"])):
         say(f"  {name}: {_version_of(cmd)}")
     say(f"  gh login: {_version_of(['gh', 'auth', 'status'])}")
