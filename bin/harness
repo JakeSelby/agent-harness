@@ -531,9 +531,6 @@ def claude_projection(settings: Dict[str, Any], template: Dict[str, Any]) -> Dic
 # records what it wrote, so the same key can be updated and taken back out. docs/telemetry.md.
 
 UNMANAGED = object()  # "this caller manages no such key", distinct from "remove the key"
-# The runtimes the pass-through can configure, in the order output names them. The list is the
-# validator's, so the CLI and the config cannot disagree about what a name means.
-NATIVE_RUNTIMES = ("claude-code", "codex")
 OTEL_HEADERS_HELPER = "otel-headers.py"
 # Claude Code offers grpc, http/json and http/protobuf against a base URL and appends the signal
 # path itself; protobuf is the one an OTLP/HTTP collector always accepts.
@@ -548,18 +545,16 @@ OTEL_LABEL_SAFE = re.compile(r"^[A-Za-z0-9_.:/@+-]+$")
 def native_runtimes(telemetry: Dict[str, Any]) -> List[str]:
     """The runtimes `telemetry.native` asks to export their own telemetry.
 
-    `settings` in `claude/hooks/telemetry.py` validates the key and hands `sync` the list of
-    names; `true` and `false` are read here too, so a block assembled by hand means what the
-    same block in a config file means. An unknown name never reaches this point: the validator
-    refuses the config before any command gets to act on it.
+    Resolved by `claude/hooks/telemetry.py`, which both validates the key and owns the list of
+    names, rather than by a second copy of that list here: a runtime added there is configurable
+    from this side with no further change, and a value it refuses is refused here too, so a
+    block assembled by hand means what the same block in a config file means. A checkout with no
+    hook file exports nothing natively, so there is nothing for it to name.
     """
-    value = telemetry.get("native", False)
-    if isinstance(value, bool):
-        return list(NATIVE_RUNTIMES) if value else []
-    if isinstance(value, str):
-        value = [value]
-    named = set(value or ())
-    return [name for name in NATIVE_RUNTIMES if name in named]
+    module = load_telemetry()
+    if module is None:
+        return []
+    return list(module.native_runtimes(telemetry.get("native", False)))
 
 
 def native_labels(cfg: Dict[str, Any], telemetry: Dict[str, Any]) -> Tuple[Dict[str, str], List[str]]:
@@ -1706,8 +1701,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         host = module.endpoint_label(telemetry["endpoint"]) if module else telemetry["endpoint"]
         say(f"  native telemetry: on -> {host} ({', '.join(runtimes)})")
         attributes, omitted = resource_attributes(cfg, telemetry)
-        if "claude-code" in runtimes:
-            live = (read_json(claude_dir() / "settings.json") or {}) if cfg.get("claude", {}).get("manage", True) else {}
+        # Each runtime is reported from its own live file, never from the config key alone: a
+        # name in `native` is a request, and a `manage` switch, a value the harness did not
+        # write or a sync that has not run yet can all leave it unhonoured.
+        if "claude-code" not in runtimes:
+            say("    claude-code: not named by telemetry.native; its settings are left alone")
+        elif not cfg.get("claude", {}).get("manage", True):
+            say("    claude-code: named by telemetry.native, but claude.manage is off, so `sync` "
+                "writes nothing for it")
+        else:
+            live = read_json(claude_dir() / "settings.json") or {}
             current = (live.get("env") or {}).get("OTEL_RESOURCE_ATTRIBUTES")
             if current is None:
                 say("    claude-code: not configured in settings.json; run `harness sync`")
@@ -1718,14 +1721,26 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                     f"next one; run `harness sync`. Wanted {attributes}")
             for name in omitted:
                 say(f"    label {name} cannot travel in OTEL_RESOURCE_ATTRIBUTES and is left off")
-        else:
-            say("    claude-code: not named by telemetry.native; its settings are left alone")
-        if "codex" in runtimes:
-            say("    codex: no header is written, because [otel] takes a literal header map; its "
-                "export needs an endpoint that accepts this machine unauthenticated")
-        else:
+        if "codex" not in runtimes:
             say("    codex: not named by telemetry.native; its [otel] table is left alone, which "
                 "is the setting to use against a collector that requires a header")
+        elif not cfg.get("codex", {}).get("manage", True):
+            say("    codex: named by telemetry.native, but codex.manage is off, so `sync` writes "
+                "nothing for it")
+        else:
+            config_toml = codex_dir() / "config.toml"
+            table = codex_otel_in_config(config_toml.read_text()) if config_toml.is_file() else None
+            wanted, _ = codex_native_otel(telemetry, {}, True)
+            if table is None or not any(key in table for key in wanted):
+                say("    codex: [otel] not configured in config.toml; run `harness sync`")
+            elif all(table.get(key) == value for key, value in (wanted or {}).items()):
+                say("    codex: [otel] exports logs and metrics to this endpoint. No header is "
+                    "written, because [otel] takes a literal header map; its export needs an "
+                    "endpoint that accepts this machine unauthenticated")
+            else:
+                say("    codex: [otel] holds exporters this endpoint did not ask for — an earlier "
+                    "sync, or a value the harness did not write and left alone; run "
+                    "`harness sync` and read what it reports")
         say("    a runtime named here attaches its own user and organization identifiers to what "
             "it sends; read docs/telemetry.md before pointing this at a hosted endpoint")
     stale = placeholder_identity(load_config())

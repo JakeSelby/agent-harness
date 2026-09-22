@@ -10,13 +10,16 @@ rather than silently configuring nothing.
 
 Every exercise runs under a temporary HOME. Run: python3 -m unittest discover tests
 """
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -77,6 +80,25 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(harness.native_runtimes(block(["codex"])), ["codex"])
         self.assertEqual(harness.native_runtimes({}), [])
 
+    def test_the_cli_names_the_runtimes_the_validator_names_and_no_others(self):
+        self.assertEqual(harness.native_runtimes(block(True)),
+                         list(telemetry_hook.NATIVE_RUNTIMES))
+
+    def test_a_runtime_added_to_the_validator_is_resolved_without_a_second_edit(self):
+        """One list, not two: a name the config accepts is a name the CLI acts on."""
+        extended = harness.load_telemetry()
+        extended.NATIVE_RUNTIMES = tuple(telemetry_hook.NATIVE_RUNTIMES) + ("another-runtime",)
+        with unittest.mock.patch.object(harness, "load_telemetry", return_value=extended):
+            self.assertEqual(harness.native_runtimes(block(["another-runtime"])),
+                             ["another-runtime"])
+
+    def test_the_cli_refuses_every_shape_the_validator_refuses(self):
+        for value in ("codex", {"claude-code": 1}, 3, ["codex", None]):
+            with self.assertRaises(ValueError):
+                harness.native_runtimes(block(value))
+            with self.assertRaises(ValueError):
+                telemetry_hook.settings({"telemetry": block(value)})
+
     def test_claude_values_are_asked_for_only_when_claude_code_is_named(self):
         cfg = {"stances": {}}
         self.assertEqual(harness.claude_native_values(block(["codex"]), cfg), ({}, []))
@@ -109,12 +131,33 @@ class SyncTests(unittest.TestCase):
         os.environ.update(self._environ)
         self.tmp.cleanup()
 
-    def configure(self, native):
+    def configure(self, native, **overrides):
         config = json.loads((REPO / "config.example.json").read_text())
         config["telemetry"] = block(native)
+        config.update(overrides)
         path = self.home / ".config" / "agent-harness" / "config.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(config), encoding="utf-8")
+
+    def doctor(self):
+        """Doctor's report without the installed clients: no test launches a real one, and
+        `claude doctor` under a temporary HOME raises a macOS keychain dialog."""
+        which = harness.shutil.which
+
+        def hidden(name, *args, **kwargs):
+            return None if name == "claude" else which(name, *args, **kwargs)
+
+        prior = os.environ.pop("HARNESS_QUIET", None)
+        buf = io.StringIO()
+        try:
+            with unittest.mock.patch.object(harness, "_version_of", return_value="stub"), \
+                    unittest.mock.patch.object(harness.shutil, "which", side_effect=hidden), \
+                    contextlib.redirect_stdout(buf):
+                harness.cmd_doctor(harness.argparse.Namespace())
+        finally:
+            if prior is not None:
+                os.environ["HARNESS_QUIET"] = prior
+        return buf.getvalue()
 
     def sync(self):
         return harness.cmd_sync(harness.argparse.Namespace(
@@ -164,6 +207,50 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(self.sync(), 0)
         self.assertEqual(self.otel(), {})
         self.assertEqual(self.env()[OTEL_ENV], "http://collector.invalid:4318")
+
+    def test_dropping_claude_code_takes_back_its_env_and_leaves_codex_exporting(self):
+        """The mirror of the case above: a gate narrowed back to `native` being merely truthy
+        would keep writing the Claude variables under `["codex"]` and go unnoticed."""
+        self.configure(True)
+        self.assertEqual(self.sync(), 0)
+        self.configure(["codex"])
+        self.assertEqual(self.sync(), 0)
+        self.assertEqual([k for k in self.env() if k.startswith(("OTEL_", "CLAUDE_"))], [])
+        self.assertNotIn("otelHeadersHelper", json.loads(self.settings_file.read_text()))
+        self.assertEqual(sorted(self.otel()), CODEX_KEYS)
+
+    def test_doctor_reports_each_named_runtime_from_its_own_live_file(self):
+        self.configure(["claude-code"])
+        self.assertEqual(self.sync(), 0)
+        report = self.doctor()
+        self.assertIn("native telemetry: on -> http://collector.invalid:4318 (claude-code)",
+                      report)
+        self.assertIn("labels match this version and these stances", report)
+        self.assertIn("codex: not named by telemetry.native", report)
+
+    def test_doctor_does_not_call_codex_configured_when_sync_left_its_table_alone(self):
+        self.config_toml.parent.mkdir(parents=True, exist_ok=True)
+        self.config_toml.write_text(
+            '[otel.exporter.otlp-http]\nendpoint = "http://mine.invalid:4318/v1/logs"\n')
+        self.configure(["codex"])
+        self.assertEqual(self.sync(), 2)
+        self.assertEqual(self.otel()["exporter"],
+                         {"otlp-http": {"endpoint": "http://mine.invalid:4318/v1/logs"}})
+        report = self.doctor()
+        self.assertIn("codex: [otel] holds exporters this endpoint did not ask for", report)
+
+    def test_doctor_says_a_named_runtime_whose_block_is_unmanaged_is_written_nothing(self):
+        self.configure(["codex"], codex={"manage": False})
+        self.assertEqual(self.sync(), 0)
+        self.assertEqual(self.otel(), {})
+        self.assertIn("codex.manage is off, so `sync` writes nothing for it", self.doctor())
+
+    def test_doctor_says_codex_is_configured_once_sync_has_written_the_table(self):
+        self.configure(["codex"])
+        self.assertEqual(self.sync(), 0)
+        report = self.doctor()
+        self.assertIn("codex: [otel] exports logs and metrics to this endpoint", report)
+        self.assertIn("claude-code: not named by telemetry.native", report)
 
     def test_an_unknown_runtime_name_stops_the_sync(self):
         self.configure(["claude"])
