@@ -8,7 +8,7 @@
     "story": 190,
     "task": 7,
     "bug": 58,
-    "chore": 42,
+    "chore": 43,
     "spike": 7,
     "decision": 7
   },
@@ -4093,6 +4093,19 @@
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C042",
+      "github_number": 530,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/530",
+      "title": "Reserve BMad IDs for the accepted backlog so the traceability audit is green",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C042.md",
+      "parent_bmad_id": "AH-E006",
+      "parent_github_number": 212,
+      "lifecycle": "active",
       "provenance": "authored"
     }
   ]
