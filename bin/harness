@@ -3326,10 +3326,11 @@ def cmd_usage(args: argparse.Namespace) -> int:
         print(f"usage --rules groups by rule, repo or stance; --by {by} is not one of them",
               file=sys.stderr)
         return 2
-    if rules_mode and by == "prefix":
-        # A detector hit belongs to a session's conduct; its cache prefix is a property of the
-        # same session's context, and neither report answers the other's question.
-        print("usage --by prefix reports cache-prefix stability; --rules does not apply",
+    if by == "prefix" and (rules_mode or stance):
+        # A detector hit belongs to a session's conduct and a stance groups its tokens; a
+        # cache prefix is a property of the session's context, and neither of those reports
+        # answers its question. Refused rather than accepted and ignored.
+        print("usage --by prefix reports cache-prefix stability; --rules and --stance do not apply",
               file=sys.stderr)
         return 2
     if rules_mode and by == "day":

@@ -45,6 +45,15 @@ def session(session_id, read, write, **extra):
     return row
 
 
+def subagent(session_id, read, write, **extra):
+    """A Claude Code subagent row, whose tokens the session row already folds in."""
+    row = {"kind": "subagent", "runtime": "claude-code", "session_id": session_id,
+           "agent_type": "worker-a", "turns": 4, "cache_read": read, "cache_write": write,
+           "started": NOW, "ended": NOW}
+    row.update(extra)
+    return row
+
+
 def slice_(read, write, turns):
     return {"input": 0, "output": 0, "cache_read": read, "cache_write": write, "turns": turns}
 
@@ -67,9 +76,13 @@ class MissRatioTests(unittest.TestCase):
         # Codex writes this shape: it exports no per-turn cache figures at all.
         self.assertIsNone(cache_prefix.miss_ratio(session("s-1", 0, 0)))
 
-    def test_reads_against_no_writes_are_unknown_because_a_prefix_is_written_first(self):
-        # Every Codex row is this shape: cached reads it does report, writes it does not.
+    def test_a_runtime_that_reports_no_writes_at_all_is_unknown(self):
+        # The Codex shape: a real cached-read figure, and no cache-write figure to divide by.
         self.assertIsNone(cache_prefix.miss_ratio(session("s-1", 60000000, 0, runtime="codex")))
+        self.assertIsNone(cache_prefix.miss_ratio(session("s-1", 60000000, None, runtime="codex")))
+
+    def test_reads_against_no_writes_are_a_held_prefix_where_writes_are_reported(self):
+        self.assertEqual(cache_prefix.miss_ratio(session("s-1", 60000, 0)), 0.0)
 
     def test_an_unreadable_field_is_unknown_rather_than_an_exception(self):
         self.assertIsNone(cache_prefix.miss_ratio(session("s-1", "lots", 10)))
@@ -100,16 +113,70 @@ class StepTests(unittest.TestCase):
         found = cache_prefix.step(row)
         self.assertEqual((found["turn"], found["day"]), (7, "2026-09-19"))
 
-    def test_a_slice_with_no_ratio_breaks_the_chain_instead_of_counting_as_zero(self):
-        row = session("s-1", 1, 1, days={"2026-09-17": slice_(0, 9000, 2),
+    def test_a_slice_with_no_ratio_breaks_the_chain_rather_than_being_compared_through(self):
+        # The two readable slices differ by 80 points, so a surviving chain would print them as
+        # adjacent days they never were.
+        row = session("s-1", 1, 1, days={"2026-09-17": slice_(9000, 1000, 2),
                                          "2026-09-18": slice_(0, 0, 2),
-                                         "2026-09-19": slice_(0, 9000, 2)})
+                                         "2026-09-19": slice_(1000, 9000, 2)})
         self.assertIsNone(cache_prefix.step(row))
+
+    def test_a_held_day_is_a_ratio_and_does_not_hide_the_step_after_it(self):
+        row = session("s-1", 51000, 9000, days={"2026-09-18": slice_(50000, 0, 5),
+                                                "2026-09-19": slice_(1000, 9000, 5)})
+        found = cache_prefix.step(row)
+        self.assertEqual((found["turn"], found["before"], found["after"]), (6, 0.0, 0.9))
 
     def test_a_session_with_no_day_slices_reports_its_ratio_and_no_step(self):
         row = session("s-1", 9000, 1000)
         self.assertIsNone(cache_prefix.step(row))
         self.assertAlmostEqual(cache_prefix.miss_ratio(row), 0.1)
+
+
+class FoldedSubagentTests(unittest.TestCase):
+    """A Claude Code session row holds its subagents' tokens; its prefix does not."""
+
+    def test_subagent_tokens_are_subtracted_before_the_ratio_is_taken(self):
+        row = session("s-1", 900000, 320000, subagents=2)
+        children = [subagent("s-1", 0, 150000), subagent("s-1", 0, 150000)]
+        found = cache_prefix.figure(row, children)
+        self.assertEqual((found["cache_read"], found["cache_write"]), (900000, 20000))
+        self.assertLess(found["ratio"], 0.03)
+        # Left folded in, the same session reads as one that re-bought a quarter of its prefix.
+        self.assertGreater(cache_prefix.miss_ratio(row), 0.25)
+
+    def test_fewer_child_rows_than_the_session_spawned_is_unknown(self):
+        row = session("s-1", 900000, 320000, subagents=6)
+        found = cache_prefix.figure(row, [subagent("s-1", 0, 150000)])
+        self.assertIsNone(found["ratio"])
+        self.assertIsNone(found["cache_write"])
+
+    def test_a_child_row_missing_a_cache_field_is_unknown(self):
+        row = session("s-1", 900000, 320000, subagents=1)
+        child = subagent("s-1", 0, 150000)
+        del child["cache_write"]
+        self.assertIsNone(cache_prefix.figure(row, [child])["ratio"])
+
+    def test_a_subtraction_that_goes_negative_is_unknown(self):
+        row = session("s-1", 900000, 20000, subagents=1)
+        self.assertIsNone(cache_prefix.figure(row, [subagent("s-1", 0, 150000)])["ratio"])
+
+    def test_a_session_that_spawned_reports_no_step_because_its_slices_fold_them_in(self):
+        row = session("s-1", 60000, 40000, subagents=1,
+                      days={"2026-09-18": slice_(50000, 1000, 6),
+                            "2026-09-19": slice_(10000, 39000, 4)})
+        self.assertIsNone(cache_prefix.step(row, [subagent("s-1", 0, 38000)]))
+        self.assertTrue(cache_prefix.figure(row, [subagent("s-1", 0, 38000)])["step_blocked"])
+
+    def test_a_codex_session_folds_nothing_in_so_nothing_is_subtracted(self):
+        row = session("s-1", 900000, 320000, runtime="codex", subagents=2)
+        self.assertEqual(cache_prefix.own_cache(row, []), (900000, 320000))
+
+    def test_the_whole_ledger_is_indexed_so_a_child_outside_the_window_still_comes_out(self):
+        rows = [session("s-1", 900000, 320000, subagents=1),
+                subagent("s-1", 0, 300000, ended="2020-01-01T00:00:00Z")]
+        found = cache_prefix.figures(rows, cutoff="2026-01-01")
+        self.assertEqual([f["cache_write"] for f in found], [20000])
 
 
 class FigureTests(unittest.TestCase):
@@ -154,7 +221,8 @@ class ReportTests(unittest.TestCase):
     def report(self, rows, **kwargs):
         self.write(rows)
         args = argparse.Namespace(days=kwargs.pop("days", 30), by=kwargs.pop("by", "prefix"),
-                                  rules=kwargs.pop("rules", False), stance=None, rescan=False)
+                                  rules=kwargs.pop("rules", False),
+                                  stance=kwargs.pop("stance", None), rescan=False)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             self.rc = harness.cmd_usage(args)
@@ -191,25 +259,49 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(self.rc, 0)
         self.assertIn("no sessions recorded", out)
 
+    def test_a_session_that_spawned_says_its_step_is_not_measurable(self):
+        out = self.report([session("s-1", 900000, 320000, subagents=1,
+                                   days={"2026-09-18": slice_(50000, 1000, 6),
+                                         "2026-09-19": slice_(10000, 39000, 4)}),
+                           subagent("s-1", 0, 300000)])
+        self.assertIn("not measurable (subagents)", out)
+        self.assertIn("0 with a mid-session step", out)
+
+    def test_a_stance_says_nothing_about_a_prefix_and_the_pair_is_refused(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            out = self.report([session("s-1", 9000, 1000)], stance="cost")
+        self.assertEqual(self.rc, 2)
+        self.assertEqual(out, "")
+        self.assertIn("--rules and --stance do not apply", err.getvalue())
+
     def test_rules_and_prefix_are_different_questions_and_the_pair_is_refused(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             out = self.report([session("s-1", 9000, 1000)], rules=True)
         self.assertEqual(self.rc, 2)
         self.assertEqual(out, "")
-        self.assertIn("--rules does not apply", err.getvalue())
+        self.assertIn("--rules and --stance do not apply", err.getvalue())
 
 
 class CapabilityTests(unittest.TestCase):
     def test_the_codex_adapter_records_that_it_exports_no_cache_figures(self):
         limits = json.loads((REPO / "adapters" / "codex" / "capabilities.json")
                             .read_text(encoding="utf-8"))["limitations"]
-        self.assertTrue(any("cache" in line for line in limits), msg=limits)
+        lines = [line for line in limits if "cache_write" in line]
+        self.assertEqual(len(lines), 1, msg=limits)
+        # It reports a cached-read figure; only the write side is missing, so the note must not
+        # claim both fields come through as zeroes.
+        self.assertIn("cache_read", lines[0])
+        self.assertNotIn("zero", lines[0])
 
     def test_the_documentation_states_that_the_figure_does_not_enforce(self):
         text = (REPO / "docs" / "usage.md").read_text(encoding="utf-8")
         self.assertIn("--by prefix", text)
         self.assertIn("measures", text)
+        # What the figure excludes, and which of several steps it keeps.
+        self.assertIn("are subtracted from the", text)
+        self.assertIn("sharpest rise, not the first", text)
 
 
 if __name__ == "__main__":
