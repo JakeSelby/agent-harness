@@ -72,6 +72,18 @@ The core instruction/rule/stance budget remains linted. Skills and detailed pres
 demand. Runtime-generated instructions and native client context still require qualification;
 passing a source budget is not evidence about a model's total context or compliance.
 
+**The cap that binds is tokens, not lines.** No runtime truncates what this layer measures: Claude
+Code loads a CLAUDE.md of up to 4 MiB in full and skips a larger one, its 200-line limit applies
+only to auto-memory `MEMORY.md`, and its "target under 200 lines" is authoring advice for one file
+rather than a sum over many ([memory docs](https://code.claude.com/docs/en/memory)). What the layer
+does cost is measured: issue #430 put the harness's live standing context at 12,607 tokens against
+a bare profile, stable to +/- 15 across eight task pairs. `ALWAYS_LOADED_TOKEN_CAP` is a third of
+that figure, so instructions, rules and the longest variant of every stance may hold a third of the
+prefix and no more. The 200-line cap stays as a secondary guard, because a layer that is cheap in
+tokens but sprawls over hundreds of short lines is still hard to read and hard to obey. Tokens are
+characters over four, the same tokenizer-free approximation `scripts/cost_bench.py` uses; `harness
+lint` prints both measures against both caps on every run and fails on either.
+
 ## Rationale relocated from the rules
 
 The sentences below explain rules that now state only the instruction.
