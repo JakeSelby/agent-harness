@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A `/close-out` workflow ends a finished session in one invocation: it sweeps for work still
+  open — dirty checkouts, `harness worktree audit`, this session's pull requests and their
+  checks, running background work, parked decisions — delegates the merge to `/land` and the
+  progress file to `/handoff`, batches the follow-ups it found for filing on an explicit
+  go-ahead, messages the sessions whose work this one changed where the client can reach
+  them, and archives only when the invocation asked it to. It never clears or compacts
+  first, because archiving ends the session and both only spend context the close-out is
+  still using (#426).
+
 - Qualification evidence is written per case as the case finishes, so a round killed part-way costs
   one case rather than the whole round. `scripts/native_acceptance.py` appends each finished case to
   a durable log outside the checkout, `--progress` names that log and `--from-progress` rebuilds a

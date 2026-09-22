@@ -177,11 +177,11 @@
     {
       "id": "delivery-loop",
       "title": "A delivery loop, not just a prompt",
-      "pitch": "Five commands take a piece of work from a question to a reviewed pull request, with fresh eyes at the review step.",
+      "pitch": "Seven commands carry a piece of work from a question to a merged pull request and a closed-out session, with fresh eyes at the review step.",
       "features": [
         {
           "name": "The ritual",
-          "line": "/research, /plan, /build, /review, /handoff.",
+          "line": "/research, /plan, /build, /review, /land, /handoff, /close-out.",
           "doc": "primitives/workflows"
         },
         {
