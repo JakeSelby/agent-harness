@@ -56,8 +56,11 @@ SCRATCH_DIR = "/tmp"
 # The suite's own stdout is block-buffered under a pipe and lands after unittest's stderr summary,
 # so the last line of `2>&1` is noise, not the verdict. Filter to the verdict lines and judge the
 # tool's output directly rather than whatever the model chose to relay.
+# Keep the failure names and causes as well as the verdict, bounded, so a red gate can be read
+# from the saved stream without re-running it.
 PREFLIGHT_PROMPT = ("Run exactly this and reply with its output: `python3 bin/harness lint && "
-                    "python3 -m unittest discover -s tests 2>&1 | grep -E '^(OK|FAILED|Ran [0-9]+ tests)'`")
+                    "python3 -m unittest discover -s tests 2>&1 | grep -E "
+                    "'^(OK|FAILED|Ran [0-9]+ tests|ERROR:|FAIL:)|Error:|Operation not permitted' | head -120`")
 PREFLIGHT_CAP_USD = 0.25
 PREFLIGHT_TURNS = 3
 PREFLIGHT_PASS = "OK"

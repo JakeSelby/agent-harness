@@ -477,6 +477,19 @@ class ReplayPreflightTests(unittest.TestCase):
         self.assertTrue(BENCH.gate_passed(gate_reply(noisy)))
         self.assertFalse(BENCH.gate_passed(gate_reply("lint: 0 finding(s) in /repo\n/private/tmp/x/task-one\n")))
 
+    def test_a_red_gate_keeps_its_failure_lines_in_the_saved_stream(self):
+        """The prompt's filter must pass the ERROR and FAIL lines through, or a refusal is unreadable."""
+        for keep in ("^(OK|FAILED|Ran [0-9]+ tests|ERROR:|FAIL:)", "Error:", "Operation not permitted"):
+            self.assertIn(keep, BENCH.PREFLIGHT_PROMPT)
+        with tempfile.TemporaryDirectory() as tmp:
+            red = RED.replace("FAILED", "ERROR: test_x (tests.test_y.T)\nPermissionError: no\nFAILED")
+            launch = Launch([gate_reply(red), gate_reply(red)])
+            opts = options(tmp, reps=1, skip_preflight=False); opts["raw"] = tmp
+            with self.assertRaises(SystemExit):
+                BENCH.replay([TASK], opts, launch)
+            saved = (Path(tmp) / "preflight-bare.json").read_text(encoding="utf-8")
+            self.assertIn("ERROR: test_x", BENCH.gate_output(saved))
+
     def test_a_refused_read_is_red_even_when_unittest_says_ok(self):
         blocked = GREEN.replace("OK", "PermissionError: [Errno 1] Operation not permitted: '/x/plans'\nOK")
         self.assertFalse(BENCH.gate_passed(gate_reply(blocked)))
