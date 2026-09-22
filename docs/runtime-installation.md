@@ -53,3 +53,28 @@ Link and adoption intent is journaled before filesystem changes, so an interrupt
 its recovery path. Malformed native JSON/TOML is rejected during preflight. Uninstall preserves
 redirected links and occupied restoration destinations, returning a conflict status and retaining
 the recovery manifest. It does not overwrite even a dangling user symlink to restore a backup.
+
+## Install from the plugin marketplace
+
+Claude Code can load the projected primitives without a checkout. In a session:
+
+```
+/plugin marketplace add JakeSelby/agent-harness
+/plugin install agent-harness@agent-harness
+```
+
+`.claude-plugin/marketplace.json` lists one plugin whose source is the repository root, so the
+install reads `.claude-plugin/plugin.json` and nothing is duplicated between the two manifests.
+That manifest carries the skills, the eleven subagent roles, the slash commands and the output
+style. Claude Code namespaces them: a plugin skill is `/agent-harness:<name>`.
+
+A marketplace install is a strict subset of `bin/harness install`. It does not give you:
+
+- the ownership journal, `harness diff`, or a restoring `harness uninstall`;
+- stance selection — no rules, no `CLAUDE.md` projection, no personal file;
+- the Codex projection under `~/.agents/skills` and `~/.codex`;
+- hooks, so command grading, the stop gate and the usage feed are all off.
+
+The marketplace path is its own client surface in
+[the compatibility catalog](compatibility.md) and is **unqualified**: no native evidence has been
+recorded for it. `harness doctor` reports which of the two paths is active.

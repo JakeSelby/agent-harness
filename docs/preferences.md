@@ -3,6 +3,12 @@
 Two kinds of preference exist, and they are configured differently because Claude Code reads
 rule text literally: there is no variable substitution inside a rule or CLAUDE.md.
 
+Nine stance axes ship, and only three of them bind to enforcement today: `autonomy` sets which
+shell-command grade stops and asks, `delegation` changes how a spawn is routed, and `cost`
+resolves a class, an effort and a soft budget per role. The other six are prose that swaps cleanly
+and acquires no enforced control by being switched. `harness usage --rules --by stance` groups rule
+hits by the variant in force, so a switch can be checked rather than assumed.
+
 ## Identity
 
 The `identity` block of `~/.config/agent-harness/config.json` (`name`, `pronouns`, `role`,

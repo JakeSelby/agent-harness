@@ -10,6 +10,7 @@ Run: python3 -m unittest discover tests
 import importlib.machinery
 import importlib.util
 import re
+import sys
 import unittest
 from pathlib import Path
 
@@ -30,8 +31,8 @@ UNASKED = re.compile(r"without (waiting to be|being) asked|delegate freely|use s
 STANDING = "without waiting to be asked"
 PERMISSIVE = ("tiered", "session-model")
 
-# One line under the lint cap is reserved for the next rule change; the lint cap itself is 200.
-BUDGET = 196
+sys.path.insert(0, str(REPO / "tests"))
+from context_budget import LINE_BUDGET, TOKEN_CAP, breakdown, measured  # noqa: E402
 
 
 def always_loaded_files():
@@ -94,8 +95,9 @@ class VariantTests(unittest.TestCase):
 
 class BudgetTests(unittest.TestCase):
     def test_moving_the_instruction_did_not_grow_always_loaded_context(self):
-        total, groups = harness.always_loaded_lines(REPO)
-        self.assertLessEqual(total, BUDGET, msg=f"{total} lines: {groups}")
+        lines, tokens = measured()
+        self.assertLessEqual(lines, LINE_BUDGET, msg=breakdown())
+        self.assertLessEqual(tokens, TOKEN_CAP, msg=breakdown())
 
 
 if __name__ == "__main__":

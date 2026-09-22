@@ -10,8 +10,11 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 and **unsupported** means a combination explicitly outside the integration contract.
 
 Claude Code and Codex are this release's integration targets. The v0.11.1 stable support floor
-qualifies their CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces and Codex Desktop on macOS remain
-unqualified previews. Do not read successful source generation or deterministic tests as native
+qualifies their CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
+plugin-marketplace install remain unqualified previews. A marketplace install carries the
+skills, roles, commands and output style only; the ownership journal, stance selection, the
+Codex projection and the hooks come from `bin/harness install`, and
+[runtime installation](runtime-installation.md) states the difference. Do not read successful source generation or deterministic tests as native
 client qualification.
 
 ## What qualified means at each level
@@ -39,24 +42,24 @@ generated matrix in [wshobson/agents' `docs/harnesses.md`](https://github.com/ws
 <!-- harness:compatibility:start -->
 **Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
 
-**Unqualified:** `claude-code-vscode-macos`, `codex-vscode-macos`, `codex-desktop-macos`.
+**Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-vscode-macos`, `codex-desktop-macos`.
 
 **Planned:** `cursor`, `grok`.
 
 A client's status is not a capability's status. Each cell is derived from that runtime's `adapters/<runtime>/capabilities.json` at generation time:
 
-| Capability | `claude-code-cli-macos` | `claude-code-vscode-macos` | `claude-code-cli-linux` | `codex-cli-macos` | `codex-vscode-macos` | `codex-desktop-macos` | `codex-cli-linux` |
-|---|---|---|---|---|---|---|---|
-| `autonomy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `build-vs-buy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `commits` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `cost` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `delegation` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `licensing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `plan-ceremony` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| Capability | `claude-code-cli-macos` | `claude-code-vscode-macos` | `claude-code-cli-linux` | `claude-code-plugin-marketplace` | `codex-cli-macos` | `codex-vscode-macos` | `codex-desktop-macos` | `codex-cli-linux` |
+|---|---|---|---|---|---|---|---|---|
+| `autonomy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `build-vs-buy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `commits` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `cost` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `delegation` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `licensing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `plan-ceremony` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 <!-- harness:compatibility:end -->
 
 Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md)
