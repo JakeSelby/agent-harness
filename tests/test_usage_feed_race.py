@@ -18,7 +18,7 @@ Run: python3 -m unittest discover tests
 import time
 import unittest
 
-from test_usage_feed import append, assistant, load_feed, write
+from test_usage_feed import MEASURE, append, assistant, load_feed, write
 from test_usage_feed_settling import Clock, SettlingFixture, ended, streaming
 
 
@@ -127,7 +127,7 @@ class ReportTests(RaceFixture):
         self.flush("aaa")                                  # the responses land
         self.assertEqual(self.returned("aaa", "gatherer"),
                          ["usage-feed: gatherer finished at 4,250 output tokens and 3 tool "
-                          "calls — 0.5× its budget of 8,500 / 15"])
+                          "calls — 0.5× its budget of 8,500 / 15", MEASURE])
         totals = self.state()["subagents"]
         self.assertEqual((totals["output"], totals["tool_calls"]), (4250, 3))
         self.assertEqual((totals["count"], totals["unknown"]), (1, 0))
@@ -165,7 +165,9 @@ class ReportTests(RaceFixture):
         self.unflushed("ccc")
         self.stop("ccc", agent_type="gatherer")
         self.flush("ccc")
-        self.assertEqual(len(self.returned("ccc", "gatherer")), 1)
+        self.assertEqual(self.returned("ccc", "gatherer"),
+                         ["usage-feed: gatherer finished at 4,250 output tokens and 3 "
+                          "tool calls — 0.5× its budget of 8,500 / 15", MEASURE])
         append(self.transcript, [assistant("m1", 20)])
         self.assertEqual([line for line in self.submit() if "finished" in line], [])
         self.assertEqual(self.state()["subagents"]["output"], 4250)
@@ -247,7 +249,8 @@ class UnrecordedTests(RaceFixture):
         self.stop("nowhere", agent_type="gatherer")
         append(self.transcript, [assistant("m1", 10)])
         lines = self.submitted(module)
-        self.assertEqual(lines[1], "usage-feed: gatherer finished, spend unknown")
+        self.assertEqual(lines[1], "usage-feed: gatherer finished, spend unknown, "
+                                   "no transcript found for agent nowhere")
         self.assertEqual(self.state()["unsummed"], {})     # final, not pending
         self.assertEqual(self.state()["subagents"]["unknown"], 1)
 

@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness usage --by prefix` reports whether each session held its cached prefix: the cache-miss
+  ratio `cache_write / (cache_read + cache_write)` from the ledger rows it already has, with each
+  subagent row's counts subtracted from its parent because the runtime folds them in, and the
+  slice at which the ratio rose most sharply. A session whose subagent rows are missing, a row with
+  no cache fields, and a runtime that never reports cache writes all report `unknown` rather than a
+  figure. It measures and does not enforce; Codex exports no per-turn cache figures, which its
+  capabilities file now records (#415).
+
 - A `/close-out` workflow ends a finished session in one invocation: it sweeps for work still
   open — dirty checkouts, `harness worktree audit`, this session's pull requests and their
   checks, running background work, parked decisions — delegates the merge to `/land` and the
@@ -267,6 +275,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The usage feed says `spend unknown` once and names the agent it could not read, feeds a
+  cumulative line for every round of an agent resumed with a follow-up message rather than only
+  its first, and states once per session what its token figure measures so it cannot be read as
+  the task notification's `subagent_tokens` (#306).
 - `harness sync` installs the Claude Code output style from the `voice` stance instead of
   unconditionally: `scannable` installs `Scannable`, `answer-card` and `off` install none, a style
   you chose yourself survives, and a harness-installed style is removed when the variant changes.
