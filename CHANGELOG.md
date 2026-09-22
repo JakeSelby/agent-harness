@@ -243,6 +243,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `telemetry.native` takes `true`, `false` or a list of runtime names, so a collector that
+  authenticates can be fed natively from Claude Code while Codex, which takes header values only
+  as literals in its configuration file, is left alone. `true` keeps its meaning, an unknown name
+  stops `sync`, and `docs/telemetry.md` says which runtime can reach an authenticated endpoint (#405).
+
 - The README's install command clones the `stable` branch, so a new install starts from the latest
   release instead of the development trunk.
 
