@@ -262,6 +262,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness sync` installs the Claude Code output style from the `voice` stance instead of
+  unconditionally: `scannable` installs `Scannable`, `answer-card` and `off` install none, a style
+  you chose yourself survives, and a harness-installed style is removed when the variant changes.
+  The Claude and Codex projections now agree on what each variant means (#394).
+
 - Three defects in the native acceptance runner, recorded during 0.11.0 qualification and none of
   them in the harness runtime. `orchestrator_text()` now reads a session's transcript whether or not
   a subagent directory was written, so a session that spawned none no longer returns an empty string
