@@ -7,7 +7,7 @@
     "epic": 8,
     "story": 151,
     "task": 1,
-    "bug": 50,
+    "bug": 53,
     "chore": 34,
     "spike": 7,
     "decision": 7
@@ -3271,6 +3271,19 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S150.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B052",
+      "github_number": 440,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/440",
+      "title": "reserve hands out a BMad ID another worktree already took, because it trusts a per-checkout counter",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B052.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
