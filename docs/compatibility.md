@@ -9,8 +9,9 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 **Unqualified** means no complete passing evidence, **planned** means no current integration,
 and **unsupported** means a combination explicitly outside the integration contract.
 
-Claude Code and Codex are this release's integration targets. The v0.11.1 stable support floor
-qualifies their CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
+Claude Code and Codex are this release's integration targets. The v0.12.0 candidate floor
+requires their CLIs on macOS and Linux, and that qualification has not yet been re-run against
+this source. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
 plugin-marketplace install remain unqualified previews. A marketplace install carries the
 skills, roles, commands and output style only; the ownership journal, stance selection, the
 Codex projection and the hooks come from `bin/harness install`, and
@@ -40,9 +41,7 @@ each client row carrying its derived `capabilities`. The capability-by-client la
 generated matrix in [wshobson/agents' `docs/harnesses.md`](https://github.com/wshobson/agents/blob/main/docs/harnesses.md).
 
 <!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
-
-**Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-vscode-macos`, `codex-desktop-macos`.
+**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 

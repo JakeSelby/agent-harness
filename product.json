@@ -242,11 +242,6 @@
       "title": "Close the loop",
       "line": "Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.",
       "issue": 135
-    },
-    {
-      "title": "The instrument, standalone",
-      "line": "The measurement engine as its own package: run it on your own transcripts and your own rules with no harness installed.",
-      "issue": 453
     }
   ],
   "topics": [

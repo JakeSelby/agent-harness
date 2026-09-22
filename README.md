@@ -183,14 +183,12 @@ trust if prompted. [Start with the full guide](docs/getting-started.md).
 
 ## Release status
 
-**Release status:** `0.11.1` is the current stable release. Its shared engine, adapters,
-configuration and hook decisions are qualified on the four required Claude Code and Codex CLI
-targets listed below.
+**Release status:** `0.12.0` is a release candidate. The shared engine, adapters, generated
+configuration and hook decisions are implemented and tested. Native qualification is being
+refreshed for the four required Claude Code and Codex CLI targets listed below.
 
 <!-- harness:compatibility:start -->
-**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`, `codex-cli-macos`, `codex-cli-linux`.
-
-**Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-vscode-macos`, `codex-desktop-macos`.
+**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 
