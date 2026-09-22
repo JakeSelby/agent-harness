@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
 spec = importlib.util.spec_from_loader("harness", loader)
@@ -45,7 +47,7 @@ class TempHome(unittest.TestCase):
         self.tmp.cleanup()
 
     def scrubbed_env(self):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = self.tmp.name
         return env
 

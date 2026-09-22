@@ -13,6 +13,8 @@ import time
 import unittest
 from pathlib import Path
 
+from isolation import without_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -347,7 +349,7 @@ class RuleRecordTests(TempHome):
         self.assertEqual(rec["turns"], 4)
 
     def worker(self, hooks, path):
-        env = dict(os.environ, HOME=str(self.home))
+        env = dict(without_config_dir(), HOME=str(self.home))
         out = subprocess.run([sys.executable, str(hooks / "usage-log.py"), "--worker", str(path), "s-1", ""],
                              capture_output=True, text=True, env=env, timeout=30)
         self.assertEqual(out.returncode, 0)
@@ -359,7 +361,7 @@ class RuleRecordTests(TempHome):
         (hooks / "usage-log.py").write_text(
             (REPO / "claude" / "hooks" / "usage-log.py").read_text(encoding="utf-8"), encoding="utf-8")
         path = rules_fixture(self.home / "rules.jsonl")
-        env = dict(os.environ, HOME=str(self.home))
+        env = dict(without_config_dir(), HOME=str(self.home))
         out = subprocess.run([sys.executable, str(hooks / "usage-log.py"), "--worker", str(path), "s-1", ""],
                              capture_output=True, text=True, env=env, timeout=30)
         self.assertEqual(out.returncode, 0)

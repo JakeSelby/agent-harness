@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "install.sh"
 AUTHOR = ["-c", "user.name=t", "-c", "user.email=t" + "@" + "example.invalid"]
@@ -61,7 +63,7 @@ class InstallerScriptTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def env(self, **over):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env.update({"HOME": str(self.home), "HARNESS_HOME": str(self.home),
                     "HARNESS_CHECKOUT": str(self.checkout),
                     "HARNESS_REPO_URL": str(self.source),

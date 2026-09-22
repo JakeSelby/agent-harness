@@ -22,6 +22,8 @@ import time
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 HOOK = REPO / "claude" / "hooks" / "usage-feed.py"
@@ -102,7 +104,7 @@ class Fixture(unittest.TestCase):
         path.write_text(json.dumps(config))
 
     def env(self, **extra):
-        merged = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        merged = without_harness_vars()
         merged["HOME"] = str(self.home)
         merged.update(extra)
         return merged

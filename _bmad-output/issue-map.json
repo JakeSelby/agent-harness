@@ -7,7 +7,7 @@
     "epic": 11,
     "story": 173,
     "task": 5,
-    "bug": 52,
+    "bug": 53,
     "chore": 36,
     "spike": 7,
     "decision": 7
@@ -3661,6 +3661,19 @@
       "type": "task",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T003.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B052",
+      "github_number": 498,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/498",
+      "title": "claude_dir() lets CLAUDE_CONFIG_DIR override a set HARNESS_HOME, so the test suite writes into the real profile",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B052.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

@@ -18,6 +18,8 @@ import time
 import unittest
 from pathlib import Path
 
+from isolation import without_config_dir
+
 from test_usage import REPO, harness, usage_log
 
 HOOK = REPO / "claude" / "hooks" / "usage-log.py"
@@ -85,7 +87,7 @@ class Fixture(unittest.TestCase):
     def record(self):
         """The SessionEnd worker, run the way the hook runs it: a subprocess over a temp HOME."""
         out = subprocess.run([sys.executable, str(HOOK), "--worker", str(self.transcript), "s-1", ""],
-                             capture_output=True, text=True, env=dict(os.environ, HOME=str(self.home)),
+                             capture_output=True, text=True, env=dict(without_config_dir(), HOME=str(self.home)),
                              timeout=60)
         self.assertEqual(out.returncode, 0, out.stderr)
         return self.rows()

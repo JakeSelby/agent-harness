@@ -18,6 +18,8 @@ import time
 import unittest
 from pathlib import Path
 
+from isolation import without_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "grade-bash.py"
 spec = importlib.util.spec_from_file_location("grade_bash", HOOK)
@@ -40,7 +42,7 @@ def run(command, stance="execute", mode="default"):
     """Run the hook as a subprocess with an empty HOME, so no real config is read. Returns
     (permissionDecision, permissionDecisionReason), or (None, None) when it stays silent."""
     with tempfile.TemporaryDirectory() as home:
-        env = dict(os.environ, HOME=home, HARNESS_STANCE_AUTONOMY=stance)
+        env = dict(without_config_dir(), HOME=home, HARNESS_STANCE_AUTONOMY=stance)
         out = subprocess.run(
             [sys.executable, str(HOOK)],
             input=json.dumps({
@@ -517,7 +519,7 @@ class HookTests(unittest.TestCase):
                 input=json.dumps({"tool_name": "Bash",
                                   "tool_input": {"command": "git push --force"}}),
                 capture_output=True, text=True,
-                env=dict(os.environ, HOME=home, HARNESS_STANCE_AUTONOMY="execute"),
+                env=dict(without_config_dir(), HOME=home, HARNESS_STANCE_AUTONOMY="execute"),
             )
         block = json.loads(out.stdout)["hookSpecificOutput"]
         self.assertEqual(block["permissionDecision"], "ask")
@@ -536,7 +538,7 @@ class HookTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as home:
                     out = subprocess.run(
                         [sys.executable, str(HOOK)], input=payload, capture_output=True,
-                        text=True, env=dict(os.environ, HOME=home),
+                        text=True, env=dict(without_config_dir(), HOME=home),
                     )
                 self.assertEqual(out.stdout.strip(), "")
                 self.assertEqual(out.returncode, 0)
@@ -580,7 +582,7 @@ class HookTests(unittest.TestCase):
             config = Path(home) / ".config" / "agent-harness"
             config.mkdir(parents=True)
             (config / "config.json").write_text(body)
-            env = dict(os.environ, HOME=home)
+            env = dict(without_config_dir(), HOME=home)
             env.pop("HARNESS_STANCE_AUTONOMY", None)
             out = subprocess.run(
                 [sys.executable, str(HOOK)],
@@ -601,7 +603,7 @@ class HookTests(unittest.TestCase):
                 input=json.dumps({"tool_name": "Bash", "permission_mode": "default",
                                   "tool_input": {"command": "rm -rf /"}}),
                 capture_output=True, text=True,
-                env=dict(os.environ, HOME=lonely, HARNESS_STANCE_AUTONOMY="execute"),
+                env=dict(without_config_dir(), HOME=lonely, HARNESS_STANCE_AUTONOMY="execute"),
             )
         self.assertEqual(out.stdout.strip(), "")
         self.assertEqual(out.returncode, 0)

@@ -21,6 +21,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
@@ -221,10 +223,7 @@ class RerouteTests(unittest.TestCase):
         self.config(primitive_roots=[str(root)], stances={"delegation": "tiered", "cost": "plain"})
 
     def run_hook(self, tool_input, env=None, cwd=None):
-        merged = dict(os.environ)
-        for key in list(merged):
-            if key.startswith("HARNESS_"):
-                del merged[key]
+        merged = without_harness_vars()
         merged["HOME"] = str(self.home)
         merged.update(env or {})
         payload = {"tool_name": "Agent", "transcript_path": str(self.transcript),

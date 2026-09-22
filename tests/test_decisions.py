@@ -20,6 +20,8 @@ import time
 import unittest
 from pathlib import Path
 
+from isolation import drop_inherited_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 
@@ -323,6 +325,7 @@ class ReportTests(Base):
                                           rescan=False, action=None)
         buf = io.StringIO()
         env = dict(os.environ)
+        drop_inherited_config_dir()
         os.environ["HARNESS_HOME"] = str(self.home)
         # `say` is silent under HARNESS_QUIET, which another test in the suite may have set.
         os.environ.pop("HARNESS_QUIET", None)

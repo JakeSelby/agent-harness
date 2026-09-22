@@ -16,6 +16,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import isolate_home, without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
 spec = importlib.util.spec_from_loader("harness", loader)
@@ -69,7 +71,7 @@ class SessionHookTests(unittest.TestCase):
         self.git("commit", "-m", "the handoff fixture commit")
 
     def env(self):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env.update({
             "HOME": str(self.home),
             "GIT_CONFIG_NOSYSTEM": "1",
@@ -206,11 +208,7 @@ class GitignoreSyncTests(unittest.TestCase):
         self.home = Path(self.tmp.name)
         self._saved = {k: v for k, v in os.environ.items() if k.startswith("HARNESS_") or k == "HOME"}
         self.addCleanup(self._restore)
-        for k in list(os.environ):
-            if k.startswith("HARNESS_"):
-                del os.environ[k]
-        os.environ["HOME"] = str(self.home)
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def _restore(self):
         for k in list(os.environ):

@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import isolate_home
+
 REPO = Path(__file__).resolve().parent.parent
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
 spec = importlib.util.spec_from_loader("harness", loader)
@@ -80,11 +82,7 @@ class DesignJudgeSyncTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old_environ = dict(os.environ)
-        os.environ["HOME"] = str(self.home)
-        for k in list(os.environ):
-            if k.startswith("HARNESS_"):
-                del os.environ[k]
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def tearDown(self):
         os.environ.clear()
