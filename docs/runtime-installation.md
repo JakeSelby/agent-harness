@@ -54,6 +54,41 @@ its recovery path. Malformed native JSON/TOML is rejected during preflight. Unin
 redirected links and occupied restoration destinations, returning a conflict status and retaining
 the recovery manifest. It does not overwrite even a dangling user symlink to restore a backup.
 
+## The one-line installer
+
+`scripts/install.sh` is POSIX `sh`, collapses the first eight commands of the clone path into one,
+and is safe to run twice. Its shape is borrowed from pmstack's `install.sh`.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+```
+
+1. **Requirements.** `git`, `python3` 3.9 or newer, macOS or Linux. A missing one is a single line
+   naming what to install, and nothing else runs.
+2. **Checkout.** Clones `--branch stable` into `~/repos/agent-harness`. An existing checkout there
+   is fetched and fast-forwarded instead of re-cloned; one that cannot fast-forward, and a
+   destination that is occupied by something that is not a git checkout, both stop the script
+   rather than being reconciled for you.
+3. **Configuration.** `bin/harness init --yes` writes `~/.config/agent-harness/config.json` from
+   the example, taking the name from `git config user.name`, the handle from a signed-in `gh` and
+   the timezone from the system. Any field it cannot answer keeps its example value and is listed
+   on the way out for `harness config set`. An existing config is never rewritten.
+4. **Preview.** `bin/harness install --dry-run`, which writes nothing.
+5. **Next command.** It prints `bin/harness install` and `bin/harness uninstall` and stops. The
+   script never runs `install` without `--dry-run`.
+
+Any failure exits non-zero with one line naming the step. `HARNESS_CHECKOUT` moves the checkout,
+`HARNESS_BRANCH` tracks another branch, `HARNESS_INSTALL_NO_HOMEBREW=1` and
+`HARNESS_INSTALL_NO_APPS=1` pass `--no-brew` and `--no-apps` to the preview, and anything after
+`sh -s --` is passed to it too.
+
+There is no PyPI package, and one is not planned. The harness runs *from its checkout*: every hook
+in `~/.claude/settings.json` runs a script under `~/.claude/hooks/harness`, which is a link into
+the checkout; the rules, stances and skills in `~/.claude` are links into it too; and the vendored
+TOML parser is imported relative to it. A copy installed into a `site-packages` directory would
+have to become that checkout, so the script clones one instead.
+[The sync model](sync-model.md) has the detail.
+
 ## Install from the plugin marketplace
 
 Claude Code can load the projected primitives without a checkout. In a session:
