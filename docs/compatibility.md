@@ -48,18 +48,18 @@ generated matrix in [wshobson/agents' `docs/harnesses.md`](https://github.com/ws
 
 A client's status is not a capability's status. Each cell is derived from that runtime's `adapters/<runtime>/capabilities.json` at generation time:
 
-| Capability | `claude-code-cli-macos` | `claude-code-vscode-macos` | `claude-code-cli-linux` | `codex-cli-macos` | `codex-vscode-macos` | `codex-desktop-macos` | `codex-cli-linux` |
-|---|---|---|---|---|---|---|---|
-| `autonomy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `build-vs-buy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `commits` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `cost` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `delegation` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `licensing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `plan-ceremony` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
-| `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| Capability | `claude-code-cli-macos` | `claude-code-vscode-macos` | `claude-code-cli-linux` | `claude-code-plugin-marketplace` | `codex-cli-macos` | `codex-vscode-macos` | `codex-desktop-macos` | `codex-cli-linux` |
+|---|---|---|---|---|---|---|---|---|
+| `autonomy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `build-vs-buy` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `commits` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `cost` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `delegation` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `licensing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `plan-ceremony` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 <!-- harness:compatibility:end -->
 
 Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md)
