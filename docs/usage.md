@@ -463,6 +463,11 @@ treat the sentence above as a thing to check in your own data rather than as an 
 
 ## Rule telemetry
 
+The engine underneath — the event schema, the shell decomposition, the registry and the six
+generic detectors — is [ruleprobe](https://github.com/JakeSelby/ruleprobe), vendored as a wheel
+in `lib/vendor` beside `tomlkit`; `claude/hooks/rule-detectors.py` is this repository's rule
+pack over it, holding the detectors that are about these rules and the opt-outs.
+
 The same pass that sums the tokens builds the event list `claude/hooks/rule-detectors.py`
 documents and runs every detector over it, so the record carries three more fields:
 

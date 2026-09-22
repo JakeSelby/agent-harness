@@ -8,7 +8,7 @@
     "story": 173,
     "task": 5,
     "bug": 52,
-    "chore": 34,
+    "chore": 36,
     "spike": 7,
     "decision": 7
   },
@@ -3277,6 +3277,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-C034",
+      "github_number": 432,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/432",
+      "title": "Ignore .agent-harness/evidence/ repository-wide so captured transcripts cannot redden another session's gate",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C034.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B051",
       "github_number": 436,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/436",
@@ -3661,6 +3674,19 @@
       "type": "task",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T004.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C035",
+      "github_number": 501,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/501",
+      "title": "Record how a pull request is landed under the main ruleset",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C035.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
