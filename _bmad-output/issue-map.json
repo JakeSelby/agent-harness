@@ -7,7 +7,7 @@
     "epic": 11,
     "story": 173,
     "task": 6,
-    "bug": 53,
+    "bug": 54,
     "chore": 36,
     "spike": 7,
     "decision": 7
@@ -3635,6 +3635,19 @@
       "type": "task",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T002.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B053",
+      "github_number": 483,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/483",
+      "title": "Remote Control host gives up after 10 min offline, kills every session, and the launchd relaunch does not re-adopt them",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B053.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

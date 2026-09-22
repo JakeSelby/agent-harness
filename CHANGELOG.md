@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness remote-control` supervises each host through Claude Code's ten-minute give-up: `heal`
+  keeps the bridge pointer naming the live environment, stops a host with one `SIGTERM` at nine
+  minutes unreachable so launchd's relaunch takes the preserving path, and recreates the session
+  worktrees a give-up already deleted. `status` lists sessions left active but disconnected on
+  this Mac's environments and prints the manual reattach command for each — it never runs one,
+  because a `--session-id` host registers the lost environment a second time and the client then
+  routes new chats to it. `doctor` reports each host's process, environment, pointer freshness and
+  disconnected sessions. Workspace trust is now read for the exact folder, as Claude Code reads
+  it, and an untrusted folder fails `install` with the fix instead of looping launchd (#483).
+
+- `harness remote-control install|status|uninstall` keeps one Claude Code Remote Control server
+  per `remote_control.folders` entry running under launchd on macOS, so a new session can be
+  started from the mobile app with no terminal open. A folder whose workspace trust was never
+  accepted is reported and skipped, never trusted on the user's behalf.
+
 - `harness usage --by prefix` reports whether each session held its cached prefix: the cache-miss
   ratio `cache_write / (cache_read + cache_write)` from the ledger rows it already has, with each
   subagent row's counts subtracted from its parent because the runtime folds them in, and the
