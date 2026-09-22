@@ -212,6 +212,24 @@ class ReplayArmTests(unittest.TestCase):
             (tmp / "home" / ".claude" / "CLAUDE.md").symlink_to(tmp / "checkout" / "claude" / "CLAUDE.md")
             self.assertEqual(BENCH.installed_harness(tmp / "home"), tmp / "checkout")
 
+    def test_a_snapshot_keeps_the_history_its_gate_needs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = git_repo(Path(tmp) / "source")
+            for n in range(3):
+                (repo / "file.txt").write_text("v%d\n" % n, encoding="utf-8")
+                subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t",
+                                "commit", "-qam", "chore: step %d" % n], check=True)
+            subprocess.run(["git", "-C", str(repo), "tag", "v1"], check=True)
+            at = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"]).decode().strip()
+            (repo / "file.txt").write_text("the fix\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t",
+                            "commit", "-qam", "fix: it"], check=True)
+            subprocess.run(["git", "-C", str(repo), "tag", "v2"], check=True)
+            clone = BENCH.snapshot(repo, at, Path(tmp) / "clone")
+            count = subprocess.check_output(["git", "-C", str(clone), "rev-list", "--all", "--count"])
+            self.assertEqual(count.decode().strip(), "4")  # the ancestors the gate reads survive
+            self.assertEqual(subprocess.check_output(["git", "-C", str(clone), "tag"]).decode().split(), ["v1"])
+
     def test_a_snapshot_cannot_reach_the_commit_that_solved_the_task(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = git_repo(Path(tmp) / "source")
@@ -219,8 +237,11 @@ class ReplayArmTests(unittest.TestCase):
             (repo / "file.txt").write_text("the fix\n", encoding="utf-8")
             subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t",
                             "commit", "-qam", "fix: it"], check=True)
+            fix = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"]).decode().strip()
             clone = BENCH.snapshot(repo, first, Path(tmp) / "clone")
             self.assertEqual((clone / "file.txt").read_text(encoding="utf-8"), "one\n")
+            self.assertFalse(BENCH.reaches(clone, fix))
+            self.assertTrue(BENCH.reaches(clone, first))
             count = subprocess.check_output(["git", "-C", str(clone), "rev-list", "--all", "--count"])
             self.assertEqual(count.decode().strip(), "1")
 
@@ -315,6 +336,24 @@ def row(arm, rep, passed, cost, error=False):
     return {"arm": arm, "rep": rep, "passed": None if error else passed, "error": error, "cost_usd": cost,
             "cost_normalised_usd": cost, "date": "2026-01-01", "harness_version": "9.9.9", "harness_sha": "a" * 40,
             "tag": "candidate", "model": "claude-test", "cli_version": "1.0"}
+
+
+class FixtureGateTests(unittest.TestCase):
+    def test_a_red_gate_in_a_clean_snapshot_is_reported_against_the_task_not_the_agent(self):
+        calls = []
+        real, real_oracle = BENCH.repo_gate, BENCH._oracle
+        BENCH.repo_gate = lambda workdir, commands, python=None: calls.append(1) or [("gate", 1)]
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                repo = git_repo(Path(tmp) / "source")
+                task = dict(TASK, parent_sha="HEAD", tests={"oracle": "none"})
+                BENCH._oracle = lambda r, n: types.SimpleNamespace(check=lambda root: ["no"],
+                                                                   solve=lambda root: None)
+                errors = BENCH.verify_tasks([task], repo, Path(tmp) / "work", [["gate"]])
+            self.assertTrue(calls)
+            self.assertIn("already fails in a clean snapshot", errors[0])
+        finally:
+            BENCH.repo_gate, BENCH._oracle = real, real_oracle
 
 
 class ReplaySummaryTests(unittest.TestCase):

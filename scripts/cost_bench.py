@@ -36,6 +36,9 @@ ORACLES = Path("benchmarks") / "oracles"
 HISTORY = Path("benchmarks") / "history.jsonl"
 HISTORY_MD = Path("benchmarks") / "history.md"
 ARMS = ("bare", "harness")
+SNAPSHOT_BRANCH = "main"
+# This repository's own gate, as AGENTS.md names it: a snapshot must pass it before any arm runs.
+GATE_COMMANDS = (["python3", "bin/harness", "lint"], ["python3", "-m", "unittest", "discover", "-s", "tests"])
 RUN_CAP_USD = 2.0
 SPEND_CAP_USD = 25.0
 THRESHOLD = 0.85
@@ -214,21 +217,42 @@ def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD):
             "--permission-mode", "acceptEdits", "--settings", json.dumps(FENCE)]
 
 
+def _git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo)] + list(args), env=scrubbed_env(),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+
+
 def snapshot(repo, sha, dest):
-    """The tree at `sha` as a one-commit repository, so the commit that solved it is not reachable."""
+    """The repository rewound to `sha`, with real history and no way forward to the fix.
+
+    A tree with no history is not the repository an agent is asked to work in: this project's own
+    gate reads its git history, so an archive of the files alone fails the gate before the agent has
+    touched anything, and both arms then spend turns proving the failure was already there. The
+    clone keeps every ancestor and the tags among them, and drops every ref ahead of `sha` before
+    pruning, so the commit that solved the task is not reachable and not present."""
     dest = Path(dest)
-    dest.mkdir(parents=True)
-    archive = subprocess.Popen(["git", "-C", str(repo), "archive", sha], stdout=subprocess.PIPE)
-    subprocess.run(["tar", "-x", "-C", str(dest)], stdin=archive.stdout, check=True)
-    archive.stdout.close()
-    if archive.wait():
-        raise RuntimeError("git archive %s failed" % sha)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    wanted = _git(repo, "rev-parse", "--verify", "%s^{commit}" % sha).stdout.strip()
     env = scrubbed_env()
-    for args in (["init", "-q"], ["add", "-A"],
-                 ["-c", "user.name=cost-bench", "-c", "user.email=cost-bench",
-                  "commit", "-q", "-m", "chore: baseline"]):
-        subprocess.run(["git", "-C", str(dest)] + args, check=True, env=env, stdout=subprocess.DEVNULL)
+    subprocess.run(["git", "clone", "--quiet", "--local", "--no-hardlinks", "--no-checkout",
+                    str(repo), str(dest)], check=True, env=env)
+    _git(dest, "checkout", "--quiet", "-B", SNAPSHOT_BRANCH, sha)
+    for ref in _git(dest, "for-each-ref", "--format=%(refname)").stdout.split():
+        ancestor = ref.startswith("refs/tags/") and not _git(dest, "merge-base", "--is-ancestor",
+                                                             ref, "HEAD").returncode
+        if ref != "refs/heads/" + SNAPSHOT_BRANCH and not ancestor:
+            _git(dest, "update-ref", "-d", ref)
+    _git(dest, "remote", "remove", "origin")
+    _git(dest, "reflog", "expire", "--expire=now", "--all")
+    _git(dest, "gc", "--quiet", "--prune=now")
+    if _git(dest, "rev-parse", "--verify", "--quiet", "HEAD").stdout.strip() != wanted:
+        raise RuntimeError("snapshot of %s did not land on that commit" % sha)
     return dest
+
+
+def reaches(repo, sha):
+    """Whether `sha` is present in the snapshot at all: the guard that the fix stayed hidden."""
+    return _git(repo, "cat-file", "-e", sha).returncode == 0
 
 
 def parse_result(stdout):
@@ -319,11 +343,30 @@ def score(task, workdir, repo, python=sys.executable):
     return (done.returncode == 0 and count > 0, "ran %d, exit %d" % (count, done.returncode))
 
 
-def verify_tasks(tasks, repo, parent):
-    """Errors for every task whose check does not fail before the work and pass after it."""
+def repo_gate(workdir, commands, python=sys.executable):
+    """Exit codes for the repository's own gate, run in `workdir`. A benchmark fixture whose gate is
+    already red charges both arms for failures the agent did not cause."""
+    out = []
+    for command in commands:
+        done = subprocess.run([python if part == "python3" else part for part in command],
+                              cwd=str(workdir), env=scrubbed_env({"PYTHONPATH": str(Path(workdir) / "lib")}),
+                              timeout=CHECK_TIMEOUT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              universal_newlines=True)
+        out.append((" ".join(command), done.returncode))
+    return out
+
+
+def verify_tasks(tasks, repo, parent, gate=None):
+    """Errors for every task whose fixture or check does not hold before the agent runs."""
     errors = []
     for task in tasks:
         before = snapshot(repo, task["parent_sha"], Path(parent) / (task["id"] + "-parent"))
+        if task["kind"] == "issue" and reaches(before, task["good_sha"]):
+            errors.append("%s: the commit that solved it is present in the snapshot" % task["id"])
+        for command, code in repo_gate(before, gate or []):
+            if code:
+                errors.append("%s: `%s` already fails in a clean snapshot (exit %d)"
+                              % (task["id"], command, code))
         if score(task, before, repo)[0]:
             errors.append("%s: the check already passes at the parent sha" % task["id"])
         if task["kind"] == "issue":
@@ -505,7 +548,7 @@ def cmd_replay(args):
     if args.verify_tasks:
         parent = Path(tempfile.mkdtemp(prefix="cost-replay-verify-"))
         try:
-            errors = verify_tasks(tasks, ROOT, parent)
+            errors = verify_tasks(tasks, ROOT, parent, GATE_COMMANDS)
         finally:
             shutil.rmtree(str(parent), ignore_errors=True)
         for error in errors:
