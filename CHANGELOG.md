@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-09-22
+
 ### Added
 
 - `harness remote-control` supervises each host through Claude Code's ten-minute give-up: `heal`
@@ -234,6 +236,15 @@ All notable changes to this project are documented here. The format follows
   native Claude Code cost and token metrics down to agent, model, effort and stance variant. The
   instance-specific connection id is a placeholder, with the one-line lookup beside it.
 
+- `scripts/cost_bench.py replay` runs a pinned task set headlessly against two profiles — a
+  signed-in, otherwise empty Claude Code profile and the installed harness — on one shared command
+  line and a scrubbed environment, and scores each run with a check the agent never sees.
+  `benchmarks/tasks.json` pins the tasks, `benchmarks/oracles/` holds the held-back checks, and
+  `--verify-tasks` proves every check and refuses a fixture whose own gate is red or whose solving
+  commit is still reachable. It calls a model and spends real usage, so it is run by hand on a
+  release candidate and never in CI, and no result is published with this release: the runner
+  ships, the number does not. Reading and limits: `docs/benchmarks.md`.
+
 - `scripts/cost_bench.py static` measures what the harness adds to every Claude Code session against
   a bare one: files, lines, characters, an estimated token count and its price per model from
   `policy/prices.json`. `benchmarks/static.json` holds the figure for the last release and CI fails
@@ -293,6 +304,12 @@ All notable changes to this project are documented here. The format follows
   check in your own data rather than an expectation.
 
 ### Fixed
+
+- The test suite no longer writes the harness into a real profile. `claude_dir()` honours
+  `CLAUDE_CONFIG_DIR`, so a suite run in a shell that had it set installed links and rendered
+  files into whatever profile it named instead of the run's own temporary home. Every test now
+  clears it through one shared isolation helper, and the sandbox fence that hid the leak is no
+  longer what keeps a caller's profile intact.
 
 - The usage feed says `spend unknown` once and names the agent it could not read, feeds a
   cumulative line for every round of an agent resumed with a follow-up message rather than only

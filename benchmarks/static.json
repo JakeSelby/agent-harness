@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "harness_version": "0.11.1",
+  "harness_version": "0.12.0",
   "chars_per_token": 4.0,
   "always_loaded": {
     "files": 21,
@@ -9,18 +9,18 @@
     "est_tokens": 5168
   },
   "listings": {
-    "files": 32,
-    "lines": 32,
-    "chars": 9154,
-    "est_tokens": 2288
+    "files": 33,
+    "lines": 33,
+    "chars": 9303,
+    "est_tokens": 2326
   },
   "total": {
-    "files": 53,
-    "lines": 375,
-    "chars": 29827,
-    "est_tokens": 7457
+    "files": 54,
+    "lines": 376,
+    "chars": 29976,
+    "est_tokens": 7494
   },
-  "worst_case_est_tokens": 7516,
+  "worst_case_est_tokens": 7553,
   "largest": [
     {
       "path": "claude/output-styles/scannable.md",
@@ -50,32 +50,32 @@
   ],
   "usd": {
     "claude-fable-5": {
-      "session_start": 0.093213,
-      "later_turn": 0.007457
+      "session_start": 0.093675,
+      "later_turn": 0.007494
     },
     "claude-fable-5-1": {
-      "session_start": 0.093213,
-      "later_turn": 0.001864
+      "session_start": 0.093675,
+      "later_turn": 0.001873
     },
     "claude-haiku-4-5": {
-      "session_start": 0.009321,
-      "later_turn": 0.000746
+      "session_start": 0.009368,
+      "later_turn": 0.000749
     },
     "claude-opus-4-6": {
-      "session_start": 0.046606,
-      "later_turn": 0.003729
+      "session_start": 0.046837,
+      "later_turn": 0.003747
     },
     "claude-opus-4-8": {
-      "session_start": 0.046606,
-      "later_turn": 0.003729
+      "session_start": 0.046837,
+      "later_turn": 0.003747
     },
     "claude-opus-5": {
-      "session_start": 0.046606,
-      "later_turn": 0.003729
+      "session_start": 0.046837,
+      "later_turn": 0.003747
     },
     "claude-sonnet-5": {
-      "session_start": 0.018642,
-      "later_turn": 0.001491
+      "session_start": 0.018735,
+      "later_turn": 0.001499
     }
   }
 }

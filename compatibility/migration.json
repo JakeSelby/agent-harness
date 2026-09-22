@@ -1,16 +1,17 @@
 {
   "schema_version": 1,
-  "harness_version": "0.11.1",
-  "summary": "Upgrade from v0.11.0 by reviewing the generated v0.11.1 projection before applying it: a patch release with no new files, hook events or roles. The spawn guard now refuses a constrained role's brief however the spawn is named, the builder role reports what produced any fixture it edits, and the `delegation: off` stance says that a spawn is denied; the architecture-viewer preview is inert until an external adapter is registered and selected.",
+  "harness_version": "0.12.0",
+  "summary": "Upgrade from v0.11.1 by reviewing the generated v0.12.0 projection before applying it: a minor release that adds the `/land` and `/close-out` workflows, a local decision log, an optional OTLP export of the usage ledger with an optional per-runtime pass-through to each client's own telemetry, and `harness remote-control`. `harness sync` now installs the Claude Code output style named by your `voice` stance instead of a fixed one, so a selection you never made explicitly can change; nothing is exported and no supervisor is installed until you turn each on. The architecture-viewer preview is inert until an external adapter is registered and selected.",
   "actions": [
-    "Run `harness sync --dry-run` from the v0.11.1 checkout and inspect every proposed write, ownership change and conflict. Expect the `builder` agent definition and the `delegation` stance text to change and nothing to be added.",
+    "Run `harness sync --dry-run` from the v0.12.0 checkout and inspect every proposed write, ownership change and conflict. Expect two new commands, `close-out` and `land`, and expect the installed Claude Code output style to follow your `voice` stance: if you had selected a style by hand, select the matching `voice` variant before syncing or the sync changes it.",
     "Run `harness sync` only after resolving unmanaged-file and adoption conflicts.",
-    "If you route BMad code review through the harness, run `harness bmad check <framework-root>` and then `harness bmad apply <framework-root>`: each review layer's brief now begins with a `harness-role:` line that the spawn guard enforces, and a framework checkout keeps the old layer text until you apply it.",
-    "Expect a session record under `~/.local/state/agent-harness/sessions/` to gain a bounded `denied_spawns` list once the guard has refused a constrained-role spawn in that session. It is pruned with the record and read by nothing else."
+    "Telemetry stays off unless you ask for it. To export the ledger, add a `telemetry` block to your configuration: `export` turns on OTLP/HTTP, and `native` takes `true`, `false` or a list of runtime names, so a collector only one runtime can authenticate against is written only for that runtime. Read headers from an environment variable or a mode-600 file outside every git work tree, never inline. See docs/telemetry.md.",
+    "Expect new owner-only local state: `~/.local/state/agent-harness/decisions.jsonl`, an append-only record of what a hook decided and what settled it. It is pruned with the rest of the local state, read only by `harness usage`, and removed by `harness uninstall`.",
+    "`harness remote-control install` registers a launchd agent that supervises a Claude Code Remote Control host. It is opt-in, installs nothing on its own, and `harness remote-control uninstall` removes both the agent and the healer."
   ],
   "recovery": [
     "Preserve reported conflicts, adopted backups, external viewer adapter descriptors and external viewer installations.",
-    "To return to v0.11.0, check out that tag and run `harness sync` once; v0.11.0 ignores the `denied_spawns` key in a session record, and a BMad framework checkout keeps working with or without the marker line.",
+    "To return to v0.11.1, run `harness remote-control uninstall` if you installed it, remove the `telemetry` block from your configuration and run `harness sync` once from the v0.11.1 checkout; v0.11.1 ignores `decisions.jsonl` and restores the fixed output style from its own settings template.",
     "Use `harness uninstall --dry-run` before uninstalling, and follow docs/runtime-installation.md for rollback and ownership recovery; use docs/bmad.md for task continuation."
   ]
 }
