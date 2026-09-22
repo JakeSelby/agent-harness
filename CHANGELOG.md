@@ -262,6 +262,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness usage` no longer prints the partial-totals warning above a USD report whose own
+  footer already counts those runs as unpriced; a report with no unpriced run still warns that
+  a column is short (#407).
+
 - Three defects in the native acceptance runner, recorded during 0.11.0 qualification and none of
   them in the harness runtime. `orchestrator_text()` now reads a session's transcript whether or not
   a subagent directory was written, so a session that spawned none no longer returns an empty string
