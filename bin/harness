@@ -49,6 +49,7 @@ sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
 from harness_core import codex_client, keychain, collisions, importer
+from harness_core import decision as decisions_provider
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -2146,6 +2147,36 @@ def cmd_stances(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_decide(args: argparse.Namespace) -> int:
+    """Ask the selected decision provider about one action, and print what it answered.
+
+    A reporting command, like `stances`: it changes nothing, and nothing consults it yet. It
+    exists so a policy file can be checked against the counterparty it will be read under,
+    rather than the first time a hook reads it.
+    """
+    cfg = load_config()
+    slug = args.counterparty or decisions_provider.counterparty(str(Path.cwd()))
+    try:
+        provider = decisions_provider.select_provider(cfg, root=str(Path.cwd()))
+        action = decisions_provider.Action(action_class=args.action, grade=args.grade)
+        answer = provider.decide(action, slug)
+    except decisions_provider.PolicyError as exc:
+        raise SystemExit(str(exc))
+    if args.json:
+        print(json.dumps({"schema_version": 1, "action": action.as_dict(), "counterparty": slug,
+                          "decision": answer.as_dict()}, indent=2))
+        return 0
+    say(f"{args.action} on {slug}: {answer.outcome} "
+        f"(level {answer.autonomy_level}, provider {answer.provider})")
+    say(answer.reason)
+    for match in answer.injected_cognition["rule_matches"]:
+        say("  rule: " + match)
+    if answer.injected_cognition["agent_message"]:
+        say("  agent: " + answer.injected_cognition["agent_message"])
+    say("No hook consults this yet; command grading still answers the permission question.")
+    return 0
+
+
 def cmd_workspace(args: argparse.Namespace) -> int:
     if args.action != "create":
         raise SystemExit("workspace: only `create` is supported")
@@ -3733,6 +3764,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = sub.add_parser("stances", help="show resolved personal stance switches and their behavior")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_stances)
+
+    p = sub.add_parser("decide", help="ask the selected decision provider about one action class")
+    p.add_argument("--action", required=True, choices=list(decisions_provider.ACTION_CLASSES),
+                   help="the action class to ask about")
+    p.add_argument("--grade", type=int, choices=[0, 1, 2, 3],
+                   help="the command grade when it is known; unknown is judged as 1")
+    p.add_argument("--counterparty", help="slug to decide for (default: this repo and branch)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_decide)
 
     p = sub.add_parser("diff", help="report drift between checkout, last sync and live files")
     p.add_argument("--quiet", action="store_true")
