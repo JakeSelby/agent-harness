@@ -5,9 +5,9 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 11,
-    "story": 170,
+    "story": 171,
     "task": 1,
-    "bug": 50,
+    "bug": 52,
     "chore": 34,
     "spike": 7,
     "decision": 7
@@ -3277,6 +3277,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B051",
+      "github_number": 436,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/436",
+      "title": "A plan file reaches no native plan view, so the reviewer is asked to approve a document they cannot open",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B051.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-E008",
       "github_number": 442,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/442",
@@ -3317,12 +3330,25 @@
     },
     {
       "bmad_id": "AH-S151",
+      "github_number": 445,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/445",
+      "title": "Make the repository findable: widen About topics, reword the description, add a plugin manifest and the mark",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S151.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S170",
       "github_number": 446,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/446",
       "title": "Ship a Claude Code plugin marketplace manifest",
       "type": "story",
       "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S151.md",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S170.md",
       "parent_bmad_id": "AH-E008",
       "parent_github_number": 442,
       "lifecycle": "active",

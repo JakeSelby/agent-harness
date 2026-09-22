@@ -18,9 +18,11 @@ What to plan: $ARGUMENTS
    explicit session model, brief file and `--artifact <new-plan.md>` when delegation is useful;
    otherwise write it yourself; you post the message and end at the
    build gate either way.
-4. **Post the chat message in the skill's shape** — the verdict, the at-a-glance bullets, the
-   numbered decisions verbatim, a workspace-relative link to the plan file, and nothing else.
-   The diagram and the numbered steps stay in the file.
+4. **Open the plan where the reviewer reads, then post the chat message in the skill's shape** —
+   the verdict, the at-a-glance bullets, the numbered decisions verbatim, a workspace-relative
+   link to the plan file, and nothing else. The diagram and the numbered steps stay in the file.
+   Opening it is not optional: a link is a path, not a rendering, and a file written straight to
+   disk appears in no native plan view. Use an absolute path when you open it.
 5. **End the turn at the build gate.** Close with the skill's build line and stop.
 
 This command needs no repository and no code; a plan for anything at all lands the same way.
