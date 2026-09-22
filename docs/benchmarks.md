@@ -52,10 +52,12 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
   admits each arm's own config directory and `/tmp` for reading and writing, because the
   repository's suite writes to both and a fence that admitted only the CLI's default would fail
   the gate for whichever arm was moved to a bench profile.
-- **Each arm's gate runs under its own fence before anything is scored.** One capped `-p` run per
-  arm reports the gate's last line; an arm that does not answer `OK` refuses the whole replay with
-  exit 2, before any scored run launches, and its cost counts against `--spend-cap`. Every scored
-  row records `preflight`. `--skip-preflight` bypasses the check and stamps the rows `skipped`.
+- **Each arm's fence is proved before anything is scored.** One capped `-p` run per arm runs
+  `bin/harness lint` under that arm's own fence and profile; an arm whose lint is not clean, or
+  whose run has a read refused, refuses the whole replay with exit 2 before any scored run
+  launches, and its cost counts against `--spend-cap`. The bar is lint rather than the full suite
+  because the suite is profile-dependent at older snapshot commits. Every scored row records
+  `preflight`. `--skip-preflight` bypasses the check and stamps the rows `skipped`.
 - **Every run starts in a throwaway snapshot outside the home directory**, launched with a scrubbed
   environment. A folder under the home directory inherits the user's instruction files through the
   parent-folder walk, which would put the harness into the bare arm. The snapshot holds one commit,
@@ -73,6 +75,12 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
   85% of bare per passed task while passing no fewer than bare minus one, mean of reps.
 - **What is faked:** single-shot prompts stand in for interactive sessions, two of the four tasks
   are synthetic, and only the installed harness can be run; older tags are refused.
+
+**Status.** The live tier has produced one uncontaminated result: 1.052 on a four-task set, above
+the 0.85 threshold, so no cost claim is published. Two earlier figures in either direction were
+artifacts of the runner's sandbox and of a test-suite defect, both since fixed. Treat this tier as
+an instrument whose methodology is under review, not as a result; the static tier above is the
+figure to rely on today.
 
 ## Limits
 
