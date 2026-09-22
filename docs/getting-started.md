@@ -14,14 +14,25 @@ unsupported; WSL2 is unqualified. The harness does not sell or supply model acce
 
 ## Install
 
-Clone the repository, run `bin/harness init`, and select which runtimes to manage:
+One command clones the `stable` branch to `~/repos/agent-harness`, writes a default configuration
+and previews the install without performing it:
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+```
+
+Read the preview it prints, then select which runtimes to manage and install:
+
+```sh
+cd ~/repos/agent-harness
 bin/harness config set claude.manage true
 bin/harness config set codex.manage true
 bin/harness install --dry-run
 bin/harness install
 ```
+
+To clone by hand instead, or to see what each step of the script does, read
+[installation ownership](runtime-installation.md#the-one-line-installer).
 
 You can set either runtime to false; a Codex-only setup needs no Claude configuration. Install
 adds the selected missing runtime tools and synchronizes their configuration. On macOS it can

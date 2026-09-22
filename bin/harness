@@ -7,7 +7,7 @@ A user-aligned, model-provider-agnostic harness built on shared custom primitive
 Projects shared primitives into selected runtimes, merges owned settings, renders personal
 guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML parser.
 
-    harness init    [--force]
+    harness init    [--force] [--yes]
     harness install [--dry-run] [--no-brew] [--no-apps] [--no-vscode] [--no-codex] [--with-optional]
     harness sync    [--dry-run] [--adopt] [--adopt-codex]
     harness diff    [--quiet]
@@ -2633,6 +2633,45 @@ def _detect_github() -> str:
     return out.stdout.strip() if out.returncode == 0 else ""
 
 
+def _detect_git_name() -> str:
+    if _tool("git") is None:
+        return ""
+    out = subprocess.run(["git", "config", "--get", "user.name"], capture_output=True, text=True)
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def init_defaults(args: argparse.Namespace, path: Path) -> int:
+    """Write the config with no questions, for a scripted first run.
+
+    Every field the machine can answer for itself is answered; anything it cannot is left at the
+    example value and named on the way out, because a wrong invented identity is worse than a
+    placeholder the next line tells you to replace.
+    """
+    example = example_config()
+    cfg = deepcopy(example)
+    identity = cfg.setdefault("identity", {})
+    name = getattr(args, "name", None) or _detect_git_name()
+    if name:
+        identity["name"] = name
+    role = getattr(args, "role", None)
+    if role:
+        identity["role"] = role
+    github = getattr(args, "github", None) or _detect_github()
+    if github:
+        identity["github"] = github
+    identity["timezone"] = getattr(args, "timezone", None) or _detect_timezone()
+    preset = getattr(args, "preset", None) or "software"
+    cfg["stances"] = dict(example.get("stances", {}), **STANCE_PRESETS[preset])
+    write_json_atomic(path, cfg)
+    say(f"wrote {path} ({preset} defaults)")
+    left = placeholder_identity(cfg)
+    if left:
+        say("  still at the example value: " + ", ".join(left))
+        for field in left:
+            say(f"    harness config set identity.{field} \"…\"")
+    return 0
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     """Write the config file by asking, so a first run needs no hand-edited JSON."""
     path = config_path()
@@ -2641,9 +2680,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         say("  one value:  harness config set identity.name \"…\"")
         say("  start over: harness init --force")
         return 1
+    if getattr(args, "yes", False):
+        return init_defaults(args, path)
     if not sys.stdin.isatty():
         say("harness init asks questions and needs a terminal.")
-        say("Without one, write the same values with `harness config set KEY VALUE`.")
+        say("Without one, run `harness init --yes` for defaults, or write the same values")
+        say("with `harness config set KEY VALUE`.")
         return 1
     example = example_config()
     cfg = deepcopy(example)
@@ -3645,6 +3687,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p = sub.add_parser("init", help="write the config file by answering questions")
     p.add_argument("--force", action="store_true", help="replace an existing config file")
+    p.add_argument("--yes", action="store_true",
+                   help="ask nothing: take the defaults, for a scripted first run")
+    p.add_argument("--preset", choices=sorted(STANCE_PRESETS), help="stance preset for --yes")
+    p.add_argument("--name", help="identity.name for --yes (default: git config user.name)")
+    p.add_argument("--role", help="identity.role for --yes")
+    p.add_argument("--github", help="identity.github for --yes (default: the gh login)")
+    p.add_argument("--timezone", help="identity.timezone for --yes (default: detected)")
     p.set_defaults(func=cmd_init)
 
     p = sub.add_parser("config", help="read or write one config value, e.g. `config get identity.name`")
