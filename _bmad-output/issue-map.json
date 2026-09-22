@@ -7,7 +7,7 @@
     "epic": 11,
     "story": 190,
     "task": 7,
-    "bug": 58,
+    "bug": 59,
     "chore": 43,
     "spike": 7,
     "decision": 7
@@ -4105,6 +4105,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C042.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B058",
+      "github_number": 531,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/531",
+      "title": "grade-bash timing test fails on wall clock under Python 3.9 on a loaded machine",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B058.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     }
