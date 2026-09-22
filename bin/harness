@@ -15,6 +15,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness uninstall
     harness lint    [PATH]
     harness usage   [--days N] [--by day|repo|model|role|stance|decision] [--stance NAME] [--rescan]
+    harness usage   --rules [--by rule|repo|stance] [--days N] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
     harness worktree remove NAME [REPO] [--merged] [--also-clear NAME]
