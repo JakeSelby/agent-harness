@@ -138,6 +138,10 @@ workflow's `GITHUB_TOKEN` ([workflow syntax](https://docs.github.com/en/actions/
 The `--check` side of it runs inside `scripts/release_preflight.py`, which warns rather than fails
 when `gh` is unauthenticated.
 
+`scripts/sync_about.py --apply` writes whatever `product.json` the *current checkout* holds. Run it
+only from a worktree fast-forwarded to `origin/main` (`bin/harness worktree create main-sync <repo>`,
+then `git merge --ff-only origin/main`); a stale checkout once reverted the About panel.
+
 ## Rollback
 
 Keep the previous harness tag, both site commits, reference gitlink and deployed artifact identity
