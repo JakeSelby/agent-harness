@@ -440,16 +440,74 @@ def _is_harness_entry(entry: Dict[str, Any]) -> bool:
     return False
 
 
+def harness_output_styles() -> Dict[str, str]:
+    """The output styles this checkout ships, as voice variant -> the style's own name.
+
+    `claude/output-styles/<variant>.md` is the whole registry: a `voice` variant gets an output
+    style when a file is named after it. A variant with no file imposes its shape through its
+    stance text alone; `scannable` is the only variant with presentation material on either
+    runtime today, and the Codex projection names it explicitly in `render_codex_agents`.
+    """
+    styles: Dict[str, str] = {}
+    for path in sorted((REPO / "claude" / "output-styles").glob("*.md")):
+        name, fence = path.stem, 0
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip() == "---":
+                fence += 1
+                if fence == 2:
+                    break
+            elif fence == 1 and line.startswith("name:"):
+                name = line.split(":", 1)[1].strip().strip("\"'") or path.stem
+        styles[path.stem] = name
+    return styles
+
+
+def voice_output_style(cfg: Dict[str, Any]) -> Optional[str]:
+    """The output style the configured `voice` selects, or `None` when it selects none."""
+    variant = (cfg.get("stances") or {}).get("voice")
+    return harness_output_styles().get(variant) if variant else None
+
+
+OUTPUT_STYLE_PATH = json.dumps(["outputStyle"])
+UNRECORDED = object()  # "nobody read the journal", distinct from "the journal records nothing"
+
+
+def installed_output_style(held: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """The style `harness sync` recorded writing, or `None` if it never wrote one.
+
+    Ownership of `outputStyle` is what the reconciliation journal says the harness installed,
+    never what the value is called: a user who chose `Scannable` themselves before ever
+    installing the harness owns that value, and no sync or uninstall may take it away.
+    `held` is the journal's key record for the settings file; read from the store when omitted.
+    """
+    if held is None:
+        settings_file = claude_dir() / "settings.json"
+        record = reconcile.Store(state_dir(), dry=True).data["files"].get(str(settings_file), {})
+        held = record.get("keys", {})
+    applied = (held.get(OUTPUT_STYLE_PATH) or {}).get("applied") or {}
+    return applied.get("value") if applied.get("present") else None
+
+
 def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: Dict[str, Any],
-                          retired: Iterable[str] = ()) -> Dict[str, Any]:
+                          retired: Iterable[str] = (), installed: Optional[str] = None) -> Dict[str, Any]:
     """`retired` names allow rules an earlier template added that this one no longer carries;
-    they are removed so a rule withdrawn upstream does not outlive it in a user's settings."""
+    they are removed so a rule withdrawn upstream does not outlive it in a user's settings.
+    `installed` is the output style the journal says a previous sync wrote, the only value a
+    variant that installs none is allowed to remove."""
     out = deepcopy(live) if live else {}
     ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
     owned = ownership.get("claude", {}).get("owned_keys", [])
     for key in owned:
         if key in template:
             out[key] = template[key]
+    # `outputStyle` comes from the `voice` stance, not from the template: selecting a variant
+    # with no style of its own removes the one an earlier selection installed, and a value the
+    # harness is not recorded as having written is left exactly as it is.
+    style = voice_output_style(cfg)
+    if style:
+        out["outputStyle"] = style
+    elif installed is not None and out.get("outputStyle") == installed:
+        out.pop("outputStyle", None)
     perms = out.setdefault("permissions", {})
     p = posture(cfg)
     if p != "inherit":
@@ -485,10 +543,22 @@ def merge_claude_settings(live: Dict[str, Any], template: Dict[str, Any], cfg: D
     return out
 
 
-def strip_claude_settings(live: Dict[str, Any], template: Dict[str, Any]) -> Dict[str, Any]:
+def strip_claude_settings(live: Dict[str, Any], template: Dict[str, Any],
+                          installed: Any = UNRECORDED) -> Dict[str, Any]:
+    """Undo the harness's settings material. Only reached for a file the reconciliation journal
+    does not hold — anything it holds is undone by the store, which restores the prior value.
+
+    `installed` is the output style the journal says was written; `None` means the harness wrote
+    none, so whatever style is there is the user's and stays. Left at `UNRECORDED` — no caller
+    consulted the journal — the styles this checkout ships are removed, which is what an install
+    older than the journal leaves behind.
+    """
     out = deepcopy(live) if live else {}
+    shipped = set(harness_output_styles().values()) if installed is UNRECORDED else {installed}
     ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
     for key in ownership.get("claude", {}).get("owned_keys", []):
+        if key == "outputStyle" and out.get(key) not in shipped:
+            continue
         out.pop(key, None)
     perms = out.get("permissions", {})
     if "allow" in perms:
@@ -511,11 +581,18 @@ def retired_allow_rules(applied: Dict[str, Any], template: Dict[str, Any]) -> Li
     return [r for r in previous if r not in current]
 
 
-def claude_projection(settings: Dict[str, Any], template: Dict[str, Any]) -> Dict[str, Any]:
-    """The slice of a settings file the harness cares about, for diffing."""
+def claude_projection(settings: Dict[str, Any], template: Dict[str, Any],
+                      installed: Optional[str] = None) -> Dict[str, Any]:
+    """The slice of a settings file the harness cares about, for diffing.
+
+    `installed` is the output style the harness wrote, so a style it did not write is left out
+    of both the applied record and the drift report rather than counted as harness material.
+    """
     ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
     owned = ownership.get("claude", {}).get("owned_keys", [])
     proj: Dict[str, Any] = {"keys": {k: settings.get(k) for k in owned}}
+    if installed is None:
+        proj["keys"]["outputStyle"] = None
     proj["defaultMode"] = settings.get("permissions", {}).get("defaultMode")
     proj["allow"] = sorted(settings.get("permissions", {}).get("allow", []))
     proj["hooks"] = sorted(
@@ -1307,12 +1384,19 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         live = read_json(settings_file) or {}
         mtime = settings_file.stat().st_mtime if settings_file.exists() else None
         applied = read_json(applied_path()) or {}
-        merged = merge_claude_settings(live, template, cfg, retired=retired_allow_rules(applied, template))
+        held = store.data["files"].get(str(settings_file), {}).get("keys", {})
+        was_installed = installed_output_style(held)
+        style = voice_output_style(cfg)
+        merged = merge_claude_settings(live, template, cfg, retired=retired_allow_rules(applied, template),
+                                       installed=was_installed)
         ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
-        owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])]
+        # `outputStyle` is listed only while the harness has something to say about it: the
+        # style the voice stance selects, or one it installed for an earlier selection and is
+        # now taking back out. A style the user chose is neither written nor recorded as owned.
+        owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])
+                       if k != "outputStyle" or style is not None or was_installed is not None]
         owned_paths += [["permissions", "allow"], ["permissions", "defaultMode"]]
         owned_paths += [["hooks", event] for event in template.get("hooks", {})]
-        held = store.data["files"].get(str(settings_file), {}).get("keys", {})
         native_paths, native_notices = apply_native_claude(merged, live, held, telemetry, cfg, ownership)
         owned_paths += native_paths
         report.extend(native_notices)
@@ -1326,8 +1410,9 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
             say("  native  telemetry.native no longer names claude-code; removing the Claude "
                 "telemetry settings sync added")
         store.json(settings_file, merged, owned_paths)
-        applied["claude"] = claude_projection(merged, template)
-        applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template)
+        applied["claude"] = claude_projection(merged, template, installed=style)
+        applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template,
+                                                installed=style)
 
         # VS Code.
         if cfg.get("vscode", {}).get("manage", True):
@@ -1457,9 +1542,10 @@ def _diff_lines() -> List[str]:
     template = runtime_template()
     applied = read_json(applied_path()) or {}
     live = read_json(claude_dir() / "settings.json") or {}
-    live_p = claude_projection(live, template)
+    live_p = claude_projection(live, template, installed=installed_output_style())
     applied_p = applied.get("claude", {})
-    template_p = claude_projection(merge_claude_settings({}, template, cfg), template)
+    template_p = claude_projection(merge_claude_settings({}, template, cfg), template,
+                                   installed=voice_output_style(cfg))
     if applied_p:
         for k, v in live_p["keys"].items():
             if applied_p.get("keys", {}).get(k) != v:
@@ -1808,7 +1894,7 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
     sf = claude_dir() / "settings.json"
     live = read_json(sf)
     if live is not None and str(sf) not in reconcile.Store(state_dir()).data["files"]:
-        write_json_atomic(sf, strip_claude_settings(live, template), backup=True)
+        write_json_atomic(sf, strip_claude_settings(live, template, installed_output_style()), backup=True)
         say(f"  strip   {sf}")
     store = reconcile.Store(state_dir())
     store.uninstall()

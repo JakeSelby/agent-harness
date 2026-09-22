@@ -267,6 +267,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness sync` installs the Claude Code output style from the `voice` stance instead of
+  unconditionally: `scannable` installs `Scannable`, `answer-card` and `off` install none, a style
+  you chose yourself survives, and a harness-installed style is removed when the variant changes.
+  Ownership comes from the reconciliation journal rather than the style's name, so a style you
+  picked before installing is left alone even when the harness ships one by that name. The Codex
+  projection is unchanged; `scannable` was already the only variant it gave presentation material
+  to, so the two runtimes now mean the same thing by each variant (#394).
 - `harness usage` no longer prints the partial-totals warning above a USD report whose own
   footer already counts those runs as unpriced; a report with no unpriced run still warns that
   a column is short (#407).
