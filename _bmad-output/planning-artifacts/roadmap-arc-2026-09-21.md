@@ -25,6 +25,14 @@ are for.
 Two receipts that the sensor already works, both in this repository's own backlog: #429 (a shipped
 stance measured as never firing) and #324 (a shipped hook measured as not moving its own metric).
 
+*Added 2026-09-22 from the enterprise-review intake, all v0.13.0:* the price table stops inheriting a
+family rate for an unlisted variant (#517), the usage ledger reports its own deduplication ratio
+(#518) and deduplicates id-less records (#519), the compatibility matrix says per runtime whether
+the tier restriction is enforced (#520), the single-coordinator dispatch is documented (#521), the
+detector corpus runs in CI with the repository-specific detectors labelled (#522), capped reads
+assert newest-first (#526), and the stale claims the intake found in our own copy are fixed (#516).
+The assessment: `roadmap-intake-enterprise-review-2026-09-22.md`.
+
 ## 0.14 — close the loop
 
 Where the sentence becomes true. Epic #135 is retitled to say what it is for.
@@ -41,6 +49,13 @@ Where the sentence becomes true. Epic #135 is retitled to say what it is for.
   `local` variant resolves autonomy per action class and repository from a file; an external
   variant resolves it from a control plane. The public repository stays independent of any one.
 
+- **A rung below `light`.** `class: none` in the cost sidecar: no spawn, a deterministic resolver,
+  the model as fallback. The command grader already works this way; 0.14 names it so the adaptive
+  posture has somewhere to tighten into (#523).
+- **The cache claim measured.** "Prompt caching beats both" tier and effort is argued from list
+  prices today; a cache axis in the live replay, the dispatch overhead measured once, and the
+  prompt-cache TTL position recorded as disputed at its source (#524).
+
 *Exit for the milestone:* a stance switch is checked, not assumed — `harness usage --rules` groups
 hits by the variant that was selected, and at least one variant is demoted or promoted from that
 evidence rather than by hand.
@@ -56,6 +71,8 @@ for its long tail, and every one added shallow costs the depth claim.
   a floor a project or session can only tighten. The current precedence is override.
 - **Real `constraints.json` content.** The conflict engine ships empty today; the first constraints
   are the ones the repository already violates.
+- **Record and replay beneath the live benchmark**, only after #369 has one published row: real
+  responses keyed by request hash, replayed in CI, failing loud on a miss (#525).
 - **"Across AI agents"** returns to the headline here, and not before.
 
 ## 1.0 — the empty slot
