@@ -137,7 +137,7 @@
         "",
         "- A price file in the repo lists, per model id, USD per million tokens for input, output, cache read and cache write, each entry with an `as_of` date and the primary-source URL it was read from. No entry is written from memory; a model whose price cannot be confirmed is left out.",
         "- A user can override or add prices in `config.json`.",
-        "- Model ids resolve by longest prefix, so a dated id finds its family.",
+        "- Model ids resolve by exact match after normalisation, so a dated or reseller-prefixed id finds its family and a variant the table does not list is unpriced.",
         "- `usage` reports a USD column and a count of unpriced runs. An unknown model or a partial row is unpriced, never $0.",
         "- Where a runtime distinguishes cache-write tiers or reasoning tokens, the mapping onto the four columns is stated in one place.",
         "- `doctor` warns when the newest `as_of` is older than 90 days.",

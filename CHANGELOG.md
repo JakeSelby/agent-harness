@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A model id the price table does not list is unpriced, where an unlisted variant of a listed
+  family used to inherit that family's rate. Inheritance under-bills a premium variant by a
+  multiple and prints a known-low figure as a known one — `gpt-5.5-pro` is $30/$180 where
+  `gpt-5.5` is $5/$30 — which was the one place the ledger broke its own rule that an unknown is
+  never zero. Ids now resolve by exact match after normalisation, which additionally drops a
+  release suffix (a date stamp, a reseller's `-v1:0`, an `@date`), so every dated and cloud
+  reseller spelling still reaches its family entry and no recorded row changes price. To price a
+  variant, add it to `policy/prices.json` or override it under `prices` in `config.json`; until
+  then it is counted in the `unpriced` footer and carries no `harness.usd` attribute (#517).
+
 ## [0.12.0] — 2026-09-22
 
 ### Added

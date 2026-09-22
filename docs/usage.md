@@ -410,13 +410,14 @@ and a model whose price could not be confirmed from a primary source is absent r
 guessed. Override or extend it under `prices` in `config.json` — see
 [preferences.md](preferences.md).
 
-- **Ids resolve by longest prefix** after normalisation, which lower-cases, drops a cloud vendor
-  prefix and drops a context-window suffix. So `claude-haiku-4-5`,
-  `anthropic.claude-haiku-4-5-20251001-v1:0` and `claude-opus-5[1m]` all reach a family entry.
-  Long context is not a separate rate: Anthropic prices the full 1M-token window at the standard
-  rate for Claude 4.6 and later. The cost of prefix matching is that an unlisted variant of a
-  listed family inherits the family's rate even when it is priced differently; list it or
-  override it.
+- **Ids resolve by exact match** after normalisation, which lower-cases, drops a cloud vendor
+  prefix, drops a context-window suffix and drops a release suffix — a date stamp, a reseller's
+  `-v1:0`, an `@date`. So `claude-haiku-4-5`, `anthropic.claude-haiku-4-5-20251001-v1:0` and
+  `claude-opus-5[1m]` all reach one family entry. Long context is not a separate rate: Anthropic
+  prices the full 1M-token window at the standard rate for Claude 4.6 and later. Nothing
+  resolves by prefix: a variant the table does not name is unpriced, not billed at its family's
+  rate — `gpt-5.5-pro` is $30/$180 where `gpt-5.5` is $5/$30. To price one, add it to
+  [`policy/prices.json`](../policy/prices.json) or override it under `prices` in `config.json`.
 - **Cache writes are priced by TTL.** Anthropic charges 1.25x base input for a 5-minute write
   and 2x for a 1-hour one, and Claude Code reports the split under `cache_creation`, so a row
   records `cache_write_5m` and `cache_write_1h` beside its `cache_write` total and each tier is
@@ -445,7 +446,8 @@ guessed. Override or extend it under `prices` in `config.json` — see
   and a row marked `partial` are all counted in the `unpriced` footer and contribute nothing to
   the column. An understated dollar figure is worse than an absent one, because nothing on the
   line says it is short. A role-run worker whose row names a model alias rather than an id —
-  `opus`, `fable` — is unpriced for the same reason.
+  `opus`, `fable` — is unpriced for the same reason, and so is a variant of a listed family
+  that the price table does not name.
 - **A day slice holds tokens and no model**, so a multi-day session's cost is allocated across
   its days by each day's share of its tokens. For a single-day session, which is nearly all of
   them, the share is one and the allocation is exact; for a long one it is an allocation and not
