@@ -136,8 +136,12 @@ def resolve_stances(root, config, strict=True):
     """Resolve built-in and user-authored choices without accepting path traversal."""
     roots = stance_roots(root, config)
     available = {}
-    for source in roots:
+    for index, source in enumerate(roots):
         if not source.is_dir():
+            # A custom root may carry rules and skills only — `harness import` writes one — so a
+            # root with no `stances/` contributes nothing rather than breaking every sync.
+            if index:
+                continue
             raise ValueError("missing stance source: " + str(source))
         for dimension in sorted(source.iterdir()):
             if dimension.is_dir():
