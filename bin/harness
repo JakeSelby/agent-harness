@@ -337,11 +337,19 @@ def placeholder_identity(cfg: Dict[str, Any]) -> List[str]:
             if k in example and str(resolved.get(k, example[k])).strip() == str(example[k]).strip()]
 
 
-def resolve_stances(cfg: Dict[str, Any]) -> Dict[str, Path]:
+def resolve_stances(cfg: Dict[str, Any], strict: bool = True) -> Dict[str, Path]:
     try:
-        return primitive_catalog.resolve_stances(REPO, cfg)
+        return primitive_catalog.resolve_stances(REPO, cfg, strict=strict)
     except ValueError as exc:
         raise SystemExit(str(exc))
+
+
+def stance_conflicts(cfg: Dict[str, Any]) -> List[str]:
+    """Which shipped constraints this selection violates; a sync still refuses to run on one."""
+    try:
+        return primitive_catalog.stance_conflicts(REPO, cfg)
+    except ValueError as exc:
+        return ["stance constraints unreadable: " + str(exc)]
 
 
 def cost_table(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -1694,6 +1702,33 @@ def check_cost_sidecars(root: Path) -> List[str]:
     return hits
 
 
+def check_stance_constraints(root: Path) -> List[str]:
+    """Fail when the shipped constraints do not load, or the shipped defaults violate one.
+
+    The constraints are the machine-readable half of a claim two variants, or a variant and a
+    role contract, otherwise make only in prose. Evaluating them against `config.example.json`
+    is what catches a new variant, a new role or a reworded default landing in a contradiction.
+    """
+    path = root / "primitives" / "constraints.json"
+    if not path.is_file():
+        return []
+    rel = path.relative_to(root)
+    cfg = {"stances": (read_json(root / "config.example.json") or {}).get("stances", {}),
+           "primitive_roots": []}
+    try:
+        rules = primitive_catalog.stance_constraints(root, cfg)
+        hits = [f"stance-constraints: the default selection violates a constraint: {c}"
+                for c in primitive_catalog.stance_conflicts(root, cfg)]
+    except ValueError as exc:
+        return [f"stance-constraints: {rel}: {exc}"]
+    if not rules:
+        return [f"stance-constraints: {rel} ships no constraint; delete the file or state one"]
+    if hits:
+        hits.append("stance-constraints: change the default selection, the variant prose, or the "
+                    "constraint that no longer holds; a role a constraint exempts goes in its `allow`")
+    return hits
+
+
 def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -> List[str]:
     """Lint everything git would commit: tracked files plus untracked files that are not ignored.
     Outside a git repository, every file."""
@@ -1765,7 +1800,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     else:
         hits = lint_tree(root)
         scope = str(root)
-    hits = hits + check_context_cap(root) + check_cost_sidecars(root)
+    hits = hits + check_context_cap(root) + check_cost_sidecars(root) + check_stance_constraints(root)
     if (root / "primitives" / "roles").is_dir():
         hits += ["projection drift: " + name + "; run `harness generate`"
                  for name in primitive_catalog.projection_drift(root)]
@@ -1797,12 +1832,15 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 def cmd_stances(args: argparse.Namespace) -> int:
     cfg = load_config()
-    choices = resolve_stances(cfg)
+    # Non-strict for the same reason the cost table is: a command whose job is to say what is in
+    # force must name the conflict, not die of it. `harness sync` still refuses the selection.
+    choices = resolve_stances(cfg, strict=False)
     data = {"schema_version": 1, "precedence": ["defaults", "user", "project", "session"],
             "stances": {name: {"variant": path.stem, "source": str(path),
                                 "behavior": path.read_text(encoding="utf-8").strip()}
                         for name, path in choices.items()}}
     data["adapter_coverage"] = compatibility.coverage(REPO, choices)
+    data["conflicts"] = stance_conflicts(cfg)
     posture = load_posture()
     # Non-strict: a cost sidecar nobody can read is reported here, not raised as a traceback
     # over a command whose job is to tell you what is in force.
@@ -1823,6 +1861,10 @@ def cmd_stances(args: argparse.Namespace) -> int:
                 " (full table: `harness stances --json`)")
             if cost["warnings"]:
                 say(f"cost warnings: {len(cost['warnings'])}; `harness stances --json` names them")
+        for conflict in data["conflicts"]:
+            say("stance conflict: " + conflict)
+        if data["conflicts"]:
+            say("stance conflict: `harness sync` refuses this selection; change one of the two.")
         say("Native runtime restrictions still apply; stance guidance is not proof of enforcement.")
     return 0
 

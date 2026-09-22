@@ -46,9 +46,26 @@ Optional `constraints.json` alongside `stances/` can reject incompatible choices
   "reason": "Direct feedback requires an active voice policy"}]}
 ```
 
-Each rule has a nonempty `when` selection and optional `requires` and `excludes` selections.
-All `when` entries must match to activate the rule; every requirement must match and no
-excluded choice may be selected. Validation runs before sync changes files.
+Each rule has a nonempty `when` selection, a one-sentence `reason`, and at least one of
+`requires`, `excludes` and `excludes_roles`. All `when` entries must match to activate the rule;
+every requirement must match and no excluded choice may be selected. Any other field is an
+authoring error rather than a key a later version might read.
+
+`excludes_roles` is the one condition that reads something other than the selection: the
+frontmatter of the shipped role contracts, with `allow` naming the roles a skill exempts by
+name. It is how the harness states in data that `delegation: tiered` refuses the frontier class
+while `designer` and `design-judge` are allowed to declare it:
+
+```json
+{"stances": [{"when": {"delegation": "tiered"},
+  "excludes_roles": {"tier": "frontier", "allow": ["designer", "design-judge"]},
+  "reason": "Only the design roles the delegation-tiering skill exempts may declare frontier"}]}
+```
+
+A violated constraint is a finding in `harness stances --json` (a `conflicts` array) and in
+`harness lint`, which evaluates the shipped constraints against `config.example.json`. It stays
+a hard error in the resolver, so `harness sync` refuses the selection rather than projecting a
+contradiction; validation runs before sync changes files.
 
 ## A cost variant with numbers in it
 
