@@ -1,5 +1,5 @@
 {
-    "description": "Find out which of your agent rules actually fire. A user-owned agent harness for Claude Code and Codex: every rule carries a transcript detector, and usage reports hit rate per rule.",
+    "description": "Find out which of your agent rules actually fire. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
     "homepageUrl": "https://agent-harness.jakeselby.com",
     "repositoryTopics": [
         {

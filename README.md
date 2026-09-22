@@ -1,3 +1,5 @@
+<img src="docs/assets/brand/mark.svg" width="48" height="48" alt="The Agent Harness mark: an amber pointer on a dark dial, turned to one position on a warm background.">
+
 # Agent Harness
 
 [![CI](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml)
