@@ -137,6 +137,29 @@ def turn(thread, read, model="claude-test-20260101"):
             "message": {"model": model, "usage": {"cache_read_input_tokens": read}}}
 
 
+def call(thread, tools=(), write=0, read=0, model="claude-test-20260101"):
+    """An assistant message that both spends cache and calls tools, as a real turn does."""
+    return {"type": "assistant", "parent_tool_use_id": thread,
+            "message": {"model": model,
+                        "usage": {"cache_read_input_tokens": read, "cache_creation_input_tokens": write},
+                        "content": [{"type": "tool_use", "name": name, "input": {}} for name in tools]}}
+
+
+def config_tree(root, personal="p" * 64, rules=2):
+    """A profile directory shaped like an installed one: the layers a fingerprint counts."""
+    root = Path(root)
+    files = {"CLAUDE.md": "c" * 100, "CLAUDE.personal.md": personal,
+             "skills/one/SKILL.md": "s" * 10, "agents/worker.md": "a" * 10,
+             "output-styles/style.md": "o" * 10, "notes.md": "ignored"}
+    for index in range(rules):
+        files["rules/rule-%d.md" % index] = "r" * 20
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return root
+
+
 class Launch:
     """Stands in for the CLI: replays recorded output and records how it was called."""
     def __init__(self, outputs):
@@ -278,6 +301,32 @@ class ReplayCaptureTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 BENCH.parse_result(bad)
 
+    def test_the_first_call_cache_write_is_the_standing_prefix_not_the_run_total(self):
+        """The first usage block pays for the instruction layer; the run's total also pays for
+        everything the agent read afterwards, so the two answer different questions."""
+        stream = [call(None, ["Read"], write=9000), call(None, ["Bash"], write=400), result()]
+        parsed = BENCH.parse_result(json.dumps(stream))
+        self.assertEqual(parsed["first_call_cache_write"], 9000)
+        self.assertEqual(parsed["tokens"]["cache_creation_input_tokens"], 30)  # the result's total
+        self.assertIsNone(BENCH.parse_result(json.dumps(result()))["first_call_cache_write"])
+
+    def test_every_tool_use_block_is_counted_and_spawns_are_the_subagent_share(self):
+        stream = [call(None, ["Bash", "Read", "Task"]), call(None, ["Task", "Agent", "Bash"]),
+                  call("toolu_1", ["Bash"]), result()]
+        parsed = BENCH.parse_result(json.dumps(stream))
+        self.assertEqual(parsed["tool_counts"], {"Bash": 3, "Read": 1, "Task": 2, "Agent": 1})
+        self.assertEqual(parsed["spawns"], 3)
+        self.assertEqual(BENCH.parse_result(json.dumps(result()))["tool_counts"], {})
+
+    def test_hook_blocks_is_none_because_this_output_format_carries_no_hook_decision(self):
+        """Hook lifecycle events are the only structured place a Stop hook's `block` appears, and
+        the CLI emits them only under `--include-hook-events`, which its help limits to
+        `--output-format=stream-json`. The runner reads `--output-format json`, so the field is
+        unknown rather than zero, and no text pattern is allowed to stand in for it."""
+        stream = [call(None, ["Bash"]), result()]
+        self.assertIsNone(BENCH.parse_result(json.dumps(stream))["hook_blocks"])
+        self.assertIn("--include-hook-events", BENCH.parse_result.__doc__)
+
     def test_normalised_cost_reprices_first_turn_reads_as_writes_or_declines(self):
         turns = [{"model": "claude-test-20260101", "cache_read": 1000000}]
         self.assertEqual(BENCH.normalised_cost(1.0, turns, PRICES), 3.3)  # + 1M x (2.5 - 0.2)
@@ -337,6 +386,36 @@ class ReplayRunTests(unittest.TestCase):
             self.assertFalse(Path(kwargs["cwd"]).exists())
             self.assertEqual(list(Path(opts["tmp"]).iterdir()), [])
 
+    def test_a_row_records_which_instruction_layer_its_arm_launched_with(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = options(tmp, reps=1, change_note="raised the effort dial")
+            config_tree(opts["bare_config"])
+            config_tree(Path(opts["home"]) / ".claude", personal="p" * 8, rules=1)
+            stream = json.dumps([call(None, ["Bash", "Task"], write=1234), result()])
+            rows, _ = BENCH.replay([TASK], opts, Launch([stream] * 2))
+            bare = [r for r in rows if r["arm"] == "bare"][0]
+            harness = [r for r in rows if r["arm"] == "harness"][0]
+            self.assertEqual(bare["arm_config_dir"], str(opts["bare_config"]))
+            self.assertEqual(harness["arm_config_dir"], "inherited")  # no CLAUDE_CONFIG_DIR: ~/.claude
+            self.assertEqual(bare["arm_fingerprint"]["rules"], 2)
+            self.assertEqual(bare["arm_fingerprint"]["personal_bytes"], 64)
+            self.assertEqual(harness["arm_fingerprint"]["rules"], 1)
+            self.assertNotEqual(bare["arm_fingerprint"]["sha"], harness["arm_fingerprint"]["sha"])
+            self.assertEqual(bare["fingerprint_source"], "launch")
+            for row in rows:
+                self.assertEqual(row["change_note"], "raised the effort dial")
+                self.assertEqual((row["first_call_cache_write"], row["spawns"]), (1234, 1))
+                self.assertEqual(row["tool_counts"], {"Bash": 1, "Task": 1})
+                self.assertIsNone(row["hook_blocks"])
+
+    def test_an_errored_row_carries_the_arm_fields_and_no_stream_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, _ = BENCH.replay([TASK], options(tmp, reps=1), Launch(["garbage"] * 2))
+            self.assertEqual([r["error"] for r in rows], [True, True])
+            self.assertEqual(rows[0]["tool_counts"], {})
+            self.assertIsNone(rows[0]["spawns"])
+            self.assertEqual(rows[0]["arm_fingerprint"]["rules"], 0)
+
     def test_a_run_under_the_home_directory_is_refused_before_launching(self):
         with tempfile.TemporaryDirectory() as tmp:
             launch = Launch([])
@@ -345,11 +424,11 @@ class ReplayRunTests(unittest.TestCase):
             self.assertEqual(launch.calls, [])
 
 
-def row(arm, rep, passed, cost, error=False, bucket="", predicted=None):
+def row(arm, rep, passed, cost, error=False, bucket="", predicted=None, task="demo", note=""):
     return {"arm": arm, "rep": rep, "passed": None if error else passed, "error": error, "cost_usd": cost,
             "cost_normalised_usd": cost, "date": "2026-01-01", "harness_version": "9.9.9", "harness_sha": "a" * 40,
             "tag": "candidate", "model": "claude-test", "cli_version": "1.0", "bucket": bucket,
-            "predicted_ratio": predicted}
+            "predicted_ratio": predicted, "task": task, "change_note": note}
 
 
 class FixtureGateTests(unittest.TestCase):
@@ -429,8 +508,124 @@ class ReplaySummaryTests(unittest.TestCase):
 
     def test_a_row_written_before_buckets_existed_still_renders(self):
         legacy = BENCH.history_row([row("bare", 1, True, 1.0), row("harness", 1, True, 0.5)], "s1")
-        del legacy["bucket"], legacy["predicted_ratio"]
+        del legacy["bucket"], legacy["predicted_ratio"], legacy["per_task"], legacy["change_note"]
         self.assertIn("| n/a |", BENCH.render_history([legacy]))
+
+    def test_the_history_row_breaks_the_aggregate_down_by_task_with_each_cell_s_spread(self):
+        """One task moving is the usual shape of a regression, and a cell whose reps differ by half
+        says the aggregate above it is noise. Both are unreadable from the aggregate alone."""
+        rows = [row("bare", 1, True, 1.0, task="alpha"), row("bare", 2, True, 2.0, task="alpha"),
+                row("harness", 1, True, 0.5, task="alpha"), row("harness", 2, True, 0.5, task="alpha"),
+                row("bare", 1, True, 4.0, task="beta"), row("harness", 1, True, 8.0, task="beta")]
+        cells = BENCH.history_row(rows, "s1")["per_task"]
+        self.assertEqual(cells["alpha"], {"bare": 1.5, "harness": 0.5, "ratio": 0.3333,
+                                          "bare_spread": 2.0, "harness_spread": 1.0, "n": 2})
+        self.assertEqual(cells["beta"]["ratio"], 2.0)
+        self.assertIsNone(cells["beta"]["bare_spread"])  # one priced run has no spread
+
+    def test_the_rendered_ledger_carries_the_task_lines_and_the_change_note(self):
+        rows = [row("bare", 1, True, 1.0, task="alpha", note="moved the skills out of context"),
+                row("bare", 2, True, 2.0, task="alpha", note="moved the skills out of context"),
+                row("harness", 1, True, 0.5, task="alpha", note="moved the skills out of context"),
+                row("harness", 2, True, 0.5, task="alpha", note="moved the skills out of context")]
+        text = BENCH.render_history([BENCH.history_row(rows, "s1")])
+        self.assertIn("    note: moved the skills out of context", text)
+        self.assertIn("    alpha: bare 1.500, harness 0.500, ratio 0.333, spread bare 2.000 /"
+                      " harness 1.000, n 2", text)
+        self.assertIn("| 9.9.9 @ aaaaaaa |", text)  # the aggregate columns are untouched
+        self.assertNotIn("—", text)
+
+    def test_an_errored_or_unpriced_run_is_left_out_of_its_task_cell(self):
+        rows = [row("bare", 1, True, 1.0, task="alpha"), row("bare", 2, None, 9.0, True, task="alpha"),
+                row("harness", 1, True, 0.5, task="alpha")]
+        cells = BENCH.per_task(rows)
+        self.assertEqual((cells["alpha"]["bare"], cells["alpha"]["bare_spread"]), (1.0, None))
+        self.assertEqual(cells["alpha"]["n"], 2)  # the rep happened, even though it priced nothing
+
+
+class ArmFingerprintTests(unittest.TestCase):
+    def test_the_fingerprint_counts_the_layers_and_moves_when_a_file_changes_length(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = config_tree(Path(tmp) / "profile")
+            first = BENCH.config_fingerprint(root)
+            self.assertEqual({k: v for k, v in first.items() if k != "sha"},
+                             {"rules": 2, "skills": 1, "agents": 1, "personal_bytes": 64})
+            (root / "rules" / "rule-0.md").write_text("r" * 21, encoding="utf-8")
+            self.assertNotEqual(BENCH.config_fingerprint(root)["sha"], first["sha"])
+            (root / "rules" / "rule-0.md").write_text("q" * 21, encoding="utf-8")
+            same_size = BENCH.config_fingerprint(root)
+            self.assertNotEqual(same_size["sha"], first["sha"])
+            self.assertEqual(len(same_size["sha"]), 8)
+            self.assertEqual(BENCH.config_fingerprint(root / "gone"),
+                             {"sha": BENCH.config_fingerprint(Path(tmp) / "empty")["sha"], "rules": 0,
+                              "skills": 0, "agents": 0, "personal_bytes": 0})
+
+    def test_an_inherited_arm_is_fingerprinted_from_the_home_profile_and_named_not_pathed(self):
+        """A row must survive being read by anyone, so it carries `inherited` and sizes, never the
+        owner's home directory. The repository's own lint rejects a home path in a file."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            config_tree(home / ".claude", rules=3)
+            self.assertEqual(BENCH.config_fingerprint(BENCH.INHERITED, home)["rules"], 3)
+            self.assertEqual(BENCH.config_fingerprint(None, home),
+                             BENCH.config_fingerprint(home / ".claude", home))
+            self.assertEqual(BENCH.config_label(None, home), "inherited")
+            self.assertEqual(BENCH.config_label(home / ".claude-bare", home), "~/.claude-bare")
+            self.assertEqual(BENCH.config_label("/opt/profile", home), "/opt/profile")
+
+
+class BackfillTests(unittest.TestCase):
+    def written(self, tmp, rows, raw):
+        results = Path(tmp) / "results"
+        results.mkdir()
+        BENCH.write_jsonl(results / BENCH.RESULTS, rows)
+        folder = Path(tmp) / "raw"
+        folder.mkdir()
+        for name, text in raw.items():
+            (folder / name).write_text(text, encoding="utf-8")
+        return results, folder
+
+    def test_backfill_enriches_a_copy_and_leaves_the_original_alone(self):
+        stream = json.dumps([call(None, ["Bash", "Task"], write=777), result()])
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = config_tree(Path(tmp) / "profile")
+            old = [row("bare", 1, True, 1.0), row("harness", 1, True, 0.5)]
+            for stale in old:
+                stale.pop("change_note")
+            results, raw = self.written(tmp, old, {"demo-bare-1.json": stream,
+                                                   "demo-harness-1.json": stream})
+            before = (results / BENCH.RESULTS).read_text(encoding="utf-8")
+            code = BENCH.main(["backfill", "--results", str(results), "--raw", str(raw),
+                               "--config-dir", str(profile)])
+            self.assertEqual(code, 0)
+            self.assertEqual((results / BENCH.RESULTS).read_text(encoding="utf-8"), before)
+            enriched = BENCH.read_jsonl(results / BENCH.ENRICHED)
+            self.assertEqual([r["spawns"] for r in enriched], [1, 1])
+            self.assertEqual(enriched[0]["first_call_cache_write"], 777)
+            self.assertEqual(enriched[0]["tool_counts"], {"Bash": 1, "Task": 1})
+            self.assertEqual(enriched[0]["change_note"], "")
+            self.assertEqual(enriched[0]["cost_usd"], 1.0)  # the original figures are untouched
+            self.assertEqual(enriched[0]["arm_config_dir"], str(profile))
+            self.assertEqual(enriched[0]["arm_fingerprint"], BENCH.config_fingerprint(profile))
+            for row_out in enriched:
+                self.assertEqual(row_out["fingerprint_source"], "backfill")
+
+    def test_a_row_with_no_raw_output_is_reported_and_keeps_its_fields_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results, raw = self.written(tmp, [row("bare", 1, True, 1.0)], {})
+            code = BENCH.main(["backfill", "--results", str(results), "--raw", str(raw),
+                               "--inherited", "--in-place"])
+            self.assertEqual(code, 1)
+            enriched = BENCH.read_jsonl(results / BENCH.ENRICHED)
+            self.assertEqual(enriched[0]["tool_counts"], {})
+            self.assertIsNone(enriched[0]["spawns"])
+            self.assertEqual(enriched[0]["arm_config_dir"], "inherited")
+            self.assertEqual(BENCH.read_jsonl(results / BENCH.RESULTS), enriched)  # --in-place
+
+    def test_a_missing_results_file_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit):
+                BENCH.main(["backfill", "--results", tmp, "--raw", tmp])
 
 
 class ManifestTests(unittest.TestCase):
