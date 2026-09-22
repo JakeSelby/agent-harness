@@ -27,8 +27,11 @@ of every dimension, the five largest files, and what that many tokens cost per m
 - **CI fails when the estimate grows more than 5% over the committed figure.** Trim the growth, or
   add an entry to `benchmarks/allow.json` naming `harness_version`, the new `est_tokens` and a
   `reason`. The entry stops matching as soon as the figure moves again.
-- **The line cap in `harness lint` is separate and unchanged.** The cap bounds the worst case in
-  lines; this tracks the default selection in tokens and dollars, version by version.
+- **The caps in `harness lint` are separate.** They bound the worst case — the longest variant of
+  every stance — in tokens and in lines, over instructions, rules and stances only; this tracks the
+  default selection, output styles and listings included, in tokens and dollars, version by
+  version. Both use the same characters-over-four estimate. Which cap binds, and why:
+  [how-it-works](how-it-works.md#context-discipline).
 
 ## Live replay
 

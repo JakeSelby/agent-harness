@@ -62,6 +62,16 @@
       "client_version": "2.1.278"
     },
     {
+      "id": "claude-code-plugin-marketplace",
+      "runtime": "claude-code",
+      "provider": "anthropic",
+      "client": "plugin-marketplace",
+      "platform": "unspecified",
+      "status": "unqualified",
+      "required_for_release": false,
+      "evidence": []
+    },
+    {
       "id": "codex-cli-macos",
       "runtime": "codex",
       "provider": "openai",
