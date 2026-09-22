@@ -9,9 +9,10 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 **Unqualified** means no complete passing evidence, **planned** means no current integration,
 and **unsupported** means a combination explicitly outside the integration contract.
 
-Claude Code and Codex are this release's integration targets. The v0.12.0 candidate floor
-requires their CLIs on macOS and Linux, and that qualification has not yet been re-run against
-this source. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
+Claude Code and Codex are this release's integration targets. The v0.12.0 release carries no
+native qualification: no client has evidence for this source and no client is marked required
+for release, a deliberately narrower support contract taken for a pre-1.0 release. The v0.11.1
+stable floor remains the last one qualifying those CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
 plugin-marketplace install remain unqualified previews. A marketplace install carries the
 skills, roles, commands and output style only; the ownership journal, stance selection, the
 Codex projection and the hooks come from `bin/harness install`, and
