@@ -461,6 +461,41 @@ show up in the only corpus it has been measured against: across 137 sessions on 
 hit rate was 97.0% at zero subagents, 97.2% at 1–6, 97.3% at 7–50 and 97.1% at 51 or more — so
 treat the sentence above as a thing to check in your own data rather than as an expectation.
 
+### Whether the prefix held
+
+`hit` says how much of the prompt was served from cache. It does not say whether the cached
+prefix survived the session, and that is the thing `primitives/rules/cache-hygiene.md` actually
+asks for: a mid-task change to the tool set, the MCP server list, the model or the effort dial
+turns the next turn's cache reads into cache writes, and the only visible symptom is a larger
+bill. `bin/harness usage --by prefix` reports the miss ratio per session:
+
+```
+miss = cache_write / (cache_read + cache_write)
+```
+
+The share of the prefix the provider had to re-write rather than serve, computed from the two
+fields every row already carries. No new hook, no new event, nothing recorded that was not
+recorded before. A low ratio is a session that kept one prefix; a high one is a session that
+bought its context again.
+
+The report also names where the ratio stepped. A row's `days` slices carry the same cache
+fields and that day's turn count, so the ratio is recomputed per slice and the first turn of the
+slice that rose by twenty points or more is printed as `turn 7 (2026-09-19): 2% -> 80%`. That is
+the finest index the ledger can support honestly: turn-level cache figures are not recorded, and
+inventing an event to record them was out of scope. A session with a single day of slices, or
+none, reports its ratio and no step.
+
+**It measures, it does not enforce.** Nothing denies, warns on or blocks a prefix change, here or
+anywhere else in the harness; the figure is retrospective and read-only, and what to do about a
+step is the session's call.
+
+A session whose rows carry no cache fields reports `unknown`, never zero. So does a session
+reporting cached reads against no writes at all, which is every Codex session: that runtime
+exports no per-turn cache-write figures (`adapters/codex/capabilities.json`), and a prefix that
+was read was written first, so a flat zero there is a gap in the feed rather than a prefix that
+cost nothing. A zero would read as a perfectly held prefix, which is the opposite of what the row
+knows. The footer counts those sessions separately.
+
 ## Rule telemetry
 
 The engine underneath — the event schema, the shell decomposition, the registry and the six
