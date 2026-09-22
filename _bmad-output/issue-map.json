@@ -5,7 +5,7 @@
   "generated_at": "2026-09-19",
   "next_ids": {
     "epic": 11,
-    "story": 172,
+    "story": 173,
     "task": 3,
     "bug": 52,
     "chore": 34,
@@ -3624,6 +3624,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T002.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S172",
+      "github_number": 485,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/485",
+      "title": "Add the decision-provider contract with none and local providers",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S172.md",
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
       "lifecycle": "active",
       "provenance": "authored"
     }
