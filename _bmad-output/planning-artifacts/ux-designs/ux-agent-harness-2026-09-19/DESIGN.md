@@ -1,6 +1,7 @@
 ---
 title: Agent Harness design contract
-status: final
+status: superseded
+superseded_by: ../ux-agent-harness-2026-09-23/DESIGN.md
 created: 2026-09-19
 updated: 2026-09-19
 colors:
