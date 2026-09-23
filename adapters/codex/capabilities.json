@@ -48,7 +48,8 @@
     "Unsupported controls remain visible; custom stance prose does not add enforcement.",
     "The usage feed is uncovered: this runtime raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back and no such event is registered.",
     "Cache-prefix stability is not measurable here: this runtime reports a cached-read figure and no cache-write figure at all, so a ledger row carries real cached_input_tokens in cache_read and leaves cache_write unreported. `harness usage --by prefix` reports a Codex session as unknown rather than as a perfectly held prefix.",
-    "Band routing is not decided on this runtime, so the decision log records no tier-agent-spawns row here: the spawn hook that reroutes an unnamed spawn to a band worker runs on Claude Code alone. Every other decision point writes on both runtimes, and the Bash ask is labelled from PostToolUse and SessionEnd, which both raise."
+    "Band routing is not decided on this runtime, so the decision log records no tier-agent-spawns row here: the spawn hook that reroutes an unnamed spawn to a band worker runs on Claude Code alone. Every other decision point writes on both runtimes, and the Bash ask is labelled from PostToolUse and SessionEnd, which both raise.",
+   "The completion claim on a stop-gate row is unverified here. The reader parses this runtime's rollout shape and accepts the three names its Stop payload could give the file, but no Codex Stop payload has been observed on the machine this was measured on, so a row written here may carry no claim and count a miss instead. The switch, the cap and the hash behave identically on both runtimes."
   ],
   "role_execution": {
     "constrained": "isolated-cli",

@@ -20,6 +20,11 @@ tool output and never assistant prose. `input_sha256` is over the **uncapped** t
 rows whose capped text is identical are still told apart, and a long command can be matched
 against its own later events.
 
+`telemetry.completion_claim`, off by default, adds `completion_claim` and its hash to a
+stop-gate row: the tail of the turn's final assistant message, read from the transcript the
+Stop event names. It is the only assistant prose this file ever holds, which is why it is a
+switch of its own and why it is off. See `claim_fields`.
+
 This module sits beside the hooks rather than in `lib/harness_core`, for the reason
 `telemetry.py` gives: a hook is reached through `~/.claude/hooks/harness` and nothing above
 that directory resolves from it. `lifecycle.py` loads it with its own `load()`.
@@ -49,8 +54,19 @@ MAX_INPUT = 2048
 NOT_RUN = "not_run"
 RAN = "ran"
 
+# The completion claim: the tail of the turn's final assistant message, on a stop-gate row and
+# nowhere else. It is the one place this log holds model prose, so it has its own switch and
+# that switch is off. Capped like `input`, hashed over the uncapped message for the same reason.
+MAX_CLAIM = 2048
+# The read is the last CLAIM_TAIL_BYTES of the file, so it costs the same on a transcript of any
+# size, and a file past MAX_TRANSCRIPT is not opened at all — nothing that large is a transcript
+# whose last line this hook should be seeking to inside a Stop hook's budget.
+CLAIM_TAIL_BYTES = 256 * 1024
+MAX_TRANSCRIPT = 256 * 1024 * 1024
+
 _CONFIG = []
 _ERRORS = [0]
+_CLAIM_MISSES = [0]
 
 
 def home():
@@ -98,9 +114,34 @@ def enabled(cfg=None):
     return block.get("decisions", True) is True
 
 
+def claim_enabled(cfg=None):
+    """Whether a stop-gate row carries the completion claim: `telemetry.completion_claim`.
+
+    Off by default, unlike `decisions` beside it, because this is the only field in the log that
+    holds assistant prose: a row that quotes the turn's last words is a different thing to keep
+    on a shared machine from a row holding a command. It is no part of `export` either — a
+    decision row reaches no endpoint whatever `export` says.
+    """
+    cfg = read_config() if cfg is None else cfg
+    block = cfg.get("telemetry") if isinstance(cfg, dict) else None
+    if not isinstance(block, dict):
+        return False
+    return block.get("completion_claim", False) is True
+
+
 def errors():
     """How many writes this process swallowed. A hook's decision never depends on it."""
     return _ERRORS[0]
+
+
+def claim_misses():
+    """How many rows the switch asked for a claim on and did not get one for.
+
+    A transcript that is missing, unreadable, too large or holding no assistant prose is an
+    absence somebody reading the log has to be able to see. Counted separately from `errors`:
+    nothing failed to be written, the evidence was not there to write.
+    """
+    return _CLAIM_MISSES[0]
 
 
 def now_ts(now=None):
@@ -170,6 +211,99 @@ def tail_text(target=None, limit=TAIL_BYTES):
         return ""
 
 
+def _assistant_message(record):
+    """The assistant message in one transcript record, or None for anything else.
+
+    Both runtimes in one shape: Claude Code holds the message under `message` on an `assistant`
+    record, a Codex rollout wraps the same object in a `response_item`, and each carries its own
+    `role`. A sidechain record is a subagent's turn and never the session's own last word.
+    """
+    if not isinstance(record, dict) or record.get("isSidechain"):
+        return None
+    if record.get("type") == "assistant":
+        message = record.get("message")
+    elif record.get("type") == "response_item":
+        message = record.get("payload")
+    else:
+        message = record
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return None
+    return message
+
+
+def _message_text(message):
+    """The prose of an assistant message: every text block, joined, and nothing else.
+
+    A block with no `text` is a tool call, a thought or an image, none of which is a claim.
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+    parts = [b["text"] for b in content
+             if isinstance(b, dict) and isinstance(b.get("text"), str) and b["text"]]
+    return "\n".join(parts).strip()
+
+
+def final_assistant_text(transcript):
+    """The prose of the newest main-line assistant message, or None when there is none.
+
+    Bounded on both sides — see MAX_TRANSCRIPT and CLAIM_TAIL_BYTES — so the cost of this read
+    does not grow with the session. The first line of the window is usually a fragment; it fails
+    to parse, which is what discards it, and a turn whose last assistant record is a tool call
+    is passed over for the newest one that actually said something.
+    """
+    if not transcript:
+        return None
+    try:
+        target = os.path.expanduser(str(transcript))
+        if os.path.getsize(target) > MAX_TRANSCRIPT:
+            return None
+        with open(target, "rb") as stream:
+            try:
+                stream.seek(-CLAIM_TAIL_BYTES, os.SEEK_END)
+            except OSError:
+                stream.seek(0)
+            tail = stream.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    for line in reversed(tail.splitlines()):
+        if '"assistant"' not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        message = _assistant_message(record)
+        if message is None:
+            continue
+        text = _message_text(message)
+        if text:
+            return text
+    return None
+
+
+def claim_fields(transcript, cfg=None):
+    """The completion-claim fields for a decision row, or `{}` when there are none to add.
+
+    `{}` whenever the switch is off, so the row is byte for byte the row written before this
+    existed. With it on, a claim that cannot be read counts in `claim_misses()` and the row is
+    still written: missing evidence is never a reason to lose the decision it was evidence for.
+    """
+    try:
+        if not claim_enabled(cfg):
+            return {}
+        text = final_assistant_text(transcript)
+        if not text:
+            _CLAIM_MISSES[0] += 1
+            return {}
+        return {"completion_claim": text[-MAX_CLAIM:], "completion_claim_sha256": digest(text)}
+    except Exception:
+        _CLAIM_MISSES[0] += 1
+        return {}
+
+
 def _append(row, target=None):
     """One line, one `write`. Appending is the only way this file is ever changed."""
     target = Path(target) if target else path()
@@ -186,7 +320,8 @@ def _append(row, target=None):
     return target
 
 
-def record(point, answer, text="", event=None, runtime="", key=None, target=None, now=None):
+def record(point, answer, text="", event=None, runtime="", key=None, target=None, now=None,
+           transcript=None):
     """Log one judgment. Returns its `decision_id`, or None when nothing was written.
 
     Never raises. A failed write is counted and the caller carries on with the decision it had
@@ -194,6 +329,9 @@ def record(point, answer, text="", event=None, runtime="", key=None, target=None
 
     `key` makes the id reproducible, so an event that arrives later can name this decision
     without having read the file; with none, the id is a fresh one nobody will join to.
+
+    `transcript` is the file a completion claim is read from, and adds nothing to the row unless
+    the caller passes one and the switch is on: see `claim_fields`.
     """
     try:
         if not enabled():
@@ -206,6 +344,7 @@ def record(point, answer, text="", event=None, runtime="", key=None, target=None
                "deterministic_answer": answer, "outcome": None,
                "runtime": runtime or os.environ.get("HARNESS_RUNTIME", ""),
                "harness_version": harness_version()}
+        row.update(claim_fields(transcript))
         _append(row, target)
         return identity
     except Exception:

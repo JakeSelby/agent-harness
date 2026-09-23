@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `telemetry.completion_claim`, off by default, records the agent's completion claim on a
+  `stop-gate` decision row: the last 2 KiB of the turn's final assistant message, read from the
+  transcript at Stop because the Stop payload carries no assistant text, with the hash over the
+  uncapped message. Verifying what an agent said it had done against the gate result needs the
+  two on one row, and until now the row held only the gate. It is its own switch, and off,
+  because it is the only field in the decision log that holds assistant prose; with it off the
+  row is byte for byte what it was. The read is a bounded tail, so it costs the same on a
+  transcript of any size, and a transcript that is missing, unreadable or over 256 MiB writes
+  the row without the claim and counts the miss (#387).
+
 ### Fixed
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed
