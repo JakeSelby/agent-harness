@@ -329,6 +329,23 @@ class LintTests(TempHome):
         self.assertFalse(any("README.md" in h for h in hits))
         self.assertFalse(any("LICENSE" in h for h in hits))
 
+    def test_untracked_local_work_is_skipped_until_it_is_staged(self):
+        root = self._fixture()
+        def git(*args):
+            subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
+        git("init", "-q")
+        note = root / ".agent-harness" / "plans" / "note.md"
+        note.parent.mkdir(parents=True)
+        note.write_text("Built on Widgetron.\n")
+        (root / "stray.md").write_text("Built on Widgetron.\n")
+        terms = ([], ["widgetron"])
+        hits = harness.lint_tree(root, terms)
+        self.assertFalse(any("note.md" in h for h in hits), hits)
+        self.assertTrue(any("stray.md" in h and "project name" in h for h in hits), hits)
+        git("add", str(note))
+        hits = harness.lint_tree(root, terms)
+        self.assertTrue(any("note.md" in h and "project name" in h for h in hits), hits)
+
     def test_repo_carries_no_identifier_shapes_anywhere(self):
         """The regression test for the first release: no file, not even the lint or these
         tests, may contain an identifier-shaped literal."""

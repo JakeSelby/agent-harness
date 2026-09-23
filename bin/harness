@@ -185,6 +185,7 @@ ALWAYS_LOADED_CAP = 200
 NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates", "primitives", "adapters"}
 NAME_FORBIDDEN_FILES = {"config.example.json"}
 LINT_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".pytest_cache"}
+LOCAL_WORK_DIR = ".agent-harness"
 
 
 def lint_terms_path() -> Path:
@@ -2238,13 +2239,24 @@ def check_stance_constraints(root: Path) -> List[str]:
 
 def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -> List[str]:
     """Lint everything git would commit: tracked files plus untracked files that are not ignored.
-    Outside a git repository, every file."""
-    try:
-        out = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    Outside a git repository, every file.
+
+    Untracked files under `.agent-harness/` are the exception. That directory stays unignored so a
+    handoff can read its plans, which leaves every session's local notes one listing away from
+    reddening another session's gate; staging one brings it back into the lint before it commits.
+    """
+    def listed(*flags: str) -> List[str]:
+        out = subprocess.run(["git", "-C", str(root), "ls-files", *flags, "-z"],
                              capture_output=True, text=True, timeout=10)
-        if out.returncode == 0:
-            files = sorted(root / f for f in out.stdout.split("\0") if f)
-            return lint_files(root, files, terms) + check_detectors(root)
+        if out.returncode != 0:
+            raise RuntimeError(out.stderr)
+        return [f for f in out.stdout.split("\0") if f]
+    try:
+        tracked = listed("--cached")
+        untracked = [f for f in listed("--others", "--exclude-standard")
+                     if not f.startswith(LOCAL_WORK_DIR + "/")]
+        files = sorted(root / f for f in set(tracked + untracked))
+        return lint_files(root, files, terms) + check_detectors(root)
     except Exception:
         pass
     return lint_files(root, sorted(p for p in root.rglob("*") if p.is_file()), terms) + check_detectors(root)

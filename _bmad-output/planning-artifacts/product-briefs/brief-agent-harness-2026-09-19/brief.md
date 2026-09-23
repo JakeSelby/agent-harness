@@ -1,6 +1,7 @@
 ---
 title: Agent Harness product brief
-status: final
+status: superseded
+superseded_by: ../brief-agent-harness-2026-09-23/brief.md
 created: 2026-09-19
 updated: 2026-09-19
 sources:
