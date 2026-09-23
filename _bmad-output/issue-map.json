@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 18,
-    "story": 223,
+    "story": 224,
     "task": 26,
     "bug": 74,
     "chore": 65,
@@ -5234,6 +5234,19 @@
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C064.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S223",
+      "github_number": 702,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/702",
+      "title": "spawn-confinement observes the refusal from the decisions log, not only from the client's answer",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S223.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
