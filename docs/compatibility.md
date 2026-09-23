@@ -162,6 +162,43 @@ The CLI verifies these records and `harness compatibility --release-check` fails
 required clients are qualified. A reviewer must assess the observations; a JSON label alone is
 not empirical evidence.
 
+### Where each target runs, and what it needs
+
+The required targets are the four CLI rows the v0.11.1 stable floor qualified. Every round to date,
+0.9.0 through 0.11.1 on all four, ran on one maintainer-owned Apple-silicon Mac; there is no
+other qualification host and no hosted runner. What each target needs on that host:
+
+- **`codex-cli-macos`.** The binary is the one bundled in the ChatGPT desktop app,
+  `/Applications/ChatGPT.app/Contents/Resources/codex`, linked onto `PATH` as
+  `~/.local/bin/codex`. The app updates it, so the version is whatever `codex --version`
+  reports on the day and the record names it (0.11.1 recorded `0.154.0-alpha.6.2`). It
+  authenticates with a ChatGPT account session, `codex login`, which writes `~/.codex/auth.json`;
+  no API key is used. The host is the Mac itself.
+- **`codex-cli-linux`.** npm's `@openai/codex` at the version the round pins (0.11.1 recorded
+  `0.155.1`), installed by [`scripts/linux-target.Dockerfile`](../scripts/linux-target.Dockerfile).
+  The host is a linux/arm64 container under Docker Desktop on the same Mac, with the frozen clone
+  mounted into it. How it authenticated is not recorded: the 0.11.x records say only that each
+  probe ran with a throwaway home and Codex home. The runbook's in-container `codex login` is a
+  suggestion, not what those rounds are known to have done.
+- **`claude-code-cli-macos`.** The native Claude Code install, version from `claude --version`.
+  It authenticates with a credential the acceptance runner passes through by name, an Anthropic
+  API key or a cloud profile; an interactive `claude login` does not reach the runner's disposable
+  home. The host is the Mac itself.
+- **`claude-code-cli-linux`.** npm's `@anthropic-ai/claude-code` at the pinned version (0.11.1
+  recorded `2.1.278`), in the same container and authenticated the same way, the variable passed
+  in by name with `docker run -e`.
+
+The [runbook](qualification-runbook.md#target-hosts) has the commands that establish each of
+these before a round, and `python3 scripts/smoke_tier.py --targets <ids>` refuses the round at
+once when a client, a Codex login or the Docker daemon is missing. A Codex login is a
+session, not a key, and the acceptance runner's disposable `CODEX_HOME` does not yet carry it, so
+a Codex target's evidence can only be produced by hand until it does; no Codex target is
+qualified for the current source.
+
+If a release cannot qualify the Codex or the Linux targets, it narrows the support floor the
+last qualified release set. That narrowing is stated in this page's opening section as a
+decision, as v0.12.0's is, and is never a target silently left out of a round.
+
 ### Which source change invalidates which evidence
 
 Evidence is invalidated per target, not per repository. A target's path set is the shared runtime
