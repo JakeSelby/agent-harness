@@ -344,6 +344,7 @@ development_status:
   ah-c047-reserve-bmad-ids-for-the-three-unmapped-v0-13-0: done
   ah-c051-docs-changelog-restore-five-unreleased-entries: done
   ah-c064-0-13-0-requires-only-the-two-claude-code-cli: ready-for-dev
+  ah-c066-release-0-13-0-fold-the-changelog-record-the: ready-for-dev
   ah-d001-docs-bmad-decide-the-builder-routing-follow-up: done
   ah-d003-decide-whether-the-credential-probe-names-the: done
   ah-d004-decide-whether-repeated-agent-pairs-get-an: done

@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-09-23
+
 ### Added
 
 - The acceptance runner passes `CLAUDE_CODE_OAUTH_TOKEN` into each case's disposable home and the
@@ -299,6 +301,186 @@ All notable changes to this project are documented here. The format follows
   `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
   block a freeze (#334).
 
+- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
+  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
+  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
+  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
+  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
+  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
+  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
+  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
+  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
+  may never widen a decision, and every path with no usable answer — no key, a timeout, an
+  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
+  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
+  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
+  to the decision ledger, and never the state. Answers are not deterministic across identical
+  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
+  no handler for any other scheme, because a bearer key goes out with every request; a request is
+  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
+  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
+  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
+  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
+  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
+  from the vendor's documentation and have not been verified against the live service from this
+  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
+
+- The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
+  the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
+  behind each state. It is derived from a `tier_restriction` entry in
+  `adapters/<runtime>/capabilities.json` rather than written into the rendered docs: the Claude
+  Code CLI and VS Code surfaces read `enforced`, because `claude/hooks/tier-agent-spawns.py`
+  rewrites a spawn asking for the strongest class by name. Every Codex surface reads `advisory`:
+  the coordinator runs there and a Codex `Agent` call still passes the role, marker, evasion and
+  brief checks, but the tier rewrite sits behind a `runtime == "claude-code"` gate in
+  `lib/harness_core/lifecycle.py`. The plugin-marketplace install reads `advisory` because it
+  installs no hooks at all. The generated note states what `enforced` does not cover — the
+  session's own model, which the harness never writes; a `delegation` variant other than
+  `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
+  now links to the row instead of restating it (#520).
+- `scripts/smoke_tier.py` runs the repository's deterministic pre-qualification checks as one
+  command that spends no model turn: the acceptance runner's self-tests against recorded
+  transcripts under `tests/fixtures/transcripts/`, the documentation-link check, the
+  credential-reachability probe, and the disposable-home sync, projection-drift and lifecycle
+  checks. Three of the four defects the 0.11.0 qualification round recorded were deterministic
+  plumbing faults of exactly this kind, each found part-way through a paid round that then had to
+  be run again. Every check is bounded by a timeout, so an unauthenticatable environment is
+  reported as an error rather than as a three-hundred-second hang, and a check that could not run
+  is `unverified` and never a pass. The tier is additive and never qualification: it observes no
+  client, and the run fails if anything it ran wrote under `compatibility/evidence/` or into the
+  catalog. CI runs it as a `smoke` job that the branch ruleset does not require, and
+  `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
+  block a freeze (#334).
+
+- BMad story files now carry the design. `scripts/bmad_issue_sync.py` writes each new work item
+  from a typed template for its kind, with the issue link, parent and state in a managed block that
+  `refresh` rewrites while keeping the rest of the file byte for byte. A new `upgrade` subcommand
+  converts legacy stubs without loss, carrying amendment sections over verbatim, and
+  `audit --delivery N`, run by the required `issue-ownership` check, fails a pull request whose own
+  story leaves a required section unfilled. Legacy stubs pass that check with a notice until they are
+  upgraded. (#620)
+
+- BMad's sprint and build workflows now have a status surface that nobody maintains by hand.
+  `python3 scripts/bmad_issue_sync.py sprint-status` renders
+  `_bmad-output/implementation-artifacts/sprint-status.yaml` from the issue map and the story files,
+  deriving each item's status from its GitHub state and its story's depth check. `new`, `reserve`,
+  `refresh` and `upgrade` regenerate it whenever they write, `audit` fails while it drifts, and the
+  `bmad-build` and `bmad-sprint-planning` customizations point at the command instead of editing it. (#623)
+
+### Changed
+
+- Pull requests to `main` land through a merge queue, and changelog entries after 0.13.0 are
+  one fragment file per change under `changelog.d/`. Every pull request workflow also runs on
+  `merge_group`, and the issue-ownership and landing-copy checks read the queued pull request's
+  number from the queue branch, since a queued entry whose checks never report stalls the queue.
+  `scripts/release_notes.py --changelog <version>` assembles the fragments into a version section
+  in a stable order, and `bin/harness lint` fails a branch that changes `bin/`, `lib/`,
+  `adapters/`, `primitives/`, `policy/`, `docs/` or `scripts/` without a fragment or a
+  `<number>.none.md` waiver. Every branch used to edit the same Unreleased section, so any two in
+  flight conflicted there, and the up-to-date requirement cost a rebase and a full CI rerun per
+  landing. (#337)
+- An isolated role worker is no longer handed the harness checkout as a read root and pointed at
+  the whole skill corpus. It carries the shared policy as its system text and is mounted only
+  what that policy tells it to open: the skills the resolved rules and stances name, and copies
+  of the `docs/*.md` files they cite. The set is derived from the text itself, so a stance that
+  stops citing a skill stops paying for it, and a worker is never told to obey a rule whose
+  reference it cannot reach. A role adds what its body assumes but the shared text never names
+  with a `skills:` line — `design-loop` for `design-judge`, `all` for `planner`, whose body tells
+  it to read the skills the plan will name — and a name that resolves to no shipped skill fails
+  the run rather than quietly removing that authority. Measured as what is mounted rather than
+  what a run reads, a review layer went from the whole checkout, about 1,073,900 estimated tokens
+  of text, to about 30,800, and the corpus it was offered as skill authority from all 31,600
+  tokens to the 26,600 the policy cites. Each run records the figure under `context` in
+  `status.json` — policy, reference and total against a 50,000-token budget, counted with the
+  approximation `harness lint` applies to always-loaded context — recorded and not enforced,
+  because what a worker is shown is fixed by its contract before any brief is read. On Claude
+  Code the narrowing is enforced by the restricted file tools; under Codex's read-only sandbox it
+  is instruction text, as that runtime's declared input roots already were (#335).
+- The BMad override templates ask each review layer to launch only once the previous layer's
+  worker has exited. This is correctness before economy: a role worker that is still running
+  publishes no token count, so a round with four layers in flight cannot be held under a cap it
+  cannot measure, which is how an observed 450,000-token cap became 985,000 (#335).
+- A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
+  `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
+  fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
+  it: a recipe layer is refused whether it is spawned unnamed, as a generic subagent or as a band
+  worker, the refusal offers exactly the descriptor's declared input roots as the isolated
+  worker's read roots, and one cheap turn confirms that an unnamed spawn still routes to the cost
+  variant's default band worker at that row's class and effort with the budget sentence, and that
+  a null variant rewrites nothing. The BMad run becomes an optional, non-gating suite run once per
+  minor release on one target, documented in `docs/bmad.md` and `docs/releasing.md`; the offline
+  template and surface tests stay in CI, because they are what catches an upstream rename. The
+  catalog now carries two limitations in place of one: that no framework's workflow is exercised
+  natively in a qualification round, and what descriptor-driven confinement still cannot
+  recognise. Generic task continuation moves off the framework page to
+  `docs/task-continuation.md`, and the framework-named asides in the design-loop skill, the
+  handoff workflow, the delegation-tiering skill and a spawn-hook test are gone (#349).
+
+- `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
+  single-coordinator for some time — a sync registers one command per lifecycle event and
+  `runtime_template()` takes that registration from `lib/harness_core/lifecycle.py` — so the
+  eleven per-policy entries the file still listed were replaced unread at every sync, and an
+  entry added there by hand would have been silently discarded. `docs/how-it-works.md` now
+  describes the model: why one process per event rather than one per policy, where precedence is
+  decided, and how the coordinator fails closed. Two places that still described registration as
+  conditional are corrected with it: `docs/preferences.md` said the `plan-ceremony` stance decides
+  whether the plan-card validator is registered, where it decides whether the validator runs, and
+  `claude/OWNERSHIP.json` now says in the manifest itself that a hook id's `stance` and `variant`
+  name when a policy acts, never whether it is registered. No installed settings file changes,
+  because what sync wrote was already the coordinator registration (#521).
+
+- The standing context every session loads is 1,005 estimated tokens smaller, 7,524 to 6,519 on
+  `scripts/cost_bench.py static`. The `scannable` output style keeps all nine of its rules and
+  loses the worked examples and the register table, 1,528 tokens to 862; the fifteen skill and
+  eleven agent descriptions lose their capability restatements and keep every condition and
+  literal user phrasing a session selects on, 2,326 tokens of listings to 1,980. Because a
+  description is the trigger mechanism, those phrases are now frozen in
+  `tests/test_description_trigger_phrases.py`, which fails when one is dropped rather than
+  reworded, and a new skill or role must declare its own. Before-and-after rows are in
+  `docs/benchmarks.md`; the third change the issue names, deferring action-gated rule text behind
+  the hooks that fire on the act, is framed as an unrun spike in
+  `docs/spikes/2026-09-22-deferred-rule-text.md` and nothing about it is implemented (#430).
+- `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
+  and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
+  native approval is the gate. The typed `build` reply was a convention no tooling could observe,
+  and a plan written straight to disk reached no plan view at all. Because the runtime fixes the
+  filename before any content exists and plan mode permits no other write, the naming waits for
+  approval: `/plan` then renames the file to a topic slug — refusing to overwrite an existing
+  name — and invokes `/build` with that path, which the builder commits into its worktree so the
+  plan reaches the pull request. `/build` works from the path or the
+  issue number it is given and never searches for a plan, because a plan found by modification
+  date is as likely to be a stale one a checkout touched. `/plan` asks before entering plan mode,
+  since entering it is the user's call, and a runtime with no plan mode — or a user who declines
+  it — keeps the previous behaviour as an explicit branch: write the file named for the topic,
+  open it for the reviewer, close on the build line (#439).
+- Native qualification evidence is now invalidated per target rather than per repository. Each
+  client's evidence is checked against the shared runtime source plus its own runtime's adapter
+  directory, so a fix confined to `adapters/codex` no longer costs the Claude Code targets of a
+  qualification round, and the reverse holds; a shared-source change, an unmapped runtime or a
+  record that states no scope still invalidates everything, so the narrowing fails closed. The
+  catalog declares the per-runtime directories and each evidence record states the path set it
+  was validated under. The narrowing stops at the files shared code reads whatever the runtime —
+  `bindings.json`, `capabilities.json` and `worker.py`, which `harness tiers`, stance coverage and
+  `harness role run --runtime` reach for either adapter — so those are declared in the catalog and
+  still invalidate every target; only `hook.py` is private to its runtime. A new test parses the
+  runtime source and fails when a loader reaches an adapter file the declaration does not cover.
+  Per-case scoping is not included: it changes a v1 stable interface and waits on an owner
+  decision (#333).
+
+- The delegation rule now states that subagents never message a peer, and the builder role says
+  what a blocked builder does instead: stop, finish what does not depend on the answer, and return
+  the question under **Deviations** for the caller. A delivered message bills as a typed prompt on
+  the receiver and again on the sender when the reply lands, and turn count is what the delegation
+  arithmetic is sensitive to, while the measured coordination wins in the literature all come from
+  mediating writes at write time rather than from agents conversing; `delegation-tiering` carries
+  that reasoning with the three papers cited. Session-to-session `SendMessage` between
+  human-facing sessions is unchanged (#539).
+
+- The BMad governance text that every planning workflow loads now splits authority between the issue and its
+  story file, routes each SDLC step to its BMad skill, and requires every pull request to keep the planning
+  corpus current. The build workflow treats a work item's story file as its spec and writes the design back
+  into it. (#621)
+
 ### Fixed
 
 - The stop gate releases a turn after eight consecutive red blocks in each session, even when
@@ -409,122 +591,6 @@ All notable changes to this project are documented here. The format follows
   reports its usage without them, is `null`, never zero, since zero is a run that held its whole
   prefix (#497).
 
-### Changed
-
-- Pull requests to `main` land through a merge queue, and changelog entries after 0.13.0 are
-  one fragment file per change under `changelog.d/`. Every pull request workflow also runs on
-  `merge_group`, and the issue-ownership and landing-copy checks read the queued pull request's
-  number from the queue branch, since a queued entry whose checks never report stalls the queue.
-  `scripts/release_notes.py --changelog <version>` assembles the fragments into a version section
-  in a stable order, and `bin/harness lint` fails a branch that changes `bin/`, `lib/`,
-  `adapters/`, `primitives/`, `policy/`, `docs/` or `scripts/` without a fragment or a
-  `<number>.none.md` waiver. Every branch used to edit the same Unreleased section, so any two in
-  flight conflicted there, and the up-to-date requirement cost a rebase and a full CI rerun per
-  landing. (#337)
-- An isolated role worker is no longer handed the harness checkout as a read root and pointed at
-  the whole skill corpus. It carries the shared policy as its system text and is mounted only
-  what that policy tells it to open: the skills the resolved rules and stances name, and copies
-  of the `docs/*.md` files they cite. The set is derived from the text itself, so a stance that
-  stops citing a skill stops paying for it, and a worker is never told to obey a rule whose
-  reference it cannot reach. A role adds what its body assumes but the shared text never names
-  with a `skills:` line — `design-loop` for `design-judge`, `all` for `planner`, whose body tells
-  it to read the skills the plan will name — and a name that resolves to no shipped skill fails
-  the run rather than quietly removing that authority. Measured as what is mounted rather than
-  what a run reads, a review layer went from the whole checkout, about 1,073,900 estimated tokens
-  of text, to about 30,800, and the corpus it was offered as skill authority from all 31,600
-  tokens to the 26,600 the policy cites. Each run records the figure under `context` in
-  `status.json` — policy, reference and total against a 50,000-token budget, counted with the
-  approximation `harness lint` applies to always-loaded context — recorded and not enforced,
-  because what a worker is shown is fixed by its contract before any brief is read. On Claude
-  Code the narrowing is enforced by the restricted file tools; under Codex's read-only sandbox it
-  is instruction text, as that runtime's declared input roots already were (#335).
-- The BMad override templates ask each review layer to launch only once the previous layer's
-  worker has exited. This is correctness before economy: a role worker that is still running
-  publishes no token count, so a round with four layers in flight cannot be held under a cap it
-  cannot measure, which is how an observed 450,000-token cap became 985,000 (#335).
-- A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
-  `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
-  fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
-  it: a recipe layer is refused whether it is spawned unnamed, as a generic subagent or as a band
-  worker, the refusal offers exactly the descriptor's declared input roots as the isolated
-  worker's read roots, and one cheap turn confirms that an unnamed spawn still routes to the cost
-  variant's default band worker at that row's class and effort with the budget sentence, and that
-  a null variant rewrites nothing. The BMad run becomes an optional, non-gating suite run once per
-  minor release on one target, documented in `docs/bmad.md` and `docs/releasing.md`; the offline
-  template and surface tests stay in CI, because they are what catches an upstream rename. The
-  catalog now carries two limitations in place of one: that no framework's workflow is exercised
-  natively in a qualification round, and what descriptor-driven confinement still cannot
-  recognise. Generic task continuation moves off the framework page to
-  `docs/task-continuation.md`, and the framework-named asides in the design-loop skill, the
-  handoff workflow, the delegation-tiering skill and a spawn-hook test are gone (#349).
-
-- `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
-  single-coordinator for some time — a sync registers one command per lifecycle event and
-  `runtime_template()` takes that registration from `lib/harness_core/lifecycle.py` — so the
-  eleven per-policy entries the file still listed were replaced unread at every sync, and an
-  entry added there by hand would have been silently discarded. `docs/how-it-works.md` now
-  describes the model: why one process per event rather than one per policy, where precedence is
-  decided, and how the coordinator fails closed. Two places that still described registration as
-  conditional are corrected with it: `docs/preferences.md` said the `plan-ceremony` stance decides
-  whether the plan-card validator is registered, where it decides whether the validator runs, and
-  `claude/OWNERSHIP.json` now says in the manifest itself that a hook id's `stance` and `variant`
-  name when a policy acts, never whether it is registered. No installed settings file changes,
-  because what sync wrote was already the coordinator registration (#521).
-### Added
-
-- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
-  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
-  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
-  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
-  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
-  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
-  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
-  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
-  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
-  may never widen a decision, and every path with no usable answer — no key, a timeout, an
-  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
-  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
-  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
-  to the decision ledger, and never the state. Answers are not deterministic across identical
-  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
-  no handler for any other scheme, because a bearer key goes out with every request; a request is
-  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
-  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
-  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
-  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
-  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
-  from the vendor's documentation and have not been verified against the live service from this
-  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
-
-- The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
-  the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
-  behind each state. It is derived from a `tier_restriction` entry in
-  `adapters/<runtime>/capabilities.json` rather than written into the rendered docs: the Claude
-  Code CLI and VS Code surfaces read `enforced`, because `claude/hooks/tier-agent-spawns.py`
-  rewrites a spawn asking for the strongest class by name. Every Codex surface reads `advisory`:
-  the coordinator runs there and a Codex `Agent` call still passes the role, marker, evasion and
-  brief checks, but the tier rewrite sits behind a `runtime == "claude-code"` gate in
-  `lib/harness_core/lifecycle.py`. The plugin-marketplace install reads `advisory` because it
-  installs no hooks at all. The generated note states what `enforced` does not cover — the
-  session's own model, which the harness never writes; a `delegation` variant other than
-  `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
-  now links to the row instead of restating it (#520).
-- `scripts/smoke_tier.py` runs the repository's deterministic pre-qualification checks as one
-  command that spends no model turn: the acceptance runner's self-tests against recorded
-  transcripts under `tests/fixtures/transcripts/`, the documentation-link check, the
-  credential-reachability probe, and the disposable-home sync, projection-drift and lifecycle
-  checks. Three of the four defects the 0.11.0 qualification round recorded were deterministic
-  plumbing faults of exactly this kind, each found part-way through a paid round that then had to
-  be run again. Every check is bounded by a timeout, so an unauthenticatable environment is
-  reported as an error rather than as a three-hundred-second hang, and a check that could not run
-  is `unverified` and never a pass. The tier is additive and never qualification: it observes no
-  client, and the run fails if anything it ran wrote under `compatibility/evidence/` or into the
-  catalog. CI runs it as a `smoke` job that the branch ruleset does not require, and
-  `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
-  block a freeze (#334).
-
-### Fixed
-
 - Three faults in the qualification scripts, each of which would have cost a paid round to find.
   The round's clone passed `--shared=false` to `git clone`, an option that takes no value, so
   every provision exited; `bidirectional-handoff` sent the same `--revision` twice expecting a
@@ -545,57 +611,6 @@ All notable changes to this project are documented here. The format follows
   service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
   An unusable value is now treated as a file that is not there, and the reason names the variable
   and never the value (#334).
-
-### Changed
-
-- The standing context every session loads is 1,005 estimated tokens smaller, 7,524 to 6,519 on
-  `scripts/cost_bench.py static`. The `scannable` output style keeps all nine of its rules and
-  loses the worked examples and the register table, 1,528 tokens to 862; the fifteen skill and
-  eleven agent descriptions lose their capability restatements and keep every condition and
-  literal user phrasing a session selects on, 2,326 tokens of listings to 1,980. Because a
-  description is the trigger mechanism, those phrases are now frozen in
-  `tests/test_description_trigger_phrases.py`, which fails when one is dropped rather than
-  reworded, and a new skill or role must declare its own. Before-and-after rows are in
-  `docs/benchmarks.md`; the third change the issue names, deferring action-gated rule text behind
-  the hooks that fire on the act, is framed as an unrun spike in
-  `docs/spikes/2026-09-22-deferred-rule-text.md` and nothing about it is implemented (#430).
-- `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
-  and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
-  native approval is the gate. The typed `build` reply was a convention no tooling could observe,
-  and a plan written straight to disk reached no plan view at all. Because the runtime fixes the
-  filename before any content exists and plan mode permits no other write, the naming waits for
-  approval: `/plan` then renames the file to a topic slug — refusing to overwrite an existing
-  name — and invokes `/build` with that path, which the builder commits into its worktree so the
-  plan reaches the pull request. `/build` works from the path or the
-  issue number it is given and never searches for a plan, because a plan found by modification
-  date is as likely to be a stale one a checkout touched. `/plan` asks before entering plan mode,
-  since entering it is the user's call, and a runtime with no plan mode — or a user who declines
-  it — keeps the previous behaviour as an explicit branch: write the file named for the topic,
-  open it for the reviewer, close on the build line (#439).
-- Native qualification evidence is now invalidated per target rather than per repository. Each
-  client's evidence is checked against the shared runtime source plus its own runtime's adapter
-  directory, so a fix confined to `adapters/codex` no longer costs the Claude Code targets of a
-  qualification round, and the reverse holds; a shared-source change, an unmapped runtime or a
-  record that states no scope still invalidates everything, so the narrowing fails closed. The
-  catalog declares the per-runtime directories and each evidence record states the path set it
-  was validated under. The narrowing stops at the files shared code reads whatever the runtime —
-  `bindings.json`, `capabilities.json` and `worker.py`, which `harness tiers`, stance coverage and
-  `harness role run --runtime` reach for either adapter — so those are declared in the catalog and
-  still invalidate every target; only `hook.py` is private to its runtime. A new test parses the
-  runtime source and fails when a loader reaches an adapter file the declaration does not cover.
-  Per-case scoping is not included: it changes a v1 stable interface and waits on an owner
-  decision (#333).
-
-- The delegation rule now states that subagents never message a peer, and the builder role says
-  what a blocked builder does instead: stop, finish what does not depend on the answer, and return
-  the question under **Deviations** for the caller. A delivered message bills as a typed prompt on
-  the receiver and again on the sender when the reply lands, and turn count is what the delegation
-  arithmetic is sensitive to, while the measured coordination wins in the literature all come from
-  mediating writes at write time rather than from agents conversing; `delegation-tiering` carries
-  that reasoning with the three papers cited. Session-to-session `SendMessage` between
-  human-facing sessions is unchanged (#539).
-
-### Fixed
 
 - An assistant transcript record whose `message` is not an object is skipped rather than read as
   one. Such a record holds no usage, no model and no content blocks, and reading it aborted the
@@ -644,6 +659,55 @@ All notable changes to this project are documented here. The format follows
   reseller spelling still reaches its family entry and no recorded row changes price. To price a
   variant, add it to `policy/prices.json` or override it under `prices` in `config.json`; until
   then it is counted in the `unpriced` footer and carries no `harness.usd` attribute (#517).
+
+- The `spawn-confinement` qualification case now reads the harness decision log for the refused spawn's
+  session, so a framework spawn the hook refused is observed even when a headless client does not repeat the
+  refusal in its answer. The client's text is kept as a second signal, and when it carries the refusal its
+  wording is still checked. (#702)
+
+- Three scripted native-acceptance cases now drive `bin/harness` with the contract it actually has.
+  The role-confinement case passes the client's own `--runtime` to `harness role run`, the
+  bidirectional-handoff case writes its task contract to a file and passes that path to
+  `harness task save --input`, whose help now says it takes a path, and the migration-uninstall case
+  changes a harness-owned setting by hand before uninstalling, so its expected exit 2 and "user
+  changes preserved" are what it observes. A new test drives each case's call through the real CLI. (#703)
+
+- The `gate-invalidation` acceptance case now reads the stop-gate hook's state record at the
+  repository's resolved path, where the hook writes it, so a disposable home under a symlinked
+  temporary directory such as macOS's no longer reports the gate as never recorded. Its probe
+  repository also ignores the gate's own run counter, which had made every green run look like a
+  tree changed during the gate. (#704)
+
+- The `cost-posture` and `framework-spawn-routing` qualification cases no longer fail when a
+  headless resume reroutes an unnamed spawn to a band worker. Headless `claude -p --resume` runs
+  as a new process that loads its agent registry and announces the restored workers, so the
+  spawn hook routes on that announcement as designed. The case now reads the session record and
+  the transcript's agent listing. It fails only when the record widened on resume, when a
+  reroute went to a worker nothing named, or when the spawn did not run. (#705)
+
+- The native acceptance runner now refuses a target whose platform is not the host's, naming both,
+  before any case runs; it used to stamp the record's platform from the target spec, so a Linux round
+  driven on a Mac wrote the Mac's outcome as a Linux record. The round driver's plan says where each
+  target runs, and a round skips a target meant for another host, reporting it as not run here. (#708)
+
+- Three native qualification cases now observe what happened instead of reporting `unverified`.
+  `role-confinement` parses the JSON worker record `harness role run` prints, and reads the result
+  from its `result_path`. `bidirectional-handoff` reads the writing runtime from the task record
+  itself and asks the reading session for it by name. `spawn-confinement` reads the session
+  transcript to tell a refused spawn from an allowed one and from one the model never attempted,
+  and says which. (#716)
+
+- The `spawn-confinement` native case now makes the model attempt the spawn it classifies. Its brief
+  quoted nothing and gave the descriptor's "read that file" no referent, so a model asked which file
+  was meant instead of calling the Agent tool. The spawn prompt now opens with a sentence naming the
+  file, keeps the descriptor's own sentences verbatim and still names no `subagent_type`, and the
+  brief says the quoted text is the subagent's. (#718)
+
+- A qualification round given no `--model` now passes each target its routed execution model, so
+  the cases run on the model the round and evidence records declare; they used to run on the
+  runner's default (`haiku`) while the records named the routed model. An operator's `--model`
+  still wins and the routing says so with `model_source: operator` and the routed model beside it.
+  Every evidence record and per-case row now carries `model_run`, the model passed to the client. (#721)
 
 ## [0.12.0] — 2026-09-22
 
