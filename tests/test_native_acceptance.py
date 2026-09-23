@@ -32,7 +32,7 @@ MODULE = load()
 CLIENT = "claude-code-cli-macos"
 
 
-def stub_probe(client, name, model, keep):
+def stub_probe(client, name, model, keep, confirmed=False):
     return {"case": name, "result": "passed", "observation": "A native session did the thing.",
             "seconds": 0.1, "sessions": 1}
 
@@ -88,8 +88,13 @@ class RecordTests(unittest.TestCase):
         with patch.object(compatibility.Path, "read_bytes", return_value=rendered):
             self.assertEqual(compatibility.evidence_errors(REPO, catalog, client), [])
 
-    def test_an_unautomated_case_is_unverified_with_its_reason(self):
-        data = self.record()
+    def test_a_required_case_with_no_driver_is_unverified_with_its_reason(self):
+        # Every required case is registered today; what is guarded is that one added to the
+        # catalog ahead of its driver records itself as unobserved rather than silently absent.
+        without = dict(MODULE.CASES)
+        without.pop("migration-uninstall")
+        with patch.object(MODULE, "CASES", without):
+            data = self.record()
         self.assertEqual(data["cases"]["migration-uninstall"], "unverified")
         self.assertIn(MODULE.NOT_AUTOMATED, data["observations"])
 
@@ -196,7 +201,7 @@ class KeychainTests(unittest.TestCase):
         failed = self.completed(1, "security: could not create")
         with patch.object(MODULE.platform, "system", return_value="Darwin"), \
                 patch.object(MODULE, "run", return_value=failed) as ran:
-            home = MODULE.Home("claude", "kc", "haiku")
+            home = MODULE.Home(MODULE.CLIENTS[CLIENT], "kc", "haiku")
             self.addCleanup(home.discard)
             launches = len(ran.call_args_list)
             with self.assertRaises(MODULE.Unverified) as caught:

@@ -17,18 +17,60 @@ is only the mechanics of a run.
 - Every probe is one short headless turn and costs money. Use the cheapest model the client
   offers; `--model` defaults to it.
 
+## Provisioning the round
+
+A round needs a frozen clone of the commit it qualifies and somewhere to keep each target's
+record. Provision both once, outside the checkout:
+
+```sh
+python3 scripts/qualification_provision.py --out ../round-v<version>
+```
+
+The clone is taken from this repository's own object store and is refused unless the tree is
+clean and the clone lands on the commit named. No required case runs a framework workflow, so no
+case needs anything else. On a minor release, `--bmad` also installs a BMad framework checkout
+with the pinned installer from [bmad](bmad.md) for the optional integration suite in
+[releasing](releasing.md#source-and-qualification), which is run by hand; it is the only step that
+reaches the network, and `--print-env` prints the export that suite's operator needs.
+
 ## Running
 
 ```sh
 python3 scripts/native_acceptance.py --client claude-code-cli-macos --dry-plan
 python3 scripts/native_acceptance.py --client claude-code-cli-macos --cases cost-posture \
     --model haiku --out ../native-cost-posture.json
+python3 scripts/qualification_round.py --round ../round-v<version> --plan
+python3 scripts/qualification_round.py --round ../round-v<version> \
+    --targets claude-code-cli-macos,codex-cli-macos --model haiku
 ```
 
-`--dry-plan` launches no client and names, per case, what a run would do or that the case is not
-automated yet. `--keep-home` leaves each disposable home in place for debugging; without it every
-home is removed at the end of its case. Write `--out` outside the checkout: the runner refuses to
-run against a dirty tree, and an evidence file is added to the tree deliberately, after review.
+`--dry-plan` launches no client and names, per case, what a run would do. `--keep-home` leaves
+each disposable home in place for debugging; without it every home is removed at the end of its
+case. Write `--out` outside the checkout: the runner refuses to run against a dirty tree, and an
+evidence file is added to the tree deliberately, after review.
+
+`scripts/qualification_round.py` drives a provisioned round: the smoke tier once, then the
+runner per target from the frozen clone, one record each. It decides nothing and stops for
+nothing — a round collects every target's defects before any of them is fixed, which is the rule
+in [releasing](releasing.md#freeze-the-qualification-branch) — and it exits non-zero unless every
+case of every target passed. A target's earlier record is moved aside before its runner is
+launched, so a runner that exits before writing one reports every case `unverified` rather than
+the previous round's passes, and a target that runs past the round deadline is recorded and
+carried rather than raised — the targets after it still run.
+
+## Client surfaces
+
+Each surface names the environment variable that moves its whole configuration home, which is
+what makes a disposable home possible: `CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for
+Codex. The Codex surface is driven headlessly with `codex exec --json` and read from the rollout
+files under its home, following `adapters/codex/worker.py` and
+[usage](usage.md#codex-rollouts).
+
+**No Codex round has been driven through this runner.** Until one has been, its reading is
+derived from those files rather than observed, so every Codex verdict is reported `unverified`
+with the observation kept, exactly as an unobserved case is. On the first round that runs a Codex
+target, qualify it by hand as well, compare the two, and pass `--home-confirmed` only once they
+agree. Record that comparison with the round's observations.
 
 ## Credentials
 
