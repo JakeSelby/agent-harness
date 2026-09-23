@@ -54,7 +54,7 @@ transcript, and stamping today's would make the whole history look like this rel
 
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
-`days` and, when the row has any, `idless_records`.
+`days`, `raw_vs_deduped` and, when the row has any, `idless_records`.
 The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
@@ -68,7 +68,18 @@ response, and a call whose other records do carry a message id joins their slot 
 opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
 deduplicated at all — it is summed as written, and `idless_records` counts how many such records
 the row's totals include, the session's own and those of the subagent files folded into them.
-A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls. The token totals **include the
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls.
+
+`raw_vs_deduped` is **the measured size of that inflation**: the per-line sum of the four token
+fields over the deduplicated total the row carries, across the same records — the session's own
+and those of the subagent files folded into it. `1.0` says the transcript held nothing to
+remove; `2.4` says counting every line would have billed this session for two and a half times
+what it spent. One ratio rather than one per field, because the fields are deduplicated by the
+same slots and the row already carries each of them for a reader who wants them apart. A row
+that measured no raw figure — a Codex row, a worker row, a row written before this release —
+carries the string `"unknown"` rather than `1.0`, which would claim a measurement nobody made.
+`harness usage` reports the token-weighted ratio over the window as a footer figure, and the
+OTLP export carries the row's own as the `raw_vs_deduped` attribute. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;

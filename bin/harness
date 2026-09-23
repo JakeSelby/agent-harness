@@ -3936,6 +3936,10 @@ def cmd_usage(args: argparse.Namespace) -> int:
     delegated: List[Dict[str, Any]] = []
     unknown_metrics = set()
     unpriced = 0
+    # The measured inflation of the counted totals, weighted by the tokens each run counted, so
+    # a long session moves the figure more than a short one. A run whose row carries no ratio —
+    # Codex, a worker, a row written before the field existed — is counted as unknown.
+    dedup_raw, dedup_counted, dedup_runs, dedup_unknown = 0.0, 0, 0, 0
     ledger: List[Dict[str, Any]] = []
     for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
         try:
@@ -3976,6 +3980,15 @@ def cmd_usage(args: argparse.Namespace) -> int:
             continue
         cost = row_cost(row, table, children.get(row.get("session_id") or "")
                         if kind == "session" and row.get("runtime") != "codex" else None)
+        ratio = row.get("raw_vs_deduped")
+        counted = sum(v for v in (row.get(name) for name in RATE_FIELDS)
+                      if isinstance(v, int) and not isinstance(v, bool) and v > 0)
+        if isinstance(ratio, float) and counted > 0:
+            dedup_raw += ratio * counted
+            dedup_counted += counted
+            dedup_runs += 1
+        else:
+            dedup_unknown += 1
         if sliced and days_map:
             # The run is counted on the day the session ended, once; its tokens are counted on
             # the days they were spent. So the run column still counts sessions rather than
@@ -4062,6 +4075,15 @@ def cmd_usage(args: argparse.Namespace) -> int:
     # cheap window unless the runs it could not price are counted somewhere.
     say(f"unpriced: {unpriced} run(s), unknown model or partial tokens" if unpriced
         else "unpriced: none")
+    # The size of the deduplication, said rather than silently applied: the columns above are
+    # the corrected figures, and this is how much larger counting every transcript line would
+    # have made them. See docs/usage.md.
+    if dedup_counted:
+        say(f"raw_vs_deduped: raw totals were {dedup_raw / dedup_counted:.2f}x the counted "
+            f"totals over {dedup_runs} run(s)"
+            + (f", {dedup_unknown} run(s) unknown" if dedup_unknown else ""))
+    else:
+        say("raw_vs_deduped: unknown, no run in this window recorded a raw figure")
     if not table:
         say(f"no price table: {PRICES_PATH} is missing or unreadable")
     return 0

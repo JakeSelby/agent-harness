@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Every session row carries `raw_vs_deduped`, the measured size of the usage deduplication: the
+  per-line sum of the four token fields over the deduplicated total the row reports, taken over
+  the same records — the session's own and those of the subagent files folded into it. The
+  totals are corrected once per message id at that id's largest figure, and the raw sum used to
+  be discarded, so a session whose transcript repeated every response and one that repeated none
+  reported the same figure with no way to tell them apart. `harness usage` prints the
+  token-weighted ratio for the window as a footer figure beside `unpriced`, and the OTLP export
+  carries the row's own as a `raw_vs_deduped` attribute. A row that measured no raw figure — a
+  Codex row, whose runtime reports cumulative snapshots rather than a figure per record, a
+  worker row, or a row written before this release — reads `unknown` rather than `1.0`, which
+  would claim a measurement nobody made (#518).
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
   the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
   behind each state. It is derived from a `tier_restriction` entry in
