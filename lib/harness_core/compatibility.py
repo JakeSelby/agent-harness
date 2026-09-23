@@ -113,6 +113,9 @@ def catalog(root):
     for row in data["clients"]:
         if row.get("status") not in STATES:
             raise ValueError("invalid compatibility status")
+        # A truthy string here would silently claim enforcement for a surface that has no hooks.
+        if not isinstance(row.get("installs_hooks", True), bool):
+            raise ValueError(row["id"] + ": installs_hooks must be true or false")
         if row["status"] == "qualified":
             errors = evidence_errors(root, data, row)
             if errors:
@@ -221,16 +224,23 @@ def tier_restriction(root, client):
     adapter's `without_hooks` entry instead: the same prose, none of the refusal. A runtime with
     no adapter, or none declaring the key, restricts nothing.
     """
-    path = root / "adapters" / str(client.get("runtime")) / "capabilities.json"
+    runtime = str(client.get("runtime"))
+    path = root / "adapters" / runtime / "capabilities.json"
     entry = json.loads(path.read_text()).get("tier_restriction") if path.is_file() else None
     if not isinstance(entry, dict):
         return {"state": "none", "mechanism": None}
-    if client.get("installs_hooks", True) is False and isinstance(entry.get("without_hooks"), dict):
-        entry = entry["without_hooks"]
-    if entry.get("state") not in TIER_RESTRICTIONS:
-        raise ValueError(client.get("runtime", "?") + " declares an unknown tier restriction: "
-                         + str(entry.get("state")))
-    return {"state": entry["state"], "mechanism": entry.get("mechanism")}
+    # Both branches are validated whichever one this client takes, so a typo in the fallback is
+    # not discovered by the one surface that reads it.
+    resolved = entry
+    for candidate in (entry, entry.get("without_hooks")):
+        if candidate is None:
+            continue
+        if not isinstance(candidate, dict) or candidate.get("state") not in TIER_RESTRICTIONS:
+            raise ValueError(runtime + " declares an unknown tier restriction: "
+                             + json.dumps(candidate))
+        if candidate is not entry and client.get("installs_hooks", True) is False:
+            resolved = candidate
+    return {"state": resolved["state"], "mechanism": resolved.get("mechanism")}
 
 
 def capability_states(root, data, client):
