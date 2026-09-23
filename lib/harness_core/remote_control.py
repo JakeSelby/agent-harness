@@ -367,7 +367,12 @@ def worktree_add_argv(root, path, branch, base, branch_exists):
 
 # --------------------------------------------------------------------------- lost sessions
 
-SESSIONS_URL = "https://api.anthropic.com/v1/code/sessions?limit=50"
+# The cap is a budget, so the page has to be spent on the newest sessions: a lost session is
+# recovered within minutes or not at all. The endpoint takes no sort parameter — `sort` and
+# `order` were measured on 2026-09-22 to return the identical page — so the order is checked on
+# arrival by `descending_by_event` and never requested.
+PAGE_LIMIT = 50
+SESSIONS_URL = "https://api.anthropic.com/v1/code/sessions?limit=%d" % PAGE_LIMIT
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 API_HEADERS = {"anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20"}
 # `--session-id` reattach hosts register the lost environment a second time, as a single-session
@@ -390,8 +395,83 @@ def sessions_request(token):
     return Request(SESSIONS_URL, headers=dict(API_HEADERS, Authorization="Bearer " + token))
 
 
+def session_rows(payload):
+    """The rows of one sessions page, or None when the payload is not a page of session objects.
+
+    An entry that is not an object refuses the whole page rather than being dropped: what is left
+    would pass the order check trivially, and a page this malformed says nothing about the rest.
+    """
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+        return None
+    return data
+
+
+def event_time(row):
+    """One row's `last_event_at` as a datetime, or None when it carries no readable one.
+
+    The field is ISO-8601 with microseconds and a `Z`, which 3.9's parser does not take.
+    """
+    stamp = row.get("last_event_at")
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp[:-1] + "+00:00" if stamp.endswith("Z") else stamp)
+    except ValueError:
+        return None
+
+
+def descending_by_event(rows):
+    """Whether a page is newest-first by `last_event_at`, the field the server orders by.
+
+    Measured against a live account on 2026-09-22: a 50-row page is descending by `last_event_at`
+    with no violations, while `updated_at` goes backwards seven times within it and `created_at`
+    twenty-two, so `last_event_at` is the only field the cap can be read under.
+
+    A page of more than one row holding a row with no readable timestamp is not descending: its
+    order cannot be read, and under a cap an order that cannot be read is refused rather than
+    assumed.
+    """
+    times = [event_time(row) for row in rows]
+    if len(times) < 2:
+        return True
+    if any(when is None for when in times):
+        return False
+    return all(a >= b for a, b in zip(times, times[1:]))
+
+
+class SessionPage(object):
+    """One capped read of the sessions endpoint: what came back, or why nothing did.
+
+    The three statuses are kept apart because a caller must never print one as another — a
+    refused page is not an account with no lost sessions. `truncated` is whether the account
+    holds more sessions than this page, which is as far as a capped read can honestly speak.
+    """
+
+    FAILED, REFUSED, OK = "failed", "refused", "ok"
+
+    def __init__(self, status, rows=(), truncated=False):
+        self.status = status
+        self.rows = list(rows)
+        self.truncated = truncated
+
+    @property
+    def ok(self):
+        return self.status == self.OK
+
+    def with_rows(self, rows):
+        return SessionPage(self.status, rows, self.truncated)
+
+    def scope(self):
+        """What the count on this page may claim: the account, or only the newest `PAGE_LIMIT`."""
+        return " in the newest %d" % PAGE_LIMIT if self.truncated else ""
+
+
 def fetch_sessions(token, opener=None):
-    """The account's recent Remote Control sessions, or None when the call fails.
+    """One page of the account's recent Remote Control sessions, newest first.
+
+    A page that did not arrive newest-first is refused rather than read, because under a cap the
+    rows such a page dropped are unknown rather than merely old.
 
     A failure here is a report line, never an exit code: the supervisor's other work does not
     depend on the network.
@@ -400,16 +480,21 @@ def fetch_sessions(token, opener=None):
         with (opener or urlopen)(sessions_request(token), timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except Exception:  # noqa: BLE001 - any network or parse failure reads the same to the caller
-        return None
-    data = payload.get("data") if isinstance(payload, dict) else None
-    return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else None
+        return SessionPage(SessionPage.FAILED)
+    rows = session_rows(payload)
+    if rows is None:
+        return SessionPage(SessionPage.FAILED)
+    if not descending_by_event(rows):
+        return SessionPage(SessionPage.REFUSED)
+    return SessionPage(SessionPage.OK, rows, bool(payload.get("next_cursor")))
 
 
 def disconnected_sessions(rows, environment_ids):
     """Sessions still `active` whose bridge is `disconnected`, on an environment this Mac ran.
 
     An archived session is past recovery and one on another device's environment is not ours,
-    so both are left out.
+    so both are left out. The page's own order is kept: it has already been checked newest-first
+    by `last_event_at`, and re-sorting on `updated_at` would scramble it.
     """
     wanted = {str(e) for e in (environment_ids or [])}
     out = []
@@ -419,7 +504,7 @@ def disconnected_sessions(rows, environment_ids):
         if row.get("environment_id") not in wanted:
             continue
         out.append(row)
-    return sorted(out, key=lambda row: str(row.get("updated_at") or ""), reverse=True)
+    return out
 
 
 def reattach_command(session, permission_mode="default"):

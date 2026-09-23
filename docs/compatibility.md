@@ -36,10 +36,23 @@ a stance entry or on `role_execution` in `adapters/<runtime>/capabilities.json`;
 must be one of the catalog's `required_cases`. Listing cases under a capability that is not
 `qualified`, or claiming `qualified` without them, is a contradiction between the two files:
 `harness compatibility --release-check` blocks the release and the test suite fails. Today no
-adapter names a case, so every capability is `unqualified` while the four CLI clients are
-qualified, which is what the table below says. `harness compatibility --json` emits both levels,
+adapter names a case and no client is qualified, so every cell below reads `unqualified`, which is
+what the table says. `harness compatibility --json` emits both levels,
 each client row carrying its derived `capabilities`. The capability-by-client layout follows the
 generated matrix in [wshobson/agents' `docs/harnesses.md`](https://github.com/wshobson/agents/blob/main/docs/harnesses.md).
+
+The table's last row answers a different question: not whether a capability carries native
+evidence, but whether the `delegation` stance's model-tier ceiling binds on that surface.
+`tier_restriction` in `adapters/<runtime>/capabilities.json` declares it per runtime, with a
+`without_hooks` entry for a client that installs no hooks — `"installs_hooks": false` on a catalog
+client, which today is the plugin-marketplace install. The Claude Code CLI and VS Code surfaces
+read `enforced`, because `claude/hooks/tier-agent-spawns.py` rewrites an `Agent` call that asks for
+the strongest class by `model:` down to the class below unless the role it names declares that
+class itself. Every Codex surface reads `advisory`: the coordinator does run there, and a Codex
+`Agent` call still passes the role, marker, evasion and brief checks, but the tier rewrite is
+behind a `runtime == "claude-code"` gate in `lib/harness_core/lifecycle.py`, so the ceiling
+reaches Codex as projected prose alone. The marketplace install reads `advisory` for the plainer
+reason that it installs no hooks at all.
 
 <!-- harness:compatibility:start -->
 **Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
@@ -60,6 +73,9 @@ A client's status is not a capability's status. Each cell is derived from that r
 | `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 | `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 | `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| tier restriction | enforced | enforced | enforced | advisory | advisory | advisory | advisory | advisory |
+
+The last row is not a qualification state. It says whether the delegation stance's model-tier ceiling is **enforced** (a hook rewrites or refuses the spawn), **advisory** (prompt text only) or **none**, carried advisory by `primitives/skills/delegation-tiering/SKILL.md`, `primitives/stances/delegation/tiered.md`; enforced by `claude/hooks/tier-agent-spawns.py`. `enforced` is narrower than it sounds. It never reaches the session's own model: the `model` settings key is one this harness never writes (`docs/settings-ownership.md`). Within a session it rewrites a spawn only while the selected `delegation` variant is `tiered` — `off` stops the spawn instead, and any other variant leaves it alone — and only while the adapter's class table maps at least two models, since one class is no ladder to move a spawn down. Under every other condition the ceiling is prose, exactly as `advisory` is everywhere.
 <!-- harness:compatibility:end -->
 
 Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md)
