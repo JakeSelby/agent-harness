@@ -1,6 +1,7 @@
 ---
 title: Agent Harness architecture spine
-status: final
+status: superseded
+superseded_by: ../architecture-agent-harness-2026-09-23/ARCHITECTURE-SPINE.md
 created: 2026-09-19
 updated: 2026-09-19
 sources:
