@@ -1,6 +1,6 @@
 ---
 name: harness-authoring
-description: Decide where an instruction belongs and write it there. Use when asked to add, change or remove a rule, skill, instruction, hook, setting or CLAUDE.md line, when asked to "remember" something that should persist beyond this session, or when a correction should apply to future sessions. Routes the change into the agent-harness checkout, a personal file, a repo's own instructions, or auto memory, and runs the sync and lint.
+description: Decide where an instruction belongs and write it there, then sync and lint. Use when asked to add, change or remove a rule, skill, instruction, hook, setting or CLAUDE.md line, to "remember" something that should persist beyond this session, or when a correction should apply to future sessions.
 ---
 
 # Harness authoring

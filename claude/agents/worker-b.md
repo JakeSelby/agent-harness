@@ -1,6 +1,6 @@
 ---
 name: worker-b
-description: Band B work — bounded multi-step work with a named guard: a sequential two-tool chain, bulk read-and-summarize over a list the caller names, mechanical edits applying an already-decided plan, a structured return whose values the caller validates. Choose this band when the steps are known in advance; branching on intermediate results is worker-c.
+description: Band B work — bounded multi-step work with a named guard: a sequential two-tool chain, bulk read-and-summarize over a caller-named list, mechanical edits applying an already-decided plan, a structured return the caller validates. Choose this band when the steps are known in advance; branching on intermediate results is worker-c.
 model: opus
 disallowedTools: Agent
 effort: low
