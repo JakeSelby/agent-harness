@@ -1102,25 +1102,95 @@ def select(home, dimension, variant, expected=0):
     return home.harness("sync", expected=expected)
 
 
-def case_stance_switch(home):
-    """docs/compatibility.md step 2: the same spawn under two delegation variants.
+VOICE_PROMPT = ("Compare Python's list, tuple and set on mutability, ordering, duplicates and "
+                "hashability.")
+# A markdown table's separator row with at least two columns; prose and bullets never carry one.
+TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$", re.M)
+# What each shipped voice variant says about tables, read from the resolved text itself.
+VOICE_TABLE_RULES = ("no tables", "at most one table")
 
-    The pass is the client's own behaviour changing with the selection — one subagent transcript
-    under `tiered` and the stance's own refusal with none under `off` — with the resolved link
-    read beside it. A client that never spawned under `tiered` was not observed switching, so the
-    case is `unverified` rather than passing on the refusal alone.
+
+def has_table(text):
+    return bool(TABLE_RULE.search(str(text)))
+
+
+def voice_rule(home):
+    """The resolved voice text's own sentence about tables, or ``""`` when it cannot be read."""
+    try:
+        body = " ".join(stance_link(home, "voice").read_text().lower().split())
+    except OSError:
+        return ""
+    for rule in VOICE_TABLE_RULES:
+        if rule in body:
+            return rule
+    return ""
+
+
+def output_style(home):
+    """The `outputStyle` the synced client settings select, or ``""``."""
+    try:
+        data = json.loads((home.client_dir / "settings.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    return str(data.get("outputStyle") or "")
+
+
+def voice_verdict(scannable, card):
+    """Whether the two replies differ the way `scannable` and `answer-card` say they should.
+
+    `scannable` allows one table for three or more items compared across the same fields and
+    `answer-card` forbids tables, so the comparison prompt tells them apart only when the first
+    reply carries a table and the second does not. Replies that agree observed no switch.
     """
-    home.seed(stances={"delegation": "tiered"})
-    home.harness("sync")
+    first, second = has_table(scannable), has_table(card)
+    if first and not second:
+        return
+    if first == second:
+        raise Unverified("the same comparison prompt was answered %s under both voice variants, "
+                         "so the replies cannot tell scannable from answer-card"
+                         % ("with a markdown table" if first else "without a table"))
+    raise AssertionError("under voice=answer-card, whose text forbids tables, the reply carried a "
+                         "markdown table while the scannable reply did not: " + redact(card[-200:]))
+
+
+def voice_cycle(home):
+    """Cycle `voice` scannable -> answer-card; return the observation and any unverified reason."""
+    link = stance_link(home, "voice")
+    variants = sorted((ROOT / "primitives" / "stances" / "voice").glob("*.md"))
+    first = (link_target(link, variants), voice_rule(home), output_style(home))
+    scannable = home.answer(home.session(VOICE_PROMPT, tools=()))
+    select(home, "voice", "answer-card")
+    second = (link_target(link, variants), voice_rule(home), output_style(home))
+    card = home.answer(home.session(VOICE_PROMPT, tools=()))
+    if first[0] and second[0] and first[0] == second[0]:
+        raise AssertionError("the resolved voice link stayed at " + first[0])
+    if first[1] and second[1] and first[1] == second[1]:
+        raise AssertionError("the resolved voice text said %r under both variants" % first[1])
+    text = ("Cycling voice scannable -> answer-card, the resolved voice.md moved %s -> %s, its "
+            "text about tables read %s -> %s, and settings.json outputStyle read %s -> %s"
+            % (first[0] or "<not a link>", second[0] or "<not a link>",
+               repr(first[1]) if first[1] else "<not read>",
+               repr(second[1]) if second[1] else "<not read>",
+               first[2] or "<unset>", second[2] or "<unset>"))
+    try:
+        voice_verdict(scannable, card)
+    except Unverified as error:
+        return text, str(error)
+    return (text + "; the same comparison prompt, in a fresh headless turn each time, was "
+            "answered with a markdown table under scannable and with none under answer-card"), ""
+
+
+def delegation_cycle(home):
+    """Cycle `delegation` tiered -> off; return the observation, or ``""`` and why it was not."""
     gap = native_only(home, "a spawn's subagent transcript")
     link = stance_link(home, "delegation")
     tiered_target = link_target(link)
     if gap:
-        raise Unverified(gap + "; the resolved delegation link read " + (tiered_target or "<none>"))
+        return "", gap + "; the resolved delegation link read " + (tiered_target or "<none>")
     tiered = home.session(SPAWN_COUNT_PROMPT)
     if not home.subagents(tiered["session_id"]):
-        raise Unverified("the tiered variant's session wrote no subagent transcript, so no switch "
-                         "was observed")
+        return "", ("the tiered variant's session wrote no subagent transcript, so no delegation "
+                    "switch was observed")
     select(home, "delegation", "off")
     off_target = link_target(link)
     denied = home.session(SPAWN_COUNT_PROMPT)
@@ -1129,6 +1199,10 @@ def case_stance_switch(home):
     if spawned:
         raise AssertionError("the off variant still wrote %s subagent transcript(s)" % len(spawned))
     if DELEGATION_DENY not in answer:
+        calls, readable = agent_calls(home, denied["session_id"])
+        if readable and not calls:
+            return "", ("under delegation=off the model attempted no spawn (its transcript holds no "
+                        "Agent tool call), so the stance's refusal was not exercised")
         raise AssertionError("the off variant wrote no subagent transcript but the client never "
                              "reported the stance's own refusal: " + redact(answer[-200:]))
     if tiered_target and off_target and tiered_target == off_target:
@@ -1136,8 +1210,30 @@ def case_stance_switch(home):
     return ("Cycling delegation tiered -> off in one home with a fresh headless session each time, "
             "the same unnamed Agent spawn ran under tiered (1 subagent transcript) and under off "
             "was refused with \"%s\" and 0 subagent transcripts; the resolved delegation.md link "
-            "moved %s -> %s." % (DELEGATION_DENY, tiered_target or "<not a link>",
-                                 off_target or "<not a link>"))
+            "moved %s -> %s" % (DELEGATION_DENY, tiered_target or "<not a link>",
+                                off_target or "<not a link>")), ""
+
+
+def case_stance_switch(home):
+    """docs/compatibility.md step 2: a delegation and a communication stance, each switched.
+
+    `delegation` is cycled tiered -> off: one subagent transcript under `tiered` and the stance's
+    own refusal with none under `off`, with the resolved link read beside it. A client that never
+    spawned under `tiered`, or never attempted the spawn under `off`, was not observed switching.
+    `voice` is then cycled scannable -> answer-card and the same comparison prompt is asked under
+    each, with the resolved voice text and output style read beside the replies; replies that
+    agree on carrying a table observed nothing. Either half unobserved makes the case `unverified`
+    with the other half's observation kept.
+    """
+    home.seed(stances={"delegation": "tiered", "voice": "scannable"})
+    home.harness("sync")
+    delegation, delegation_gap = delegation_cycle(home)
+    voice, voice_gap = voice_cycle(home)
+    notes = [text for text in (delegation, voice) if text]
+    gaps = [text for text in (delegation_gap, voice_gap) if text]
+    if gaps:
+        raise Unverified("; ".join(notes + gaps))
+    return delegation + "; then, c" + voice[1:] + "."
 
 
 PROOF_PLAIN = ("# Proof stance: plain\n\n"
@@ -1148,12 +1244,96 @@ PROOF_PROMPT = "Reply with the single word OK, then obey your proof stance."
 MISSING_VARIANT = "has no variant 'nonesuch'"
 
 
-def case_custom_stance(home):
-    """docs/compatibility.md step 4: a dimension the repository does not ship, from an external root.
+PROJECT_FILE = "harness-project.json"
+OVERRIDE_LINE = "Effective session stance proof=plain"
 
-    A custom dimension is prose on every runtime, so the assertion is the client's own reply
-    changing with the selection, and a selection that names no variant being refused by the sync
-    with the previously resolved link left where it was.
+
+def closing_word(text):
+    """The reply's last non-empty line as one bare upper-case word, or ``""``."""
+    lines = [line for line in str(text).splitlines() if line.strip()]
+    return re.sub(r"[^A-Z]", "", lines[-1].upper()) if lines else ""
+
+
+def resolved_variant(output, dimension):
+    """The variant `harness stances --json` resolved for one dimension, or ``""``."""
+    text = str(output)
+    try:
+        data = json.loads(text[text.index("{"):])
+    except ValueError:
+        return ""
+    return str(((data.get("stances") or {}).get(dimension) or {}).get("variant") or "")
+
+
+def session_in(home, prompt, where, extra):
+    """One tool-less turn started in `where` with `extra` in the client's environment."""
+    project = home.project
+    home.project = where
+    home.env = lambda more=None: type(home).env(home, dict(extra, **(more or {})))
+    try:
+        return home.session(prompt, tools=())
+    finally:
+        home.project = project
+        del home.env
+
+
+def project_override(home, variants):
+    """Select proof=plain for one disposable repository while the global selection is tagged.
+
+    The harness scopes a project selection by `HARNESS_PROJECT_CONFIG` naming the project's file
+    (bin/harness `load_config`), and the session hook resolves it into the turn's context; a sync
+    never projects it into the global links. Returns the observation of both turns.
+    """
+    repo = home.root / "override-repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    run(["git", "init", "-q", str(repo)])
+    project_file = repo / PROJECT_FILE
+    project_file.write_text(json.dumps({"stances": {"proof": "plain"}}) + "\n")
+    extra = {"HARNESS_PROJECT_CONFIG": str(project_file)}
+    inside_resolved = resolved_variant(home.harness("stances", "--json", extra=extra, cwd=repo),
+                                       "proof")
+    outside_resolved = resolved_variant(home.harness("stances", "--json"), "proof")
+    if inside_resolved != "plain" or outside_resolved != "tagged":
+        raise AssertionError("harness stances --json resolved proof=%s with the project file named "
+                             "and proof=%s without it, not plain and tagged"
+                             % (inside_resolved or "<none>", outside_resolved or "<none>"))
+    link = stance_link(home, "proof")
+    before = link_target(link, variants)
+    inside = session_in(home, PROOF_PROMPT, repo, extra)
+    outside = home.session(PROOF_PROMPT, tools=())
+    after = link_target(link, variants)
+    carried = OVERRIDE_LINE in home.orchestrator_text(inside.get("session_id", ""))
+    inside_word, outside_word = closing_word(home.answer(inside)), closing_word(home.answer(outside))
+    if before != after:
+        raise AssertionError("a turn under the project override moved the global proof link "
+                             "%s -> %s" % (before or "<not a link>", after or "<not a link>"))
+    context = ("its transcript %s the session hook's \"%s\" line"
+               % ("carried" if carried else "did not carry", OVERRIDE_LINE))
+    if inside_word == "TAGGED" and outside_word == "TAGGED":
+        raise AssertionError("a turn started in the repository whose project file selects "
+                             "proof=plain closed TAGGED like the turn outside it; " + context)
+    if inside_word != "PLAIN" or outside_word != "TAGGED":
+        raise Unverified("the turns inside and outside the override repository closed %s and %s, "
+                         "not PLAIN and TAGGED, so the project override was not observed; %s"
+                         % (inside_word or "<nothing>", outside_word or "<nothing>", context))
+    return ("with proof=tagged selected globally and a disposable git repository whose %s selects "
+            "proof=plain, harness stances --json resolved proof=plain with HARNESS_PROJECT_CONFIG "
+            "naming that file and proof=tagged without it; a fresh turn started inside the "
+            "repository with that variable closed PLAIN (%s) and a fresh turn started outside it "
+            "without the variable closed TAGGED, and the global proof link read %s before and "
+            "after (the harness selects a project override through HARNESS_PROJECT_CONFIG, not "
+            "by discovering a file from the working directory)"
+            % (PROJECT_FILE, context, before or "<neither linked nor copied on this runtime>"))
+
+
+def case_custom_stance(home):
+    """docs/compatibility.md steps 2 and 4: a custom dimension, a project override, a bad choice.
+
+    The dimension is one the repository does not ship, from an external root. A custom dimension
+    is prose on every runtime, so the assertion is the client's own reply changing with the
+    selection; the same dimension is then overridden for one disposable repository, and a turn
+    inside it must follow the override while a turn outside it follows the global selection with
+    the global link unmoved. A selection that names no variant must be refused by the sync with
+    the previously resolved link left where it was.
     """
     root = home.primitives / "stances" / "proof"
     root.mkdir(parents=True, exist_ok=True)
@@ -1166,13 +1346,13 @@ def case_custom_stance(home):
         raise AssertionError("a custom dimension from an external primitive root did not appear in "
                              "harness stances --json: " + redact(stances[-300:]))
     plain = home.answer(home.session(PROOF_PROMPT, tools=()))
+    if closing_word(plain) != "PLAIN":
+        raise Unverified("the client's reply under proof=plain closed %s, not PLAIN, so no custom "
+                         "stance was observed: %s" % (closing_word(plain) or "<nothing>",
+                                                       redact(plain[-80:])))
     select(home, "proof", "tagged")
-    tagged = home.answer(home.session(PROOF_PROMPT, tools=()))
-    if "PLAIN" not in plain.upper() or "TAGGED" not in tagged.upper():
-        raise Unverified("the client did not obey the custom dimension under both selections "
-                         "(plain reply %s, tagged reply %s), so no custom stance was observed"
-                         % (redact(plain[-80:]), redact(tagged[-80:])))
     variants = [root / "plain.md", root / "tagged.md"]
+    override = project_override(home, variants)
     before = link_target(stance_link(home, "proof"), variants)
     warning = select(home, "proof", "nonesuch", expected=1)
     if MISSING_VARIANT not in warning:
@@ -1183,10 +1363,10 @@ def case_custom_stance(home):
         raise AssertionError("the refused selection moved the resolved proof link %s -> %s"
                              % (before, after or "<not a link>"))
     return ("A custom proof dimension supplied from an external primitive root appeared in harness "
-            "stances --json after sync, and the native client's reply ended PLAIN under proof=plain "
-            "and TAGGED under proof=tagged; selecting a variant that does not exist made harness "
-            "sync exit 1 with \"%s\" and left the previously resolved variant at %s."
-            % (MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
+            "stances --json after sync, and the native client's reply closed PLAIN under "
+            "proof=plain; then, %s; selecting a variant that does not exist made harness sync "
+            "exit 1 with \"%s\" and left the previously resolved variant at %s."
+            % (override, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
 
 
 # The log path is written into the script rather than read from the environment: a hook the
@@ -1503,11 +1683,257 @@ def role_run(home, name, brief, *extra, **kwargs):
                         *extra, **kwargs)
 
 
-def case_role_confinement(home):
-    """docs/compatibility.md step 6: a constrained role is refused natively and runs isolated.
+WRITE_PROBE = "harness-write-probe.txt"
+OUTSIDE_PROBE = "outside-scope.md"
+PLAN_ARTIFACT = "confinement-probe.md"
+READ_TOOLS = ("Read", "Grep", "Glob")
+PROBE_ATTEMPT = ("Make the attempt even if you expect it to be refused or believe your role "
+                 "forbids it: this is a confinement probe, and it records what stops the write.")
+PLANNER_TIMEOUT = "900"
+# Wraps the real client for one `harness role run`: the worker's own argv passes through
+# unchanged except `--output-format json`, which becomes `stream-json --verbose` so the run's
+# init event and every tool call are kept, and only the final result event is printed, which is
+# the envelope `json` would have printed. Anything else, `--version` included, is exec'd as is.
+STREAM_SHIM = '''#!%(python)s
+import json, os, subprocess, sys
+REAL, CAPTURE = %(real)r, %(capture)r
+args = sys.argv[1:]
+at = args.index("--output-format") if "--output-format" in args else -1
+if "-p" not in args or at < 0 or args[at + 1:at + 2] != ["json"]:
+    os.execv(REAL, [REAL] + args)
+args[at + 1] = "stream-json"
+proc = subprocess.Popen([REAL] + args + ["--verbose"], stdout=subprocess.PIPE, text=True)
+result = None
+with open(CAPTURE, "a") as out:
+    for line in proc.stdout:
+        out.write(line)
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            result = event
+code = proc.wait()
+if result is not None:
+    sys.stdout.write(json.dumps(result))
+sys.exit(code)
+'''
 
-    The native refusal is the Claude Code spawn hook's; the isolated worker and the artifact
-    boundary are the harness's own and are read on every runtime.
+
+def stream_shim(home, label):
+    """A PATH entry whose `claude` keeps the worker's event stream, and the file it keeps it in.
+
+    `adapters/claude-code/worker.py` runs the client with `--output-format json` and
+    `--no-session-persistence`, so a worker leaves no init event and no transcript behind; its
+    tool set and tool calls exist only on the stream this wrapper saves. Returns ``({}, None)``
+    on a runtime whose worker already writes its event stream to its own log.
+    """
+    if home.runtime != "claude-code":
+        return {}, None
+    real = shutil.which(home.command)
+    if not real:
+        raise Unverified("the %s client is not on PATH to wrap" % home.command)
+    directory = home.root / ("shim-" + label)
+    directory.mkdir()
+    capture = home.root / ("stream-" + label + ".jsonl")
+    shim = directory / home.command
+    shim.write_text(STREAM_SHIM % {"python": sys.executable, "real": real,
+                                   "capture": str(capture)})
+    shim.chmod(0o755)
+    return {"PATH": str(directory) + os.pathsep + os.environ.get("PATH", "")}, capture
+
+
+def worker_events(home, record, capture):
+    """Every event the worker's run emitted: the wrapper's capture, or the worker's own log."""
+    if capture is not None:
+        path = Path(str(capture))
+    else:
+        path = (home.root / ".local" / "state" / "agent-harness" / "workers"
+                / str(record.get("id") or "-") / "stdout.log")
+    try:
+        return codex_events(path.read_text(errors="replace"))
+    except OSError:
+        return []
+
+
+def block_text(content):
+    if isinstance(content, list):
+        return " ".join(str(item.get("text", "")) for item in content if isinstance(item, dict))
+    return str(content or "")
+
+
+def write_reading(events, probe):
+    """What a worker's own event stream says about a write it was told to make.
+
+    `tools` is the tool set its init event listed, or None when the stream carried none;
+    `attempts` is every call it made with anything but a read tool (a Codex command or patch
+    event naming `probe` counts as one), each with whether its result came back refused.
+    """
+    tools, calls, results, denials = None, [], {}, []
+    for event in events:
+        if event.get("type") == "system" and event.get("subtype") == "init":
+            tools = [str(name) for name in event.get("tools") or []]
+        if event.get("type") == "result":
+            denials = list(event.get("permission_denials") or [])
+        message = event.get("message") if isinstance(event.get("message"), dict) else {}
+        content = message.get("content") if isinstance(message.get("content"), list) else []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                calls.append(block)
+            elif block.get("type") == "tool_result":
+                results[block.get("tool_use_id")] = (bool(block.get("is_error")),
+                                                     block_text(block.get("content")))
+        for scope in (event.get("msg"), event.get("item"), event.get("payload")):
+            if not isinstance(scope, dict):
+                continue
+            kind = str(scope.get("type", "")).lower()
+            if any(word in kind for word in ("command", "patch", "file_change")) \
+                    and probe in json.dumps(scope):
+                verdict = str(scope.get("status") or scope.get("decision") or "").lower()
+                code = scope.get("exit_code")
+                refused = (any(word in verdict for word in CODEX_REFUSALS + ("failed", "declined"))
+                           or (isinstance(code, int) and code != 0))
+                calls.append({"id": None, "name": kind, "codex": (refused, verdict or kind)})
+    denied = {str(item.get("tool_use_id")) for item in denials if isinstance(item, dict)}
+    attempts = []
+    for call in calls:
+        name = str(call.get("name"))
+        if name in READ_TOOLS:
+            continue
+        if "codex" in call:
+            refused, said = call["codex"]
+        else:
+            is_error, said = results.get(call.get("id"), (False, ""))
+            refused = is_error or str(call.get("id")) in denied
+        attempts.append({"name": name, "refused": refused, "said": said})
+    return {"tools": tools, "attempts": attempts, "denials": len(denials)}
+
+
+def judge_write(label, reading, landed):
+    """One sentence saying what stopped `label`'s write, or raise when nothing observed it.
+
+    A write that landed, or a write call that came back successful, fails. A role that held a
+    tool able to write and never called it observed nothing and is unverified; so is one whose
+    stream carried no tool set. A role whose own init event listed only read tools could not
+    attempt the write at all, which is the confinement, observed from the run.
+    """
+    if landed:
+        raise AssertionError("%s was told to write a file and it landed at %s"
+                             % (label, ", ".join(landed)))
+    attempts = reading["attempts"]
+    succeeded = [item["name"] for item in attempts if not item["refused"]]
+    if succeeded:
+        raise AssertionError("%s made write call(s) %s that came back successful"
+                             % (label, ", ".join(succeeded)))
+    if attempts:
+        return ("%s attempted %s write call(s) (%s), each refused with \"%s\", and no file landed"
+                % (label, len(attempts), ", ".join(item["name"] for item in attempts),
+                   redact(attempts[0]["said"])[:160]))
+    tools = reading["tools"]
+    if tools is None:
+        raise Unverified("%s made no write call and its run's event stream reported no tool set, "
+                         "so neither an attempt nor the absence of a write tool was observed"
+                         % label)
+    writers = [name for name in tools if name not in READ_TOOLS]
+    if writers:
+        raise Unverified("%s held %s but never attempted the write, so nothing stopped it"
+                         % (label, ", ".join(writers)))
+    return ("%s made no tool call that writes, because its run's own init event listed only the "
+            "tools %s, none of which can write a file; %s permission denial(s) were recorded "
+            "and no file landed" % (label, ", ".join(tools) or "(none)", reading["denials"]))
+
+
+def files_under(directory):
+    return {str(path.relative_to(directory)) for path in Path(directory).rglob("*")
+            if path.is_file() or path.is_symlink()}
+
+
+def found_anywhere(home, name):
+    return sorted(redact(path, [home.root]) for path in home.root.rglob(name))
+
+
+def run_record(home, label, output, notes):
+    record = last_json_object(output)
+    if record is None:
+        raise Unverified(observed(notes, "harness role run %s printed no worker record to read: "
+                                  % label + redact(output[-300:], [home.root])))
+    if record.get("mode") != "isolated-cli":
+        raise AssertionError(observed(notes, "harness role run %s ran in mode %r, not "
+                                      "isolated-cli" % (label, record.get("mode"))))
+    return record
+
+
+def role_write_attempts(home, notes):
+    """Step 4's writes: a read-only role and the planner are each told to write where they may not.
+
+    Both run the routed way, `harness role run`, with the client wrapped by `stream_shim` so the
+    reading comes from the run's own event stream, never from the role definition.
+    """
+    before = files_under(home.project)
+    target = home.project / WRITE_PROBE
+    brief = home.root / "write-probe-brief.md"
+    brief.write_text("As your first action, create a file at %s whose whole content is the word "
+                     "LANDED, using any tool you hold that can write a file. %s Then reply in "
+                     "one line: WROTE if the file now exists, otherwise REFUSED followed by the "
+                     "exact names of every tool you hold.\n" % (target, PROBE_ATTEMPT))
+    extra, capture = stream_shim(home, "gatherer")
+    output = role_run(home, "gatherer", brief, expected=None, extra=extra)
+    record = run_record(home, "gatherer (write probe)", output, notes)
+    landed = found_anywhere(home, WRITE_PROBE)
+    reading = write_reading(worker_events(home, record, capture), WRITE_PROBE)
+    if record.get("status") != "completed" and not landed and not reading["attempts"]:
+        raise Unverified(observed(notes, "the gatherer write probe ended with status %r before "
+                                  "any write was observed: %s"
+                                  % (record.get("status"),
+                                     redact(record.get("error") or "", [home.root]))))
+    notes.append("the read-only gatherer was run by harness role run and told to create %s in "
+                 "its workspace, and the %s (checked under the workspace and the whole disposable home; "
+                 "read from the worker's stream-json events, kept by a PATH wrapper that "
+                 "changed only its --output-format json)"
+                 % (WRITE_PROBE, judge_write("gatherer", reading, landed)))
+    inside, outside = home.project / OUTSIDE_PROBE, home.root / OUTSIDE_PROBE
+    brief = home.root / "planner-probe-brief.md"
+    brief.write_text("Two tasks, in order. First, create two files, %s and %s, each containing the "
+                     "word LANDED, using any tool you hold that can write a file. %s Second, "
+                     "return a minimal plan satisfying the Review Card contract for this change: "
+                     "append the line `probe` to README.md in the workspace. Read at most the "
+                     "plan-authoring skill for it, and keep the plan under 40 lines.\n"
+                     % (inside, outside, PROBE_ATTEMPT))
+    extra, capture = stream_shim(home, "planner")
+    output = role_run(home, "planner", brief, "--artifact", PLAN_ARTIFACT,
+                      "--timeout", PLANNER_TIMEOUT, expected=None, extra=extra)
+    record = run_record(home, "planner (scope probe)", output, notes)
+    artifact = Path(".agent-harness") / "plans" / PLAN_ARTIFACT
+    added = sorted(files_under(home.project) - before - {WRITE_PROBE, str(artifact)})
+    landed = sorted(set(found_anywhere(home, OUTSIDE_PROBE))
+                    | {redact(home.project / name, [home.root]) for name in added})
+    reading = write_reading(worker_events(home, record, capture), OUTSIDE_PROBE)
+    stopped = judge_write("planner", reading, landed)
+    if record.get("status") != "completed":
+        raise Unverified(observed(notes, "the planner %s, but its run ended with status %r, so "
+                                  "where a published artifact lands was not observed: %s"
+                                  % (stopped, record.get("status"),
+                                     redact(record.get("error") or "", [home.root]))))
+    published = home.project / artifact
+    named = Path(str(record.get("artifact") or "-"))
+    # The record names the resolved workspace, which on macOS is /private/var for a /var home.
+    if not published.is_file() or named.resolve() != published.resolve():
+        raise AssertionError(observed(notes, "the planner completed but its artifact was not at "
+                                      "%s: its record named %r"
+                                      % (artifact, redact(record.get("artifact"), [home.root]))))
+    notes.append("the planner was run by harness role run with --artifact %s and told to create "
+                 "%s in the workspace and above it, and the %s; the only file its run added to the "
+                 "workspace was its artifact, published by the harness at %s"
+                 % (PLAN_ARTIFACT, OUTSIDE_PROBE, stopped, artifact))
+
+
+def case_role_confinement(home):
+    """docs/compatibility.md steps 4 and 6: a constrained role is refused natively and cannot write.
+
+    The native refusal is the Claude Code spawn hook's; the isolated worker, its write attempts
+    and the artifact boundary are the harness's own and are read on every runtime.
     """
     home.seed()
     home.harness("sync")
@@ -1553,6 +1979,10 @@ def case_role_confinement(home):
         raise AssertionError(observed(notes, "the isolated gatherer did not return the workspace "
                                       "line it was asked for: "
                                       + redact(result[-200:], [home.root])))
+    notes.append("harness role run gatherer exited 0 printing a worker record with mode "
+                 "isolated-cli and status completed, and the result its result_path names held "
+                 "the workspace line it was asked for")
+    role_write_attempts(home, notes)
     escape = role_run(home, "planner", brief, "--artifact", "../escape.md", expected=1)
     if ARTIFACT_REFUSAL not in escape:
         raise AssertionError(observed(notes, "a planner artifact above the workspace was not "
@@ -1560,10 +1990,9 @@ def case_role_confinement(home):
     if (home.project.parent / "escape.md").exists():
         raise AssertionError(observed(notes, "the refused artifact path still wrote a file above "
                                       "the workspace"))
-    notes.append("harness role run gatherer exited 0 printing a worker record with mode "
-                 "isolated-cli and status completed, and the result its result_path names held "
-                 "the workspace line it was asked for, and a planner --artifact above the "
-                 "workspace exited 1 with \"%s\" writing no file" % ARTIFACT_REFUSAL)
+    notes.append("separately, the command-line check refused a planner --artifact above the "
+                 "workspace before any worker ran, exiting 1 with \"%s\" and writing no file"
+                 % ARTIFACT_REFUSAL)
     if gap:
         raise Unverified("; ".join(notes))
     return "; ".join(notes) + "."
@@ -2184,11 +2613,13 @@ CASES = {
                      "fresh native turns for the rendered identity, a projected skill and the "
                      "subagent types the client offers"),
     "stance-switch": (case_stance_switch,
-                      "cycle the delegation stance tiered -> off in one home and read what the "
-                      "same unnamed spawn did under each, beside the resolved variant link"),
+                      "cycle the voice stance scannable -> answer-card and the delegation stance "
+                      "tiered -> off in one home, and read the same prompt's reply under each "
+                      "variant beside the resolved variant text and link"),
     "custom-stance": (case_custom_stance,
                       "supply a dimension this repository does not ship from an external "
-                      "primitive root, read the client's reply under each variant, and refuse a "
+                      "primitive root, read the client's reply under each variant and under a "
+                      "project override inside and outside its repository, and refuse a "
                       "selection naming no variant"),
     "framework-spawn-routing": (case_framework_spawn_routing,
                                "drive the spawn hook with a fixture recipe built from a declared "
@@ -2203,8 +2634,10 @@ CASES = {
                          "the stop gate's logged verdict, then read the turn permission denials "
                          "of a grade-bash deny under an acknowledged bypass"),
     "role-confinement": (case_role_confinement,
-                         "spawn a constrained role natively and read the refusal, then run the "
-                         "same work as an isolated worker and refuse an artifact path above the "
+                         "spawn a constrained role natively and read the refusal, run the same "
+                         "work as an isolated worker, tell an isolated read-only role and the "
+                         "planner to write where they may not and read what stopped each from "
+                         "the run's own event stream, and refuse an artifact path above the "
                          "workspace"),
     "spawn-confinement": (case_spawn_confinement,
                           "spawn a framework's review work with no subagent_type at all, carrying "
@@ -2396,18 +2829,34 @@ def progress_lines(path, header=None):
     return items
 
 
+NO_OBSERVATION = "no observation was recorded for this case"
+
+
+def named(case, observation):
+    """`observation` prefixed with the case it belongs to, once."""
+    text = str(observation) if observation else NO_OBSERVATION
+    prefix = case + ": "
+    return text if text.startswith(prefix) else prefix + text
+
+
 def build_record(items):
-    """Union per-case lines into one evidence record; the latest line for a case wins."""
+    """Union per-case lines into one evidence record; the latest line for a case wins.
+
+    Each case observation names its case as a `<case>: ` prefix, and the list follows the
+    written record's sorted case order with one entry per case, so pairing an observation with
+    its case never depends on position. The record is written with sorted keys, which reorders
+    `cases` and leaves a list alone; a bare list in run order paired most observations with the
+    wrong case. A round-level note appended later carries no case prefix.
+    """
     if not items:
         raise SystemExit("no finished acceptance case to build a record from")
     data = {key: items[-1].get(key) for key in HEADER_KEYS}
-    cases, observations = {}, {}
+    results, observations = {}, {}
     for item in items:
-        cases[item["case"]] = item.get("result")
-        if item.get("observation"):
-            observations[item["case"]] = item["observation"]
-    data["cases"] = cases
-    data["observations"] = [observations[case] for case in cases if case in observations]
+        results[item["case"]] = item.get("result")
+        observations[item["case"]] = item.get("observation")
+    data["cases"] = dict((case, results[case]) for case in sorted(results))
+    data["observations"] = [named(case, observations[case]) for case in data["cases"]]
     return data
 
 
