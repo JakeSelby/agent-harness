@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 227,
     "task": 26,
-    "bug": 80,
+    "bug": 82,
     "chore": 66,
     "spike": 10,
     "decision": 12
@@ -5377,6 +5377,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B079.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B081",
+      "github_number": 729,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/729",
+      "title": "role-confinement never has a read-only role attempt a write",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B081.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
