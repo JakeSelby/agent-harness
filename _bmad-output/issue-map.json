@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 12,
-    "story": 205,
+    "story": 206,
     "task": 7,
     "bug": 60,
     "chore": 51,
@@ -4287,6 +4287,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C050.md",
       "parent_bmad_id": "AH-E011",
       "parent_github_number": 552,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S205",
+      "github_number": 588,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/588",
+      "title": "Trim the output style and the harness descriptions (#430 changes 2 and 3)",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S205.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     }

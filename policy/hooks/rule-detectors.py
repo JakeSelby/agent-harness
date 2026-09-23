@@ -39,7 +39,7 @@ from ruleprobe.shell import (MAX_COMMAND, MARKER_RE, SUB_PLACEHOLDER, git_calls,
 SECRET_PATTERNS = generic.SECRET_PATTERNS
 
 # The three openers and the closing phrase are read from `claude/output-styles/scannable.md`
-# (lines 27 and 126) at build time and frozen here; this module never reads a file at runtime.
+# (sections 1 and 9) at build time and frozen here; this module never reads a file at runtime.
 BANNED_OPENERS = ("I started by", "After investigating", "Great question")
 BANNED_CLOSER = "Let me know if"
 
