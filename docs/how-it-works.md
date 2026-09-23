@@ -77,8 +77,9 @@ class, an effort and a soft budget for each role and band — which `policy/hook
 resolves once for the dispatcher and every hook alike. Two facts shaped where it can act. A native
 subagent's reasoning effort exists only in an agent definition and not in the spawn call, so the
 posture reaches a spawn by being written into that definition at sync time, and an unnamed spawn
-is routed to a band worker that carries one — in a session whose agent registry already held that
-worker when it started, and otherwise not at all. And an agent can only budget what it can count, so
+is routed to a band worker that carries one — in a session whose agent registry holds that worker,
+because it did at startup or because the runtime has since said it reloaded one, and otherwise not
+at all. And an agent can only budget what it can count, so
 the budget in a brief and the feed that reports against it both come from the same local
 measurements. What each variant sets: [preferences](preferences.md#what-a-session-costs). How it
 is written: [primitive authoring](primitive-authoring.md). What is measured, and what is not:
@@ -99,8 +100,8 @@ configuration homes and rollback. Keep the shared checkout stable and change it 
 artifacts against their recorded state. Personal data stays outside the repository. Keep a personal
 writing-voice profile in your preserved personal instructions; see [identity](preferences.md#identity).
 
-[BMad integration and handoffs](bmad.md) keep framework state and task continuation independent of
-runtime transcripts. [Usage](usage.md) records measurements with explicit gaps. [Preferences](preferences.md)
+[Task continuation](task-continuation.md) and the [BMad integration](bmad.md) keep task state and
+framework state independent of runtime transcripts. [Usage](usage.md) records measurements with explicit gaps. [Preferences](preferences.md)
 explains preset choices; [the stance demonstration](stance-demo.md) shows one switch reaching both
 runtimes and a custom extension.
 

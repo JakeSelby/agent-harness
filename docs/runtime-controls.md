@@ -44,12 +44,13 @@ because code that never knew those roles cannot miss them. `harness uninstall` b
 downgrade is the remedy; it removes what the newer release wrote.
 
 Routing is session-scoped for the same reason that effort is sync-scoped: what a native agent is
-comes from files read at a moment, not from a live lookup. Claude Code loads its agent registry
-when the session process starts and never reloads it, so session start records which definitions
-that registry held, and an unnamed spawn is routed only to a worker named in its own session's
-record. A `startup` writes the record, a `resume` may only narrow an existing one, and `clear` and
-`compact` leave it alone. A session with no record keeps the previous behaviour and is told once
-to start a new one, so start a new session after a sync that installs or changes the band workers.
+comes from files read at a moment, not from a live lookup. Session start records which definitions
+the session's registry held, and an unnamed spawn is routed only to a worker that session can
+resolve. A `startup` writes the record, a `resume` may only narrow an existing one, and `clear` and
+`compact` leave it alone. A session that reloads a definition installed after it started is told
+so by the runtime, on its own transcript, and routes to that worker from the turn it hears it;
+a session that is told nothing — a headless one never reloads — keeps the previous behaviour and
+is asked once to start a new session, which is still the certain remedy after a sync.
 Any failure to answer the routing question leaves the spawn unrouted and silent, never refused.
 
 Usage records identify the runtime and available runtime version. Codex cumulative token snapshots
@@ -170,11 +171,75 @@ measurable for exactly this reason: the row exists, priced and labelled, before 
 provider says can change an answer. Both rows stop when `telemetry.decisions` is `false`; see
 [usage telemetry](usage.md).
 
+## Measuring a provider before trusting it
+
+A typed answer is not evidence that it was the right one. `harness decisions eval` replays the
+labelled rows of the [decision log](usage.md) — real inputs, the answer the deterministic hook
+gave, and the outcome the session later showed — through a question pack in `shadow` mode, and
+writes a report to `~/.local/state/agent-harness/jev-eval.json` or wherever `--out` says.
+
+```sh
+bin/harness decisions eval --replay tests/fixtures/jev/eval/responses.json   # no socket
+bin/harness decisions eval --point grade-bash --split heldout --out report.json
+bin/harness decisions eval --live --max-requests 50 --usd-per-mtok 3 --budget-usd 2
+```
+
+A **pack is versioned**. `lib/harness_core/decisions/packs.py` holds each one as an id, a
+`major.minor.patch` version and the hash of its content, frozen at construction so nothing that
+holds a pack can rewrite a criterion between the hash being taken and the request being built.
+The provider puts the id and the version on every ledger row beside the request hash, so a row
+resolves to the words that were asked. A threshold fitted against one version says nothing
+about another, and `Pack.verify` refuses the mismatch rather than carrying the number across.
+
+The **split is seeded by content**: a case lands in `dev` or `heldout` by the hash of the
+decision point and the capped input a request would actually carry — not the row's
+`input_sha256`, which is over the uncapped text and would put one identical request on both
+sides — never by `random` and never by position, so a re-run reproduces the split and adding
+rows does not reshuffle the old ones. A request hash found on both sides is a refusal, not a
+warning. Thresholds are fitted on `dev` alone; **only the held-out block is evidence**, and the
+dev block is in the file so a reader can see how far the fitted split flatters the fit.
+`--split dev` prints it with a line saying as much. There is no global default, and a point
+with no labelled dev case is reported **unfitted** rather than given the shipped 0.8 as though
+it had been measured.
+
+The fit is scored under the provider's own semantics: below the threshold, and for `unknown`
+or no answer at all, the deterministic answer is what is compared against the label, because
+that is what the harness would have done. Scoring an abstention as a miss would drive every fit
+to the lowest confidence in the set. The report carries, per point and per split: accuracy, the
+same rate for the deterministic answer alone as the baseline to beat, how many cases the
+provider could have changed at all (it may tighten an allow into an ask and never widen one),
+the confusion by label, agreement with the deterministic answer over the labelled cases, a
+calibration table over the confidence with its expected calibration error and a bootstrap
+interval drawn from hashed indices rather than a linear congruential generator, input and
+output tokens, cost per 1,000 decisions where a price was given, the returned model ids, and an
+`unusable` block counting unavailable calls, errors and abstentions — none of which is ever
+counted as a pass. The report holds no clock and no absolute path, and no input text, so two
+runs over one log are byte-identical and the file can be sent on.
+
+What the labels do **not** prove is in the report's own `caveats`, and is the first thing to
+read. `grade-bash` logs a row only where the harness said `ask` or `deny`, so the set is the
+prompts and never the commands allowed through without one; `ran` is a user approving something
+they were asked about, which is evidence the prompt was unnecessary and not proof; `not_run`
+does not separate a refusal from an interrupted turn. A flip rate over `--repeat` passes is
+zero by construction under `--replay`, because a recorded response cannot disagree with itself,
+and latency under `--replay` is the runner's and is reported as unmeasured rather than as a
+number whose name claims the service produced it.
+
+Ordinary runs need `--replay` and open no socket at all, which is also why a replay ignores the
+kill switch: the switch gates requests and a replay makes none. `--replay` and `--live` together
+are refused rather than silently ordered. `--live` needs `--max-requests`; `--budget-usd` needs
+`--usd-per-mtok` beside it, because no price for this provider is published here and a dollar
+ceiling nobody can convert is not a ceiling; and a live run with an empty
+`governance.jev.state_fields` is refused as pointless, since every request would carry the same
+four base fields and differ in nothing. A live run sends under the user's own allowlist, so an
+evaluation cannot send a field a hook is not allowed to send.
+
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.
 Nothing consults a provider yet: command grading still answers the permission question on its own,
 and binding the two is separate work.
 
-Session start checks BMad configuration without installing it. Installation remains explicit.
-See [task continuation and BMad](bmad.md), [installation ownership](runtime-installation.md),
+Session start checks a declared integration's configuration without installing it. Installation
+remains explicit. See [task continuation](task-continuation.md), the [BMad integration](bmad.md),
+[installation ownership](runtime-installation.md),
 and the compatibility catalog for qualification evidence.

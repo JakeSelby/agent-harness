@@ -54,7 +54,7 @@ transcript, and stamping today's would make the whole history look like this rel
 
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
-`days` and, when the row has any, `idless_records`.
+`days`, `raw_vs_deduped` and, when the row has any, `idless_records`.
 The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
@@ -68,7 +68,22 @@ response, and a call whose other records do carry a message id joins their slot 
 opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
 deduplicated at all — it is summed as written, and `idless_records` counts how many such records
 the row's totals include, the session's own and those of the subagent files folded into them.
-A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls. The token totals **include the
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls.
+
+`raw_vs_deduped` is **the measured size of that inflation**: the per-line sum of the four token
+fields over the deduplicated total the row carries, across the same records — the session's own
+and those of the subagent files folded into it. `1.0` says the transcript held nothing to
+remove; `2.4` says counting every line would have billed this session for two and a half times
+what it spent. One ratio rather than one per field, because the fields are deduplicated by the
+same slots and the row already carries each of them for a reader who wants them apart. A Codex
+session row, whose runtime reports cumulative snapshots rather than a figure per record, carries
+the string `"unknown"` rather than `1.0`, which would claim a measurement nobody made. A
+subagent row, a worker row and a row written before this release carry **no such key at all**,
+and a reader — `harness usage` included — reads that absence as unknown for the same reason.
+The footer figure `harness usage` prints is the window's raw sum over its counted sum: each
+row's ratio weighted by the deduplicated tokens that row contributed to the columns above it,
+which under `--by day` are its in-window slices and not its whole total. The OTLP export carries
+a row's own value as the `raw_vs_deduped` attribute, and a row without the key exports none. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
@@ -123,8 +138,24 @@ role carries** — the same figures `brief-guard` writes into a brief — so an 
 subtraction on one row rather than a join against whatever the cost table says today. They are
 read from the table at the moment the row is written, not from the brief, which no scan can
 see; a role nothing prices, a table that will not build and a Codex subagent all record `null`,
-because a zero would say the spawn was budgeted nothing. These rows carry the same tokens a
-second time, attributed, which is why no grouping sums both them and their session.
+because a zero would say the spawn was budgeted nothing. `return_path` and
+`return_over_budget` measure the return this row's spawn handed back, joined to the parent's
+`Agent` call on the same `tool_use_id`: whether it named a path that existed under the worktree
+or the scratchpad at the moment the row was written (`"resolvable"`, `"unresolvable"`, or
+`"none"` for a return that named no path at all, which is a fact and not a failure), and
+whether its word count passed the cap its brief stated — the number beside the word `words` in
+the cap `rule-detectors` reads, or the 400-word default `brief-guard` appends to a brief that
+states none. A path counts when it is quoted, in a fence or in backticks, or when bare prose
+gives it a path's own shape: a root, a relative prefix, or an extension on its last segment, so
+`pass/fail` and `2026/09/22` are prose and a URL is nobody's file here. Both fields are `null`
+when the scan could not measure them: no parent call to join on, an empty return, an empty
+brief, a spawn whose `requested_type` carries its cap in its own definition, or a Codex row,
+whose runtime joins no return at all. A result the scan kept only the first 64 KB of records
+`return_measured: "truncated"` instead, because a word count over the head of a return is not a
+word count of the return. The match is a string match and the resolution an `os.path.exists`;
+no model judges the return here. These rows
+carry the same tokens a second time, attributed, which is why no grouping sums both them and
+their session.
 
 **`kind: "worker"`** — one row per completed `harness role run` worker, with the role name as
 `agent_type`. A worker is an isolated CLI session; its runtime reports what the run cost in the
@@ -320,8 +351,9 @@ through role-run workers.
 ### The session registry
 
 One more directory sits beside the feed's, `~/.local/state/agent-harness/sessions/`, written by
-session start rather than by any measurement: one small file per session naming the agent
-definitions that session's registry held, which is what decides whether an unnamed spawn can be
+session start and by a spawn that learns of a reload rather than by any measurement: one small
+file per session naming the agent
+definitions that session's registry held, which is the floor under whether an unnamed spawn can be
 routed to a band worker — see [runtime controls](runtime-controls.md). It holds agent names and a
 timestamp, nothing about the work; the files are owner-only in an owner-only directory, swept
 after a fortnight of not being used, and removed by `harness uninstall`.
@@ -359,12 +391,13 @@ one field that holds prose is [the completion claim](#the-completion-claim), whi
 | `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
 | `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
 
-An approved Bash command is not logged. The harness answers the permission question on a small
+An approved Bash command is not *graded*. The harness answers the permission question on a small
 minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a
-prompt or a refusal is the judgment a label can grade. `not_run` is deliberately not called
-"denied": a user who refused, a user who interrupted the turn and a session that crashed all
-look the same from a hook, and naming one of them would put a label in the file that nobody
-measured.
+prompt or a refusal is the judgment a label can grade. A sample of the approvals is kept all the
+same, as [sampled allows](#sampled-allows) below, which carry no outcome. `not_run` is
+deliberately not called "denied": a user who refused, a user who interrupted the turn and a
+session that crashed all look the same from a hook, and naming one of them would put a label in
+the file that nobody measured.
 
 Both runtimes write, for the events both raise. Band routing happens on Claude Code alone, so
 Codex records no `tier-agent-spawns` row; `adapters/codex/capabilities.json` names that gap.
@@ -373,6 +406,48 @@ A write that fails is counted and swallowed — a log that can change a permissi
 worse than no log — and `telemetry.decisions: false` in `config.json` turns the whole thing off,
 after which no row, no file and no directory is written. See
 [telemetry.md](telemetry.md#the-decision-log-switch).
+
+### Sampled allows
+
+One Bash command in twenty that the harness **allowed** is written as a `grade-bash` row of its
+own:
+
+```json
+{"kind": "decision", "point": "grade-bash", "deterministic_answer": "allow", "sampled": true,
+ "sample_rate": 20, "input": "cargo test --release", "outcome": null}
+```
+
+They exist because the graded rows are all prompts: a check that may only tighten an allow into
+an ask has nothing to measure its false alarms against without the commands nobody was asked
+about. They are **negatives, not judgments** — `sampled: true`, never an outcome, passed by at
+SessionEnd rather than closed as `not_run`, and counted by `usage --by decision` on a
+`grade-bash (sampled)` line of their own so they cannot dilute the outcome rates of the graded
+rows.
+
+Only an allow the harness actually gave is sampled. A command it answered nothing about is the
+runtime's own to decide and may still be prompted on or refused, so it is no evidence of an
+allow and no row: that covers a grade-1 command under the `execute` stance, and every command
+on Codex, where a plain approval is dropped from the hook output and the client's own default
+stands. A confirmed command — one re-run with the confirmation marker after a prompt — is not
+sampled either; it belongs to the `ask` row that prompted it.
+
+Which commands are sampled is the **command text's own hash**, not a random draw, so the same
+corpus samples the same commands and a measurement over these rows is reproducible. That makes
+the sample one of **distinct commands, not of invocations**: a command in the sample is logged
+every time it runs and one outside it never is, so the row count says how often those particular
+commands ran and multiplying it by `sample_rate` estimates nothing. Read it as a corpus to
+replay a candidate check over, which is what it is for.
+
+The `input` of a sampled row is **redacted**, unlike the text of a prompt the user was shown:
+the value of every assignment and every credential flag, quoted or not (`FOO=…`, `--password=…`,
+`--token …`, `-p…`), every secret shape the [rule detectors](#rule-telemetry) match, and the home
+directory written `~` so no username reaches the row. `input_sha256` is over the **redacted**
+text on these rows and over the original on every other row: the hash of an original next to the
+redacted text would put a short secret within reach of a dictionary attack.
+
+`telemetry.allow_sample_rate` sets the rate and `0` stops it;
+[telemetry.md](telemetry.md#the-allowed-command-sample) has the switch, and `decisions: false`
+turns it off with everything else.
 
 ### The completion claim
 
@@ -417,6 +492,11 @@ bin/harness usage --by decision        # counts, outcome rates and the unlabelle
 The **unlabelled share** is the column to read first: an outcome rate over the two decisions
 that happened to be labelled is not evidence about the point.
 
+`harness decisions eval` replays the labelled rows of this file through a question pack and
+reports how closely the judgment tracked them, with a threshold fitted per decision point. What
+it measures, what it writes and what its labels do not prove are in
+[runtime controls](runtime-controls.md).
+
 ## What a decision provider cost
 
 A provider that leaves the machine spends tokens and wall-clock time, so each call it makes
@@ -435,8 +515,8 @@ reads nothing else. The counterparty is kept only when it matches the `repo:<nam
 the ledger already derives, within a bounded length, and as a short digest otherwise — it is a
 caller's string and part of what went out, so a path must not survive in a row kept for months.
 A row that could not be written at all is recorded in `usage.errors.jsonl` beside the ledger,
-by exception type and never by message. What may leave the machine at all is a separate question, answered in
-[runtime controls](runtime-controls.md).
+by exception type and never by message. What may leave the machine at all is a separate
+question, answered in [runtime controls](runtime-controls.md).
 
 Four things are worth reading off it:
 
@@ -474,6 +554,13 @@ a mean, so it prints three points on the curve; `unmeasured` counts the runs who
 reported no tool-call figure, which are named there rather than averaged in as a zero. A role
 with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
 second-largest of eight, and a budget re-seeded from it is a guess wearing a number.
+
+`path` and `over` are the returns themselves: of the returns that named a path, the share whose
+path resolved; and of the returns measured against a cap, the share that ran past it. A return
+that named no path is in neither figure, so a role whose returns are all one-line verdicts
+prints `-` for `path` rather than `0%`, which would read as a role that wrote paths and got
+them all wrong. A row written before the measurement existed, a Codex row and a return nothing
+could be joined to print `-` too.
 
 `--by day` reads a row's `days` slices when it carries them and falls back to its end date when
 it does not, so a session that ran for a fortnight is spread over the days it spent on. The

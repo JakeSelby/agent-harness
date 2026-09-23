@@ -1,6 +1,6 @@
 ---
 name: code-quality-instruments
-description: Measure whether a test suite is actually any good, rather than only that it exists and passes. Use when adding or reviewing tests on a change that matters, when a suite passes but a bug still shipped, when coverage is high and confidence is not, and before promising a module is well tested. Carries branch coverage, mutation score, the complexity-times-coverage risk signal, duplication, and the per-language instruments that produce each.
+description: Measure whether a test suite is any good, not only that it passes: branch coverage, mutation score, complexity-times-coverage risk, duplication. Use when adding or reviewing tests on a change that matters, a suite passes but a bug still shipped, coverage is high and confidence is not, or before promising a module is well tested.
 ---
 
 The `testing` stance says whether tests are required. This is how you find out whether the ones

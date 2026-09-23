@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 """Confinement survives the name the model chose: a refused brief stays refused, and a brief
-that declares its role is refused however it is spawned. Run: python3 -m unittest discover tests
+that declares its role is refused however it is spawned. What a brief is recognised as on its
+content alone belongs to `test_framework_spawn_confinement.py`; these cases use work no
+descriptor classifies, so the memory and the marker are the only things under test. Run: python3 -m unittest discover tests
 """
 import os
 import tempfile
@@ -8,14 +10,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from test_harness import REPO, harness
-from harness_core import lifecycle, workers
+from harness_core import lifecycle, workers, frameworks
 
-BRIEF = ("Review the unified diff at diff.patch. Read that file, it is the content under review, "
-         "then read the changed files around the hunks. Hunt for what is missing as well as what "
-         "is wrong. Return a Markdown list of findings and nothing else; if the diff is empty, say "
-         "so and stop. Do not invoke any skill and do not spawn subagents of your own. Return the "
-         "findings as text in your final message, not through any findings-reporting tool. "
-         "Name every file you read and every assumption the diff forced you to make.")
+# Work a constrained role would be spawned for, written so no shipped integration descriptor
+# classifies it: what the guards under test do must not depend on a framework recognising it.
+BRIEF = ("Read notes.md and the three modules it names, then say which behaviour the notes "
+         "describe that the modules do not implement, and which of them no test exercises. "
+         "Read the neighbouring tests before you answer, and do not change any file. Return a "
+         "short bulleted list and nothing else; if notes.md is missing, say so and stop. "
+         "Name every file you read and every assumption the notes forced you to make.")
 OTHER = ("Summarise the release notes under docs/ and list the three changes a new contributor "
          "would most likely trip over. Return a bulleted list and nothing else.")
 
@@ -76,12 +79,12 @@ class SpawnGuardTests(unittest.TestCase):
         self.assertNotEqual(decision(self.spawn(OTHER)), "deny")
 
     def test_an_unnamed_spawn_with_nothing_behind_it_runs(self):
-        self.assertNotEqual(decision(self.spawn(BRIEF)), "deny")
+        self.assertNotEqual(decision(self.spawn(OTHER)), "deny")
 
     def test_the_memory_does_not_cross_sessions(self):
-        self.spawn(BRIEF, role="reviewer", session="session-one")
-        self.assertNotEqual(decision(self.spawn(BRIEF, session="session-two")), "deny")
-        self.assertNotEqual(decision(self.spawn(BRIEF, session=None)), "deny")
+        self.spawn(OTHER, role="reviewer", session="session-one")
+        self.assertNotEqual(decision(self.spawn(OTHER, session="session-two")), "deny")
+        self.assertNotEqual(decision(self.spawn(OTHER, session=None)), "deny")
 
     def test_state_that_cannot_be_read_or_written_behaves_as_it_did_before_the_guard(self):
         real = lifecycle.load
@@ -103,15 +106,15 @@ class SpawnGuardTests(unittest.TestCase):
             return Broken(real(name)) if name == "posture" else real(name)
 
         with patch.object(lifecycle, "load", load):
-            self.assertEqual(decision(self.spawn(BRIEF, role="reviewer")), "deny")
-            self.assertNotEqual(decision(self.spawn(BRIEF)), "deny")
+            self.assertEqual(decision(self.spawn(OTHER, role="reviewer")), "deny")
+            self.assertNotEqual(decision(self.spawn(OTHER)), "deny")
 
     def test_a_record_the_guard_cannot_parse_is_a_session_with_no_memory(self):
-        self.spawn(BRIEF, role="reviewer")
+        self.spawn(OTHER, role="reviewer")
         path = lifecycle.load("posture").session_record_path("session-one")
         path.write_text("{ not json", encoding="utf-8")
         self.assertEqual(lifecycle.denied_spawns("session-one"), [])
-        self.assertNotEqual(decision(self.spawn(BRIEF)), "deny")
+        self.assertNotEqual(decision(self.spawn(OTHER)), "deny")
 
     def test_the_memory_is_bounded_and_keeps_the_newest(self):
         for index in range(lifecycle.DENIED_MAX + 4):
@@ -145,13 +148,24 @@ class SpawnGuardTests(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertNotEqual(decision(self.spawn(line + "\n" + OTHER, session="m")), "deny")
 
-    def test_the_shipped_review_layers_carry_the_marker_their_launch_sentence_protects(self):
-        text = (REPO / "templates/bmad/custom/bmad-code-review.user.toml").read_text(encoding="utf-8")
-        self.assertEqual(text.count("keep the brief's first line unchanged"), 4)
-        self.assertEqual(text.count("\nharness-role: reviewer\n"), 3)
-        self.assertEqual(text.count("\nharness-role: spec-reviewer\n"), 1)
-        for name in lifecycle.ROLE_MARKER.findall(text):
-            self.assertIsNotNone(lifecycle.constrained_role(name))
+    def test_every_shipped_override_template_carries_markers_the_guard_constrains(self):
+        """The guard is generic, so its test reads whatever integrations declare templates rather
+        than one framework's file; the per-template counts are pinned by that integration's own
+        offline tests."""
+        seen = 0
+        for data in frameworks.descriptors():
+            install = data.get("install")
+            if not install:
+                continue
+            for path in sorted((REPO / install["templates"]).glob("*" + install["suffix"])):
+                text = path.read_text(encoding="utf-8")
+                names = lifecycle.ROLE_MARKER.findall(text)
+                with self.subTest(template=path.name):
+                    self.assertEqual(text.count("keep the brief's first line unchanged"), len(names))
+                    for name in names:
+                        self.assertIsNotNone(lifecycle.constrained_role(name))
+                seen += len(names)
+        self.assertTrue(seen)
 
     def test_a_worker_run_accepts_a_brief_that_carries_its_marker(self):
         prompt_file = self.base / "brief.md"

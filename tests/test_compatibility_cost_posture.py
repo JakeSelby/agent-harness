@@ -51,9 +51,11 @@ class EvidenceScopeTests(unittest.TestCase):
         self.git.start()
         self.addCleanup(self.git.stop)
 
-    def test_the_new_case_is_the_only_one_the_historical_record_lacks(self):
+    def test_the_cases_added_since_the_historical_record_are_the_ones_it_lacks(self):
+        """Explicit, so adding a required case is a deliberate edit here rather than a surprise."""
         required = compatibility.catalog(REPO)["required_cases"]
-        self.assertEqual(set(required) - set(self.record["cases"]), {"cost-posture"})
+        self.assertEqual(set(required) - set(self.record["cases"]),
+                         {"cost-posture", "spawn-confinement", "framework-spawn-routing"})
 
     def test_a_release_evidence_record_still_validates_under_its_own_catalog(self):
         before = HISTORICAL.read_bytes()
@@ -81,7 +83,9 @@ class EvidenceScopeTests(unittest.TestCase):
             client["evidence"] = [dict(client["evidence"][0],
                                        sha256=hashlib.sha256(json.dumps(record).encode()).hexdigest())]
             errors = compatibility.evidence_errors(REPO, data, client)
-        self.assertIn("missing acceptance cases: cost-posture", errors)
+        missing = [line for line in errors if line.startswith("missing acceptance cases: ")]
+        self.assertEqual(len(missing), 1)
+        self.assertIn("cost-posture", missing[0].split(": ", 1)[1].split(", "))
 
 
 if __name__ == "__main__":

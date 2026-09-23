@@ -50,7 +50,7 @@ SEVERITY_NUMBER = 9  # INFO, per the OTLP logs data model.
 # `native` is validated here and used by `harness sync`, never by this exporter: runtime
 # pass-through writes a runtime's own telemetry settings and sends nothing itself.
 KNOWN_KEYS = ("export", "endpoint", "headers_env", "headers_file", "labels", "native",
-              "decisions", "completion_claim")
+              "decisions", "completion_claim", "allow_sample_rate")
 
 # The runtimes native pass-through can configure. `native` is `true` for all of them, `false`
 # for none, or the list of the ones it names: Codex takes header values only as literals in
@@ -58,6 +58,9 @@ KNOWN_KEYS = ("export", "endpoint", "headers_env", "headers_file", "labels", "na
 # fed natively from Claude Code alone. See docs/telemetry.md.
 NATIVE_RUNTIMES = ("claude-code", "codex")
 DEFAULT_ENDPOINT = "http://localhost:4318"
+# The allowed-command sample, kept in step with `decisions.DEFAULT_SAMPLE_RATE`, which this
+# module does not import: validation here must not depend on a sibling hook being loadable.
+DEFAULT_SAMPLE_RATE = 20
 
 
 def home():
@@ -128,9 +131,15 @@ def settings(cfg=None, path=None):
     claim = block.get("completion_claim", False)
     if not isinstance(claim, bool):
         raise ValueError("telemetry.completion_claim must be true or false; got " + repr(claim))
+    # One in how many allowed Bash commands is kept as an ungraded negative:
+    # `decisions.sample_rate`, 20 by default, 0 for none.
+    rate = block.get("allow_sample_rate", DEFAULT_SAMPLE_RATE)
+    if isinstance(rate, bool) or not isinstance(rate, int) or rate < 0:
+        raise ValueError("telemetry.allow_sample_rate must be a whole number of commands, one "
+                         "of which is logged, or 0 for none; got " + repr(rate))
     return {"export": mode, "endpoint": endpoint.rstrip("/"), "headers_env": headers_env,
             "headers_file": headers_file, "labels": dict(labels), "native": native,
-            "decisions": decisions, "completion_claim": claim}
+            "decisions": decisions, "completion_claim": claim, "allow_sample_rate": rate}
 
 
 def native_runtimes(value):
