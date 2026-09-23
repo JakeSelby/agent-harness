@@ -14,6 +14,24 @@ All notable changes to this project are documented here. The format follows
   4.5% of subagent output, and in the larger sample of runs whose brief carried no budget the
   median overrun was discovered with one tool call left — too late to act on — so nothing is built
   and the record says which numbers would change the answer (#322).
+- Every one of the eleven required acceptance cases now has a driver in
+  `scripts/native_acceptance.py`, so `--dry-plan` no longer says of any case that it is not
+  automated yet. Ten of them were prose in an evidence record that a worker re-implemented by
+  hand each round, which is most of what a round's orchestrator tokens were spent on. Each new
+  case emits the observation string a reviewer assesses, and each returns `unverified` rather
+  than a pass when the behaviour it is about was not observed: a runtime that writes no subagent
+  record is a named gap, a model that declined a turn is not a control, a BMad framework checkout
+  that was not provisioned is a reason and never a skip. `gate-invalidation` delivers its Stop
+  events to the runtime's own coordinator rather than paying for eleven client turns, and says so
+  in its observation. The provisioning and driver that used to live only in each round's scratch
+  copy are committed as `scripts/qualification_provision.py` and `scripts/qualification_round.py`;
+  the clone comes from this repository's own object store, and the pinned BMad installer is the
+  only step that reaches the network. The runner also gained a Codex configuration home — its own
+  `CODEX_HOME`, the `codex exec --json` invocation and the rollout layout — derived from
+  `adapters/codex/worker.py`, `policy/hooks/usage-log.py` and the documentation. No Codex round
+  has been driven through it, so every Codex verdict is reported `unverified` with its
+  observation kept until an operator compares one against a hand run and passes
+  `--home-confirmed`, which is the discipline `permission-controls` already owes (#336).
 - A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
   the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
   this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
@@ -76,6 +94,20 @@ All notable changes to this project are documented here. The format follows
   because what sync wrote was already the coordinator registration (#521).
 ### Added
 
+- `scripts/native_acceptance.py` drives the `permission-controls` case, which was qualified by
+  hand every round: it syncs the manual, unacknowledged bypass, acknowledged bypass and auto
+  postures, reads the permission mode each one wrote into the client's own settings, and asks for
+  the same one-command file write under each, pre-approving no tool so that the posture is what
+  decides the call. The acknowledged bypass is judged by `bypass_verdict`, landed uncalled in
+  0.12.0, against the mode the client reported for that turn, so the three outcomes stay apart: a
+  turn the policy blocked, a turn the model declined on its own judgement, and a turn that
+  completed. A decline is `unverified` rather than a failure, which was the defect the driver had
+  to be written around, and each posture's reading is kept as it is made, so a later posture that
+  cannot be observed reports the earlier ones rather than erasing them. Three real client turns
+  recorded under those modes — result, transcript record and the sentinel state each left — are
+  the tests' fixtures, so the suite still launches no client, and `docs/releasing.md` records the
+  comparison against a hand run that the first live round owes before this verdict is trusted
+  (#404).
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
   the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
   behind each state. It is derived from a `tier_restriction` entry in
@@ -89,6 +121,28 @@ All notable changes to this project are documented here. The format follows
   session's own model, which the harness never writes; a `delegation` variant other than
   `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
   now links to the row instead of restating it (#520).
+- `scripts/smoke_tier.py` runs the repository's deterministic pre-qualification checks as one
+  command that spends no model turn: the acceptance runner's self-tests against recorded
+  transcripts under `tests/fixtures/transcripts/`, the documentation-link check, the
+  credential-reachability probe, and the disposable-home sync, projection-drift and lifecycle
+  checks. Three of the four defects the 0.11.0 qualification round recorded were deterministic
+  plumbing faults of exactly this kind, each found part-way through a paid round that then had to
+  be run again. Every check is bounded by a timeout, so an unauthenticatable environment is
+  reported as an error rather than as a three-hundred-second hang, and a check that could not run
+  is `unverified` and never a pass. The tier is additive and never qualification: it observes no
+  client, and the run fails if anything it ran wrote under `compatibility/evidence/` or into the
+  catalog. CI runs it as a `smoke` job that the branch ruleset does not require, and
+  `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
+  block a freeze (#334).
+
+### Fixed
+
+- The credential probe answers for a variable holding something that is not a path, where asking
+  the filesystem about it used to raise and carry the value into the error's own message — a
+  service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
+  An unusable value is now treated as a file that is not there, and the reason names the variable
+  and never the value (#334).
+
 ### Changed
 
 - The delegation rule now states that subagents never message a peer, and the builder role says

@@ -10,8 +10,28 @@ is only the mechanics of a run.
   dirty tree rather than record a commit that does not describe what ran.
 - The client must be installed and logged in for the account you intend to qualify, and
   `<client> --version` must report a version the runner can parse.
+- Run `python3 scripts/smoke_tier.py` first. It spends no model turn, and the deterministic
+  faults it catches — an unreachable credential, a drifted projection, a runner that misreads a
+  transcript — are the ones that otherwise surface part-way through a paid round. It is advisory
+  and never qualification; see [releasing](releasing.md#freeze-the-qualification-branch).
 - Every probe is one short headless turn and costs money. Use the cheapest model the client
   offers; `--model` defaults to it.
+
+## Provisioning the round
+
+A round needs a frozen clone of the commit it qualifies, somewhere to keep each target's record,
+and — only if it will run `bmad-workflow` — a BMad framework checkout. Provision all three once,
+outside the checkout:
+
+```sh
+python3 scripts/qualification_provision.py --out ../round-v<version> --bmad
+python3 scripts/qualification_provision.py --out ../round-v<version> --print-env
+```
+
+The clone is taken from this repository's own object store and is refused unless the tree is
+clean and the clone lands on the commit named. `--bmad` is the only step that reaches the
+network, and it runs the pinned installer from [bmad](bmad.md). Without it, `bmad-workflow`
+reports itself `unverified` rather than skipping: nothing was read, so nothing is claimed.
 
 ## Running
 
@@ -19,12 +39,35 @@ is only the mechanics of a run.
 python3 scripts/native_acceptance.py --client claude-code-cli-macos --dry-plan
 python3 scripts/native_acceptance.py --client claude-code-cli-macos --cases cost-posture \
     --model haiku --out ../native-cost-posture.json
+python3 scripts/qualification_round.py --round ../round-v<version> --plan
+python3 scripts/qualification_round.py --round ../round-v<version> \
+    --targets claude-code-cli-macos,codex-cli-macos --model haiku
 ```
 
-`--dry-plan` launches no client and names, per case, what a run would do or that the case is not
-automated yet. `--keep-home` leaves each disposable home in place for debugging; without it every
-home is removed at the end of its case. Write `--out` outside the checkout: the runner refuses to
-run against a dirty tree, and an evidence file is added to the tree deliberately, after review.
+`--dry-plan` launches no client and names, per case, what a run would do. `--keep-home` leaves
+each disposable home in place for debugging; without it every home is removed at the end of its
+case. Write `--out` outside the checkout: the runner refuses to run against a dirty tree, and an
+evidence file is added to the tree deliberately, after review.
+
+`scripts/qualification_round.py` drives a provisioned round: the smoke tier once, then the
+runner per target from the frozen clone, one record each. It decides nothing and stops for
+nothing — a round collects every target's defects before any of them is fixed, which is the rule
+in [releasing](releasing.md#freeze-the-qualification-branch) — and it exits non-zero unless every
+case of every target passed.
+
+## Client surfaces
+
+Each surface names the environment variable that moves its whole configuration home, which is
+what makes a disposable home possible: `CLAUDE_CONFIG_DIR` for Claude Code, `CODEX_HOME` for
+Codex. The Codex surface is driven headlessly with `codex exec --json` and read from the rollout
+files under its home, following `adapters/codex/worker.py` and
+[usage](usage.md#codex-rollouts).
+
+**No Codex round has been driven through this runner.** Until one has been, its reading is
+derived from those files rather than observed, so every Codex verdict is reported `unverified`
+with the observation kept, exactly as an unobserved case is. On the first round that runs a Codex
+target, qualify it by hand as well, compare the two, and pass `--home-confirmed` only once they
+agree. Record that comparison with the round's observations.
 
 ## Credentials
 

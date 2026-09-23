@@ -1,0 +1,2 @@
+{"type": "session_meta", "timestamp": "2026-09-22T00:00:03Z", "payload": {"id": "00000000-0000-7000-8000-0000000000c2", "cwd": "/tmp/probe", "source": {"subagent": {"thread_spawn": {"parent_thread_id": "00000000-0000-7000-8000-0000000000c1", "depth": 1, "agent_role": null, "agent_nickname": "amber-fox", "model": "placeholder-model"}}}}}
+{"type": "event_msg", "timestamp": "2026-09-22T00:00:04Z", "payload": {"type": "agent_message", "message": "DONE"}}
