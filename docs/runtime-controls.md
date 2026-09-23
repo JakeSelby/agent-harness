@@ -59,6 +59,16 @@ refuses an overwrite; detached worker failures go to `usage.errors.jsonl` beside
 Transcript adapters cannot observe nested tool calls absent from the transcript and do not prove
 that a stance caused a behavior.
 
+A cap on a multi-item read is a budget: ask the source for newest-first where it can be asked,
+check the order that actually arrives, refuse the page when it is not descending, and record at
+the declaration which end is dropped — when several sources compete for one budget, drop the
+least authoritative first. The Remote Control sessions page (`remote_control.fetch_sessions`) and
+the usage feed's `OPEN_TAIL` both keep the newest, because a correction that arrives last is the
+one a trimmed history must not lose. The sessions endpoint takes no sort parameter and is ordered
+by `last_event_at`, so that read asserts the order rather than requesting it, and a refusal is
+reported as not checked, never as nothing found. A count over a page that carries a cursor names
+the page it counted rather than the account.
+
 ## Decision providers
 
 `lib/harness_core/decision.py` holds one transport-agnostic contract for the question "may this
@@ -82,6 +92,29 @@ raise. Level 3 allows every grade, level 2 asks at grade 2 and up, level 1 asks 
 and an unknown grade is judged as 1. A policy file that cannot be honoured as written is an error
 naming the file, never a silent "no policy". Both providers write to the existing
 `decisions.jsonl` ledger and neither reaches the network.
+
+A third provider, `jev`, lives in `lib/harness_core/decisions/jev.py` and answers over the
+network. It asks a validated question pack — a `choice` judgment and a `score` severity — about
+the action class, the counterparty, the command grade and at most a command string and a summary,
+and it carries the deterministic `local` provider underneath. The service has no abstention
+outcome, so every `choice` question must offer an explicit `unknown` option and a pack without one
+is refused before anything is sent; `unknown` and an answer below the confidence threshold both
+mean "use the deterministic answer". A judgment may turn an `allow` into an `ask` and may never
+widen a decision or produce a `deny`. Every other outcome fails open to the deterministic
+decision: no key, a timeout, an exhausted budget, a malformed response, an unexpected exception.
+Each call writes one `event` row carrying the status, the requested and returned model ids, the
+pack and request hashes, the usage and the latency, and never the state; `harness decide`
+suppresses that row, because a reporting command changes nothing. The endpoint must be `https`
+and the opener can reach no other scheme, since a bearer key goes with every request, and a
+request is charged to its budget as it is sent rather than when it succeeds, so a failing
+endpoint cannot be retried without limit. The token ceilings, the endpoint, the response shape
+and the status mapping come from the vendor's documentation and have not been checked against
+the live service from this repository. Answers are not
+deterministic across identical requests, so nothing promises a repeated request answers the same
+way — only that the same request hashes the same. Credentials come from `TYPESAFE_API_KEY` or
+`JEV_API_KEY` in the environment; no key file is ever read. The client is not live unless it is
+constructed with `live=True`, so selecting this provider today calls nothing: the opt-in
+configuration, the per-decision-point modes and the sentinel that disables every call are #137.
 
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.

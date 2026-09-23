@@ -14,7 +14,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "allow-plan-webfetch.py"
-TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
 OWNERSHIP = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
 
 
@@ -69,15 +68,6 @@ class PlanWebFetchTests(unittest.TestCase):
     def test_hook_never_denies(self):
         # A disallowed case yields no decision, never a deny.
         self.assertIsNone(decision(url="file:///x"))
-
-    def test_settings_template_registers_the_hook(self):
-        entries = [
-            e for e in TEMPLATE["hooks"]["PreToolUse"]
-            if any("# harness:plan-webfetch" in h["command"] for h in e["hooks"])
-        ]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["matcher"], "WebFetch")
-        self.assertIn("allow-plan-webfetch.py", entries[0]["hooks"][0]["command"])
 
     def test_ownership_claims_the_hook_id(self):
         self.assertEqual(

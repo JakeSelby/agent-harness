@@ -1870,7 +1870,9 @@ def remote_control_doctor(cfg: Dict[str, Any]) -> None:
         return
     projects_root = home() / ".claude" / "projects"
     token = claude_oauth_token()
-    rows = remote_control.fetch_sessions(token) if token else None
+    page = remote_control.fetch_sessions(token) if token else remote_control.SessionPage(
+        remote_control.SessionPage.FAILED)
+    rows = page.rows if page.ok else None
     for folder in opts["folders"]:
         name = remote_control.label(folder)
         pid = host_pid(name)
@@ -1897,12 +1899,16 @@ def remote_control_doctor(cfg: Dict[str, Any]) -> None:
                   else f"{len(mine)} session(s), {lost} disconnected")
         say(f"  remote-control {folder}: pid {pid}, env {env}, {fresh}, {reach}, {served}")
     if rows is None:
-        say("  remote-control sessions: not checked; no claude.ai token, or the API call failed")
+        why = ("the page did not arrive newest-first"
+               if page.status == remote_control.SessionPage.REFUSED
+               else "no claude.ai token, or the API call failed")
+        say("  remote-control sessions: not checked; " + why)
         return
     stranded = remote_control.disconnected_sessions(rows, host_environment_ids(opts["folders"]))
     if stranded:
         say(f"  remote-control sessions: {len(stranded)} active but disconnected on this Mac's "
-            "environments; `harness remote-control status` prints the reattach command for each")
+            f"environments{page.scope()}; `harness remote-control status` prints the reattach "
+            "command for each")
 
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
@@ -2344,14 +2350,16 @@ def cmd_decide(args: argparse.Namespace) -> int:
 
     A reporting command, like `stances`: it changes nothing, and nothing consults it yet. It
     exists so a policy file can be checked against the counterparty it will be read under,
-    rather than the first time a hook reads it.
+    rather than the first time a hook reads it. Changing nothing includes the ledger, so a
+    provider that would record its own call is silenced for the length of this question.
     """
     cfg = load_config()
     slug = args.counterparty or decisions_provider.counterparty(str(Path.cwd()))
     try:
         provider = decisions_provider.select_provider(cfg, root=str(Path.cwd()))
         action = decisions_provider.Action(action_class=args.action, grade=args.grade)
-        answer = provider.decide(action, slug)
+        with decisions_provider.events_suppressed():
+            answer = provider.decide(action, slug)
     except decisions_provider.PolicyError as exc:
         raise SystemExit(str(exc))
     if args.json:
@@ -3236,14 +3244,19 @@ def report_lost_sessions(folders: List[Path], opts: Dict[str, Any]) -> int:
     environment a second time as a single-session environment, and the client then routes new
     chats to it. The count is returned so `doctor` can report it without asking twice.
     """
-    rows = lost_sessions(folders)
-    if rows is None:
+    page = lost_sessions(folders)
+    if page.status == remote_control.SessionPage.REFUSED:
+        say("lost sessions: not checked (page order unknown)")
+        return 0
+    if not page.ok:
         say("lost sessions: not checked; no claude.ai token in the keychain, or the API call failed")
         return 0
+    rows = page.rows
     if not rows:
-        say("lost sessions: none")
+        say("lost sessions: none" + page.scope())
         return 0
-    say(f"lost sessions: {len(rows)} active but disconnected; reattach by hand, one at a time")
+    say(f"lost sessions: {len(rows)} active but disconnected{page.scope()}; reattach by hand, "
+        "one at a time")
     say(f"  warning: {remote_control.REATTACH_WARNING}")
     for row in rows:
         say(f"  {row.get('id')} · {row.get('title') or 'untitled'} · env {row.get('environment_id')}")
@@ -3326,19 +3339,21 @@ def claude_oauth_token() -> Optional[str]:
     return remote_control.oauth_token(probe.stdout) if probe.returncode == 0 else None
 
 
-def lost_sessions(folders: Iterable[Path]) -> Optional[List[Dict[str, Any]]]:
+def lost_sessions(folders: Iterable[Path]) -> "remote_control.SessionPage":
     """Sessions still active but disconnected on an environment this Mac registered.
 
-    None means the question could not be asked — no token, or the call failed — which reads
-    differently from an empty list and is reported as such.
+    The page's status carries through, because three answers read differently and only one of
+    them is a count: the question could not be asked, the page could not be trusted under its
+    cap, or here are the rows — of which an empty list is a real answer.
     """
     token = claude_oauth_token()
     if not token:
-        return None
-    rows = remote_control.fetch_sessions(token)
-    if rows is None:
-        return None
-    return remote_control.disconnected_sessions(rows, host_environment_ids(folders))
+        return remote_control.SessionPage(remote_control.SessionPage.FAILED)
+    page = remote_control.fetch_sessions(token)
+    if not page.ok:
+        return page
+    return page.with_rows(remote_control.disconnected_sessions(
+        page.rows, host_environment_ids(folders)))
 
 
 def default_base_branch(root: Path) -> str:
@@ -4208,7 +4223,8 @@ def cmd_compatibility(args):
     """One command shows both levels: the client's status and, beside it, the per-capability
     state derived from that runtime's adapter. Neither is hand-written twice."""
     data = compatibility.catalog(REPO)
-    clients = [dict(row, capabilities=compatibility.capability_states(REPO, data, row))
+    clients = [dict(row, capabilities=compatibility.capability_states(REPO, data, row),
+                    tier_restriction=compatibility.tier_restriction(REPO, row))
                for row in data["clients"]]
     if args.json:
         print(json.dumps(dict(data, clients=clients), indent=2))
@@ -4219,6 +4235,9 @@ def cmd_compatibility(args):
             for name, capability in client["capabilities"].items():
                 say("  " + name + ": " + capability["state"]
                     + (" (" + ", ".join(capability["cases"]) + ")" if capability["cases"] else ""))
+            say("  tier restriction: " + client["tier_restriction"]["state"]
+                + (" (" + client["tier_restriction"]["mechanism"] + ")"
+                   if client["tier_restriction"]["mechanism"] else ""))
         for limitation in data["limitations"]:
             say(limitation)
         if compatibility.source_drift(REPO, data):
