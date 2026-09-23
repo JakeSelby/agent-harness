@@ -105,13 +105,21 @@ class SessionTests(unittest.TestCase):
             BUILDER.SESSIONS = original
             shutil.rmtree(written, ignore_errors=True)
 
-    def test_no_session_carries_a_home_path_or_an_address(self):
+    def test_no_session_carries_a_real_path_an_address_or_a_real_session_id(self):
+        """Every shape a transcript copied off a machine would carry: a home directory on
+        either platform, a sandbox path, a temporary directory, an address, and the UUID a
+        runtime writes as a session id."""
+        shapes = (r"/Users/", r"/home/", r"/private/var/", r"/tmp/\w", r"[A-Za-z]:\\+Users\\+",
+                  r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+                  r"-[0-9a-fA-F]{12}\b")
         for path in sorted((CORPUS / "sessions").glob("*.jsonl")):
             body = path.read_text(encoding="utf-8")
-            self.assertNotIn("/Users/", body, msg=path.name)
-            self.assertNotIn("/home/", body, msg=path.name)
+            for shape in shapes:
+                self.assertIsNone(re.search(shape, body), msg="%s: %s" % (path.name, shape))
             for address in re.findall(r"[\w.+-]+@[\w.-]+", body):
                 self.assertTrue(address.endswith(".invalid"), msg=address)
+            for session_id in re.findall(r'"sessionId": "([^"]*)"', body):
+                self.assertTrue(session_id.startswith("corpus-"), msg=session_id)
 
 
 class FloorTests(unittest.TestCase):
@@ -136,6 +144,29 @@ class FloorTests(unittest.TestCase):
         for detector_id, row in data["detectors"].items():
             self.assertTrue(row["scored"], msg=detector_id)
 
+    def test_a_lower_floor_leaves_a_record_dormant_rather_than_stale(self):
+        """An entry names the floor it was measured against, so a run at a floor the entry
+        does not reach is not a job failure and not a stale record."""
+        status, printed = self.score(["--floor", "0.8"])
+        self.assertEqual(status, 0, msg=printed)
+        _status, as_json = self.score(["--floor", "0.8", "--json"])
+        data = json.loads(as_json)
+        self.assertEqual(data["stale"], [])
+        self.assertEqual(data["known_below_floor"], [])
+        self.assertEqual(len(data["dormant"]), len(labels()["known_below_floor"]))
+
+    def test_a_record_for_an_unscored_detector_fails_readably(self):
+        """`round()` on a row that was never scored is the unhelpful failure; the message
+        names what is wrong with the corpus instead."""
+        from ruleprobe.validity import Score
+
+        with self.assertRaises(SCORER.CorpusRecordError) as caught:
+            SCORER.measured(Score("voice/never-labelled"))
+        self.assertIn("known_below_floor", str(caught.exception))
+        self.assertIn("voice/never-labelled", str(caught.exception))
+        with self.assertRaises(SCORER.CorpusRecordError):
+            SCORER.measured(None)
+
     def test_a_detector_under_the_floor_is_recorded_with_its_measured_score(self):
         """The floor is kept and the miss is written down, not lowered away. The recorded
         pair is compared with the measurement, so this fails if either side moves."""
@@ -151,6 +182,7 @@ class FloorTests(unittest.TestCase):
             row = data["detectors"][detector_id]
             self.assertEqual(round(row["precision"], 2), round(entry["precision"], 2))
             self.assertEqual(round(row["recall"], 2), round(entry["recall"], 2))
+            self.assertEqual(entry["floor"], FLOOR)
             self.assertTrue(entry.get("note"), msg=detector_id)
 
 

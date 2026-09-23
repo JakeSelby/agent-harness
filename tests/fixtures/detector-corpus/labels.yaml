@@ -16,14 +16,21 @@
 
 version: 1
 
-# A detector measured under the floor, with the score it measured. The floor is not lowered
-# for it: the entry says what is known to be wrong and `scripts/detector_corpus.py` fails
-# again the moment the measurement moves, in either direction.
+# A detector measured under the floor, with the score it measured and the floor it was
+# measured against. The floor is not lowered for it: the entry says what is known to be wrong,
+# and `scripts/detector_corpus.py` fails again the moment the measurement moves or the detector
+# climbs above the floor its entry names. Run at a lower floor the entry is simply dormant.
 known_below_floor:
   - detector: secrets/git-add-secret-file
+    floor: 0.9
     precision: 0.83
     recall: 1.0
     note: any basename holding id_rsa is a hit, so a runbook named after a key is one too
+  - detector: autonomy/denied-by-grade
+    floor: 0.9
+    precision: 0.83
+    recall: 1.0
+    note: the signature is matched anywhere in a result, so a grep that prints it is a hit
 
 sessions:
 
@@ -136,8 +143,9 @@ sessions:
   - session: research-search-mixed-tools.jsonl
     note: two hundred and ten web tool calls, of which a hundred and fifty are searches
     labels:
-      - at: "1:q150"
+      - at: "1:f51"
         near: [research/search-over-cap]
+        note: the two hundred and first web call, which is not the two hundred and first search
 
   - session: voice-openers.jsonl
     note: five banned openers or closing phrases, and five messages that only look like one
@@ -288,6 +296,9 @@ sessions:
         fire: [autonomy/denied-by-grade]
       - at: "5:tu-k5"
         near: [autonomy/denied-by-grade]
+      - at: "6:tu-k6"
+        near: [autonomy/denied-by-grade]
+        note: a grep that prints the signature out of a test file, which is not a denial
 
   - session: commits-messages.jsonl
     note: five non-conventional subjects and five missing trailers, overlapping on four

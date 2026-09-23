@@ -21,8 +21,9 @@ DAY = "2026-02-0"
 # The trailer shape `commits/missing-trailer` looks for. It carries no address: the detector
 # reads the line's opening and the lint refuses an address shape anywhere in the tree.
 TRAILER = "Co-Authored-By: An Agent"
-# The deny reason `grade-bash.py` signs; `autonomy/denied-by-grade` matches the parenthesis.
-DENY = ("grade 3, irreversible: %s rewrites remote history "
+# The deny reason `grade-bash.py` writes, in full: the grade, the target, the consequence, the
+# same fact in plain words, and the signature `autonomy/denied-by-grade` matches.
+DENY = ("grade 3, irreversible: %s rewrites remote history \u2014 this cannot be undone "
         "(grade-bash hook, autonomy=execute)")
 
 
@@ -358,6 +359,10 @@ def denied():
     b.result("tu-g5", DENY % "git push --force origin gh-pages")
     b.bash("tu-k5", "git push --dry-run origin main")
     b.result("tu-k5", "To example.invalid:repo.git\n  refs/heads/main -> main")
+    b.user("where is the signature asserted?")
+    b.bash("tu-k6", "grep -n 'grade-bash hook,' tests/test_grade_bash.py")
+    b.result("tu-k6", "486:            \"\u2014 this cannot be undone "
+                      "(grade-bash hook, autonomy=execute)\")")
     return b
 
 

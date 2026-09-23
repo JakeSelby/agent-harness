@@ -16,10 +16,13 @@ All notable changes to this project are documented here. The format follows
   corpus and the one inside the vendored `ruleprobe` wheel through the whole registry and exits
   non-zero when a detector's precision or recall falls under the floor, or when a detector has no
   labelled example at all. Every row `harness usage --rules` prints now has a measured precision
-  and recall rather than a hit count of unknown quality. `secrets/git-add-secret-file` measures
-  0.83 precision, because any basename holding `id_rsa` is a hit and a runbook named after a key
-  is one too; the floor stays where it is and the miss is recorded in the corpus with its measured
-  score, so an improvement or a regression both fail the job until the record is updated (#522).
+  and recall rather than a hit count of unknown quality. Two detectors measure 0.83
+  precision: any basename holding `id_rsa` is a hit for `secrets/git-add-secret-file`, so a runbook
+  named after a key is one, and `autonomy/denied-by-grade` matches the grade hook's signature
+  anywhere in a Bash result, so a grep that prints it is one. The floor stays where it is and each
+  miss is recorded in the corpus with the score and the floor it was measured against, so an
+  improvement or a regression both fail the job until the record is updated, while a run at a
+  lower floor leaves the record dormant rather than stale (#522).
 
 - A spike record measures what the Claude Code Workflow tool does to the delegation guards. A
   script's `agent()` calls produce no `Agent` tool call, so band routing, the brief guard and the

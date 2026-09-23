@@ -81,8 +81,9 @@ exists only because the number was being kept before the hook shipped.
   `tests/fixtures/detector-corpus/` labels the ones written for this repository's own rules, and
   the `corpus` job runs `scripts/detector_corpus.py --floor 0.9` over both on every pull request
   ([#522](https://github.com/JakeSelby/agent-harness/issues/522)). What that buys is a detector
-  measured against what its author says it should find; `secrets/git-add-secret-file` is recorded
-  under the floor at p=0.83 rather than the floor being moved to meet it. A rate over real
+  measured against what its author says it should find; `secrets/git-add-secret-file` and
+  `autonomy/denied-by-grade` are recorded under the floor at p=0.83 rather than the floor being
+  moved to meet them. A rate over real
   sessions is still a rate of behaviour only as far as the corpus resembles them.
 - **Per-variant rates are observational.** `--rules --by stance` groups sessions by the variant
   that happened to be selected, chosen by one person for reasons the ledger does not record.

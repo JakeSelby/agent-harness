@@ -72,19 +72,43 @@ def wheel_corpus(into):
     raise RuntimeError("the vendored wheel holds no corpus: %s" % inside)
 
 
+class CorpusRecordError(Exception):
+    """A `known_below_floor` entry that cannot be checked against a measurement."""
+
+
 def known_below_floor(path):
-    """`{detector_id: (precision, recall)}` the repository corpus records as known bad.
+    """`{detector_id: (floor, precision, recall)}` the repository corpus records as known bad.
 
     A detector that cannot reach the floor on an honest corpus keeps the floor and is written
-    down here with the score it measured, rather than the floor being lowered to meet it. The
-    pair is compared, not merely looked up, so an entry that no longer describes the detector
-    fails the job in either direction: a regression and a quiet improvement are both news.
+    down here with the score it measured and the floor it was measured against, rather than
+    the floor being lowered to meet it. All three are compared, not merely looked up, so an
+    entry that no longer describes the detector fails the job in either direction: a
+    regression and a quiet improvement are both news. Running at a lower floor than the entry
+    names leaves it dormant rather than stale - the record is still true of the 0.9 gate CI
+    runs, whatever a one-off `--floor 0.8` asked for.
     """
     from ruleprobe.declarative import load
 
     document, _lines = load(str(path))
-    return dict((entry["detector"], (float(entry["precision"]), float(entry["recall"])))
+    return dict((entry["detector"], (float(entry["floor"]), float(entry["precision"]),
+                                     float(entry["recall"])))
                 for entry in document.get("known_below_floor") or [])
+
+
+def measured(score):
+    """A score's precision and recall to two places, or a readable failure.
+
+    A `known_below_floor` entry for a detector the corpus does not label, or for an id that no
+    longer exists, arrives here as an unscored row or as no row at all. An unscored row still
+    answers 1.0 to both questions - a detector that never fired and never missed - so rounding
+    it would record a perfect score for something nobody measured. That is a corpus to fix,
+    not a number to round.
+    """
+    if score is None or not score.scored or score.precision is None or score.recall is None:
+        raise CorpusRecordError(
+            "%s has no measured score; a known_below_floor entry names a detector the corpus "
+            "does not label" % (score.detector if score is not None else "the detector"))
+    return (round(score.precision, 2), round(score.recall, 2))
 
 
 def merge(parts):
@@ -129,26 +153,35 @@ def main(argv=None):
         shutil.rmtree(unpacked, ignore_errors=True)
 
     scores = merge(scores_per_corpus)
-    known = known_below_floor(REPO_CORPUS / "labels.yaml")
+    try:
+        known = known_below_floor(REPO_CORPUS / "labels.yaml")
+        failing = set(below_floor(scores, floor))
+        waived, dormant, stale = [], [], []
+        for detector_id, record in sorted(known.items()):
+            recorded_floor, pair = record[0], (round(record[1], 2), round(record[2], 2))
+            now = measured(scores.get(detector_id))
+            if now != pair:
+                stale.append("%s measures p=%.2f r=%.2f, not the recorded p=%.2f r=%.2f"
+                             % ((detector_id,) + now + pair))
+            elif now[0] >= recorded_floor and now[1] >= recorded_floor:
+                stale.append("%s is recorded as below a %.2f floor and is not"
+                             % (detector_id, recorded_floor))
+            elif detector_id in failing:
+                waived.append("%s p=%.2f r=%.2f" % ((detector_id,) + now))
+            else:
+                dormant.append("%s is recorded below %.2f, which the %.2f floor in force does "
+                               "not ask about" % (detector_id, recorded_floor, floor))
+    except CorpusRecordError as exc:
+        sys.stderr.write("corpus: %s\n" % exc)
+        return 2
     unscored = sorted(did for did, score in scores.items() if not score.scored)
-    failed, waived, stale = [], [], []
-    for detector_id in below_floor(scores, floor):
-        score = scores[detector_id]
-        measured = (round(score.precision, 2), round(score.recall, 2))
-        recorded = known.pop(detector_id, None)
-        if recorded is None:
-            failed.append(detector_id)
-        elif (round(recorded[0], 2), round(recorded[1], 2)) != measured:
-            stale.append("%s measures p=%.2f r=%.2f, not the recorded p=%.2f r=%.2f"
-                         % ((detector_id,) + measured + recorded))
-        else:
-            waived.append("%s p=%.2f r=%.2f" % ((detector_id,) + measured))
-    stale.extend("%s is recorded as below the floor and is not" % did for did in sorted(known))
+    failed = [did for did in sorted(failing) if did not in known]
 
     if args.json:
         data = scores_as_dict(scores, floor)
         data.update({"unscored": unscored, "failed": failed,
-                     "known_below_floor": sorted(waived), "stale": sorted(stale)})
+                     "known_below_floor": sorted(waived), "dormant": sorted(dormant),
+                     "stale": sorted(stale)})
         print(json.dumps(data, indent=2, sort_keys=True))
     else:
         print("\n\n".join(tables))
@@ -156,6 +189,8 @@ def main(argv=None):
         print(validity_table(scores, floor))
         for line in waived:
             print("\nknown below the %.2f floor, and recorded as such: %s" % (floor, line))
+        for line in dormant:
+            print("\n%s" % line)
         if unscored:
             print("\n%d detector(s) with no labelled example: %s"
                   % (len(unscored), ", ".join(unscored)))

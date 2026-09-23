@@ -149,11 +149,13 @@ The section that decides whether the rest is credible.
   the engine itself ships; `tests/fixtures/detector-corpus/` labels the rest, five positives and
   five near-misses each bar `research/search-over-cap`, whose positive costs a whole
   two-hundred-search transcript. CI runs `scripts/detector_corpus.py --floor 0.9` over both corpora in the
-  `corpus` job, so a precision or recall under 0.9 is a red check. One detector sits under the
-  floor and is recorded as such with its measured score, rather than the floor being lowered:
-  `secrets/git-add-secret-file` reads any basename holding `id_rsa` as a credential, so a runbook
-  named after a key is a hit (p=0.83, r=1.00). A corpus is synthetic and hand-authored, so it
-  measures the detector against what its author says it should find, not against the field.
+  `corpus` job, so a precision or recall under 0.9 is a red check. Two detectors sit under the
+  floor and are recorded as such with the score and the floor they were measured against, rather
+  than the floor being lowered: `secrets/git-add-secret-file` reads any basename holding `id_rsa`
+  as a credential, and `autonomy/denied-by-grade` reads the grade hook's signature anywhere in a
+  Bash result, so a runbook named after a key and a grep that prints the signature are both hits
+  (p=0.83, r=1.00 each). A corpus is synthetic and hand-authored, so it measures the detector
+  against what its author says it should find, not against the field.
 - **Per-variant hit rates are observational.** No fixed task set is replayed under variant A and
   variant B; "this rule works better under `execute`" is not yet a supported sentence. The one
   project that ran an A/B in this field shows both how much it helps a position and how quickly a
