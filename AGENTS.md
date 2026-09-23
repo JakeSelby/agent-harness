@@ -37,6 +37,10 @@ it to another repository. The complete pinned install command and version-contro
 `docs/bmad.md`. Run planning workflows from the shared checkout and implementation from a managed
 worktree.
 
+Every SDLC step routes to its BMad skill, and every PR keeps the corpus current: the issue keeps a
+summary, its story file carries the design. The routing map, the currency rule and the story-file
+contract are in `docs/bmad-governance.md`, which every BMad workflow loads.
+
 ## How the checkout is used
 
 - **This checkout is live.** `harness sync` symlinks `claude/rules`, each `claude/skills/*`,
