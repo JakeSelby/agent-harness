@@ -5318,6 +5318,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B077",
+      "github_number": 718,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/718",
+      "title": "spawn-confinement's brief never makes the model attempt the spawn",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B077.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B078",
       "github_number": 721,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/721",
