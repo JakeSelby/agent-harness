@@ -11,9 +11,12 @@ is only the mechanics of a run.
 - The client must be installed and logged in for the account you intend to qualify, and
   `<client> --version` must report a version the runner can parse. [Target hosts](#target-hosts)
   says where each target's client comes from and how it logs in.
-- Run `python3 scripts/smoke_tier.py` first. It spends no model turn, and the deterministic
-  faults it catches — an unreachable credential, a drifted projection, a runner that misreads a
-  transcript — are the ones that otherwise surface part-way through a paid round. It is advisory
+- Run `python3 scripts/smoke_tier.py --targets <ids>` first, naming the targets the round will
+  run; with no `--targets` it checks every CLI target this host can run and reports the others
+  as skipped. It spends no model turn, and the deterministic faults it catches — a client off
+  `PATH`, a missing Codex login or Docker daemon, an unreachable credential, a drifted
+  projection, a runner that misreads a transcript — are the ones that otherwise surface part-way
+  through a paid round. It is advisory
   and never qualification; see [releasing](releasing.md#freeze-the-qualification-branch).
 - Every probe is one short headless turn and costs money. Use the cheapest model the client
   offers; `--model` defaults to it.
@@ -34,9 +37,9 @@ for.
    ```
 
 2. **Codex login.** `codex login` with the ChatGPT account the round runs under writes
-   `~/.codex/auth.json`. It spends the plan's included usage rather than API credit. As of
-   2026-09-23 that allowance is nearly spent, so budget a small usage purchase before a Codex
-   round rather than finding the limit mid-case.
+   `~/.codex/auth.json`. A Codex round spends that ChatGPT plan's usage rather than API credit,
+   so confirm the plan has headroom for the round, or budget a usage purchase, before starting
+   rather than finding the limit mid-case.
 3. **Claude Code credential.** Export an Anthropic API key or a cloud profile the runner passes by
    name; see [credentials](#credentials).
 4. **Docker daemon**, for either Linux target. Start Docker Desktop and confirm `docker info`
@@ -70,6 +73,14 @@ docker run --rm -it -e ANTHROPIC_API_KEY \
     -v "$PWD/../round-v<version>/clone:/frozen:ro" \
     -v "$PWD/../round-v<version>/records:/records" \
     agent-harness-linux-target
+# or, for Claude Code on a cloud profile instead of an API key
+docker run --rm -it \
+    -e CLAUDE_CODE_USE_BEDROCK -e AWS_PROFILE -e AWS_REGION \
+    -e AWS_CONFIG_FILE=/aws/config -e AWS_SHARED_CREDENTIALS_FILE=/aws/credentials \
+    -v "$HOME/.aws:/aws:ro" \
+    -v "$PWD/../round-v<version>/clone:/frozen:ro" \
+    -v "$PWD/../round-v<version>/records:/records" \
+    agent-harness-linux-target
 # inside the container
 git -c safe.directory='*' clone -q /frozen harness && cd harness
 codex login --device-auth
@@ -80,14 +91,16 @@ python3 scripts/native_acceptance.py --client codex-cli-linux --model <cheapest>
 
 The writable clone exists because the runner refuses a tree it cannot prove clean, and the
 `safe.directory` override is needed because the mount is owned by another user. `-e` names each
-credential variable without its value. `codex login --device-auth` gives the container its own
+credential variable without its value. The profile form mounts the AWS directory read-only at a
+path that is not the container user's home and points the file variables at it, because the
+runner hands its disposable home only those pointers. `codex login --device-auth` gives the container its own
 ChatGPT session, so no host login file is copied into it; whether the 0.11.x Linux rounds logged
 in this way or used a copy of the host's login is not recorded.
 
 **The runner's disposable `CODEX_HOME` does not carry the session login.** `adapters/codex/worker.py`
 links `auth.json` into an isolated worker home; the acceptance runner copies no credential and
 passes only the variables in [credentials](#credentials), so a runner-driven Codex case has no
-login and every Codex target has been qualified by hand. Until the runner links the login the way
+login, and every Codex record to date was produced by hand rather than by this runner. Until the runner links the login the way
 the worker does, the precondition check above proves the login exists, not that the runner can
 use it.
 

@@ -177,7 +177,9 @@ other qualification host and no hosted runner. What each target needs on that ho
 - **`codex-cli-linux`.** npm's `@openai/codex` at the version the round pins (0.11.1 recorded
   `0.155.1`), installed by [`scripts/linux-target.Dockerfile`](../scripts/linux-target.Dockerfile).
   The host is a linux/arm64 container under Docker Desktop on the same Mac, with the frozen clone
-  mounted into it. It authenticates with a ChatGPT account session made inside the container.
+  mounted into it. How it authenticated is not recorded: the 0.11.x records say only that each
+  probe ran with a throwaway home and Codex home. The runbook's in-container `codex login` is a
+  suggestion, not what those rounds are known to have done.
 - **`claude-code-cli-macos`.** The native Claude Code install, version from `claude --version`.
   It authenticates with a credential the acceptance runner passes through by name, an Anthropic
   API key or a cloud profile; an interactive `claude login` does not reach the runner's disposable
@@ -190,7 +192,8 @@ The [runbook](qualification-runbook.md#target-hosts) has the commands that estab
 these before a round, and `python3 scripts/smoke_tier.py --targets <ids>` refuses the round at
 once when a client, a Codex login or the Docker daemon is missing. A Codex login is a
 session, not a key, and the acceptance runner's disposable `CODEX_HOME` does not yet carry it, so
-a Codex target is still qualified by hand.
+a Codex target's evidence can only be produced by hand until it does; no Codex target is
+qualified for the current source.
 
 If a release cannot qualify the Codex or the Linux targets, it narrows the support floor the
 last qualified release set. That narrowing is stated in this page's opening section as a

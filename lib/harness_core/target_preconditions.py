@@ -10,7 +10,9 @@ exist differs by case, and each missing piece otherwise surfaces part-way throug
   answer `credentials.reachable` gives;
 - a Linux target on a host that is not Linux needs `docker` on `PATH` and a daemon that answers;
   its client and login are checked by this same probe run inside the container;
-- a macOS target cannot run anywhere but a Mac.
+- a macOS target cannot run anywhere but a Mac. Named explicitly off a Mac, it is a failure; left
+  to the default list, it is skipped with that reason, so the default never fails a host for a
+  target it could not run.
 
 No value is read or printed. The Docker question is the only subprocess, bounded by a timeout, and
 it is asked once however many targets need it. The provisioning contract these checks follow is
@@ -26,7 +28,11 @@ from pathlib import Path
 
 from harness_core import credentials
 
-RUNTIMES = {"claude-code-": ("claude-code", "claude"), "codex-": ("codex", "codex")}
+RUNTIMES = {"claude-code-cli-": ("claude-code", "claude"), "codex-cli-": ("codex", "codex")}
+# The acceptance runner's CLI targets, the default when no target is named. A test holds this to
+# the runner's own table, which this module cannot import from `scripts/`.
+DEFAULT_TARGETS = ("claude-code-cli-linux", "claude-code-cli-macos", "codex-cli-linux",
+                   "codex-cli-macos")
 PLATFORMS = {"Darwin": "macos", "Linux": "linux"}
 CODEX_LOGIN = "auth.json"
 DOCKER_TIMEOUT = 15
@@ -37,12 +43,13 @@ class Unready(Exception):
 
 
 def describe(target):
-    """``(runtime, command, platform)`` for a target id such as ``codex-cli-linux``."""
+    """``(runtime, command, platform)`` for a CLI target id such as ``codex-cli-linux``.
+
+    Only the CLI surfaces run headlessly; an editor, desktop or marketplace surface is refused.
+    """
     for prefix, (runtime, command) in RUNTIMES.items():
-        if target.startswith(prefix):
-            platform_name = target.rsplit("-", 1)[-1]
-            if platform_name in PLATFORMS.values():
-                return runtime, command, platform_name
+        if target.startswith(prefix) and target[len(prefix):] in PLATFORMS.values():
+            return runtime, command, target[len(prefix):]
     raise Unready("%s is not a target this probe knows how to check" % target)
 
 
@@ -71,6 +78,23 @@ def docker_daemon(which=shutil.which, run=subprocess.run):
         raise Unready("`docker info` could not be started")
     if result.returncode:
         raise Unready("the Docker daemon is not running; start it before the round")
+
+
+def runnable(target, host):
+    """Whether `host` can run `target` at all: here, or in a container when it is a Linux target."""
+    where = describe(target)[2]
+    return where == PLATFORMS.get(host) or where == "linux"
+
+
+def by_default(host):
+    """The default targets split into those this host can run and those skipped, with why."""
+    run, skipped = [], []
+    for target in DEFAULT_TARGETS:
+        if runnable(target, host):
+            run.append(target)
+        else:
+            skipped.append((target, "runs only on a %s host" % describe(target)[2]))
+    return run, skipped
 
 
 def problems(targets, env, home, host, which=None, run=None):
@@ -110,13 +134,21 @@ def problems(targets, env, home, host, which=None, run=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--targets", required=True,
-                        help="comma-separated target ids, for example codex-cli-linux")
+    parser.add_argument("--targets",
+                        help="comma-separated target ids, for example codex-cli-linux; default "
+                             "every CLI target this host can run")
     args = parser.parse_args(argv)
-    targets = [name.strip() for name in args.targets.split(",") if name.strip()]
-    if not targets:
-        raise SystemExit("--targets names no target")
-    found = problems(targets, dict(os.environ), os.path.expanduser("~"), platform.system())
+    host = platform.system()
+    skipped = []
+    if args.targets is None:
+        targets, skipped = by_default(host)
+    else:
+        targets = [name.strip() for name in args.targets.split(",") if name.strip()]
+        if not targets:
+            raise SystemExit("--targets names no target")
+    for target, reason in skipped:
+        print("preconditions: %s: skipped, %s" % (target, reason))
+    found = problems(targets, dict(os.environ), os.path.expanduser("~"), host)
     for target, reason in found:
         print("preconditions: %s: %s" % (target, reason), file=sys.stderr)
     if found:

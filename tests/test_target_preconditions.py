@@ -7,6 +7,7 @@ a paid round, so the probe names the target and the reason before any client is 
 """
 import importlib.util
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -22,8 +23,17 @@ from harness_core import target_preconditions as probe
 PRESENT = "placeholder-value"
 
 
-def on_path(*names):
-    return lambda command, path=None: "/usr/bin/" + command if command in names else None
+def on_path(*names, folder="/usr/bin"):
+    """A `shutil.which` stand-in that finds `names` only when the PATH it is given holds `folder`.
+
+    A PATH of `None` is the process's own, as it is for `shutil.which`.
+    """
+    def which(command, path=None):
+        path = os.environ.get("PATH", "") if path is None else path
+        if command in names and folder in path.split(os.pathsep):
+            return folder + "/" + command
+        return None
+    return which
 
 
 class Daemon:
@@ -51,7 +61,8 @@ class HostTests(unittest.TestCase):
         path.write_text("{}\n")
 
     def check(self, targets, env=None, host="Darwin", which=None, run=None):
-        return probe.problems(targets, env or {}, str(self.home), host,
+        env = dict({"PATH": "/usr/bin"}, **(env or {}))
+        return probe.problems(targets, env, str(self.home), host,
                               which or on_path("codex", "claude", "docker"), run or Daemon())
 
     def test_a_codex_target_with_a_session_login_can_start(self):
@@ -78,6 +89,14 @@ class HostTests(unittest.TestCase):
         self.login()
         [(_, reason)] = self.check(["codex-cli-macos"], which=on_path("docker"))
         self.assertIn("`codex` is not on PATH", reason)
+
+    def test_the_client_is_looked_up_on_the_path_the_round_passes(self):
+        self.login()
+        which = on_path("codex", folder="/opt/clients")
+        [(_, reason)] = self.check(["codex-cli-macos"], which=which)
+        self.assertIn("`codex` is not on PATH", reason)
+        self.assertEqual(self.check(["codex-cli-macos"], {"PATH": "/usr/bin:/opt/clients"},
+                                    which=which), [])
 
     def test_a_claude_code_target_keeps_the_credential_probe_answer(self):
         self.assertEqual(self.check(["claude-code-cli-macos"], {"ANTHROPIC_API_KEY": PRESENT}), [])
@@ -124,6 +143,31 @@ class HostTests(unittest.TestCase):
         self.assertEqual(target, "cursor")
         self.assertIn("not a target this probe knows", reason)
 
+    def test_a_surface_that_is_not_a_cli_is_refused(self):
+        self.login()
+        for target in ("codex-desktop-macos", "codex-vscode-macos", "claude-code-vscode-macos",
+                       "claude-code-plugin-marketplace"):
+            [(_, reason)] = self.check([target])
+            self.assertIn("not a target this probe knows", reason, msg=target)
+
+
+class DefaultTargetTests(unittest.TestCase):
+    def test_the_default_list_is_the_runners_cli_targets(self):
+        clients = smoke_tier().CLIENTS
+        self.assertEqual(sorted(probe.DEFAULT_TARGETS), sorted(clients))
+
+    def test_a_mac_runs_every_target_and_skips_none(self):
+        run, skipped = probe.by_default("Darwin")
+        self.assertEqual(sorted(run), sorted(probe.DEFAULT_TARGETS))
+        self.assertEqual(skipped, [])
+
+    def test_a_linux_host_skips_the_macos_targets_rather_than_failing_them(self):
+        run, skipped = probe.by_default("Linux")
+        self.assertEqual(run, ["claude-code-cli-linux", "codex-cli-linux"])
+        self.assertEqual([target for target, _ in skipped],
+                         ["claude-code-cli-macos", "codex-cli-macos"])
+        self.assertIn("runs only on a macos host", skipped[0][1])
+
 
 class EntryPointTests(unittest.TestCase):
     def setUp(self):
@@ -131,15 +175,28 @@ class EntryPointTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
 
-    def run_main(self, targets, env):
+    def run_main(self, targets, env, host="Darwin"):
         out, err = io.StringIO(), io.StringIO()
         with patch.dict(os.environ, env, clear=True), patch.dict(
-                os.environ, {"HOME": str(self.home)}), patch.object(
-                probe.platform, "system", return_value="Darwin"), patch.object(
-                probe.shutil, "which", on_path("codex")):
+                os.environ, {"HOME": str(self.home), "PATH": "/usr/bin"}), patch.object(
+                probe.platform, "system", return_value=host), patch.object(
+                probe.shutil, "which", on_path("codex", "claude")):
             with redirect_stdout(out), redirect_stderr(err):
-                code = probe.main(["--targets", targets])
+                code = probe.main(["--targets", targets] if targets else [])
         return code, out.getvalue(), err.getvalue()
+
+    def test_a_ready_linux_host_passes_the_default_and_names_what_it_skipped(self):
+        env = {"OPENAI_API_KEY": PRESENT, "ANTHROPIC_API_KEY": PRESENT}
+        code, out, err = self.run_main(None, env, host="Linux")
+        self.assertEqual(code, 0, err)
+        self.assertIn("codex-cli-macos: skipped, runs only on a macos host", out)
+        self.assertIn("claude-code-cli-macos: skipped", out)
+        self.assertEqual(err, "")
+
+    def test_a_macos_target_named_on_a_linux_host_is_still_a_failure(self):
+        code, _, err = self.run_main("codex-cli-macos", {"OPENAI_API_KEY": PRESENT}, host="Linux")
+        self.assertEqual(code, 1)
+        self.assertIn("runs only on a macos host", err)
 
     def test_a_missing_login_exits_nonzero_naming_the_target(self):
         code, out, err = self.run_main("codex-cli-macos", {})
@@ -171,10 +228,10 @@ class SmokeTierTests(unittest.TestCase):
                   if item["name"] == "credentials"]
         return step
 
-    def test_the_credentials_check_covers_every_runner_target_by_default(self):
+    def test_with_no_targets_the_probe_chooses_the_hosts_own_default(self):
         argv = self.credentials()["argv"]
-        self.assertIn("harness_core.target_preconditions", argv)
-        self.assertEqual(argv[-1], ",".join(sorted(self.module.CLIENTS)))
+        self.assertEqual(argv[-1], "harness_core.target_preconditions")
+        self.assertNotIn("--targets", argv)
 
     def test_the_round_can_name_only_the_targets_it_runs(self):
         self.assertEqual(self.credentials(["codex-cli-linux"])["argv"][-1], "codex-cli-linux")
@@ -185,6 +242,42 @@ class SmokeTierTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 self.module.main(["--targets", "cursor", "--only", "credentials"])
         self.assertIn("unknown target: cursor", str(caught.exception))
+
+
+def round_driver():
+    path = REPO / "scripts" / "qualification_round.py"
+    spec = importlib.util.spec_from_file_location("qualification_round_targets", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class RoundTests(unittest.TestCase):
+    def setUp(self):
+        self.driver = round_driver()
+
+    def argv(self, targets):
+        with patch.object(self.driver.subprocess, "run") as run:
+            self.driver.smoke("/round/clone", {}, targets)
+        return run.call_args[0][0]
+
+    def test_the_round_checks_only_the_targets_it_runs(self):
+        argv = self.argv(["claude-code-cli-macos"])
+        self.assertEqual(argv[-2:], ["--targets", "claude-code-cli-macos"])
+
+    def test_the_round_passes_its_target_list_to_the_tier(self):
+        with tempfile.TemporaryDirectory() as directory:
+            round_dir = Path(directory)
+            (round_dir / "clone").mkdir()
+            (round_dir / "provision.json").write_text(json.dumps(
+                {"clone": str(round_dir / "clone"), "records": str(round_dir / "records"),
+                 "source_commit": "0" * 40}))
+            seen = []
+            with patch.object(self.driver, "smoke",
+                              side_effect=lambda clone, env, targets=(): seen.append(targets)), \
+                    patch.object(self.driver.subprocess, "run", return_value=None):
+                self.driver.run_round(round_dir, ["claude-code-cli-macos"], None, [])
+        self.assertEqual(seen, [["claude-code-cli-macos"]])
 
 
 if __name__ == "__main__":

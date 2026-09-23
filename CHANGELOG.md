@@ -15,10 +15,12 @@ All notable changes to this project are documented here. The format follows
   session, and both Linux targets run in a container on that Mac built from the new
   `scripts/linux-target.Dockerfile`, which pins both clients. The runbook's new target-hosts
   section gives the commands in order. The smoke tier's `credentials` check now takes
-  `--targets` and fails at once, naming the target, when a client is off `PATH`, the Codex login
-  is missing or the Docker daemon a Linux target needs does not answer. The runbook also records
-  that the acceptance runner does not yet carry a Codex session login into its disposable home,
-  so Codex targets are still qualified by hand. (#408)
+  `--targets`, which a qualification round passes through, and fails at once, naming the target,
+  when a client is off `PATH`, the Codex login is missing or the Docker daemon a Linux target
+  needs does not answer; with no targets named it checks what this host can run and reports a
+  macOS target on a Linux host as skipped. The runbook also records that the acceptance runner
+  does not yet carry a Codex session login into its disposable home, so Codex evidence can only
+  be produced by hand until it does. (#408)
 - A qualification round names two capability classes per target rather than one: an execution
   class, `standard` by default, for the worker that runs the scripted cases and writes the
   findings, and an assessment class, `strong` by default and a floor rather than a preference,

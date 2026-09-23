@@ -49,13 +49,14 @@ def steps(work, targets=None):
 
     `credentials` checks, for each target, what docs/qualification-runbook.md says must exist
     before it starts: its client and login here, or a Docker daemon for a Linux target this host
-    runs in a container.
+    runs in a container. With no targets named it checks every CLI target this host can run and
+    reports the rest as skipped.
     """
     return [
         {"name": "credentials",
          "how": "check each target's client, login or Docker daemon on this host",
-         "argv": [sys.executable, "-m", "harness_core.target_preconditions",
-                  "--targets", ",".join(targets or sorted(CLIENTS))],
+         "argv": [sys.executable, "-m", "harness_core.target_preconditions"]
+                 + (["--targets", ",".join(targets)] if targets else []),
          "env": {"PYTHONPATH": str(ROOT / "lib")}, "timeout": 30},
         {"name": "projection-drift",
          "how": "regenerate every native projection and compare it with the committed one",
@@ -205,7 +206,8 @@ def main(argv=None):
     parser.add_argument("--only", help="comma-separated subset of the checks to run")
     parser.add_argument("--skip", help="comma-separated checks to leave out of this run")
     parser.add_argument("--targets",
-                        help="comma-separated targets the round will run; default every one")
+                        help="comma-separated targets the round will run; default every CLI "
+                             "target this host can run")
     parser.add_argument("--list", action="store_true", dest="listing",
                         help="print what would run, running nothing")
     args = parser.parse_args(argv)
