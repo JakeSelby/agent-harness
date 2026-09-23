@@ -9,10 +9,10 @@ A **qualified** entry requires native evidence for its exact runtime, client and
 **Unqualified** means no complete passing evidence, **planned** means no current integration,
 and **unsupported** means a combination explicitly outside the integration contract.
 
-Claude Code and Codex are this release's integration targets. The v0.13.0 candidate floor
-requires their CLIs on macOS and Linux, and that qualification has not yet been re-run against
-this source. The v0.12.0 release carried no native qualification, so the v0.11.1 stable floor
-remains the last one qualifying those CLIs on macOS and Linux. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
+Claude Code and Codex are this release's integration targets. The v0.13.0 stable support floor
+qualifies the Claude Code CLI on macOS and Linux. The Codex CLI is outside that contract until a
+scripted qualification round agrees with a hand-driven one, so the v0.11.1 stable floor remains
+the last one qualifying the Codex CLI on macOS and Linux. The Claude Code and Codex VS Code surfaces, Codex Desktop on macOS and the Claude Code
 plugin-marketplace install remain unqualified previews. A marketplace install carries the
 skills, roles, commands and output style only; the ownership journal, stance selection, the
 Codex projection and the hooks come from `bin/harness install`, and
@@ -55,7 +55,9 @@ reaches Codex as projected prose alone. The marketplace install reads `advisory`
 reason that it installs no hooks at all.
 
 <!-- harness:compatibility:start -->
-**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`.
+
+**Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 

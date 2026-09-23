@@ -64,9 +64,31 @@ for.
    A Linux target checks only the daemon from the Mac; its client and login are checked by the
    same command inside the container.
 
-A Linux target then runs inside the container, against the round's frozen clone mounted
-read-only and its records directory mounted writable, both from
-[provisioning](#provisioning-the-round):
+A Linux target is never run from the Mac. The runner refuses a target whose platform is not
+the host's, because the record would carry one platform's name on another's outcome, and
+`scripts/qualification_round.py` reports such a target as not run here and leaves it out of the
+round rather than failing it (#708). It runs inside the container instead, against the round's
+frozen clone mounted read-only and its records directory mounted writable, both from
+[provisioning](#provisioning-the-round). On a Claude subscription, pass the token from
+`claude setup-token` as `CLAUDE_CODE_OAUTH_TOKEN` (#672); this is the sequence that produced the
+0.13.0 `claude-code-cli-linux` records:
+
+```sh
+docker run --rm -it -e CLAUDE_CODE_OAUTH_TOKEN \
+    -v "$PWD/../round-v<version>/clone:/frozen:ro" \
+    -v "$PWD/../round-v<version>/records:/records" \
+    agent-harness-linux-target
+# inside the container
+git -c safe.directory='*' clone -q /frozen harness && cd harness
+python3 scripts/smoke_tier.py --only credentials --targets claude-code-cli-linux
+python3 scripts/native_acceptance.py --client claude-code-cli-linux --model sonnet \
+    --out /records/claude-code-cli-linux.json
+```
+
+`sonnet` is the `standard` class's routed model in `adapters/claude-code/bindings.json`; the
+runner started by hand has no round to route it, so it is named, and the record reads
+`model_source: routing` because it matches. The API-key and cloud-profile forms, and a Codex
+target:
 
 ```sh
 docker run --rm -it -e ANTHROPIC_API_KEY \
@@ -128,8 +150,14 @@ python3 scripts/native_acceptance.py --client claude-code-cli-macos --cases cost
     --model haiku --out ../native-cost-posture.json
 python3 scripts/qualification_round.py --round ../round-v<version> --plan
 python3 scripts/qualification_round.py --round ../round-v<version> \
-    --targets claude-code-cli-macos,codex-cli-macos --model haiku
+    --targets claude-code-cli-macos,claude-code-cli-linux
 ```
+
+A round given no `--model` passes each target the model its execution class routes to, and each
+evidence record and per-case row carries it as `model_run`, with the record's routing reading
+`model_source: routing`; an operator's `--model` still wins, recorded as `model_source: operator`
+beside the routed model (#721). On a Mac the Linux target in that example is reported as not run
+here, and runs in the container from [target hosts](#target-hosts).
 
 `--dry-plan` launches no client and names, per case, what a run would do. `--keep-home` leaves
 each disposable home in place for debugging; without it every home is removed at the end of its
