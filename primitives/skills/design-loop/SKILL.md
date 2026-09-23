@@ -1,6 +1,6 @@
 ---
 name: design-loop
-description: Raise the visual quality of something that already renders — lock a visual target, then loop build → screenshot → independent scored critique → fix, against rubrics with hard accessibility, design-token, runtime and asset-licensing gates. Use when asked to make a UI, page, HTML doc, dashboard, game scene or 3D asset look dramatically better, more polished or more professional; to improve the visual design, look, styling or visual quality of a surface; or to iterate toward a reference, mockup or screenshot. Also use proactively after building or substantially changing a user-facing surface, before calling the visual work done. Not for deciding what screens exist or how flows behave — that is UX specification, handled elsewhere.
+description: Raise the visual quality of something that already renders: build, screenshot, independent scored critique, fix, against rubrics with hard accessibility, design-token, runtime and asset-licensing gates. Use when asked to make a UI, page, HTML doc, dashboard, game scene or 3D asset look dramatically better, more polished or more professional; to improve the visual design, look, styling or visual quality of a surface; to iterate toward a reference, mockup or screenshot; and proactively after building or substantially changing a user-facing surface. Not for deciding what screens exist or how flows behave.
 ---
 
 # Design loop

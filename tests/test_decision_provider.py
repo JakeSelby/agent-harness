@@ -296,7 +296,9 @@ class RegistryTests(Base):
 
     def test_the_example_config_ships_the_default_the_code_assumes(self):
         example = json.loads((REPO / "config.example.json").read_text(encoding="utf-8"))
-        self.assertEqual(example["governance"], {"provider": "none"})
+        self.assertEqual(example["governance"],
+                         {"provider": "none",
+                          "jev": {"mode": "off", "modes": {}, "state_fields": []}})
 
     def test_both_providers_answer_the_whole_contract(self):
         for provider in (decision.NullProvider(), decision.LocalProvider(root=str(self.root))):

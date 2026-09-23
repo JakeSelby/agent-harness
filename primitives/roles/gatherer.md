@@ -1,6 +1,6 @@
 ---
 name: gatherer
-description: Read-only information gathering over files — locate, read, extract and summarize a named list of paths. Offline: no web tools, so a web dimension goes to an in-session band worker instead. Returns at most 400 words plus a path to the long version. Never edits, never decides. Use for grep fan-outs, bulk read-and-summarize over a bounded scope, and doc lookups.
+description: Read-only gathering over files: locate, read, extract and summarize a named list of paths. Offline, so a web dimension goes to an in-session band worker instead. Returns at most 400 words plus a path to the long version. Use for grep fan-outs, bulk read-and-summarize over a bounded scope, and doc lookups.
 tier: strong
 authority: read-only
 context: fresh
