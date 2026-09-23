@@ -8,7 +8,7 @@
     "story": 202,
     "task": 7,
     "bug": 55,
-    "chore": 49,
+    "chore": 50,
     "spike": 10,
     "decision": 8
   },
@@ -4207,6 +4207,19 @@
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C048.md",
+      "parent_bmad_id": "AH-E011",
+      "parent_github_number": 552,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C049",
+      "github_number": 569,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/569",
+      "title": "Reserve BMad IDs for the v0.14.0 release issues",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C049.md",
       "parent_bmad_id": "AH-E011",
       "parent_github_number": 552,
       "lifecycle": "active",
