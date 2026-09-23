@@ -95,12 +95,24 @@ class SessionNudgeTests(Fixture):
         self.assertEqual(self.nudges(self.submit()), [])
 
     def test_a_posture_with_no_threshold_never_mentions_the_session(self):
-        # What `balanced` ships today: the switch is there and empty until the sizes are measured.
+        # `max` is the posture that optimises for the answer and not the bill, so it names no
+        # size and the line it would carry is never said, however large the session grows.
+        self.variant("max")
         append(self.transcript, [response("m1", 400, 900000)])
         lines = self.submit()
         self.assertIn("last turn 400 output tokens", lines[0])
         self.assertEqual(self.nudges(lines), [])
         self.assertEqual(self.state()["said_nudge"], [])
+
+    def test_the_shipped_variants_carry_their_starting_sizes(self):
+        # Starting points against a 200,000-token window, not measured figures; the follow-up to
+        # #321 replaces them from the ledger. Read from the sidecars so the docs cannot drift.
+        module = load_feed()
+        for name, sizes in (("frugal", [80000, 120000]), ("balanced", [120000, 160000]),
+                            ("max", [])):
+            self.variant(name)
+            table = module.settings(self.env())[0]
+            self.assertEqual(module.session_nudges(table), sizes, msg=name)
 
     def test_a_context_no_response_reported_is_no_crossing(self):
         # Never zero and never a guess: a usage block with neither field is a size nothing

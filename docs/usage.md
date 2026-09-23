@@ -261,7 +261,9 @@ number of its own:
 - `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
   means never.
 - `session_nudge_at` — the context sizes, in whole tokens, that the fresh-session line is said at.
-  An empty list, which every shipped variant carries until the sizes are measured, means never.
+  `frugal` ships 80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` an empty list, which
+  means never. Those figures are starting points chosen against a 200,000-token window, not
+  measured ones: the follow-up to #321 replaces them with sizes read out of the ledger.
 - `max_parallel` — the width the running-agent note measures against. `null`, which `max` ships,
   means the note never appears.
 

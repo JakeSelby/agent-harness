@@ -147,7 +147,7 @@
         },
         {
           "name": "Live usage feed",
-          "line": "The orchestrator sees what each turn and each subagent cost, and hears once when the session's context passes a size you set. A decision log records what a hook decided.",
+          "line": "The orchestrator sees what each turn and each subagent cost, and hears once when its context passes the size your stance sets. A decision log records what a hook decided.",
           "doc": "docs/usage.md"
         },
         {

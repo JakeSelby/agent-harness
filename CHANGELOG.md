@@ -16,9 +16,11 @@ All notable changes to this project are documented here. The format follows
   response's input tokens plus its cached prefix and, at a crossing, adds one line naming the size,
   the threshold and the advice to finish the task, write the handoff and start fresh. It is said
   once per threshold rather than once per turn, and the thresholds already said are kept in the
-  session's state file so a resume does not repeat them. Nothing is blocked. Every shipped
-  variant carries an empty list until the sizes are measured on real sessions, so the line is
-  silent today, and Codex raises no `UserPromptSubmit` event and declares the gap (#321).
+  session's state file so a resume does not repeat them. Nothing is blocked. `frugal` ships
+  80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` nothing at all; those are
+  starting points chosen against a 200,000-token window rather than measured figures, and the
+  follow-up to this issue replaces them with sizes read out of the ledger. Codex raises no
+  `UserPromptSubmit` event and declares the nudge uncovered (#321).
 
 ### Fixed
 
