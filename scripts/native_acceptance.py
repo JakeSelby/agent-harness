@@ -19,6 +19,7 @@ running and not the round; `--from-progress` rebuilds a record from what survive
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -292,6 +293,11 @@ class Home:
                         continue
             found.append((json.loads(meta.read_text()), records))
         return found
+
+    def transcript_path(self, session_id):
+        """The orchestrator's own transcript file, or None when the client wrote none."""
+        paths = sorted((self.client_dir / "projects").glob("*/" + session_id + ".jsonl"))
+        return paths[0] if paths else None
 
     def orchestrator_text(self, session_id):
         """The orchestrator's own transcript, whether or not the session spawned a subagent.
@@ -636,6 +642,53 @@ def brief_of(records):
     return ""
 
 
+def hook_posture():
+    """The `posture.py` the spawn and session hooks load, so the case reads what they read."""
+    spec = importlib.util.spec_from_file_location(
+        "harness_hook_posture", str(ROOT / "policy" / "hooks" / "posture.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def resume_verdict(record, announced, agent_type, ran):
+    """Judge the resumed turn by the registry evidence it ran under; returns the summary clause.
+
+    A headless `--resume` is a new process with the same session id: `SessionStart` fires with
+    `source: resume`, so the hook narrows the startup record and the workers restored since stay
+    out of it, but the new process loads its registry from disk and writes a non-initial
+    `agent_listing_delta` naming them. That announcement is the runtime saying this session
+    resolves the worker, and the spawn hook routes on it by design, so a reroute here is only
+    a defect when nothing the session ran under named the worker. `record` is the session's
+    record, `announced` what `posture.transcript_agents` read from its transcript.
+    """
+    if record is None:
+        raise Unverified("the resumed session left no session record, so the registry its start "
+                         "recorded was never observed")
+    recorded = record.get("agents")
+    widened = sorted(name for name in (recorded if isinstance(recorded, list) else [])
+                     if str(name).startswith("worker-"))
+    if widened:
+        raise AssertionError("resuming a session whose record predates the workers widened the "
+                             "record to " + redact(", ".join(widened)))
+    if not ran:
+        raise AssertionError("the spawn in a resumed session whose record predates the workers "
+                             "did not run")
+    kind = str(agent_type or "").lower()
+    told = sorted(announced or ())
+    if not kind.startswith("worker-"):
+        return ("a resumed session whose record predates the workers was not rerouted (the "
+                "runtime announced %s) and its spawn still succeeded"
+                % (", ".join(told) if told else "nothing"))
+    if kind not in told:
+        raise AssertionError("a session whose record predates the workers was rerouted to %s, "
+                             "which neither its record nor the runtime's listing named"
+                             % redact(agent_type))
+    return ("a resumed session whose record predates the workers kept them out of its record and "
+            "was rerouted to %s only after the resumed process announced it, and that spawn ran"
+            % kind)
+
+
 def case_cost_posture(home):
     root = home.primitives
     for name, body in (("unmanaged.md", NULL_PROSE),):
@@ -684,11 +737,10 @@ def case_cost_posture(home):
         path.write_text(body)
     resumed = home.session(SPAWN_PROMPT, resume=older["session_id"])
     resumed_meta, resumed_records = spawned_subagent(home, resumed["session_id"])
-    if str(resumed_meta.get("agentType", "")).lower().startswith("worker-"):
-        raise AssertionError("a session whose record predates the workers was rerouted to "
-                             + redact(resumed_meta.get("agentType")))
-    if not resumed_records:
-        raise AssertionError("the spawn in a session predating the workers did not run")
+    resumed_clause = resume_verdict(
+        hook_posture().read_session_record(resumed["session_id"], env=home.env()),
+        hook_posture().transcript_agents(home.transcript_path(resumed["session_id"])),
+        resumed_meta.get("agentType"), bool(resumed_records))
     data["stances"]["cost"] = "unmanaged"
     home.write_config(data)
     home.harness("sync")
@@ -703,9 +755,9 @@ def case_cost_posture(home):
     if not feed or not routed:
         raise Unverified(
             "the routed spawn ran on the variant's band worker, model, effort and budget sentence, "
-            "and the null variant and the pre-existing session did none of it, but the usage feed "
+            "%s, and the null variant did none of it, but the usage feed "
             "line (%s) and the routed usage row (%s) were not both observed"
-            % ("seen" if feed else "absent", "seen" if routed else "absent"))
+            % (resumed_clause, "seen" if feed else "absent", "seen" if routed else "absent"))
     complaint = spend_complaint(feed[-1])
     if complaint:
         raise AssertionError(complaint)
@@ -713,9 +765,8 @@ def case_cost_posture(home):
             "rest byte-identical; in a new native session an unnamed spawn ran as the variant's "
             "default band worker on its row's model and effort with the budget sentence in its "
             "brief, the orchestrator's context carried \"%s\", harness usage --rescan --by role "
-            "recorded the routed row, a session whose record predates the workers was not rerouted "
-            "and its spawn still succeeded, and a null variant did none of it."
-            % (len(rewritten), len(after), feed[-1]))
+            "recorded the routed row, %s, and a null variant did none of it."
+            % (len(rewritten), len(after), feed[-1], resumed_clause))
 
 
 def descriptor_recipe(descriptor):
@@ -1222,8 +1273,10 @@ ARTIFACT_REFUSAL = "--artifact must be a Markdown filename, not a path"
 
 
 def role_run(home, name, brief, *extra, **kwargs):
-    return home.harness("role", "run", name, "--workspace", str(home.project),
-                        "--prompt-file", str(brief), *extra, **kwargs)
+    # `harness role run` requires `--runtime`, and the worker runs on the client under test.
+    return home.harness("role", "run", name, "--runtime", home.runtime,
+                        "--workspace", str(home.project), "--prompt-file", str(brief),
+                        *extra, **kwargs)
 
 
 def case_role_confinement(home):
@@ -1404,7 +1457,8 @@ def case_spawn_confinement(home):
     return "; ".join(notes) + "."
 
 
-GATE_REPO_FILES = {
+GATE_REPO_FILES = {  # the run counter is ignored, or every green run would change the tree
+    ".gitignore": "gate-runs.log\n",
     "AGENTS.md": "# probe\n\n## Gate\n\n```sh\npython3 gate.py\n```\n",
     "gate.py": ("import pathlib, sys\n"
                 "log = pathlib.Path(__file__).with_name('gate-runs.log')\n"
@@ -1448,8 +1502,12 @@ def gate_runs(repo):
 
 
 def gate_state(home, repo):
-    """The stop-gate hook's own state record for this repository, or ``{}``."""
-    digest = hashlib.sha256(str(repo).encode("utf-8")).hexdigest()
+    """The stop-gate hook's own state record for this repository, or ``{}``.
+
+    The hook keys the record on the root git prints, which is resolved, so a disposable home
+    under a symlinked temporary directory is read at its resolved path too.
+    """
+    digest = hashlib.sha256(str(repo.resolve()).encode("utf-8")).hexdigest()
     path = home.root / ".local" / "state" / "agent-harness" / "stop-gate" / (digest + ".json")
     try:
         return json.loads(path.read_text())
@@ -1572,6 +1630,18 @@ def task_contract():
                        "verification": {"status": "passed"}})
 
 
+def save_task(home, repo, runtime, revision, **kwargs):
+    """`harness task save` with the contract written to a file: `--input` is a path, not JSON.
+
+    The file lives in the disposable home, outside the task repository, so it never shows up
+    as a working-tree change the record's staleness check would read.
+    """
+    contract = home.root / "task-contract.json"
+    contract.write_text(task_contract() + "\n")
+    return home.harness("task", "save", "--runtime", runtime, "--revision", str(revision),
+                        "--input", str(contract), cwd=repo, **kwargs)
+
+
 def case_bidirectional_handoff(home):
     """docs/compatibility.md step 11: one task record, written and read across runtimes.
 
@@ -1581,8 +1651,7 @@ def case_bidirectional_handoff(home):
     home.seed(stances={"autonomy": "execute"}, permissions="bypass", **{ACK_KEY: True})
     home.harness("sync")
     repo = task_repo(home)
-    saved = home.harness("task", "save", "--runtime", home.runtime, "--revision", "0",
-                         "--input", task_contract(), cwd=repo)
+    saved = save_task(home, repo, home.runtime, 0)
     record = repo / ".agent-harness" / "task.json"
     if not record.exists():
         raise Unverified("harness task save wrote no task record to hand over: "
@@ -1601,8 +1670,7 @@ def case_bidirectional_handoff(home):
              "reported passed retained as evidence only" % home.runtime,
              "its first next step was %s" % ("carried out" if marked else "not carried out")]
     other = "codex" if home.runtime != "codex" else "claude-code"
-    home.harness("task", "save", "--runtime", other, "--revision", "1",
-                 "--input", task_contract(), cwd=repo)
+    save_task(home, repo, other, 1)
     if task_revision(repo) != 2:
         raise Unverified(observed(notes, "a --runtime %s save against revision 1 did not produce "
                                   "revision 2, so there was no cross-runtime record to read back"
@@ -1618,8 +1686,7 @@ def case_bidirectional_handoff(home):
                  % (other, home.runtime, other))
     # The record now stands at revision 2, so revision 1 is spent: `tasks.save` refuses a writer
     # whose expected revision is not the current one, which is the rule this sequence follows.
-    stale = home.harness("task", "save", "--runtime", other, "--revision", "1",
-                         "--input", task_contract(), expected=1, cwd=repo)
+    stale = save_task(home, repo, other, 1, expected=1)
     if STALE_SAVE not in stale:
         raise AssertionError(observed(notes, "a second save against the spent revision 1 was not "
                                       "refused by name: " + redact(stale[-200:])))
@@ -1638,6 +1705,10 @@ LEGACY_RULE = "delegation.md"
 OWN_KEY = "MY_OWN_KEY"
 ADOPT_HINT = "--adopt"
 PRESERVED = "user changes preserved"
+# A harness-owned setting the user then changes by hand, and the value they give it: a built-in
+# Claude Code output style, so the native turn after uninstall still starts cleanly.
+HAND_EDIT_KEY = ["outputStyle"]
+HAND_EDIT_VALUE = "Explanatory"
 RESTORED_PROMPT = ("Reply with two lines: first the single word from your own instructions file, "
                    "then NONE if you have no harness stances and otherwise the word HARNESS.")
 
@@ -1659,11 +1730,34 @@ def seed_prior_install(home):
             "skill": (skill, skill.read_bytes())}
 
 
+def hand_edit_owned_setting(home):
+    """Change one harness-owned settings key by hand, as a user would; return the file.
+
+    `harness uninstall` exits 2 only when something is preserved as a conflict, and a hand edit
+    to a key the ownership store holds is the one it preserves by name. The key is confirmed in
+    that store first, so the case cannot pass on a setting the harness never owned.
+    """
+    path = home.client_dir / "settings.json"
+    store = home.root / ".local" / "state" / "agent-harness" / "ownership.json"
+    try:
+        keys = json.loads(store.read_text())["files"][str(path)]["keys"]
+    except (OSError, ValueError, KeyError, TypeError):
+        keys = {}
+    if json.dumps(HAND_EDIT_KEY) not in keys:
+        raise Unverified("the adopting sync owned no %s key in the client settings, so no hand "
+                         "edit to a harness-owned setting could be made" % HAND_EDIT_KEY[0])
+    settings = json.loads(path.read_text())
+    settings[HAND_EDIT_KEY[0]] = HAND_EDIT_VALUE
+    path.write_text(json.dumps(settings, indent=2) + "\n")
+    return path
+
+
 def case_migration_uninstall(home):
     """docs/compatibility.md step 7: adoption is refused until it is asked for, and reversed.
 
-    Every file the harness adopted must come back byte for byte, which is the only reading that
-    makes an uninstall safe to recommend.
+    Every file the harness adopted must come back byte for byte, and a harness-owned setting the
+    user changed by hand must survive, which is the only reading that makes an uninstall safe to
+    recommend.
     """
     home.seed()
     before = seed_prior_install(home)
@@ -1680,10 +1774,17 @@ def case_migration_uninstall(home):
         raise AssertionError("the adopting sync dropped the user's own settings key")
     if before["skill"][0].read_bytes() != before["skill"][1]:
         raise AssertionError("the adopting sync rewrote the user's own skill")
+    edited = hand_edit_owned_setting(home)
     removed = home.harness("uninstall", expected=2)
-    if PRESERVED not in removed:
-        raise AssertionError("harness uninstall did not report what it preserved: "
-                             + redact(removed[-300:]))
+    if PRESERVED not in removed or HAND_EDIT_KEY[0] not in removed:
+        raise AssertionError("harness uninstall did not report the hand-edited %s as preserved: "
+                             % HAND_EDIT_KEY[0] + redact(removed[-300:]))
+    kept = json.loads(edited.read_text())
+    if kept.get(HAND_EDIT_KEY[0]) != HAND_EDIT_VALUE:
+        raise AssertionError("harness uninstall reverted the user's hand-edited %s"
+                             % HAND_EDIT_KEY[0])
+    if OWN_KEY not in json.dumps(kept.get("env") or {}):
+        raise AssertionError("harness uninstall dropped the user's own settings key")
     for name, (path, body) in before.items():
         if not path.exists():
             raise AssertionError("harness uninstall did not restore the user's " + name)
@@ -1701,10 +1802,12 @@ def case_migration_uninstall(home):
                          "answered from them: " + redact(answer[-200:]))
     return ("harness sync without %s exited 2 and named the pre-existing rules/%s and the non-link "
             "instructions file without overwriting anything; %s then exited 0, kept the user's own "
-            "settings key and left the user's own skill byte-identical; harness uninstall exited 2 "
-            "reporting \"%s\", restored every adopted file byte-identical, left no harness link "
-            "under the client directory, and a native turn afterwards answered from the user's "
-            "restored instructions." % (ADOPT_HINT, LEGACY_RULE, ADOPT_HINT, PRESERVED))
+            "settings key and left the user's own skill byte-identical; after the user changed the "
+            "harness-owned %s by hand, harness uninstall exited 2 reporting \"%s\" for it, kept "
+            "that value and the user's own key, restored every adopted file byte-identical, left "
+            "no harness link under the client directory, and a native turn afterwards answered "
+            "from the user's restored instructions."
+            % (ADOPT_HINT, LEGACY_RULE, ADOPT_HINT, HAND_EDIT_KEY[0], PRESERVED))
 
 
 CASES = {
@@ -1750,7 +1853,8 @@ CASES = {
                               "stale revision, and continue it from the other runtime"),
     "migration-uninstall": (case_migration_uninstall,
                             "sync over a user's own files without and then with adoption, "
-                            "uninstall, and compare every restored file byte for byte"),
+                            "change a harness-owned setting by hand, uninstall, read that the "
+                            "edit was kept, and compare every restored file byte for byte"),
 }
 
 

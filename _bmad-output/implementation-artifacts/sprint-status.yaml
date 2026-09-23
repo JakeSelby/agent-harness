@@ -304,7 +304,8 @@ development_status:
   ah-b061-fix-lint-skip-untracked-files-under-agent: done
   ah-b062-test-codex-make-the-no-client-detection-test: done
   ah-b066-replay-counts-the-cli-s-synced-skill-packs-as: done
-  ah-b076-the-runner-stamps-a-linux-record-from-the-target: backlog
+  ah-b074-gate-invalidation-reads-the-stop-gate-state-at: ready-for-dev
+  ah-b075-cost-posture-and-framework-spawn-routing-cannot: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
@@ -425,6 +426,7 @@ development_status:
   ah-s205-trim-the-output-style-and-the-harness: done
   ah-s218-pass-claude-code-oauth-token-into-the-disposable: done
   ah-s223-spawn-confinement-observes-the-refusal-from-the: ready-for-dev
+  ah-s224-scripted-cases-drive-the-cli-with-the-contract: ready-for-dev
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-t001-give-each-replay-arm-its-own-profile-and: done
   ah-t002-record-the-fields-a-cost-replay-regression-needs: done
