@@ -55,11 +55,17 @@ def environment(report):
     return dict(os.environ)
 
 
-def smoke(clone, env):
-    """The deterministic tier, or `None` when it ran past the round's own deadline."""
+def smoke(clone, env, targets=()):
+    """The deterministic tier, or `None` when it ran past the round's own deadline.
+
+    The tier checks the preconditions of the targets this round runs and no others, so a round
+    that leaves a target out is not failed for that target's missing login or daemon.
+    """
+    argv = [sys.executable, str(Path(clone) / "scripts" / SMOKE)]
+    if targets:
+        argv += ["--targets", ",".join(targets)]
     try:
-        return subprocess.run([sys.executable, str(Path(clone) / "scripts" / SMOKE)],
-                              cwd=str(clone), env=env, check=False, timeout=ROUND_TIMEOUT)
+        return subprocess.run(argv, cwd=str(clone), env=env, check=False, timeout=ROUND_TIMEOUT)
     except subprocess.TimeoutExpired:
         return None
 
@@ -145,7 +151,7 @@ def run_round(round_dir, targets, model, confirmed, skip_smoke=False, tier_routi
               "tier_routing": tier_routing}
     write_round(round_dir, result)
     if not skip_smoke:
-        finished = smoke(clone, env)
+        finished = smoke(clone, env, targets)
         result["smoke"] = ("timed out" if finished is None
                            else PASSED if finished.returncode == 0 else "failed")
     for client in targets:

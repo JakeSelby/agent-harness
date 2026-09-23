@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Where the qualification targets run and how each is provisioned is now written down, because a
+  release session had to rediscover it every time. `docs/compatibility.md` names the binary
+  source, the login and the host for each of the four CLI targets: every round to date ran on one
+  Mac, Codex on macOS is the binary bundled in the ChatGPT desktop app logged in with a ChatGPT
+  session, and both Linux targets run in a container on that Mac built from the new
+  `scripts/linux-target.Dockerfile`, which pins both clients. The runbook's new target-hosts
+  section gives the commands in order. The smoke tier's `credentials` check now takes
+  `--targets`, which a qualification round passes through, and fails at once, naming the target,
+  when a client is off `PATH`, the Codex login is missing or the Docker daemon a Linux target
+  needs does not answer; with no targets named it checks what this host can run and reports a
+  macOS target on a Linux host as skipped. The runbook also records that the acceptance runner
+  does not yet carry a Codex session login into its disposable home, so Codex evidence can only
+  be produced by hand until it does. (#408)
 - `scripts/cost_bench.py replay --tag` runs a pinned git ref of this repository, and is repeatable,
   so `--tag v0.12.0 --tag v0.13.0 --model <id>` measures two harness versions against bare in one
   invocation and writes a history row for each, labelled with the version and commit of the ref it
