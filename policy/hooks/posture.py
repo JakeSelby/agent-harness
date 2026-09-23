@@ -37,6 +37,11 @@ SESSION_TTL_DAYS = 14
 SESSION_ID_MAX = 128
 # How stale a record may get before a spawn that read it moves its mtime out of the sweep's way.
 SESSION_REFRESH_SECONDS = 86400
+# The transcript attachment a session writes when the set of types it resolves changes, and how
+# much of the transcript's tail is read to find one. A reload is announced in the turn it is
+# noticed, so it is at the end of the file, and a bounded read keeps a spawn hook's cost flat.
+AGENT_LISTING = "agent_listing_delta"
+TRANSCRIPT_TAIL_BYTES = 256 * 1024
 # The user-config key naming tool-name globs plan mode may use, and the postures under which a
 # widened plan-mode authority is what the user already asked for everywhere else.
 PLAN_TOOLS_KEY = "plan_allow_tools"
@@ -114,6 +119,53 @@ def installed_agents(env=None):
         return []
 
 
+def transcript_agents(transcript_path, limit=TRANSCRIPT_TAIL_BYTES):
+    """The types a reload announced to this session after it started, or None when none did.
+
+    Claude Code attaches an `agent_listing_delta` record to the transcript whenever the set of
+    types it can resolve changes: one with `isInitial` true at session start, and one more each
+    time the watcher picks a definition up. A later record is the runtime's own statement that
+    this session resolves the names it adds, which no directory listing can give — a headless
+    session reloads nothing and writes no later record, so this answers for the session that
+    asked rather than for the machine. Measured in `docs/spikes/2026-09-22-registry-reload.md`.
+
+    Only the tail is read, so a long session costs what a short one does, and a listing that
+    has fallen out of it reads as None: unknown, which routes nothing.
+    """
+    if not transcript_path:
+        return None
+    try:
+        with open(str(transcript_path), "rb") as stream:
+            try:
+                stream.seek(-limit, os.SEEK_END)
+            except OSError:
+                stream.seek(0)
+            tail = stream.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    names = None
+    for line in tail.splitlines():
+        if AGENT_LISTING not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        listing = record.get("attachment") if isinstance(record, dict) else None
+        if not isinstance(listing, dict) or listing.get("type") != AGENT_LISTING:
+            continue
+        if listing.get("isInitial"):
+            continue
+        names = set() if names is None else names
+        for key, apply in (("addedTypes", names.add), ("removedTypes", names.discard)):
+            value = listing.get(key)
+            if isinstance(value, list):
+                for name in value:
+                    if isinstance(name, str):
+                        apply(name)
+    return sorted(names) if names is not None else None
+
+
 def state_dir(env=None):
     return home(env) / ".local" / "state" / "agent-harness"
 
@@ -121,12 +173,12 @@ def state_dir(env=None):
 def sessions_dir(env=None):
     """The session registry: one record per session, written when its process started.
 
-    Claude Code loads its agent registry once, when the session process starts, and does not
-    reload it. So a definition on disk is not evidence that a running session can resolve the
-    type it names — a session that began before `harness sync` installed the band workers
-    cannot spawn one, and rerouting to it turns a spawn that would have worked into one that
-    fails. The SessionStart policy writes what the registry held; the spawn hook reroutes only
-    to a name it finds there.
+    A definition on disk is not evidence that a running session can resolve the type it names:
+    an interactive session picks one up seconds after it appears, a headless one never does,
+    and rerouting to a type the session cannot resolve turns a spawn that would have worked
+    into one that fails. The SessionStart policy writes what the registry held; the spawn hook
+    reroutes to a name it finds there, or to one `transcript_agents` shows the session was
+    later told about.
     """
     return state_dir(env) / "sessions"
 

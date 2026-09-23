@@ -63,12 +63,15 @@ see what a hook is told.
   added with `--add-dir`, and a session started with `--disable-slash-commands`. It does not
   mention headless sessions; the measurement above is the evidence for those.
 
-## Verdict — keep, with a refresh
+## Verdict — keep, with a refresh, which landed with this record
 
-The conservative gate stays as the floor, and the session record gains a second source: the
-`agent_listing_delta` attachments in the session's own transcript, which the spawn hook already
-tails for the session model. Reading the newest initial record plus every later delta, applying
-`addedTypes` and `removedTypes` in order, yields the set of types this session can resolve now.
+The conservative gate stays as the floor, and the session record gained a second source in the
+same change: `posture.transcript_agents` reads the `agent_listing_delta` attachments in the
+session's own transcript, over a bounded tail, and `routable()` in the spawn hook routes to a
+worker the record predates when a later delta names it. Only records with `isInitial` false
+count, and `addedTypes` and `removedTypes` are applied in the order they were written. Run against
+the transcripts these probes left behind, the reader answers `["probe-iota"]` for the interactive
+session that reloaded and `None` for the headless one that could not.
 
 The invariant holds: the set is the runtime's own statement about itself, so it can only name a
 type the session has loaded. A session that never reloads produces only the initial record, which
@@ -76,17 +79,19 @@ is what the start-time record already holds. A delta that lands mid-turn is not 
 next user turn, so routing resumes one turn later than it could — conservative in the safe
 direction.
 
-## Follow-up the code needs
+## What the code does with it, and what it still does not
 
-- Read `agent_listing_delta` attachments in the spawn hook's routability check, ahead of the
-  start-time record, and treat an absent transcript or an unreadable tail as unknown, which is
-  already never routable.
-- The tail read is bounded, so a session whose initial listing has fallen out of the tail must fall
-  back to the session record rather than conclude the registry is empty.
-- Retire the "start a new session to route unnamed spawns" notice for the case the delta covers,
-  and keep it for a session that has not reloaded.
-- Do not build on `FileChanged` or on `SessionStart`'s `model` field; both were measured and both
-  are weaker than the delta.
+- An absent transcript, an unreadable tail and a listing that has fallen out of the tail all read
+  as unknown, which routes nothing: the session record decides those, exactly as before.
+- The "start a new session to route unnamed spawns" notice is still what a session that has not
+  reloaded hears.
+- The pricing hook asks the same function with the same transcript, so a spawn is never priced by
+  one band and routed to another.
+- Nothing is built on `FileChanged` or on `SessionStart`'s `model` field; both were measured and
+  both are weaker than the delta.
+- Left open: the delta is attached at the next user turn, so a session that reloads mid-turn
+  resumes routing one turn later than it could. Conservative in the safe direction, and no code
+  can shorten it.
 
 ## Not run
 

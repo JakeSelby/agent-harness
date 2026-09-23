@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
 """The session registry: what a running session can actually resolve.
 
-Claude Code loads its agent registry when the session process starts and never reloads it, so
-a worker definition on disk is not evidence that a running session can spawn it. A reroute to
-a type the session cannot resolve fails the spawn outright, which is worse than not rerouting
-at all. The SessionStart policy records the names the registry held; the spawn hook — and the
-pricing hook that asks it where a spawn goes — reroutes only to a name in that record.
+A worker definition on disk is not evidence that a running session can spawn it: a reroute to a
+type the session cannot resolve fails the spawn outright, which is worse than not rerouting at
+all. The SessionStart policy records the names the registry held; the spawn hook — and the
+pricing hook that asks it where a spawn goes — reroutes only to a name in that record, or to one
+the runtime has since announced to that session (`test_agent_listing_delta.py`).
 
 Run: python3 -m unittest discover tests
 """

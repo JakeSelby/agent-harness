@@ -8,13 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `docs/spikes/registry-reload-2026-09-22.md` records whether a session that started before the
-  band workers were installed can ever route to them. Measured on this client: an interactive
-  session reloads its agent registry within seconds of a definition appearing, a headless one
-  never does, and both cases are stated in the session's own transcript as an
-  `agent_listing_delta` attachment. So the conservative gate stays as the floor and gains a
-  second source that needs no guess about which kind of session it is in; the code change is
-  the follow-up the record names (#263).
+- A session that was already running when `harness sync` installed the band workers starts
+  routing unnamed spawns as soon as it can resolve them, instead of waiting for a new session.
+  Claude Code announces a reload to the session it happened in, as an `agent_listing_delta`
+  attachment on the transcript, so the spawn hook reads that over a bounded tail and routes to a
+  worker the session's start-time record predates when a later delta names it. The record stays
+  the floor: an absent or unreadable transcript, a listing that has fallen out of the tail, and a
+  session that reloaded nothing all route exactly as they did before, so a reroute still never
+  turns a spawn that would have worked into one that fails. The pricing hook reads the same
+  answer, and `docs/spikes/2026-09-22-registry-reload.md` records the eight sessions this was
+  measured in, including the headless ones that never reload (#263).
 
 ### Fixed
 
