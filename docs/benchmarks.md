@@ -18,7 +18,9 @@ python3 scripts/cost_bench.py static --write    # refresh benchmarks/static.json
 
 `benchmarks/static.json` is the committed figure for the last release. It records files, lines,
 characters, an estimated token count for the default stance selection and for the longest variant
-of every dimension, the five largest files, and what that many tokens cost per model.
+of every dimension, the five largest files, and what that many tokens cost per model. Its
+`scopes` block names the set each count is over, because the caps `harness lint` prints are
+over a narrower one.
 
 - **Tokens are an estimate:** characters divided by four. It is there to show the trend between
   versions with no tokenizer, network call or API key. It is not a billing figure.
@@ -66,6 +68,18 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
   plan sign-in. Run order changes it, because a later run finds its prefix already cached, so each
   row also carries a cache-normalised cost that reprices every thread's first-turn cache reads as
   cache writes. It is empty when the CLI output does not carry per-turn usage.
+- **Beside it, `cache_miss_ratio`: how much of its prefix the run re-bought.**
+  `cache_write / (cache_read + cache_write)` summed over every turn the run opened, subagent
+  threads included, because a fan-out's fresh prefix is part of what the run cost. The
+  arithmetic is `harness usage --by prefix`'s, imported from that module rather than restated,
+  but the two are not the same number: the session figure subtracts a subagent's tokens, so a
+  run that fanned out reads higher here, by design. A candidate that buys fewer tokens by
+  re-writing its prefix more often is otherwise invisible in the history, so `history.jsonl` and
+  `history.md` carry each arm's mean of it beside the cache-normalised ratio. A run whose output
+  carries no per-turn cache figures, any one of whose turns reports usage without them, or whose
+  turns report neither reads nor writes, is `null` and is left out of the arm's mean; so is an
+  errored run, whose turns are not the spend it would have had. Never zero: zero is a run that
+  served its whole prefix.
 - **An errored run is an error, never a failure.** It sits outside both cost per passed task and
   the pass count, and is counted beside them. The per-run cap is soft, so the runner also stops
   before any launch that could take reported spend past `--spend-cap`.

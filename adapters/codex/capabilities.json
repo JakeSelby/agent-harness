@@ -43,6 +43,10 @@
     "mode": "instruction",
     "qualification": "unqualified"
   },
+  "tier_restriction": {
+    "state": "advisory",
+    "mechanism": "primitives/stances/delegation/tiered.md"
+  },
   "limitations": [
     "Native restrictions take precedence. Hook activation requires runtime trust.",
     "Unsupported controls remain visible; custom stance prose does not add enforcement.",

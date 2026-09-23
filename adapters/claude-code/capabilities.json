@@ -43,6 +43,14 @@
     "mode": "instruction",
     "qualification": "unqualified"
   },
+  "tier_restriction": {
+    "state": "enforced",
+    "mechanism": "claude/hooks/tier-agent-spawns.py",
+    "without_hooks": {
+      "state": "advisory",
+      "mechanism": "primitives/skills/delegation-tiering/SKILL.md"
+    }
+  },
   "limitations": [
     "Native restrictions take precedence. Hook activation requires runtime trust.",
     "Unsupported controls remain visible; custom stance prose does not add enforcement."

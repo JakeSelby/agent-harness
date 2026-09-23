@@ -53,7 +53,8 @@ row carries `null`**: the version that ran a past session is not recoverable fro
 transcript, and stamping today's would make the whole history look like this release.
 
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
-`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`, `days`.
+`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
+`days` and, when the row has any, `idless_records`.
 The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
@@ -61,7 +62,13 @@ API response is written as several transcript entries, so counting per line infl
 total — but those entries do not repeat one `usage` object. The early ones carry a partial
 streaming `output_tokens` and the last carries the response's true figure, so taking the first
 undercounts it. The field-wise maximum is the final figure, and a reordered or truncated tail
-cannot lower it. `subagents` counts `Agent` tool calls. The token totals **include the
+cannot lower it. A record that carries no message id is keyed on its `requestId` instead, which
+names one API call: the same call written into both a session file and a subagent file is one
+response, and a call whose other records do carry a message id joins their slot rather than
+opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
+deduplicated at all — it is summed as written, and `idless_records` counts how many such records
+the row's totals include, the session's own and those of the subagent files folded into them.
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
@@ -106,7 +113,8 @@ field names that directory. `agent_id`, `agent_type` and `spawn_depth` come from
 than dropped. Then `model` — the id the agent's own transcript reports, most frequent across its
 assistant records, falling back to the alias the spawn asked for only when it recorded none, so
 a routed spawn and a direct one on the same model group under one name — `effort`, the four
-token fields and `tool_calls`. `tool_use_id` is
+token fields, `tool_calls` and, when the agent's transcript held any, `idless_records`: the
+records in this row's totals that neither a message id nor a request id identified. `tool_use_id` is
 the parent call this row belongs to, `requested_type` is the agent type that call asked for, and
 `rerouted` is the two disagreeing — the measure of how often a spawn hook moved a spawn. A
 requested type is kept only when it is a name the tool could have resolved; anything else is

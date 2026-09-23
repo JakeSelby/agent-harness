@@ -41,8 +41,9 @@ is editing another worktree of this repository right now.
   your change broke, including a pre-existing failure in a file you touched.
 - **Exit codes come from the command, not the pipe.** Capture the test command's own status —
   `PIPESTATUS`, `pipestatus`, or no pipe at all — and report that.
-- **Report rather than widen.** A step that has become unsafe, one that was never in the plan, or
-  a blast radius that has grown is a line in your return, not a decision you take alone.
+- **Report rather than widen, and never message a sibling.** A step that has become unsafe, one
+  never in the plan, a grown blast radius, or a decision only another agent holds is a line in
+  your return under **Deviations** — not one you take alone, and not a question you send sideways.
 
 ## Finish
 
@@ -61,7 +62,7 @@ uncommitted and return the commit as a pending action, per `delegation.md`.
 2. Files added or changed, one line each.
 3. The gate tail as the runner printed it, showing its `Ran N tests` and `OK` lines.
 4. Every fixture, golden file or pinned value you edited, with what produced each.
-5. Deviations from the brief, one line each, with why.
+5. Deviations from the brief, one line each, with why, a sibling-only question included.
 6. Checks: each one run with its answer, and each pending action you are handing back.
 
 No process narration, no restatement of the issue, no account of what you are about to do.

@@ -91,9 +91,12 @@ class UninstallSharedFilesTests(TempHome):
 
 class SettingsMergeTests(unittest.TestCase):
     def test_merge_is_idempotent(self):
-        once = harness.merge_claude_settings({}, TEMPLATE, CFG)
-        twice = harness.merge_claude_settings(once, TEMPLATE, CFG)
+        # The registration sync actually writes, not the hooks-less committed template.
+        template = harness.runtime_template()
+        once = harness.merge_claude_settings({}, template, CFG)
+        twice = harness.merge_claude_settings(once, template, CFG)
         self.assertEqual(once, twice)
+        self.assertTrue(once["hooks"])
 
     def test_allow_rules_are_a_union_and_user_rules_survive(self):
         live = {"permissions": {"allow": ["Bash(my-tool *)", "Read(~/**)"]}}
@@ -137,24 +140,18 @@ class SettingsMergeTests(unittest.TestCase):
             {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "python3 /somewhere/validate-plan-card.py"}]},
             {"matcher": "Write", "hooks": [{"type": "command", "command": "echo mine"}]},
         ]}}
-        merged = harness.merge_claude_settings(legacy, TEMPLATE, CFG)
+        merged = harness.merge_claude_settings(legacy, harness.runtime_template(), CFG)
         post = merged["hooks"]["PostToolUse"]
         commands = [h["command"] for e in post for h in e["hooks"]]
-        self.assertEqual(len([c for c in commands if "validate-plan-card" in c]), 1)
+        self.assertEqual([c for c in commands if "validate-plan-card" in c], [])
         self.assertIn("echo mine", commands)
-        self.assertTrue(any("# harness:plan-card" in c for c in commands))
-
-    def test_plan_card_hook_follows_stance(self):
-        cfg = json.loads(json.dumps(CFG))
-        cfg["stances"]["plan-ceremony"] = "light"
-        merged = harness.merge_claude_settings({}, TEMPLATE, cfg)
-        commands = [h["command"] for entries in merged["hooks"].values() for e in entries for h in e["hooks"]]
-        self.assertFalse(any("plan-card" in c for c in commands))
-        self.assertTrue(any("readonly-bash" in c for c in commands))
+        self.assertTrue(any("# harness:runtime-posttooluse" in c for c in commands))
 
     def test_strip_removes_only_harness_material(self):
-        merged = harness.merge_claude_settings({"model": "m", "permissions": {"allow": ["Bash(mine)"]}}, TEMPLATE, CFG)
-        stripped = harness.strip_claude_settings(merged, TEMPLATE)
+        template = harness.runtime_template()
+        merged = harness.merge_claude_settings({"model": "m", "permissions": {"allow": ["Bash(mine)"]}}, template, CFG)
+        self.assertTrue(merged["hooks"])
+        stripped = harness.strip_claude_settings(merged, template)
         self.assertEqual(stripped["model"], "m")
         self.assertEqual(stripped["permissions"]["allow"], ["Bash(mine)"])
         self.assertNotIn("hooks", stripped)

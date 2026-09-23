@@ -28,9 +28,11 @@ _harness = load_harness()
 TOKEN_CAP = _harness.ALWAYS_LOADED_TOKEN_CAP
 LINE_CAP = _harness.ALWAYS_LOADED_CAP
 
-# The ratchet: four lines under the line cap, so a rule change that spends the last of the headroom
-# has to say so in its diff rather than arriving unremarked.
-LINE_BUDGET = LINE_CAP - 4
+# The ratchet is the line cap itself. It used to sit four lines under it so that the diff spending
+# the last of the headroom had to say so; that happened once and the gap has done its job. The cap
+# that binds is tokens (#430); the line cap is the secondary guard docs/how-it-works.md describes,
+# and a second budget below it only made the secondary guard look like the primary one.
+LINE_BUDGET = LINE_CAP
 
 
 def measured(repo=REPO):
