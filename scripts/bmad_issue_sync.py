@@ -368,7 +368,7 @@ def parse_layout(text):
         index = next((i for i in range(1, len(bare)) if bare[i] == "---"), len(bare)) + 1
     frontmatter_end = offsets[min(index, len(lines))]
     while index < len(bare) and not bare[index].startswith("# "):
-        if bare[index].strip() and not re.match(r"^\s*<!--.*-->\s*$", bare[index]):
+        if bare[index].strip() and not is_whole_line_comment(bare[index]):
             return None  # neither typed nor a legacy render, so artifact_layout refuses it
         index += 1
     if index >= len(bare):
@@ -426,6 +426,16 @@ def legacy_text(text):
 def is_legacy_stub(item, text):
     """A legacy stub is recognised positively: it opens with the tool's legacy render for its item."""
     return strip_updated(legacy_text(text)).startswith(strip_updated(render_legacy_stub(item)))
+
+
+def is_whole_line_comment(line):
+    """True when a line holds one Markdown comment and nothing else, such as a lint directive above the H1.
+
+    Plain string tests rather than a regular expression: this classifies Markdown structure, it does
+    not sanitize HTML.
+    """
+    stripped = line.strip()
+    return stripped.startswith("<!--") and stripped.endswith("-->") and stripped.count("-->") == 1
 
 
 def artifact_layout(item, text):
