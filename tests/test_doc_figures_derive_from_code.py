@@ -42,6 +42,14 @@ def spelled(n):
     return WORDS[n]
 
 
+def labelled(text):
+    """Every detector id a corpus labels file names, in a fire or a near list."""
+    found = set()
+    for match in re.finditer(r"(?:fire|near):\s*\[([^\]]*)\]", text):
+        found.update(part.strip() for part in match.group(1).split(",") if part.strip())
+    return found
+
+
 def lines_naming(path, needle):
     body = (REPO / path).read_text(encoding="utf-8")
     return [line for line in body.splitlines() if needle in line]
@@ -80,17 +88,21 @@ class DetectorCountTests(unittest.TestCase):
         self.assertEqual(len(generic), 6)
         self.assertEqual(len(RD.DETECTORS) - len(generic), 11)
 
-    def test_the_docs_say_how_many_detectors_the_shipped_corpus_scores(self):
-        """The wheel's labels cover the generic detectors and no other; the docs say so."""
+    def test_the_docs_say_how_many_detectors_the_two_corpora_score(self):
+        """The wheel's labels and this repository's together name every detector, and the
+        docs say how many that is. The wheel's half still covers the generic detectors and
+        no other, which is why a repository corpus had to exist at all (#522)."""
         with zipfile.ZipFile(str(WHEEL)) as wheel:
-            labels = wheel.read("ruleprobe/corpus/labels.yaml").decode("utf-8")
-        scored = set()
-        for match in re.finditer(r"(?:fire|near):\s*\[([^\]]*)\]", labels):
-            scored.update(part.strip() for part in match.group(1).split(",") if part.strip())
-        self.assertEqual(scored, set(d.id for d in RD._GENERIC))
+            shipped = wheel.read("ruleprobe/corpus/labels.yaml").decode("utf-8")
+        ours = (REPO / "tests" / "fixtures" / "detector-corpus" / "labels.yaml").read_text(
+            encoding="utf-8")
+        self.assertEqual(labelled(shipped), set(d.id for d in RD._GENERIC))
+        scored = labelled(shipped) | labelled(ours)
+        self.assertEqual(scored, set(RD.DETECTORS))
         claim = "%s detectors of %s" % (spelled(len(scored)), spelled(len(RD.DETECTORS)))
         for path in ("docs/field-scan.md", "docs/caught-in-the-act.md"):
             self.assertTrue(lines_naming(path, claim), msg=path)
+            self.assertTrue(lines_naming(path, "--floor 0.9"), msg=path)
 
 
 class PinnedSnapshotTests(unittest.TestCase):

@@ -146,8 +146,16 @@ def constrained_role(name):
     try:
         fields, _ = catalog.role_contract(ROOT, name)
     except ValueError:
-        return None
+        # A shipped contract that will not load is the one case the guard cannot judge, so it
+        # judges against itself. Refusing a native spawn of a role whose own file is broken costs
+        # a message; allowing one runs a constrained role unconfined, which is the defect this
+        # guard exists for. `UNRESOLVED` says so, and carries no class to bind a model with.
+        return dict(UNRESOLVED, name=name)
     return fields if fields["authority"] in ("read-only", "artifact-write") else None
+
+
+# The authority is the safe assumption, not a reading of the file: nothing here came from one.
+UNRESOLVED = {"authority": "read-only", "unresolved": True}
 
 
 # A worker that may both read a workspace and reach the network can carry what it read back out,
@@ -158,15 +166,24 @@ OFFLINE_NOTE = {"gatherer": "An isolated gatherer is offline — Read, Grep and 
                             "dimension to an in-session band worker (worker-a, worker-b or worker-c)."}
 
 
+# The one sentence the refusal, the `delegation` stance and the shared role descriptions all
+# carry, word for word, so a session that follows the stance is never surprised by the refusal
+# (issue #304). `tests/test_role_refusal_matches_the_stance.py` holds the three copies together.
+CONFINEMENT_SENTENCE = ("A read-only role runs through `harness role run <role>`: confinement is "
+                        "read roots and return shape, not the absence of write tools, so `builder` "
+                        "needs neither and spawns natively.")
+
+
 def role_instruction(runtime, name, fields):
-    """The one sentence that says how this role is actually run. Every refusal ends with it."""
+    """How this role is actually run, ending in the sentence the stance and the roles also carry."""
     from . import catalog
     # The role's class picks the model; the session's is the fallback, never the default.
-    mapped = fields is not None and "model" in catalog.role_binding(ROOT, runtime, fields)
+    mapped = (fields is not None and not fields.get("unresolved")
+              and "model" in catalog.role_binding(ROOT, runtime, fields))
     return ("Use harness role run " + name + " --runtime " + runtime
             + ("" if mapped else " --model <session-model>")
             + " --workspace <repo> --prompt-file <brief-file>. "
-            "Planner workers also require --artifact <new-plan.md>; native role defaults are not confinement."
+            "Planner workers also require --artifact <new-plan.md>. " + CONFINEMENT_SENTENCE
             + (" " + OFFLINE_NOTE[name] if name in OFFLINE_NOTE else ""))
 
 
