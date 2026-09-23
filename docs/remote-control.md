@@ -86,6 +86,12 @@ and in 2.1.278 each host binds to the session the previous one was asked for rat
 `--session-id`. So the recovery stays a deliberate, one-at-a-time act: run the command from an
 unused directory, let the session answer, and stop that host.
 
+The read is capped at fifty sessions and the endpoint takes no sort parameter, so the page is
+checked on arrival: it must be newest-first by `last_event_at`, the field the server orders by.
+A page that is not reads as `not checked (page order unknown)` rather than as an account with
+nothing lost, and when the account holds more sessions than one page the count says `in the
+newest 50`.
+
 The claude.ai token is read from the login keychain for the duration of the call and is never
 printed, logged or written anywhere.
 

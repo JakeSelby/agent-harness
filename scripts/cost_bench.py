@@ -32,6 +32,16 @@ from harness_core import cache_prefix  # noqa: E402  the ledger's miss ratio, on
 
 CHARS_PER_TOKEN = 4.0
 GROWTH_LIMIT = 0.05
+# What each counted group covers, carried in the written figure so a reader of the file alone
+# knows which set a number is over. The caps `harness lint` prints are a narrower set.
+SCOPES = {
+    "always_loaded": "claude/CLAUDE.md, claude/rules/, claude/output-styles/ and the stance "
+                     "variant config.example.json selects, for the default selection",
+    "listings": "one description line per agent, skill and command the session lists",
+    "worst_case_est_tokens": "the same files with the longest variant of every stance dimension",
+    "note": "`harness lint` counts a narrower set against its caps: instructions, rules and the "
+            "longest stance variant, with no output style and no listings",
+}
 STATIC = Path("benchmarks") / "static.json"
 ALLOW = Path("benchmarks") / "allow.json"
 TASKS = Path("benchmarks") / "tasks.json"
@@ -146,6 +156,7 @@ def measure(root=ROOT):
         "schema_version": 1,
         "harness_version": version.read_text(encoding="utf-8").strip() if version.is_file() else "",
         "chars_per_token": CHARS_PER_TOKEN,
+        "scopes": SCOPES,
         "always_loaded": _sum(always),
         "listings": _sum(listings),
         "total": total,

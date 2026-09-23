@@ -144,9 +144,13 @@ Stated as narrowly as the evidence allows. Each line names the file that impleme
 
 The section that decides whether the rest is credible.
 
-- **Detector validity is unmeasured.** No labelled corpus, so a hit rate may be measuring the
-  detector rather than the behaviour. A labelled corpus with per-detector precision and recall is
-  0.13 work (#455). Until it lands, read every figure from `usage --rules` with that caveat.
+- **Detector validity is measured for six detectors of seventeen.** The vendored `ruleprobe`
+  wheel ships a labelled corpus and a `validity.py` scorer, and the labels cover the six generic
+  detectors the engine itself ships. The eleven detectors written for these rules are unscored, and
+  nothing in this repository's CI or tests runs the scorer or holds a precision floor; #522 wires
+  `ruleprobe corpus --floor 0.9` in here and labels the other eleven. Until it lands, read a figure
+  from `usage --rules` for those eleven as a rate of the detector firing rather than of the
+  behaviour.
 - **Per-variant hit rates are observational.** No fixed task set is replayed under variant A and
   variant B; "this rule works better under `execute`" is not yet a supported sentence. The one
   project that ran an A/B in this field shows both how much it helps a position and how quickly a
@@ -154,13 +158,21 @@ The section that decides whether the rest is credible.
 - **Rules that opt out of a detector are dark.** Tone, altitude and honesty rules carry an
   `OPT_OUT` reason and no measurement. The LLM-judge machinery that Langfuse, Opik and Phoenix ship
   is exactly what those rules need, and it is not here.
-- **The conflict engine is empty.** `constraints.json` supports `when`/`requires`/`excludes` and
-  ships zero constraints, while the repository holds a contradiction it would catch: always-loaded
-  `delegation/tiered.md` says "Never `frontier`" and two roles declare `tier: frontier`. #464.
+- **The conflict engine ships four constraints and has never used `requires`.**
+  `constraints.json` supports `when`/`requires`/`excludes`, `harness lint` fails and `harness sync`
+  refuses on a selection that violates one, and the four shipped constraints include the
+  contradiction that motivated it: always-loaded `delegation/tiered.md` says "Never `frontier`", so
+  a role declaring `tier: frontier` is excluded unless the delegation-tiering skill exempts it
+  (#464). What is still untested in anger is the rest of the schema, and the constraints are over
+  stance and role declarations only, never over rule prose.
 - **No plugin manifest, no packaged install, no importer** as of the read date; 8 to 12 commands to
   first value. #446, #447, #448.
-- **The 200-line always-loaded cap cites no source.** It will be sourced or restated in tokens
-  against the repository's own measured standing context (#450).
+- **The always-loaded cap is a token cap now, and it cites its source.** `bin/harness` quotes
+  Claude Code's memory documentation for what the 200-line figure does and does not bind, and sets
+  the binding cap to a third of the 12,607-token standing context that issue #430 measured against a
+  bare profile; the 200-line cap stays as the secondary readability guard (#450). The residual gap
+  is the estimate itself: characters over four, not a tokenizer, good for a cap and a trend and
+  never for billing.
 - **Two runtimes.** "Across AI agents" is not an honest headline yet, and it is not the headline.
 - **Two things the instrument caught about this repository itself**, recorded as the worked example
   rather than hidden: #429, a shipped delegation stance measured as never firing in nineteen headless

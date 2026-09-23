@@ -75,9 +75,10 @@ HOOKS = Path(__file__).resolve().parent
 PREFIX = "usage-feed: "
 # A journal line is one `os.write`. Far under PIPE_BUF, which is what makes an append atomic.
 MAX_LINE = 4096
-# How many message ids stay open for a later line to raise. One API response is written as
-# several lines repeating its id, and a response whose id is evicted before its final, largest
-# figure arrives would be counted twice; a tail this long is far past that window.
+# How many message ids stay open for a later line to raise, newest kept and oldest evicted. One
+# API response is written as several lines repeating its id, and a response whose id is evicted
+# before its final, largest figure arrives would be counted twice; a tail this long is far past
+# that window.
 OPEN_TAIL = 64
 MAX_LISTED = 5
 # Stops waiting for a line, and ids whose spend is already in the totals. Both bound what one
