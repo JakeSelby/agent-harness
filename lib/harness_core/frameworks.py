@@ -33,6 +33,12 @@ Input roots are declaration, never a signal: `_bmad/` names the framework but ap
 about editing it. They travel into the refusal instead, so the sentence that refuses a spawn also
 says which roots the isolated worker has to be given.
 
+An optional `install` block carries the rest of what a framework costs the harness: where the
+override templates live, where they are installed, which directory says the framework is present,
+and where its skills declare the surface those templates rely on. `harness integration check|apply
+<id>` reads it, so the CLI holds no framework name either, and the session hook's presence probe is
+the block's `detect` path rather than a literal in the hook.
+
 A descriptor that will not parse or will not validate is not enforcement that quietly stopped: the
 loader keeps why it was ignored, and the spawn hook says so once per session.
 """
@@ -129,6 +135,8 @@ def problems(data, role_check=None):
     corroboration = data.get("corroboration", 2)
     if not (isinstance(corroboration, int) and not isinstance(corroboration, bool) and corroboration >= 2):
         found.append("corroboration must be an integer of at least 2")
+    if "install" in data:
+        found += _install_problems(data["install"])
     spawns = data.get("spawns")
     if not (isinstance(spawns, list) and spawns):
         return found + ["spawns must be a non-empty list"]
@@ -147,6 +155,33 @@ def problems(data, role_check=None):
                          "must run, so this mapping could never refuse anything")
         found += _signal_problems(where, spawn, roots)
     return found
+
+
+INSTALL_STRINGS = ("detect", "templates", "destination", "suffix", "skill_surface")
+
+
+def _install_problems(install):
+    """What is wrong with the optional install block `harness integration check|apply` reads."""
+    if not isinstance(install, dict):
+        return ["install must be an object"]
+    found = []
+    for field in INSTALL_STRINGS:
+        value = install.get(field)
+        if not (isinstance(value, str) and value.strip()):
+            found.append("install." + field + " must be a non-empty string")
+    roots = install.get("skill_roots")
+    if not (isinstance(roots, list) and roots
+            and all(isinstance(r, str) and r.strip() for r in roots)):
+        found.append("install.skill_roots must be a non-empty list of paths")
+    return found
+
+
+def installable(name, directory=None):
+    """The descriptor `name`, or None. Used by the CLI, which also needs its install block."""
+    for data in descriptors(directory):
+        if data["id"] == name:
+            return data
+    return None
 
 
 def _constrained(role):

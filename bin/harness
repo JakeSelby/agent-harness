@@ -23,7 +23,8 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness config get KEY | set KEY VALUE
     harness integrations show|register|doctor [architecture-viewer]
     harness viewer validate|open|status|replace-document|close [OPTIONS]
-    harness bmad    check|apply [REPO] [--force]
+    harness integration check|apply NAME [REPO] [--force]
+    harness bmad    check|apply [REPO] [--force]   (alias for `integration ... bmad`)
     harness remote-control install [--dry-run] | status | uninstall
     harness --version
 """
@@ -50,6 +51,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
+from harness_core import frameworks
 from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
 from harness_core import decision as decisions_provider
@@ -4067,10 +4069,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------- bmad
-
-BMAD_TEMPLATES = REPO / "templates" / "bmad" / "custom"
-BMAD_SUFFIX = ".user.toml"
+# --------------------------------------------------------------- framework integrations
 
 
 def toml_surface(text: str) -> Tuple[set, set]:
@@ -4093,46 +4092,56 @@ def toml_surface(text: str) -> Tuple[set, set]:
     return keys, entries
 
 
-def _bmad_root(path: Optional[str]) -> Path:
+def integration_install(name: str) -> dict:
+    """The install block of the declared integration `name`, or an error naming what is declared."""
+    data = frameworks.installable(name)
+    if data is None or not data.get("install"):
+        known = sorted(d["id"] for d in frameworks.descriptors() if d.get("install"))
+        raise ValueError(f"no installable integration `{name}`; declared: {', '.join(known) or 'none'}")
+    return data
+
+
+def _repo_root(path: Optional[str]) -> Path:
     start = Path(path).expanduser() if path else Path.cwd()
     probe = subprocess.run(["git", "-C", str(start), "rev-parse", "--show-toplevel"],
                            capture_output=True, text=True)
     return Path(probe.stdout.strip()) if probe.returncode == 0 and probe.stdout.strip() else start.resolve()
 
 
-def bmad_surface(root, skill):
-    candidates = [root / folder / "skills" / skill / "customize.toml" for folder in (".agents", ".claude")]
+def integration_surface(install: dict, root: Path, skill: str) -> Path:
+    """Where the framework's installed skill declares the surface a template relies on."""
+    candidates = [root / folder / skill / install["skill_surface"] for folder in install["skill_roots"]]
     present = [path for path in candidates if path.is_file()]
     if len(present) == 2 and present[0].read_bytes() != present[1].read_bytes():
-        raise ValueError("BMad skill projections disagree: " + skill)
+        raise ValueError("skill projections disagree: " + skill)
     return present[0] if present else candidates[0]
 
 
-def bmad_templates() -> List[Path]:
-    return sorted(BMAD_TEMPLATES.glob(f"*{BMAD_SUFFIX}"))
+def integration_templates(install: dict) -> List[Path]:
+    return sorted((REPO / install["templates"]).glob("*" + install["suffix"]))
 
 
-def bmad_drift(template_text: str, base_text: str) -> List[str]:
+def integration_drift(template_text: str, base_text: str, surface: str = "customize.toml") -> List[str]:
     """Every key and layer id the template relies on that the installed skill no longer declares."""
     want_keys, want_entries = toml_surface(template_text)
     have_keys, have_entries = toml_surface(base_text)
-    drift = [f"key `{key}` is not in the installed customize.toml" for key in sorted(want_keys - have_keys)]
-    drift += [f"`{array}` has no entry `{ident}` in the installed customize.toml"
+    drift = [f"key `{key}` is not in the installed {surface}" for key in sorted(want_keys - have_keys)]
+    drift += [f"`{array}` has no entry `{ident}` in the installed {surface}"
               for array, ident in sorted(want_entries - have_entries)]
     return drift
 
 
-def bmad_projection_findings(root: Path) -> List[str]:
+def integration_projection_findings(install: dict, root: Path) -> List[str]:
     """Check mirrored source files and literal skill invocations, without executing workflows."""
     findings: List[str] = []
-    surfaces = [root / folder / "skills" for folder in (".agents", ".claude")]
+    surfaces = [root / folder for folder in install["skill_roots"]]
     inventories = [{p.name: p for p in surface.iterdir() if p.is_dir()}
                    if surface.is_dir() else {} for surface in surfaces]
-    for name in sorted(set(inventories[0]) & set(inventories[1])):
+    for name in sorted(set.intersection(*[set(i) for i in inventories]) if inventories else set()):
         sources = [{str(p.relative_to(skills[name])): p.read_bytes()
                     for p in skills[name].rglob("*") if p.is_file() and p.suffix in (".md", ".toml")}
                    for skills in inventories]
-        if sources[0] != sources[1]:
+        if any(source != sources[0] for source in sources[1:]):
             findings.append(f"{name}: mirrored Markdown/TOML sources disagree")
     pattern = re.compile(r"Invoke via the `([a-z0-9-]+)` skill")
     for surface, skills in zip(surfaces, inventories):
@@ -4144,21 +4153,23 @@ def bmad_projection_findings(root: Path) -> List[str]:
     return findings
 
 
-def bmad_check(root: Path) -> Tuple[List[str], List[str]]:
+def integration_check(data: dict, root: Path) -> Tuple[List[str], List[str]]:
     """Status lines and drift findings, one template at a time, for the skills the repo has."""
+    install = data["install"]
     lines: List[str] = []
-    drift: List[str] = bmad_projection_findings(root)
-    for template in bmad_templates():
-        skill = template.name[: -len(BMAD_SUFFIX)]
-        base = bmad_surface(root, skill)
+    drift: List[str] = integration_projection_findings(install, root)
+    for template in integration_templates(install):
+        skill = template.name[: -len(install["suffix"])]
+        base = integration_surface(install, root, skill)
         if not base.exists():
             lines.append(f"  {skill}: not installed here, skipped")
             continue
         text = template.read_text(encoding="utf-8")
-        drift += [f"{skill}: {d}" for d in bmad_drift(text, base.read_text(encoding="utf-8"))]
-        installed = root / "_bmad" / "custom" / template.name
+        drift += [f"{skill}: {d}" for d in integration_drift(text, base.read_text(encoding="utf-8"),
+                                                              install["skill_surface"])]
+        installed = root / install["destination"] / template.name
         if not installed.exists():
-            state = "template not installed (harness bmad apply)"
+            state = f"template not installed (harness integration apply {data['id']})"
         elif installed.read_text(encoding="utf-8") == text:
             state = "installed"
         else:
@@ -4167,24 +4178,26 @@ def bmad_check(root: Path) -> Tuple[List[str], List[str]]:
     return lines, drift
 
 
-def bmad_apply(root: Path, force: bool) -> List[str]:
+def integration_apply(data: dict, root: Path, force: bool) -> List[str]:
     """Install each template whose skill the repo has and whose surface still matches.
 
     One line per action taken or refused; nothing for a template already in place. A drifting
     template is skipped rather than written, so an upstream rename never adds a second layer."""
+    install = data["install"]
     actions: List[str] = []
-    dest_dir = root / "_bmad" / "custom"
-    for template in bmad_templates():
-        skill = template.name[: -len(BMAD_SUFFIX)]
-        base = bmad_surface(root, skill)
+    dest_dir = root / install["destination"]
+    for template in integration_templates(install):
+        skill = template.name[: -len(install["suffix"])]
+        base = integration_surface(install, root, skill)
         if not base.exists():
             continue
         text = template.read_text(encoding="utf-8")
         dest = dest_dir / template.name
         rel = dest.relative_to(root)
-        drift = bmad_drift(text, base.read_text(encoding="utf-8"))
+        drift = integration_drift(text, base.read_text(encoding="utf-8"), install["skill_surface"])
         if drift:
-            actions.append(f"  skipped {rel}: {len(drift)} drift finding(s), see harness bmad check")
+            actions.append(f"  skipped {rel}: {len(drift)} drift finding(s), "
+                           f"see harness integration check {data['id']}")
             continue
         if dest.exists() and dest.read_text(encoding="utf-8") == text:
             continue
@@ -4197,23 +4210,30 @@ def bmad_apply(root: Path, force: bool) -> List[str]:
     return actions
 
 
-def cmd_bmad(args: argparse.Namespace) -> int:
-    """`check` compares the override templates with a repository's installed BMad skills;
-    `apply` installs the ones its skills declare and still match, never replacing a differing
-    override without --force, then checks."""
-    root = _bmad_root(args.path)
-    if not (root / "_bmad").is_dir():
-        say(f"no _bmad/ directory under {root}")
+def cmd_integration(args: argparse.Namespace) -> int:
+    """`check` compares a declared integration's override templates with the framework's installed
+    skills; `apply` installs the ones those skills declare and still match, never replacing a
+    differing override without --force, then checks. The framework is named by the descriptor in
+    policy/integrations/, so no framework is named here."""
+    try:
+        data = integration_install(getattr(args, "name", None) or "bmad")
+    except ValueError as error:
+        say(str(error))
+        return 1
+    install = data["install"]
+    root = _repo_root(args.path)
+    if not (root / install["detect"]).is_dir():
+        say(f"no {install['detect']}/ directory under {root}")
         return 1
     if args.action == "apply":
-        for line in bmad_apply(root, args.force):
+        for line in integration_apply(data, root, args.force):
             say(line)
-    lines, drift = bmad_check(root)
+    lines, drift = integration_check(data, root)
     for line in lines:
         say(line)
     for finding in drift:
         say("  drift: " + finding)
-    say(f"bmad: {len(drift)} drift finding(s) in {root}")
+    say(f"{data['id']}: {len(drift)} drift finding(s) in {root}")
     return 1 if drift else 0
 
 
@@ -4511,11 +4531,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--timeout", type=float, default=30)
     p.set_defaults(func=cmd_viewer)
 
-    p = sub.add_parser("bmad", help="check or apply the BMad override templates in a repository (default: the current repo)")
+    p = sub.add_parser("integration", help="check or apply a declared framework integration's override templates in a repository (default: the current repo)")
+    p.add_argument("action", choices=["check", "apply"])
+    p.add_argument("name", help="the integration id declared in policy/integrations/")
+    p.add_argument("path", nargs="?")
+    p.add_argument("--force", action="store_true", help="apply: replace an override that differs from the template")
+    p.set_defaults(func=cmd_integration)
+
+    # Kept because it is the surface users already know; it names the integration for them.
+    p = sub.add_parser("bmad", help="alias for `harness integration check|apply bmad`")
     p.add_argument("action", choices=["check", "apply"])
     p.add_argument("path", nargs="?")
     p.add_argument("--force", action="store_true", help="apply: replace an override that differs from the template")
-    p.set_defaults(func=cmd_bmad)
+    p.set_defaults(func=cmd_integration, name="bmad")
 
     p = sub.add_parser("compatibility", help="show versioned native qualification and adapter gaps")
     p.add_argument("--json", action="store_true")

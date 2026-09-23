@@ -98,6 +98,7 @@ naming the file, never a silent "no policy". Both providers write to the existin
 Nothing consults a provider yet: command grading still answers the permission question on its own,
 and binding the two is separate work.
 
-Session start checks BMad configuration without installing it. Installation remains explicit.
-See [task continuation and BMad](bmad.md), [installation ownership](runtime-installation.md),
+Session start checks a declared integration's configuration without installing it. Installation
+remains explicit. See [task continuation](task-continuation.md), the [BMad integration](bmad.md),
+[installation ownership](runtime-installation.md),
 and the compatibility catalog for qualification evidence.

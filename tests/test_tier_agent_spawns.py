@@ -201,7 +201,7 @@ class TierSpawnsTests(unittest.TestCase):
 
     def test_a_framework_repo_is_tiered_like_any_other(self):
         self.write_transcript(record("assistant", "claude-fable-5-1"))
-        for marker in (("_bmad", "scripts"), ("_bmad", "core"), ("_bmad", "custom")):
+        for marker in (("planner", "scripts"), ("planner", "core"), ("planner", "custom")):
             with self.subTest(marker=marker):
                 nested = self.framework(*marker) / "crates" / "core"
                 nested.mkdir(parents=True, exist_ok=True)

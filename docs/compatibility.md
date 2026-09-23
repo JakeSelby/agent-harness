@@ -108,7 +108,14 @@ For every target listed in the catalog, verify every `required_cases` entry nati
 4. Check hook trust, composition, denials and multi-file patches; attempt writes from read-only
    roles and outside the planner artifact scope. Configuration defaults are insufficient proof.
 5. Change staged and untracked files after a green gate; check reruns and unverified failures.
-6. Run a BMad workflow from its shared framework checkout against an assigned worktree.
+6. Drive the spawn hook in a disposable home against a fixture recipe built from a descriptor
+   in `policy/integrations/`: confirm a brief carrying a constrained role's work is denied with
+   the isolated-worker instruction whether it is spawned unnamed, under a generic subagent type
+   or under a band worker's name; that the refusal names that descriptor's input roots as the
+   read roots the worker is limited to; that the recipe's unnamed spawn routes to the cost
+   variant's default band worker at that row's class and effort with the budget sentence in its
+   brief; and that a null variant rewrites nothing. No third-party framework's own workflow is
+   run in a qualification round; that is the optional suite in [BMad](bmad.md).
 7. Continue the same task Claude→Codex and Codex→Claude, including changed-tree and stale-writer
    cases; establish permissions anew. Verify migration, drift and uninstall preserve user data.
 8. Select a non-default cost variant and sync; confirm that only the roles it changes are

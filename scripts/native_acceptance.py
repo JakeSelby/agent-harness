@@ -478,7 +478,81 @@ def case_cost_posture(home):
             % (len(rewritten), len(after), feed[-1]))
 
 
+def descriptor_recipe(descriptor):
+    """A fixture recipe: enough of a declared integration's own routed text to be recognised.
+
+    The case is generic on purpose — it reads whatever `policy/integrations/` declares — so a
+    release qualifies framework layering without running any framework's workflow.
+    """
+    spawn = descriptor["spawns"][0]
+    phrases = spawn.get("phrases", [])[: max(2, int(descriptor.get("corroboration", 2)))]
+    if len(phrases) < 2:
+        raise Unverified("the descriptor declares too few phrases to build a fixture recipe")
+    return (spawn["id"], spawn["role"], list(descriptor.get("input_roots", [])),
+            "You are reviewing the change in the assigned worktree. " + " ".join(phrases)
+            + " Return what you find as text in your final message.")
+
+
+def hook_answer(home, prompt, subagent_type=None, session="framework-routing"):
+    """One real PreToolUse spawn event through the client's registered hook. No model turn."""
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": session,
+               "cwd": str(home.project),
+               "tool_input": {"prompt": prompt, "subagent_type": subagent_type}}
+    result = run([sys.executable, str(ROOT / "adapters" / "claude-code" / "hook.py")],
+                 env=home.env({"HARNESS_STANCE_DELEGATION": "tiered"}),
+                 input=json.dumps(payload))
+    if result.returncode:
+        raise Unverified("the spawn hook did not run: " + redact(result.stderr[-200:]))
+    try:
+        data = json.loads(result.stdout or "{}")
+    except ValueError:
+        raise Unverified("the spawn hook returned no JSON: " + redact(result.stdout[-200:]))
+    answer = data.get("hookSpecificOutput", {})
+    return answer.get("permissionDecision", ""), answer.get("permissionDecisionReason", "")
+
+
+def case_framework_spawn_routing(home):
+    descriptors = [json.loads(path.read_text())
+                   for path in sorted((ROOT / "policy" / "integrations").glob("*.json"))]
+    usable = [d for d in descriptors if d.get("spawns")]
+    if not usable:
+        raise Unverified("no integration descriptor declares a spawn to build a recipe from")
+    descriptor = usable[0]
+    layer, role, roots, recipe = descriptor_recipe(descriptor)
+    home.seed(stances={"cost": "balanced", "delegation": "tiered"})
+    home.harness("sync")
+    for named_as in (None, "general-purpose", "worker-a"):
+        decision, why = hook_answer(home, recipe, named_as, "routing-" + str(named_as))
+        if decision != "deny":
+            raise AssertionError("a recipe layer spawned as %s was allowed, not confined"
+                                 % redact(named_as))
+        if ("harness role run " + role) not in why:
+            raise AssertionError("the refusal did not route %s to the constrained role: %s"
+                                 % (redact(named_as), redact(why)))
+        named = [root for root in roots if root in why]
+        if named != roots:
+            raise AssertionError("the refusal named %s of the declared input roots"
+                                 % len(named))
+        offered = [item.strip() for group in re.findall(r"read roots: (.*?)(?:\. |$)", why)
+                   for item in group.split(",")]
+        outside = [item for item in offered if item and item not in roots]
+        if outside:
+            raise AssertionError("the refusal offered read roots outside the declared input "
+                                 "roots: " + redact(", ".join(outside)))
+    posture = case_cost_posture(home)
+    return ("A fixture recipe built from the %s %s `%s` descriptor was refused at the spawn hook "
+            "whether it was spawned unnamed, as a generic subagent or as a band worker, each "
+            "refusal routed it to `harness role run %s` and offered exactly its declared input "
+            "roots (%s) as the isolated worker's read roots and no others. No framework workflow "
+            "was run. Beside that: %s"
+            % (descriptor["name"], descriptor["version"]["pinned"], layer, role,
+               ", ".join(roots), posture))
+
+
 CASES = {
+    "framework-spawn-routing": (case_framework_spawn_routing,
+                               "drive the spawn hook with a fixture recipe built from a declared "
+                               "integration descriptor, then run the cost-posture turn"),
     "cost-posture": (case_cost_posture,
                      "sync a non-default cost variant, spawn an unnamed subagent in a new native "
                      "session, and read its meta record, brief, the usage feed and the usage rows"),
