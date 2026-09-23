@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-09-23
+
 ### Added
 
 - Where the qualification targets run and how each is provisioned is now written down, because a
