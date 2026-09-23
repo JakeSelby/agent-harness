@@ -119,7 +119,7 @@ class SessionHookTests(unittest.TestCase):
 
     def test_framework_check_does_not_install_configuration(self):
         self.framework()
-        self.assertIn("BMad integration check", self.text(self.run_hook()))
+        self.assertIn("BMad Method integration check", self.text(self.run_hook()))
         for name in ("bmad-build", "bmad-build-auto", "bmad-code-review"):
             self.assertFalse((self.repo / "_bmad" / "custom" / f"{name}.user.toml").exists())
 
@@ -236,7 +236,7 @@ class DocumentedCountTests(unittest.TestCase):
         self.assertNotRegex(text, r"\*\*(?:Rules|Skills|Stances)\*\* \([0-9]")
 
     def test_handoff_documentation_describes_shared_storage_and_migration(self):
-        text = (REPO / "docs" / "bmad.md").read_text()
+        text = (REPO / "docs" / "task-continuation.md").read_text()
         self.assertIn(".agent-harness/progress.md", text)
         self.assertIn(".claude/progress.md", text)
         self.assertIn("approvals never transfer", text)

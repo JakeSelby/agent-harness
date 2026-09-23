@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness integration check|apply <name>` is the surface for a declared framework integration.
+  It reads the template directory, the install destination, the presence probe and the skill
+  surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
+  session-start drift notice probes that descriptor's `detect` path instead of a directory
+  literal in the hook. Its `detect`, `templates`, `destination` and `skill_roots` must be
+  relative paths with no `..` segment, because `apply` writes under one of them.
+  `harness bmad check|apply` is kept as an alias, and installed override files are
+  unaffected either way (#349).
+
+- Every session row carries `raw_vs_deduped`, the measured size of the usage deduplication: the
+  per-line sum of the four token fields over the deduplicated total the row reports, taken over
+  the same records — the session's own and those of the subagent files folded into it. The
+  totals are corrected once per message id at that id's largest figure, and the raw sum used to
+  be discarded, so a session whose transcript repeated every response and one that repeated none
+  reported the same figure with no way to tell them apart. `harness usage` prints the
+  ratio for the window as a footer figure beside `unpriced` — each row's ratio weighted by the
+  deduplicated tokens it contributed to the columns above, so the figure is the window's raw sum
+  over its counted sum — and the OTLP export carries the row's own as a `raw_vs_deduped`
+  attribute. A Codex session row, whose runtime reports cumulative snapshots rather than a figure
+  per record, reads `unknown` rather than `1.0`, which would claim a measurement nobody made; a
+  subagent row, a worker row and a row written before this release carry no such key, which the
+  report reads as unknown and counts in the footer (#518).
 - `harness decisions eval` replays the labelled rows of the decision log through a question
   pack and reports how closely the judgment tracked them, so a provider can be measured before
   it is trusted. The evaluated set is the real log — the input a hook judged, the deterministic
@@ -92,6 +114,7 @@ All notable changes to this project are documented here. The format follows
   by naming it in `agentType`; the usage ledger does record every workflow agent, but those rows
   carry no tool use id, so the reroute join is empty for all of them. The record names the two
   changes the code needs. `docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md` (#540).
+
 - A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
   release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
   and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
@@ -227,6 +250,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
+  `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
+  fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
+  it: a recipe layer is refused whether it is spawned unnamed, as a generic subagent or as a band
+  worker, the refusal offers exactly the descriptor's declared input roots as the isolated
+  worker's read roots, and one cheap turn confirms that an unnamed spawn still routes to the cost
+  variant's default band worker at that row's class and effort with the budget sentence, and that
+  a null variant rewrites nothing. The BMad run becomes an optional, non-gating suite run once per
+  minor release on one target, documented in `docs/bmad.md` and `docs/releasing.md`; the offline
+  template and surface tests stay in CI, because they are what catches an upstream rename. The
+  catalog now carries two limitations in place of one: that no framework's workflow is exercised
+  natively in a qualification round, and what descriptor-driven confinement still cannot
+  recognise. Generic task continuation moves off the framework page to
+  `docs/task-continuation.md`, and the framework-named asides in the design-loop skill, the
+  handoff workflow, the delegation-tiering skill and a spawn-hook test are gone (#349).
+
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
   single-coordinator for some time — a sync registers one command per lifecycle event and
   `runtime_template()` takes that registration from `lib/harness_core/lifecycle.py` — so the
@@ -281,6 +320,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The standing context every session loads is 1,005 estimated tokens smaller, 7,524 to 6,519 on
+  `scripts/cost_bench.py static`. The `scannable` output style keeps all nine of its rules and
+  loses the worked examples and the register table, 1,528 tokens to 862; the fifteen skill and
+  eleven agent descriptions lose their capability restatements and keep every condition and
+  literal user phrasing a session selects on, 2,326 tokens of listings to 1,980. Because a
+  description is the trigger mechanism, those phrases are now frozen in
+  `tests/test_description_trigger_phrases.py`, which fails when one is dropped rather than
+  reworded, and a new skill or role must declare its own. Before-and-after rows are in
+  `docs/benchmarks.md`; the third change the issue names, deferring action-gated rule text behind
+  the hooks that fire on the act, is framed as an unrun spike in
+  `docs/spikes/2026-09-22-deferred-rule-text.md` and nothing about it is implemented (#430).
 - `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
   and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
   native approval is the gate. The typed `build` reply was a convention no tooling could observe,
@@ -319,6 +369,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An assistant transcript record whose `message` is not an object is skipped rather than read as
+  one. Such a record holds no usage, no model and no content blocks, and reading it aborted the
+  scan of the whole transcript, so one malformed line cost the session its entire row; the
+  subagent reader beside it has always skipped the same shape (#518).
 - An assistant transcript record that carries no message id is deduplicated by its `requestId`
   rather than counted once per line. Every such record used to open a slot of its own, so a
   runtime or version that writes one id-less response several times — as the streaming lines of
