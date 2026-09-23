@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An assistant transcript record that carries no message id is deduplicated by a surrogate key
+  rather than counted once per line. Every such record used to open its own slot, so a runtime
+  or version that writes one id-less response several times inflated the session total without
+  any bound. The key is the record's `requestId` where the transcript carries one, and its
+  timestamp, model and `usage` object where it does not, both scoped to the file the line came
+  from, so a repeat of one response collapses while two different responses and the same line
+  seen in two files stay apart. Session and subagent rows now carry `idless_records`, the number
+  of id-less records the row was built from, so a reader can tell a row keyed on message ids
+  from one whose dedup was inferred (#519).
+
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed
   family used to inherit that family's rate. Inheritance under-bills a premium variant by a
   multiple and prints a known-low figure as a known one — `gpt-5.5-pro` is $30/$180 where

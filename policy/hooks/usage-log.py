@@ -182,6 +182,24 @@ def _result_text(content, tool_name):
     return text[:MAX_RESULT_TEXT]
 
 
+def idless_key(source, entry, message):
+    """The key an assistant record with no message id is counted under.
+
+    Keyed per line, a runtime that writes one id-less response twice is billed for it twice,
+    with no bound on the error. `requestId` names the API call whenever the transcript carries
+    one; where it does not, the timestamp, the model and the `usage` object itself stand in for
+    it, so a repeat of one record collapses onto it while two different responses stay apart.
+    `source` names the file, because a line with no id cannot be matched across files.
+    """
+    request = entry.get("requestId")
+    if isinstance(request, str) and request.strip():
+        return ("request", source, request.strip())
+    usage = message.get("usage")
+    fingerprint = json.dumps(usage, sort_keys=True, default=str) if isinstance(usage, dict) else ""
+    return ("idless", source, entry.get("timestamp") or "",
+            message.get("model") or "", fingerprint)
+
+
 def record_usage(per_message, key, usage, day="", model=""):
     """Keep the largest figure a message id ever reported for each field.
 
@@ -381,7 +399,7 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
     while a live hook cannot be killed halfway through a very large agent's file. When either
     bites, the row carries `partial: True` and its totals are of the part that was read.
     """
-    per_message, anonymous = {}, 0
+    per_message, idless = {}, 0
     partial = False
     try:
         meta = json.loads(path.with_name(path.stem + ".meta.json").read_text(encoding="utf-8"))
@@ -444,17 +462,15 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
                 tools.add(key)
                 calls += 1
             usage = message.get("usage") or {}
-            # A line with no message id cannot be matched across files, so its key names the
-            # file it came from: two such lines from two sources are two messages, not one.
-            key = mid if mid else ("line", str(path), anonymous)
+            key = mid if mid else idless_key(str(path), entry, message)
             if not mid:
-                anonymous += 1
+                idless += 1
             record_usage(per_message, key, usage, stamp[:10], message.get("model") or "")
             if shared is not None:
                 record_usage(shared, key, usage, stamp[:10], message.get("model") or "")
-            if mid and mid in seen:
+            if key in seen:
                 continue
-            seen.add(mid)
+            seen.add(key)
             turns += 1
     if not turns:
         # Nothing readable, whether the file held no turn or the budget stopped before one:
@@ -476,6 +492,8 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
            "turns": turns, "started": started, "ended": ended}
     if partial:
         row["partial"] = True
+    if idless:
+        row["idless_records"] = idless
     row.update(budget_fields(row["agent_type"]))
     row.update(summed(per_message))
     return row
@@ -565,7 +583,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     for every delegated token twice if the two were added.
     """
     per_message = {} if shared is None else shared
-    anonymous = 0
+    idless = 0
     models, agent_calls, seen, requested = [], set(), set(), {}
     started = ended = branch = ""
     turns = 0
@@ -665,13 +683,10 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             # The same repetition is why the token sums are taken once per message id, not once
             # per line, and at that id's largest figure rather than its first: the early lines
             # of one response carry a partial streaming count.
-            if mid:
-                record_usage(per_message, mid, message.get("usage") or {}, stamp[:10],
-                             model or "")
-            else:
-                anonymous += 1
-                record_usage(per_message, ("line", "session", anonymous),
-                             message.get("usage") or {}, stamp[:10], model or "")
+            key = mid if mid else idless_key("session", entry, message)
+            if not mid:
+                idless += 1
+            record_usage(per_message, key, message.get("usage") or {}, stamp[:10], model or "")
             # Claude Code writes the effort in force on every assistant record, as `effort` and
             # again as `perTurnEffort`; a sidechain line carries the subagent's, not this
             # session's, so only the session's own records are weighed.
@@ -679,9 +694,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 chosen = entry.get("effort") or entry.get("perTurnEffort")
                 if isinstance(chosen, str) and chosen.strip():
                     efforts.setdefault(mid, chosen.strip())
-            if mid and mid in seen:
+            if key in seen:
                 continue
-            seen.add(mid)
+            seen.add(key)
             turns += 1
             # Counted exactly where `turns` is, so the slices' turn counts add up to the row's.
             turns_by_day[stamp[:10]] = turns_by_day.get(stamp[:10], 0) + 1
@@ -716,6 +731,10 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             record[name] = totals[name]
     record["subagents"] = max(len(agents), len(agent_calls))
     record["turns"] = turns
+    # How much of this row rests on a surrogate key rather than on a message id, so a reader
+    # can tell a clean row from one whose dedup was inferred.
+    if idless:
+        record["idless_records"] = idless
     weights = {}
     for mid, chosen in efforts.items():
         weights[chosen] = weights.get(chosen, 0) + ((per_message.get(mid) or {}).get("output") or 0)

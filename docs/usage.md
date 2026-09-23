@@ -61,7 +61,10 @@ API response is written as several transcript entries, so counting per line infl
 total — but those entries do not repeat one `usage` object. The early ones carry a partial
 streaming `output_tokens` and the last carries the response's true figure, so taking the first
 undercounts it. The field-wise maximum is the final figure, and a reordered or truncated tail
-cannot lower it. `subagents` counts `Agent` tool calls. The token totals **include the
+cannot lower it. A record that carries no message id at all is counted under a surrogate —
+its `requestId`, or failing that its timestamp, model and `usage` object — so a repeat of one
+id-less response collapses onto it instead of being billed again, and the row carries
+`idless_records` saying how many such records it saw. `subagents` counts `Agent` tool calls. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
