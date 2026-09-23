@@ -1,2 +1,5 @@
 [workflow]
 persistent_facts = ["file:{project-root}/docs/bmad-governance.md"]
+activation_steps_append = [
+  "When the work is a GitHub issue with a BMad ID, read its story file under _bmad-output/implementation-artifacts/ first and treat it as the spec. If the story is a legacy stub, run `python3 scripts/bmad_issue_sync.py upgrade --id <BMad ID>` and fill the skeleton before implementing. Write the design, tasks, dev notes, dev agent record and review findings back into the story in the same PR.",
+]
