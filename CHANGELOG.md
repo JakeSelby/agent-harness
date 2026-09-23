@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
+  single-coordinator for some time — a sync registers one command per lifecycle event and
+  `runtime_template()` takes that registration from `lib/harness_core/lifecycle.py` — so the
+  eleven per-policy entries the file still listed were replaced unread at every sync, and an
+  entry added there by hand would have been silently discarded. `docs/how-it-works.md` now
+  describes the model: why one process per event rather than one per policy, where precedence is
+  decided, and how the coordinator fails closed. Two places that still described registration as
+  conditional are corrected with it: `docs/preferences.md` said the `plan-ceremony` stance decides
+  whether the plan-card validator is registered, where it decides whether the validator runs, and
+  `claude/OWNERSHIP.json` now says in the manifest itself that a hook id's `stance` and `variant`
+  name when a policy acts, never whether it is registered. No installed settings file changes,
+  because what sync wrote was already the coordinator registration (#521).
 ### Added
 
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
