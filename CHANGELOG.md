@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- One Bash command in twenty that the harness allows without a prompt is now kept in the decision
+  log as a sampled negative: a `grade-bash` row with `deterministic_answer: allow`,
+  `sampled: true` and the `sample_rate` it was drawn at. The graded rows are all prompts, so a
+  check that may only tighten an allow into an ask had nothing to measure its false alarms
+  against. Which commands are kept is each command's own hash rather than a random draw, so the
+  same corpus samples the same commands on every machine and a measurement over these rows is
+  reproducible. They carry no outcome and no match key — "it ran" grades nothing — and
+  `harness usage --by decision` counts them on a `grade-bash (sampled)` line of their own, so a
+  point's outcome rates and unlabelled share are unchanged. The text of a sampled row is redacted
+  first, assignment values and every secret shape the rule detectors match, because it is text
+  nobody was prompted about; the hash stays over the original, so redaction loses evidence and
+  never identity. `telemetry.allow_sample_rate` sets the rate and `0` turns it off, as does
+  `telemetry.decisions: false` (#386).
 - `telemetry.completion_claim`, off by default, records the agent's completion claim on a
   `stop-gate` decision row: the last 2 KiB of the turn's final assistant message, read from the
   transcript at Stop because the Stop payload carries no assistant text, with the hash over the

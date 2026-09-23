@@ -260,14 +260,18 @@ def evasion_deny(runtime, session_id, prompt):
     return None
 
 
-def log_bash_decision(runtime, event, results):
+def log_bash_decision(runtime, event, results, command=None, confirmed=False):
     """Record the permission answer the harness gave this command, when it gave one.
 
-    Only `ask` and `deny` are logged. An approval is the harness declining to interrupt, and
-    "it ran" says nothing about whether declining was right; a refusal or a prompt is the
+    Only `ask` and `deny` are graded rows. An approval is the harness declining to interrupt,
+    and "it ran" says nothing about whether declining was right; a refusal or a prompt is the
     judgment a later label can grade. The row is written here rather than in `grade-bash.py`
     because this is where the answer is composed: the grader's threshold, the permission mode
     and plan-mode investigation all fold together into one answer, and only one is given.
+
+    An allowed command goes to `record_allowed`, which keeps one in twenty of them as an
+    ungraded negative. A confirmed command is not one of those: it reached here because the
+    user answered a prompt the harness raised, so it is the earlier `ask` row's story.
     """
     module = decisions()
     if module is None:
@@ -275,6 +279,9 @@ def log_bash_decision(runtime, event, results):
     answers = [r.get("hookSpecificOutput", {}).get("permissionDecision") for r in results]
     answer = next((choice for choice in ("deny", "ask") if choice in answers), None)
     if not answer:
+        if not confirmed:
+            module.record_allowed(command if command is not None
+                                  else event["tool_input"]["command"], event, runtime)
         return
     command = event["tool_input"]["command"]
     module.record("grade-bash", answer, command, event, runtime,
@@ -399,7 +406,7 @@ def dispatch(runtime, payload):
                     "planning. Plan mode widens investigation, not the build. "
                     + grader.reason(grade, verb, target, family, variant)}})
             results.append(invoke("filter-output", event))
-            log_bash_decision(runtime, event, results)
+            log_bash_decision(runtime, event, results, command, confirmed)
         elif tool == "Agent":
             delegation = selected("delegation", "tiered")
             inputs = event["tool_input"]

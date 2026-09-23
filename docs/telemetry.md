@@ -58,6 +58,28 @@ endpoint, whatever `export` is set to, and turning export on does not turn this 
 Unlike a ledger row, a decision row holds the text the hook judged — a command, or the head of
 a brief — capped at 2 KiB, which is the one reason to turn it off on a shared machine.
 
+## The allowed-command sample
+
+```json
+{ "telemetry": { "allow_sample_rate": 0 } }
+```
+
+`allow_sample_rate` is how many allowed Bash commands one logged row stands for: **20 by
+default**, so one command in twenty that the harness let through without a prompt is written to
+the decision log as an ungraded negative, and `0` writes none of them.
+[usage.md](usage.md#sampled-allows) describes the row.
+
+It is on because the graded rows are all prompts, and a check that may only turn an allow into
+an ask cannot be measured for false alarms against prompts alone. The sample is drawn from each
+command's own hash rather than from a random draw, so the same commands are sampled on every
+machine and a measurement over these rows is reproducible. The text of a sampled row is redacted
+first — assignment values and every secret shape the rule detectors match — because it is text
+nobody was prompted about; a graded row still holds the command as the user saw it.
+
+Set it to `0` on a machine where a log of commands nobody approved is unwelcome.
+`decisions: false` turns it off along with the rest of the log, and nothing here is exported:
+a decision row reaches no endpoint whatever `export` is set to.
+
 ## The completion claim switch
 
 ```json

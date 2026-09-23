@@ -339,12 +339,13 @@ one field that holds prose is [the completion claim](#the-completion-claim), whi
 | `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
 | `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
 
-An approved Bash command is not logged. The harness answers the permission question on a small
+An approved Bash command is not *graded*. The harness answers the permission question on a small
 minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a
-prompt or a refusal is the judgment a label can grade. `not_run` is deliberately not called
-"denied": a user who refused, a user who interrupted the turn and a session that crashed all
-look the same from a hook, and naming one of them would put a label in the file that nobody
-measured.
+prompt or a refusal is the judgment a label can grade. A sample of the approvals is kept all the
+same, as [sampled allows](#sampled-allows) below, which carry no outcome. `not_run` is
+deliberately not called "denied": a user who refused, a user who interrupted the turn and a
+session that crashed all look the same from a hook, and naming one of them would put a label in
+the file that nobody measured.
 
 Both runtimes write, for the events both raise. Band routing happens on Claude Code alone, so
 Codex records no `tier-agent-spawns` row; `adapters/codex/capabilities.json` names that gap.
@@ -353,6 +354,37 @@ A write that fails is counted and swallowed — a log that can change a permissi
 worse than no log — and `telemetry.decisions: false` in `config.json` turns the whole thing off,
 after which no row, no file and no directory is written. See
 [telemetry.md](telemetry.md#the-decision-log-switch).
+
+### Sampled allows
+
+One Bash command in twenty that the harness let through without a prompt is written as a
+`grade-bash` row of its own:
+
+```json
+{"kind": "decision", "point": "grade-bash", "deterministic_answer": "allow", "sampled": true,
+ "sample_rate": 20, "input": "cargo test --release", "outcome": null}
+```
+
+They exist because the graded rows are all prompts: a check that may only tighten an allow into
+an ask has nothing to measure its false alarms against without the commands nobody was asked
+about. They are **negatives, not judgments** — `sampled: true`, never an outcome, and
+`usage --by decision` counts them on a `grade-bash (sampled)` line of their own so they cannot
+dilute the outcome rates of the rows that were graded.
+
+Which commands are sampled is the command's **own hash**, not a random draw: the same corpus
+replayed samples the same commands, and a command that is in the sample is in it every time it
+runs. `sample_rate` on the row is the denominator a reader weights by. A confirmed command —
+one re-run with the confirmation marker after a prompt — is never sampled; it belongs to the
+`ask` row that prompted it.
+
+The `input` of a sampled row is **redacted** first, unlike the text of a prompt the user was
+shown: the value of every leading-word assignment, so `TOKEN=… cmd` keeps the shape and loses
+the value, and every secret shape the [rule detectors](#rule-telemetry) match. `input_sha256` is
+still over the original text, so the redaction loses evidence and never identity.
+
+`telemetry.allow_sample_rate` sets the rate and `0` stops it;
+[telemetry.md](telemetry.md#the-allowed-command-sample) has the switch, and `decisions: false`
+turns it off with everything else.
 
 ### The completion claim
 

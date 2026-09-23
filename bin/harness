@@ -3789,7 +3789,11 @@ def decision_report(days: int) -> int:
         return 0
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
-        groups.setdefault(str(row.get("point") or "(unnamed)"), []).append(row)
+        # A sampled allow is a negative nobody graded, so it groups apart from the judgments at
+        # the same point: folded in, it would read as one more unlabelled decision and drag the
+        # point's unlabelled share towards the sampling rate.
+        point = str(row.get("point") or "(unnamed)") + (" (sampled)" if row.get("sampled") else "")
+        groups.setdefault(point, []).append(row)
     head = f"{'decision':<24}{'rows':>7}{'labelled':>10}{'unlabelled':>12}  outcomes"
     say(head)
     say("-" * len(head))

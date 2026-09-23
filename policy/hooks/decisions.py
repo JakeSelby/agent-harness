@@ -36,6 +36,7 @@ output or exit status. See docs/usage.md for the report and docs/telemetry.md fo
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -54,6 +55,31 @@ MAX_INPUT = 2048
 # and naming one of them would put a label in the file that nobody measured.
 NOT_RUN = "not_run"
 RAN = "ran"
+
+# The sampled allows: a fraction of the Bash commands the harness let through without a prompt,
+# written as `grade-bash` rows with `deterministic_answer: allow` and `sampled: true`. They are
+# negatives for shadow evaluation — a check that may only tighten an allow into an ask has
+# nothing to measure its false alarms against otherwise — and they carry no outcome: "it ran"
+# says nothing about whether declining to interrupt was right. One in DEFAULT_SAMPLE_RATE by
+# default, `telemetry.allow_sample_rate` to change it and 0 to stop it. The choice is the
+# command's own hash, so a rerun of the same corpus samples the same commands, and the row
+# names the rate it was drawn at so a reader knows the denominator.
+DEFAULT_SAMPLE_RATE = 20
+
+# A sampled row is the one place this log writes text nobody prompted about, so the text is
+# redacted first: the value of every leading-word assignment, which is how a secret reaches a
+# command line, and every shape the rule detectors match. Those shapes are read out of the
+# vendored measurement engine — see `secret_shapes` — so there is one list and this file holds
+# no copy of it. `input_sha256` stays over the original text, so the redaction loses evidence
+# and never identity, exactly as the 2 KiB cap does.
+REDACTED = "<redacted>"
+SHAPES_MODULE = "ruleprobe/detectors/common.py"
+SHAPES_NAME = "SECRET_PATTERNS"
+# `FOO=secret cmd` and `cmd --flag=value` are told apart by what precedes the name: an
+# assignment starts a word, an option does not.
+ASSIGNMENT_RE = re.compile(r"(^|\s)([A-Za-z_][A-Za-z0-9_]*)=(\S+)")
+
+_SHAPES = []
 
 # The completion claim: the tail of the turn's final assistant message, on a stop-gate row and
 # nowhere else. It is the one place this log holds model prose, so it has its own switch and
@@ -133,6 +159,80 @@ def claim_enabled(cfg=None):
     return block.get("completion_claim", False) is True
 
 
+def sample_rate(cfg=None):
+    """One in how many allowed commands is logged: `telemetry.allow_sample_rate`, 20 by default.
+
+    0 stops the sampling and writes no allow row at all. A value this module cannot honour is
+    read as 0 rather than as the default: `telemetry.settings` refuses it by name when the CLI
+    reads the same block, and a hook that cannot read its own setting must not log more than
+    the user asked for. `telemetry.decisions: false` turns this off with everything else.
+    """
+    cfg = read_config() if cfg is None else cfg
+    block = cfg.get("telemetry") if isinstance(cfg, dict) else None
+    if block is None:
+        return DEFAULT_SAMPLE_RATE
+    if not isinstance(block, dict):
+        return 0
+    rate = block.get("allow_sample_rate", DEFAULT_SAMPLE_RATE)
+    if isinstance(rate, bool) or not isinstance(rate, int) or rate < 0:
+        return 0
+    return rate
+
+
+def in_sample(text, rate):
+    """Whether this command is one of the one-in-`rate` that are logged.
+
+    The command's own hash, never a random draw and never a clock: the same corpus replayed
+    through this function samples the same commands, which is what makes a measurement taken
+    against these rows reproducible.
+    """
+    if not rate or not text:
+        return False
+    return int(digest(text)[:8], 16) % rate == 0
+
+
+def secret_shapes():
+    """The shapes the rule detectors match, compiled, or None when they cannot be read.
+
+    Read out of the vendored `ruleprobe` wheel rather than imported from it: importing the
+    engine inside a PreToolUse hook costs a fifth of a second, and a copy of the list in this
+    file would be both a second source of truth and, to `harness lint`, a secret pattern
+    written into a committed file. `rule-detectors.py` takes the same list from the same place.
+    None stops the sampling, which is the safe direction: no row rather than an unredacted one.
+    """
+    if not _SHAPES:
+        _SHAPES.append(_read_shapes())
+    return _SHAPES[0]
+
+
+def _read_shapes():
+    import ast
+    import zipfile
+
+    root = checkout_root()
+    vendor = None if root is None else sorted((root / "lib" / "vendor").glob("ruleprobe-*.whl"))
+    if not vendor:
+        return None
+    try:
+        source = zipfile.ZipFile(str(vendor[-1])).read(SHAPES_MODULE).decode("utf-8")
+        for node in ast.parse(source).body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if any(getattr(t, "id", "") == SHAPES_NAME for t in node.targets):
+                return [re.compile(p) for p in ast.literal_eval(node.value)]
+    except Exception:
+        return None
+    return None
+
+
+def redact(text, shapes):
+    """`text` with assignment values and every shape in `shapes` replaced by REDACTED."""
+    text = ASSIGNMENT_RE.sub(lambda m: m.group(1) + m.group(2) + "=" + REDACTED, text)
+    for shape in shapes:
+        text = shape.sub(REDACTED, text)
+    return text
+
+
 def errors():
     """How many writes this process swallowed. A hook's decision never depends on it."""
     return _ERRORS[0]
@@ -146,21 +246,31 @@ def digest(text):
     return hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()
 
 
-def harness_version():
-    """The version in the `VERSION` file at the root of the checkout this file belongs to.
+def checkout_root():
+    """The root of the checkout this file belongs to, or None when it is running outside one.
 
     The same walk `usage-log.py` does, and for the same reason: a hook is a script, not an
-    import of the CLI. A copy running outside a checkout stamps no version rather than a guess.
+    import of the CLI.
     """
     here = Path(os.path.realpath(__file__)).parent
     for parent in [here] + list(here.parents):
-        marker = parent / "VERSION"
-        if marker.is_file() and (parent / "bin" / "harness").exists():
-            try:
-                return marker.read_text(encoding="utf-8").strip() or None
-            except OSError:
-                return None
+        if (parent / "VERSION").is_file() and (parent / "bin" / "harness").exists():
+            return parent
     return None
+
+
+def harness_version():
+    """The version in the `VERSION` file at the root of this checkout, or None outside one.
+
+    A copy running outside a checkout stamps no version rather than a guess.
+    """
+    root = checkout_root()
+    if root is None:
+        return None
+    try:
+        return (root / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
 
 
 def match_key(event, text):
@@ -354,6 +464,19 @@ def _append(row, target=None):
     return target
 
 
+def _decision_row(point, answer, text, event, runtime, key, now, written=None):
+    """The decision row itself, with `written` standing in for `text` when it is redacted."""
+    return {"kind": "decision",
+            "decision_id": uuid.uuid4().hex if key is None else decision_id(point, key),
+            "point": point,
+            "session_id": str((event or {}).get("session_id") or "") if event else "",
+            "ts": now_ts(now), "input_sha256": digest(text),
+            "input": (text if written is None else written)[:MAX_INPUT],
+            "deterministic_answer": answer, "outcome": None,
+            "runtime": runtime or os.environ.get("HARNESS_RUNTIME", ""),
+            "harness_version": harness_version()}
+
+
 def record(point, answer, text="", event=None, runtime="", key=None, target=None, now=None,
            transcript=None):
     """Log one judgment. Returns its `decision_id`, or None when nothing was written.
@@ -371,16 +494,39 @@ def record(point, answer, text="", event=None, runtime="", key=None, target=None
         if not enabled():
             return None
         text = text if isinstance(text, str) else ""
-        identity = uuid.uuid4().hex if key is None else decision_id(point, key)
-        row = {"kind": "decision", "decision_id": identity, "point": point,
-               "session_id": str((event or {}).get("session_id") or "") if event else "",
-               "ts": now_ts(now), "input_sha256": digest(text), "input": text[:MAX_INPUT],
-               "deterministic_answer": answer, "outcome": None,
-               "runtime": runtime or os.environ.get("HARNESS_RUNTIME", ""),
-               "harness_version": harness_version()}
+        row = _decision_row(point, answer, text, event, runtime, key, now)
         row.update(claim_fields(transcript))
+        identity = row["decision_id"]
         _append(row, target)
         return identity
+    except Exception:
+        _ERRORS[0] += 1
+        return None
+
+
+def record_allowed(command, event=None, runtime="", target=None, now=None, cfg=None):
+    """Log one allowed command, if it is in the sample. Returns its id, or None. Never raises.
+
+    The negatives for shadow evaluation: `deterministic_answer: allow`, `sampled: true` and the
+    rate it was drawn at. The row carries no outcome and no match key, because there is no
+    judgment here to label and an allow that later "ran" grades nothing; a reader joins nothing
+    to it and `usage --by decision` counts it apart from the graded rows. The text is redacted
+    before it is capped, unlike the text of a prompt the user was shown. See DEFAULT_SAMPLE_RATE.
+    """
+    try:
+        if not isinstance(command, str) or not command.strip() or not enabled(cfg):
+            return None
+        rate = sample_rate(cfg)
+        if not in_sample(command, rate):
+            return None
+        shapes = secret_shapes()
+        if shapes is None:
+            return None
+        row = _decision_row("grade-bash", "allow", command, event, runtime, None, now,
+                            written=redact(command, shapes))
+        row.update({"sampled": True, "sample_rate": rate})
+        _append(row, target)
+        return row["decision_id"]
     except Exception:
         _ERRORS[0] += 1
         return None
