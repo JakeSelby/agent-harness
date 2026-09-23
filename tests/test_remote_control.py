@@ -25,6 +25,12 @@ harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
 
+def harness_http_error(url, code):
+    from urllib.error import HTTPError
+    from io import BytesIO
+    return HTTPError(url, code, "status %d" % code, {}, BytesIO(b""))
+
+
 class SettingsTests(unittest.TestCase):
     def test_defaults_serve_nothing_in_worktree_mode(self):
         opts = remote_control.settings({})
@@ -43,9 +49,38 @@ class SettingsTests(unittest.TestCase):
 
     def test_bad_values_are_rejected(self):
         for block in ({"spawn": "fork"}, {"permission_mode": "yolo"}, {"folders": "/x"},
-                      {"folders": [""]}, {"folder": []}):
+                      {"folders": [""]}, {"folder": []}, {"folders": [3]},
+                      {"folders": [{"spawn": "same-dir"}]}, {"folders": [{"path": ""}]},
+                      {"folders": [{"path": "/x", "spawn": "fork"}]},
+                      {"folders": [{"path": "/x", "env": ["A=1"]}]},
+                      {"folders": [{"path": "/x", "env": {"A": 1}}]},
+                      {"folders": [{"path": "/x", "permission_mode": "auto"}]}):
             with self.subTest(block=block), self.assertRaises(ValueError):
                 remote_control.settings({"remote_control": block})
+
+    def test_errors_name_the_offending_entry(self):
+        with self.assertRaises(ValueError) as caught:
+            remote_control.settings({"remote_control": {"folders": ["/a", {"path": "/b", "spawn": "x"}]}})
+        self.assertIn("remote_control.folders[1].spawn", str(caught.exception))
+
+    def test_object_folders_carry_their_own_spawn_and_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            one, two = Path(tmp) / "one", Path(tmp) / "two"
+            opts = remote_control.settings({"remote_control": {"spawn": "worktree", "folders": [
+                str(one), {"path": str(two), "spawn": "same-dir", "env": {"X_FLAG": "1"}}]}})
+        self.assertEqual(opts["folders"], [one.resolve(), two.resolve()])
+        self.assertEqual(remote_control.folder_options(one.resolve(), opts),
+                         {"spawn": "worktree", "env": {}})
+        self.assertEqual(remote_control.folder_options(two.resolve(), opts),
+                         {"spawn": "same-dir", "env": {"X_FLAG": "1"}})
+
+    def test_a_folder_listed_twice_must_agree_with_itself(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            same = remote_control.settings({"remote_control": {"folders": [tmp, {"path": tmp}]}})
+            self.assertEqual(same["folders"], [Path(tmp).resolve()])
+            with self.assertRaises(ValueError):
+                remote_control.settings({"remote_control": {"folders": [
+                    tmp, {"path": tmp, "spawn": "same-dir"}]}})
 
 
 class PlistTests(unittest.TestCase):
@@ -61,12 +96,26 @@ class PlistTests(unittest.TestCase):
         data = plistlib.loads(body)
         self.assertEqual(data["ProgramArguments"], [
             "/opt/tools/claude", "remote-control", "--name", "My Repo", "--spawn", "worktree",
-            "--permission-mode", "auto", "--no-create-session-in-dir"])
+            "--permission-mode", "auto"])
+        # 2.1.280 reads the bridge pointer only with createSessionInDir on.
+        self.assertNotIn("--no-create-session-in-dir", data["ProgramArguments"])
         self.assertEqual(data["WorkingDirectory"], "/work/My Repo")
         self.assertTrue(data["KeepAlive"] and data["RunAtLoad"])
         self.assertEqual(data["ThrottleInterval"], remote_control.THROTTLE_SECONDS)
         self.assertEqual(data["EnvironmentVariables"]["PATH"].split(":")[0], "/opt/tools")
         self.assertIn("/usr/bin", data["EnvironmentVariables"]["PATH"].split(":"))
+
+    def test_a_folder_s_spawn_and_env_reach_its_plist_only(self):
+        opts = dict(self.OPTS, folder_options={
+            Path("/w/dsa"): {"spawn": "same-dir", "env": {"X_FLAG": "1"}}})
+        dsa = plistlib.loads(remote_control.render("/w/dsa", opts, "/bin/claude", "/home/u", "/logs"))
+        other = plistlib.loads(remote_control.render("/w/app", opts, "/bin/claude", "/home/u", "/logs"))
+        self.assertIn("same-dir", dsa["ProgramArguments"])
+        self.assertEqual(dsa["EnvironmentVariables"]["X_FLAG"], "1")
+        self.assertEqual(dsa["EnvironmentVariables"]["HOME"], "/home/u")
+        self.assertIn("worktree", other["ProgramArguments"])
+        self.assertNotIn("X_FLAG", other["EnvironmentVariables"])
+        self.assertEqual(dsa["Label"], remote_control.label("/w/dsa"))
 
     def test_keep_awake_wraps_the_server(self):
         argv = remote_control.command("/w/r", dict(self.OPTS, keep_awake=True), "/bin/claude")
@@ -218,6 +267,46 @@ class CommandTests(unittest.TestCase):
         self.assertFalse(self.plist_path(self.folder).exists())
         self.assertEqual(self.loaded, set())
 
+    def test_a_changed_plist_on_a_running_host_adopts_its_environment(self):
+        self.run_action("install")
+        name = remote_control.label(self.folder)
+        log_dir = self.home / ".local" / "state" / "agent-harness" / "remote-control"
+        (log_dir / (name + ".log")).write_text("Registered, server environmentId=env_01LIVE\n")
+        projects = self.home / ".claude" / "projects"
+        pointer = remote_control.pointer_path(projects, self.folder)
+        pointer.parent.mkdir(parents=True)
+        pointer.write_text(json.dumps({"sessionId": "cse_01PRE", "environmentId": "env_01LIVE",
+                                       "source": "standalone", "pid": 4242, "procStart": "x"}))
+        path = self.home / ".config" / "agent-harness" / "config.json"
+        path.write_text(json.dumps({"remote_control": {"folders": [str(self.folder)],
+                                                       "permission_mode": "plan"}}))
+        order = []
+        self.calls.clear()
+        with mock.patch.object(harness, "host_pid", lambda n: 4242), \
+             mock.patch.object(harness, "claude_host_pid", lambda pid: 4243), \
+             mock.patch.object(harness, "remote_control_log_dir", lambda: log_dir), \
+             mock.patch.object(harness.os, "kill", lambda pid, sig: order.append(("kill", pid, sig))):
+            real = self.launchctl
+            with mock.patch.object(harness, "launchctl",
+                                   side_effect=lambda *a: (order.append((a[0],)), real(*a))[1]):
+                code, out = self.run_action("install")
+        self.assertEqual(code, 0)
+        self.assertIn("adopting env_01LIVE from pid 4242", out)
+        written = json.loads(pointer.read_text())
+        self.assertEqual(written, {"sessionId": "cse_01PRE", "environmentId": "env_01LIVE",
+                                   "source": "standalone"})
+        steps = [o for o in order if o[0] != "print"]
+        self.assertEqual(steps[0], ("kill", 4243, harness.signal.SIGKILL))
+        self.assertEqual([s[0] for s in steps[1:3]], ["bootout", "bootstrap"])
+
+    def test_an_unchanged_plist_is_never_adopted(self):
+        self.run_action("install")
+        with mock.patch.object(harness, "host_pid", lambda n: 4242), \
+             mock.patch.object(harness.os, "kill") as kill:
+            _, out = self.run_action("install")
+        self.assertIn("unchanged", out)
+        kill.assert_not_called()
+
     def test_bootstrap_failure_is_a_nonzero_exit(self):
         def fail(*args):
             return subprocess.CompletedProcess(args, 5 if args[0] != "bootout" else 0, stdout="", stderr="Input/output error")
@@ -260,6 +349,28 @@ class PointerTests(unittest.TestCase):
         self.assertEqual(out["activeSessionIds"], ["cse_01B"])
         self.assertNotIn("somethingElse", out)
         self.assertLessEqual(set(out), set(remote_control.POINTER_KEYS))
+
+    def test_2_1_280_parked_keys_survive_the_rewrite(self):
+        previous = {"sessionId": "cse_01A", "environmentId": "env_01NEW", "source": "standalone",
+                    "parkedProjectThreadSessionIds": ["cse_01P"],
+                    "parkedProjectThreadSessionIdsPersistedAt": 99}
+        out = remote_control.pointer_payload("env_01NEW", 77, "now", previous)
+        self.assertEqual(out["parkedProjectThreadSessionIds"], ["cse_01P"])
+        self.assertEqual(out["parkedProjectThreadSessionIdsPersistedAt"], 99)
+
+    def test_an_adoption_pointer_names_no_process(self):
+        previous = {"sessionId": "cse_01A", "environmentId": "env_01NEW", "pid": 5, "procStart": "x"}
+        out = remote_control.pointer_payload("env_01NEW", None, None, previous)
+        self.assertEqual(out, {"sessionId": "cse_01A", "environmentId": "env_01NEW",
+                               "source": "standalone"})
+
+    def test_install_step(self):
+        step = remote_control.install_step
+        self.assertEqual(step(True, True, 10, "env_01A"), "unchanged")
+        self.assertEqual(step(True, False, 10, "env_01A"), "adopt")
+        self.assertEqual(step(True, False, 10, None), "load")
+        self.assertEqual(step(True, False, None, "env_01A"), "load")
+        self.assertEqual(step(False, True, None, None), "load")
 
     def test_ids_from_another_environment_are_dropped(self):
         previous = {"sessionId": "cse_01A", "environmentId": "env_01OLD", "source": "standalone",
@@ -353,6 +464,7 @@ class HealRunTests(unittest.TestCase):
         self.log_dir.mkdir(parents=True)
         self.label = remote_control.label(self.folder)
         (self.log_dir / (self.label + ".log")).write_text("bridge up on env_01LIVE\n")
+        self.token = None
         self.env = mock.patch.dict(os.environ, {"HOME": str(self.home), "XDG_STATE_HOME": ""}, clear=False)
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -368,6 +480,7 @@ class HealRunTests(unittest.TestCase):
              mock.patch.object(harness, "claude_state_file", lambda: self.home / ".claude.json"), \
              mock.patch.object(harness, "host_pid", lambda name: 4242), \
              mock.patch.object(harness, "proc_start", lambda pid: "Tue Sep 22 13:36:19 2026"), \
+             mock.patch.object(harness, "claude_oauth_token", lambda: self.token), \
              mock.patch.object(harness.platform, "system", lambda: "Darwin"):
             code = harness.cmd_remote_control_heal(args)
         return code, "\n".join(lines)
@@ -397,6 +510,7 @@ class HealRunTests(unittest.TestCase):
              mock.patch.object(harness, "remote_control_log_dir", lambda: self.log_dir), \
              mock.patch.object(harness, "claude_state_file", lambda: self.home / ".claude.json"), \
              mock.patch.object(harness, "host_pid", lambda name: None), \
+             mock.patch.object(harness, "claude_oauth_token", lambda: None), \
              mock.patch.object(harness, "say", lambda line: None), \
              mock.patch.object(harness.platform, "system", lambda: "Darwin"):
             self.assertEqual(harness.cmd_remote_control_heal(args), 0)
@@ -404,6 +518,101 @@ class HealRunTests(unittest.TestCase):
 
     def write_log(self, text):
         (self.log_dir / (self.label + ".log")).write_text(text)
+
+    def fake_api(self, rows, status=200, fail=False):
+        """A stand-in for `urlopen`: the sessions page on GET, a recorded POST otherwise."""
+        sent = []
+
+        def opener(request, timeout=None):
+            if request.get_method() == "GET":
+                body = json.dumps({"data": rows, "next_cursor": None}).encode()
+            else:
+                if fail:
+                    raise OSError("no route to host")
+                sent.append((request.full_url, json.loads(request.data), request.get_header("Anthropic-beta")))
+                if status != 200:
+                    raise harness_http_error(request.full_url, status)
+                body = b'{"environment_id": "env"}'
+            response = mock.MagicMock()
+            response.__enter__.return_value.read.return_value = body
+            response.__enter__.return_value.status = status
+            return response
+        return opener, sent
+
+    ROWS = [
+        {"id": "cse_01LOST", "status": "active", "connection_status": "disconnected",
+         "environment_id": "env_01LIVE", "last_event_at": "2026-09-23T10:00:00Z"},
+        {"id": "cse_01PARK", "status": "active", "connection_status": "disconnected",
+         "environment_id": "env_01PTR", "last_event_at": "2026-09-23T09:00:00Z"},
+        {"id": "cse_01HERE", "status": "active", "connection_status": "connected",
+         "environment_id": "env_01LIVE", "last_event_at": "2026-09-23T08:00:00Z"},
+        {"id": "cse_01THEIRS", "status": "active", "connection_status": "disconnected",
+         "environment_id": "env_01OTHERMAC", "last_event_at": "2026-09-23T07:00:00Z"}]
+
+    def seed_pointer_env(self):
+        # heal's own pass rewrites a pointer to the live env, so the pointer names a second
+        # folder's environment here: every configured folder's pointer counts as this Mac's.
+        second = (self.home / "repos" / "dsa").resolve()
+        second.mkdir(parents=True)
+        (self.home / ".config" / "agent-harness" / "config.json").write_text(json.dumps(
+            {"remote_control": {"folders": [str(self.folder), str(second)]}}))
+        path = remote_control.pointer_path(self.home / ".claude" / "projects", second)
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"sessionId": "", "environmentId": "env_01PTR", "source": "standalone"}))
+
+    def test_disconnected_sessions_on_this_mac_are_reconnected_once(self):
+        self.token = "sk-live"
+        self.seed_pointer_env()
+        opener, sent = self.fake_api(self.ROWS)
+        with mock.patch.object(remote_control, "urlopen", opener):
+            code, out = self.run_heal()
+            self.assertEqual(code, 0)
+            self.assertEqual([(u, b["session_id"]) for u, b, _ in sent], [
+                ("https://api.anthropic.com/v1/environments/env_01LIVE/bridge/reconnect", "cse_01LOST"),
+                ("https://api.anthropic.com/v1/environments/env_01PTR/bridge/reconnect", "cse_01PARK")])
+            self.assertEqual(sent[0][2], "oauth-2025-04-20,environments-2025-11-01")
+            log = (self.log_dir / "heal.log").read_text()
+            self.assertIn("reconnect cse_01LOST on env_01LIVE: 200", log)
+            self.assertNotIn("sk-live", log + out)
+            # The next pass, a minute later, is inside the ten-minute window.
+            self.run_heal()
+        self.assertEqual(len(sent), 2)
+        state = json.loads((self.log_dir / remote_control.STATE_NAME).read_text())
+        self.assertEqual(set(state["reconnected"]), {"cse_01LOST", "cse_01PARK"})
+
+    def test_reconnect_honours_dry_run(self):
+        self.token = "sk-live"
+        opener, sent = self.fake_api(self.ROWS)
+        with mock.patch.object(remote_control, "urlopen", opener):
+            _, out = self.run_heal(dry_run=True)
+        self.assertEqual(sent, [])
+        self.assertIn("would reconnect cse_01LOST on env_01LIVE", out)
+        self.assertFalse((self.log_dir / remote_control.STATE_NAME).exists())
+
+    def test_a_failed_reconnect_is_logged_and_does_not_raise(self):
+        self.token = "sk-live"
+        opener, _ = self.fake_api(self.ROWS, fail=True)
+        with mock.patch.object(remote_control, "urlopen", opener):
+            code, _ = self.run_heal()
+        self.assertEqual(code, 0)
+        self.assertIn("reconnect cse_01LOST on env_01LIVE: failed: OSError no route to host",
+                      (self.log_dir / "heal.log").read_text())
+
+    def test_a_refused_reconnect_logs_its_status(self):
+        self.token = "sk-live"
+        opener, _ = self.fake_api(self.ROWS, status=404)
+        with mock.patch.object(remote_control, "urlopen", opener):
+            self.run_heal()
+        self.assertIn("reconnect cse_01LOST on env_01LIVE: 404",
+                      (self.log_dir / "heal.log").read_text())
+
+    def test_no_token_skips_reconnect_quietly(self):
+        opener = mock.MagicMock()
+        with mock.patch.object(remote_control, "urlopen", opener):
+            code, _ = self.run_heal()
+        self.assertEqual(code, 0)
+        opener.assert_not_called()
+        self.assertNotIn("reconnect", (self.log_dir / "heal.log").read_text())
 
     def test_an_outage_short_of_the_stop_is_only_warned_about(self):
         self.write_log("bridge up on env_01LIVE\n"
@@ -536,9 +745,10 @@ class SupervisorStateTests(unittest.TestCase):
     def test_a_missing_or_junk_file_is_an_empty_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / remote_control.STATE_NAME
-            self.assertEqual(remote_control.read_state(path), {"stopped": {}, "recreated": []})
+            empty = {"stopped": {}, "recreated": [], "reconnected": {}}
+            self.assertEqual(remote_control.read_state(path), empty)
             path.write_text("[]")
-            self.assertEqual(remote_control.read_state(path), {"stopped": {}, "recreated": []})
+            self.assertEqual(remote_control.read_state(path), empty)
 
     def test_the_stop_fires_once_per_host_process(self):
         state = {"stopped": {}, "recreated": []}
@@ -548,6 +758,16 @@ class SupervisorStateTests(unittest.TestCase):
         self.assertFalse(remote_control.stop_is_due(700, "label", 10, state))
         # launchd's relaunch is a new pid, and its own outage gets its own stop.
         self.assertTrue(remote_control.stop_is_due(700, "label", 11, state))
+
+    def test_a_session_is_reconnected_at_most_once_per_window(self):
+        state = remote_control.read_state("/nonexistent")
+        self.assertTrue(remote_control.reconnect_is_due("cse_01A", state, 1000))
+        remote_control.record_reconnect(state, "cse_01A", 1000)
+        self.assertFalse(remote_control.reconnect_is_due("cse_01A", state, 1599))
+        self.assertTrue(remote_control.reconnect_is_due("cse_01A", state, 1600))
+        self.assertTrue(remote_control.reconnect_is_due("cse_01B", state, 1001))
+        remote_control.record_reconnect(state, "cse_01B", 1700)
+        self.assertEqual(state["reconnected"], {"cse_01B": 1700})
 
     def test_a_worktree_line_is_acted_on_once(self):
         state = {"stopped": {}, "recreated": []}
@@ -591,6 +811,15 @@ class LostSessionTests(unittest.TestCase):
             json.dumps({"claudeAiOauth": {"accessToken": "sk-live", "scopes": []}})), "sk-live")
         self.assertIsNone(remote_control.oauth_token("not json"))
         self.assertIsNone(remote_control.oauth_token(json.dumps({"claudeAiOauth": {}})))
+
+    def test_owned_environments_join_logs_and_pointers(self):
+        self.assertEqual(remote_control.owned_environments(
+            ["env_01A", "env_01B"], [{"environmentId": "env_01B"}, {"environmentId": "env_01C"},
+                                     None, {"environmentId": ""}]),
+            ["env_01A", "env_01B", "env_01C"])
+
+    def test_the_warning_says_heal_reconnects_first(self):
+        self.assertIn("heal reconnects these automatically", remote_control.REATTACH_WARNING)
 
     def test_the_request_carries_the_oauth_beta_headers(self):
         request = remote_control.sessions_request("sk-live")
