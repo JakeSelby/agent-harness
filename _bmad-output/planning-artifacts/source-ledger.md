@@ -2,7 +2,7 @@
 title: Agent Harness source ledger
 status: final
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-23
 ---
 
 # Source ledger
@@ -41,3 +41,30 @@ cannot be safely summarized is cited as unavailable rather than copied into the 
 - **UML viewer and supervision-surface assessment.** Preserves the distinction between measured,
   stale and unknown evidence and the need for deterministic checks. Viewer implementation remains
   deferred and no third-party viewer code is incorporated without license clearance.
+
+## 2026-09-23 re-baseline sources
+
+Added for the re-baseline epic (#616). Repository state and current GitHub records still outrank
+recollection when they disagree.
+
+- **Repository at `3020251` and GitHub issues and pull requests through #623.** Used for the as-built
+  capability inventory and the stale-statement audit behind the re-baselined brief, PRD, UX
+  specification and architecture spine.
+- **Research artifacts processed on 2026-09-23** under `research/`. Each run folder lists its sources
+  in `imports/SOURCES.md` and records claim status in its memlog:
+  - runtime platform limits and qualification
+  - cost, context and benchmark measurement
+  - decision-layer evidence
+  - coordination and memory for parallel coding agents
+  - configurability and selection models
+- **Unpublished inputs summarized here.** These were mined into local digests. Only decision-bearing
+  synthesis reached the corpus, and each figure cites a public issue, pull request or document where
+  one exists.
+  - Maintainer design sessions in Claude Code and Codex, 2026-09-18 to 2026-09-23.
+  - Local plan, assessment and handoff files.
+  - Maintainer planning notes.
+- **Additional exclusions:**
+  - Figures that measure a third-party decision provider's model, because its terms bar publication.
+  - The identity of an externally reviewed deployment.
+  - Personal spend.
+  - Named individuals.
