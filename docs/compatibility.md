@@ -41,6 +41,16 @@ qualified, which is what the table below says. `harness compatibility --json` em
 each client row carrying its derived `capabilities`. The capability-by-client layout follows the
 generated matrix in [wshobson/agents' `docs/harnesses.md`](https://github.com/wshobson/agents/blob/main/docs/harnesses.md).
 
+The table's last row answers a different question: not whether a capability carries native
+evidence, but whether the `delegation` stance's model-tier ceiling binds on that surface.
+`tier_restriction` in `adapters/<runtime>/capabilities.json` declares it per runtime, with a
+`without_hooks` entry for a client that installs no hooks — `"installs_hooks": false` on a catalog
+client, which today is the plugin-marketplace install. So the Claude Code CLI and VS Code surfaces
+read `enforced`, because `claude/hooks/tier-agent-spawns.py` rewrites an `Agent` call that asks for
+the strongest class by `model:` down to the class below unless the role it names declares that
+class itself; the marketplace install and every Codex surface read `advisory`, because the same
+ceiling reaches them as projected prose and nothing intercepts a spawn.
+
 <!-- harness:compatibility:start -->
 **Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
@@ -60,6 +70,9 @@ A client's status is not a capability's status. Each cell is derived from that r
 | `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 | `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 | `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| tier restriction | enforced | enforced | enforced | advisory | advisory | advisory | advisory | advisory |
+
+The last row is not a qualification state. It says whether the delegation stance's model-tier ceiling is **enforced** (a hook rewrites or refuses the spawn), **advisory** (prompt text only) or **none**, and names what carries it: advisory by `primitives/skills/delegation-tiering/SKILL.md`, `primitives/stances/delegation/tiered.md`; enforced by `claude/hooks/tier-agent-spawns.py`. Two gaps stay open under either state: the session's own `--model` is deliberately never rewritten (`docs/settings-ownership.md`), and a surface with no spawn hook states the ceiling without refusing anything.
 <!-- harness:compatibility:end -->
 
 Hosted agents and native memory merging remain deferred. The [architecture-viewer binding](viewer-integrations.md)

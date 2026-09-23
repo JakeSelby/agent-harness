@@ -4206,7 +4206,8 @@ def cmd_compatibility(args):
     """One command shows both levels: the client's status and, beside it, the per-capability
     state derived from that runtime's adapter. Neither is hand-written twice."""
     data = compatibility.catalog(REPO)
-    clients = [dict(row, capabilities=compatibility.capability_states(REPO, data, row))
+    clients = [dict(row, capabilities=compatibility.capability_states(REPO, data, row),
+                    tier_restriction=compatibility.tier_restriction(REPO, row))
                for row in data["clients"]]
     if args.json:
         print(json.dumps(dict(data, clients=clients), indent=2))
@@ -4217,6 +4218,9 @@ def cmd_compatibility(args):
             for name, capability in client["capabilities"].items():
                 say("  " + name + ": " + capability["state"]
                     + (" (" + ", ".join(capability["cases"]) + ")" if capability["cases"] else ""))
+            say("  tier restriction: " + client["tier_restriction"]["state"]
+                + (" (" + client["tier_restriction"]["mechanism"] + ")"
+                   if client["tier_restriction"]["mechanism"] else ""))
         for limitation in data["limitations"]:
             say(limitation)
         if compatibility.source_drift(REPO, data):

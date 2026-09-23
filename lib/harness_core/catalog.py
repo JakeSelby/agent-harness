@@ -436,8 +436,24 @@ def compatibility_capability_table(root, data):
     for name in names:
         rows.append("| `" + name + "` | "
                     + " | ".join(states[client][name]["state"] for client in columns) + " |")
+    restrictions = {row["id"]: compatibility.tier_restriction(root, row) for row in data["clients"]}
+    rows.append("| tier restriction | "
+                + " | ".join(restrictions[client]["state"] for client in columns) + " |")
+    carried = {}
+    for client in columns:
+        if restrictions[client]["mechanism"]:
+            carried.setdefault(restrictions[client]["state"], set()).add(restrictions[client]["mechanism"])
+    mechanisms = [state + " by " + ", ".join("`" + name + "`" for name in sorted(carried[state]))
+                  for state in sorted(carried)]
     return ["A client's status is not a capability's status. Each cell is derived from that "
-            "runtime's `adapters/<runtime>/capabilities.json` at generation time:", "\n".join(rows)]
+            "runtime's `adapters/<runtime>/capabilities.json` at generation time:", "\n".join(rows),
+            "The last row is not a qualification state. It says whether the delegation stance's "
+            "model-tier ceiling is **enforced** (a hook rewrites or refuses the spawn), "
+            "**advisory** (prompt text only) or **none**, and names what carries it: "
+            + "; ".join(mechanisms)
+            + ". Two gaps stay open under either state: the session's own `--model` is "
+            "deliberately never rewritten (`docs/settings-ownership.md`), and a surface with no "
+            "spawn hook states the ceiling without refusing anything."]
 
 
 def projection_drift(root):

@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
+  the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
+  behind each state. It is derived from a `tier_restriction` entry in
+  `adapters/<runtime>/capabilities.json` rather than written into the rendered docs: the Claude
+  Code CLI and VS Code surfaces read `enforced`, because `claude/hooks/tier-agent-spawns.py`
+  rewrites a spawn asking for the strongest class by name, while the plugin-marketplace install
+  installs no hooks and every Codex surface raises none, so both read `advisory`. The generated
+  note states the two gaps that stand either way — the session's own `--model` is never rewritten,
+  and a surface with no spawn hook states the ceiling without refusing anything — and the
+  `delegation-tiering` skill now links to the row instead of restating it (#520).
+
 ### Fixed
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed

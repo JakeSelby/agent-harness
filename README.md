@@ -210,6 +210,9 @@ A client's status is not a capability's status. Each cell is derived from that r
 | `role_execution` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 | `testing` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 | `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
+| tier restriction | enforced | enforced | enforced | advisory | advisory | advisory | advisory | advisory |
+
+The last row is not a qualification state. It says whether the delegation stance's model-tier ceiling is **enforced** (a hook rewrites or refuses the spawn), **advisory** (prompt text only) or **none**, and names what carries it: advisory by `primitives/skills/delegation-tiering/SKILL.md`, `primitives/stances/delegation/tiered.md`; enforced by `claude/hooks/tier-agent-spawns.py`. Two gaps stay open under either state: the session's own `--model` is deliberately never rewritten (`docs/settings-ownership.md`), and a surface with no spawn hook states the ceiling without refusing anything.
 <!-- harness:compatibility:end -->
 
 ## See one switch reach both adapters

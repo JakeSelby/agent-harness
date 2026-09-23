@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 STATES = {"qualified", "unqualified", "planned", "unsupported"}
+TIER_RESTRICTIONS = {"enforced", "advisory", "none"}
 SOURCE_PATHS = ("VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates",
                 "config.example.json")
 FREEZE_STATES = {"open", "frozen"}
@@ -211,6 +212,25 @@ def capability_entries(root, runtime):
     if "role_execution" in data:
         entries["role_execution"] = data["role_execution"]
     return entries
+
+
+def tier_restriction(root, client):
+    """Whether the model-tier ceiling binds one client surface, and what makes it bind.
+
+    Enforcement is a hook rewriting a spawn, so a surface that installs no hooks resolves to the
+    adapter's `without_hooks` entry instead: the same prose, none of the refusal. A runtime with
+    no adapter, or none declaring the key, restricts nothing.
+    """
+    path = root / "adapters" / str(client.get("runtime")) / "capabilities.json"
+    entry = json.loads(path.read_text()).get("tier_restriction") if path.is_file() else None
+    if not isinstance(entry, dict):
+        return {"state": "none", "mechanism": None}
+    if client.get("installs_hooks", True) is False and isinstance(entry.get("without_hooks"), dict):
+        entry = entry["without_hooks"]
+    if entry.get("state") not in TIER_RESTRICTIONS:
+        raise ValueError(client.get("runtime", "?") + " declares an unknown tier restriction: "
+                         + str(entry.get("state")))
+    return {"state": entry["state"], "mechanism": entry.get("mechanism")}
 
 
 def capability_states(root, data, client):

@@ -53,6 +53,7 @@
       "provider": "anthropic",
       "client": "plugin-marketplace",
       "platform": "unspecified",
+      "installs_hooks": false,
       "status": "unqualified",
       "required_for_release": false,
       "evidence": []
