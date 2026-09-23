@@ -72,6 +72,127 @@ class ReconciliationTests(unittest.TestCase):
             store.uninstall()
             self.assertEqual(json.loads(target.read_text()), {"model": "mine", "theme": "dark", "permissions": {"defaultMode": "default"}})
 
+    HARNESS_HOOK = {"hooks": [{"type": "command", "command": "python3 hook.py # harness:runtime-sessionstart"}]}
+    USER_HOOK = {"hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/mine.py"}]}
+
+    def hook_store(self, root, prior=None):
+        target = root / "settings.json"
+        target.write_text(json.dumps({"hooks": {"SessionStart": prior}} if prior is not None else {}))
+        store = reconcile.Store(root / "state")
+        paths = [["hooks", "SessionStart"]]
+        store.json(target, {"hooks": {"SessionStart": [self.HARNESS_HOOK]}}, paths, hook_lists=paths)
+        return target, store, paths
+
+    def add_user_hook(self, target, current=None):
+        current = current if current is not None else json.loads(target.read_text())
+        current["hooks"]["SessionStart"].append(self.USER_HOOK)
+        target.write_text(json.dumps(current))
+
+    def test_a_user_hook_beside_the_harness_hooks_is_not_a_conflict_or_drift(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target, store, paths = self.hook_store(Path(temp))
+            self.add_user_hook(target)
+            self.assertEqual(store.drift(), [])
+            updated = {"hooks": [{"type": "command", "command": "python3 hook2.py # harness:runtime-sessionstart"}]}
+            store.json(target, {"hooks": {"SessionStart": [self.USER_HOOK, updated]}}, paths, hook_lists=paths)
+            self.assertEqual(store.conflicts, [])
+            self.assertEqual(json.loads(target.read_text())["hooks"]["SessionStart"], [self.USER_HOOK, updated])
+            self.assertEqual(store.drift(), [])
+
+    def test_an_edited_harness_hook_is_still_a_conflict_and_drift(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target, store, paths = self.hook_store(Path(temp))
+            current = json.loads(target.read_text())
+            current["hooks"]["SessionStart"][0]["hooks"][0]["timeout"] = 5
+            self.add_user_hook(target, current)
+            self.assertEqual(store.drift(), [
+                "modified owned field: " + str(target) + ':["hooks", "SessionStart"]'])
+            store.json(target, {"hooks": {"SessionStart": [self.HARNESS_HOOK]}}, paths, hook_lists=paths)
+            self.assertEqual(store.conflicts, [str(target) + ": owned field changed: hooks.SessionStart"])
+            store.uninstall()
+            self.assertEqual(json.loads(target.read_text()), current)
+            self.assertIn(str(target) + ': user changes preserved for ["hooks", "SessionStart"]', store.conflicts)
+
+    def test_removing_the_harness_hook_is_a_conflict_even_with_your_own_left(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target, store, paths = self.hook_store(Path(temp))
+            target.write_text(json.dumps({"hooks": {"SessionStart": [self.USER_HOOK]}}))
+            store.json(target, {"hooks": {"SessionStart": [self.USER_HOOK, self.HARNESS_HOOK]}}, paths,
+                       hook_lists=paths)
+            self.assertEqual(store.conflicts, [str(target) + ": owned field changed: hooks.SessionStart"])
+            self.assertEqual(json.loads(target.read_text())["hooks"]["SessionStart"], [self.USER_HOOK])
+
+    def test_your_first_hook_on_an_event_the_harness_left_empty_is_not_a_conflict(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); target = root / "settings.json"
+            target.write_text("{}")
+            store = reconcile.Store(root / "state")
+            paths = [["hooks", "Stop"]]
+            store.json(target, {}, paths, hook_lists=paths)
+            target.write_text(json.dumps({"hooks": {"Stop": [self.USER_HOOK]}}))
+            self.assertEqual(store.drift(), [])
+            store.json(target, {"hooks": {"Stop": [self.USER_HOOK]}}, paths, hook_lists=paths)
+            self.assertEqual(store.conflicts, [])
+
+    def test_a_malformed_or_look_alike_entry_is_yours(self):
+        own = reconcile.is_harness_hook_entry
+        self.assertFalse(own("not an entry"))
+        self.assertFalse(own({"hooks": "not a list"}))
+        self.assertFalse(own({"hooks": ["not a hook", {"command": 7}]}))
+        self.assertFalse(own({"hooks": [{"command": "python3 ~/bin/my-harness-session.py"}]}))
+        self.assertTrue(own({"hooks": [{"command": "python3 ~/.claude/hooks/harness/harness-session.py"}]}))
+        self.assertTrue(own({"hooks": [{"command": "python3 harness-session.py --flag"}]}))
+        with tempfile.TemporaryDirectory() as temp:
+            target, store, _ = self.hook_store(Path(temp))
+            current = json.loads(target.read_text())
+            current["hooks"]["SessionStart"] += ["not an entry", {"hooks": "not a list"}]
+            target.write_text(json.dumps(current))
+            store.uninstall()
+            self.assertEqual(json.loads(target.read_text())["hooks"]["SessionStart"],
+                             ["not an entry", {"hooks": "not a list"}])
+
+    def test_uninstall_takes_the_harness_hooks_and_leaves_the_users(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target, store, _ = self.hook_store(Path(temp))
+            self.add_user_hook(target)
+            store.uninstall()
+            self.assertEqual(store.conflicts, [])
+            self.assertEqual(json.loads(target.read_text()), {"hooks": {"SessionStart": [self.USER_HOOK]}})
+        with tempfile.TemporaryDirectory() as temp:
+            target, store, _ = self.hook_store(Path(temp))
+            store.uninstall()
+            self.assertEqual(json.loads(target.read_text()), {"hooks": {}})
+        with tempfile.TemporaryDirectory() as temp:
+            target, store, _ = self.hook_store(Path(temp), prior=[])
+            store.uninstall()
+            self.assertEqual(json.loads(target.read_text()), {"hooks": {"SessionStart": []}})
+
+    def test_a_record_written_before_hook_lists_is_upgraded_at_the_next_sync(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); target = root / "settings.json"
+            target.write_text("{}")
+            store = reconcile.Store(root / "state")
+            paths = [["hooks", "SessionStart"]]
+            store.json(target, {"hooks": {"SessionStart": [self.HARNESS_HOOK]}}, paths)
+            self.assertNotIn("entries", store.data["files"][str(target)]["keys"]['["hooks", "SessionStart"]'])
+            self.add_user_hook(target)
+            self.assertEqual(store.drift(), [])
+            store.json(target, {"hooks": {"SessionStart": [self.USER_HOOK, self.HARNESS_HOOK]}}, paths,
+                       hook_lists=paths)
+            self.assertEqual(store.conflicts, [])
+            self.assertEqual(store.drift(), [])
+
+    def test_uninstall_reads_a_record_written_before_hook_lists_as_shared(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); target = root / "settings.json"
+            target.write_text("{}")
+            store = reconcile.Store(root / "state")
+            store.json(target, {"hooks": {"SessionStart": [self.HARNESS_HOOK]}}, [["hooks", "SessionStart"]])
+            self.add_user_hook(target)
+            store.uninstall()
+            self.assertEqual(store.conflicts, [])
+            self.assertEqual(json.loads(target.read_text()), {"hooks": {"SessionStart": [self.USER_HOOK]}})
+
     def test_interrupted_write_recovers_from_durable_intent(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); target = root / "AGENTS.md"
@@ -106,6 +227,29 @@ class NativeInstallTests(TempHome):
     def sync(self, **options):
         return harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=False,
                                 adopt_codex=options.get("adopt_codex", False), print_only=False))
+
+    def assert_personal_hook_survives(self, hooks_file, event):
+        self.assertEqual(self.sync(), 0)
+        mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": "python3 ~/.claude/hooks/mine.py"}]}
+        live = json.loads(hooks_file.read_text())
+        live["hooks"][event].append(mine)
+        hooks_file.write_text(json.dumps(live, indent=2))
+        self.assertEqual(self.sync(), 0)
+        after = json.loads(hooks_file.read_text())["hooks"][event]
+        self.assertIn(mine, after)
+        self.assertTrue(any(harness._is_harness_entry(entry) for entry in after))
+        self.assertEqual([line for line in harness._diff_lines() if "hooks" in line], [])
+        self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 0)
+        remaining = json.loads(hooks_file.read_text())
+        self.assertEqual(remaining["hooks"][event], [mine])
+        self.assertFalse(any(harness._is_harness_entry(entry)
+                             for entries in remaining["hooks"].values() for entry in entries))
+
+    def test_a_personal_hook_survives_sync_diff_and_uninstall(self):
+        self.assert_personal_hook_survives(self.home / ".claude" / "settings.json", "PostToolUse")
+
+    def test_a_personal_codex_hook_survives_sync_diff_and_uninstall(self):
+        self.assert_personal_hook_survives(self.home / ".codex" / "hooks.json", "PreToolUse")
 
     def test_session_override_does_not_change_global_projections(self):
         with patch.dict(harness.os.environ, {"HARNESS_STANCE_DELEGATION": "off"}):

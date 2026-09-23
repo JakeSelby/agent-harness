@@ -69,10 +69,7 @@ POSTURES = {
     "auto": {"claude": "auto", "vscode": None, "codex": ("on-request", "workspace-write")},
     "manual": {"claude": "default", "vscode": "default", "codex": ("on-request", "read-only")},
 }
-HARNESS_HOOK_BASENAMES = [
-    "validate-plan-card.py", "allow-readonly-bash.py", "harness-session.py",
-    "neutralize-tool-output.py",
-]
+HARNESS_HOOK_BASENAMES = reconcile.HARNESS_HOOK_BASENAMES
 LEGACY_RULES = [
     "decisions-and-plans.md", "delegation.md", "git-conventions.md", "licensing.md",
     "research-limits.md", "transcript-hygiene.md", "voice-and-format.md", "working-style.md",
@@ -433,22 +430,10 @@ def posture(cfg: Dict[str, Any]) -> str:
 # --------------------------------------------------------------------------- settings merge
 
 
-def _hook_marker(entry: Dict[str, Any]) -> Optional[str]:
-    for h in entry.get("hooks", []):
-        m = re.search(r"# harness:([a-z0-9-]+)", h.get("command", ""))
-        if m:
-            return m.group(1)
-    return None
-
-
-def _is_harness_entry(entry: Dict[str, Any]) -> bool:
-    if _hook_marker(entry):
-        return True
-    for h in entry.get("hooks", []):
-        cmd = h.get("command", "")
-        if any(b in cmd for b in HARNESS_HOOK_BASENAMES):
-            return True
-    return False
+# Which hook entries are the harness's own is decided once, in the reconciler, because
+# the ownership journal needs the same answer at sync, drift and uninstall.
+_hook_marker = reconcile.hook_marker
+_is_harness_entry = reconcile.is_harness_hook_entry
 
 
 def harness_output_styles() -> Dict[str, str]:
@@ -1407,7 +1392,8 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])
                        if k != "outputStyle" or style is not None or was_installed is not None]
         owned_paths += [["permissions", "allow"], ["permissions", "defaultMode"]]
-        owned_paths += [["hooks", event] for event in template.get("hooks", {})]
+        hook_paths = [["hooks", event] for event in template.get("hooks", {})]
+        owned_paths += hook_paths
         native_paths, native_notices = apply_native_claude(merged, live, held, telemetry, cfg, ownership)
         owned_paths += native_paths
         report.extend(native_notices)
@@ -1420,7 +1406,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         elif native_paths:
             say("  native  telemetry.native no longer names claude-code; removing the Claude "
                 "telemetry settings sync added")
-        store.json(settings_file, merged, owned_paths)
+        store.json(settings_file, merged, owned_paths, hook_lists=hook_paths)
         applied["claude"] = claude_projection(merged, template, installed=style)
         applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template,
                                                 installed=style)
@@ -1481,7 +1467,8 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         for event, entries in hook_template["hooks"].items():
             hook_merged["hooks"][event] = [e for e in hook_live.get("hooks", {}).get(event, [])
                                           if not _is_harness_entry(e)] + entries
-        store.json(hook_file, hook_merged, [["hooks", event] for event in hook_template["hooks"]])
+        hook_paths = [["hooks", event] for event in hook_template["hooks"]]
+        store.json(hook_file, hook_merged, hook_paths, hook_lists=hook_paths)
         say("  codex   hooks registered; native hook trust must be accepted in the client")
         skills_home = home() / ".agents" / "skills"
         for skill in sorted((REPO / "primitives" / "skills").iterdir()):
