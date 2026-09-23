@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `docs/spikes/registry-reload-2026-09-22.md` records whether a session that started before the
+  band workers were installed can ever route to them. Measured on this client: an interactive
+  session reloads its agent registry within seconds of a definition appearing, a headless one
+  never does, and both cases are stated in the session's own transcript as an
+  `agent_listing_delta` attachment. So the conservative gate stays as the floor and gains a
+  second source that needs no guess about which kind of session it is in; the code change is
+  the follow-up the record names (#263).
+
 ### Fixed
 
 - The repository's own copy states the figures its code holds. The landing copy said nineteen
