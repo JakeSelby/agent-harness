@@ -123,8 +123,24 @@ role carries** — the same figures `brief-guard` writes into a brief — so an 
 subtraction on one row rather than a join against whatever the cost table says today. They are
 read from the table at the moment the row is written, not from the brief, which no scan can
 see; a role nothing prices, a table that will not build and a Codex subagent all record `null`,
-because a zero would say the spawn was budgeted nothing. These rows carry the same tokens a
-second time, attributed, which is why no grouping sums both them and their session.
+because a zero would say the spawn was budgeted nothing. `return_path` and
+`return_over_budget` measure the return this row's spawn handed back, joined to the parent's
+`Agent` call on the same `tool_use_id`: whether it named a path that existed under the worktree
+or the scratchpad at the moment the row was written (`"resolvable"`, `"unresolvable"`, or
+`"none"` for a return that named no path at all, which is a fact and not a failure), and
+whether its word count passed the cap its brief stated — the number beside the word `words` in
+the cap `rule-detectors` reads, or the 400-word default `brief-guard` appends to a brief that
+states none. A path counts when it is quoted, in a fence or in backticks, or when bare prose
+gives it a path's own shape: a root, a relative prefix, or an extension on its last segment, so
+`pass/fail` and `2026/09/22` are prose and a URL is nobody's file here. Both fields are `null`
+when the scan could not measure them: no parent call to join on, an empty return, an empty
+brief, a spawn whose `requested_type` carries its cap in its own definition, or a Codex row,
+whose runtime joins no return at all. A result the scan kept only the first 64 KB of records
+`return_measured: "truncated"` instead, because a word count over the head of a return is not a
+word count of the return. The match is a string match and the resolution an `os.path.exists`;
+no model judges the return here. These rows
+carry the same tokens a second time, attributed, which is why no grouping sums both them and
+their session.
 
 **`kind: "worker"`** — one row per completed `harness role run` worker, with the role name as
 `agent_type`. A worker is an isolated CLI session; its runtime reports what the run cost in the
@@ -247,7 +263,23 @@ waiting for that record, and the line says `(so far)` when it never comes. Whate
 printed, the settled one the stop records afterwards raises the session totals — the agent is
 never named a second time, and the session total is never below the sum of the final figures.
 
-Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
+A prompt also carries one line about the session itself when its context has grown past a size
+the posture calls a full session: `usage-feed: session context 120,000 tokens, past the
+fresh-session threshold of 100,000 — finish the task, write the handoff, start a fresh session`.
+The size is the newest response's input tokens plus the prefix it read from the cache and the
+prefix it wrote into it, which is what every further turn re-reads and what a long session mostly
+costs; the turn line shows none of that.
+
+It is said once per threshold and not once per turn: a session that stays above one is silent
+until it reaches the next, and a resume — or a transcript whose identity changed, which makes the
+reader start over — reads the thresholds already said back out of the state file. A context that
+falls back under a threshold, which is what an in-place compaction does, arms that threshold
+again, because crossing it a second time is a crossing nobody has been told about. The line names
+the highest threshold newly crossed, never one already fed. A context no response has reported
+yet is no crossing, so nothing is said rather than a size of zero being invented. Like every
+other line here it is soft: nothing is blocked.
+
+Five settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
 number of its own:
 
 - `turn_feed: "off"` — nothing is injected anywhere and no file is written.
@@ -257,6 +289,10 @@ number of its own:
   ship this.
 - `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
   means never.
+- `session_nudge_at` — the context sizes, in whole tokens, smallest first and none repeating,
+  that the fresh-session line is said at. `frugal` ships 80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` an empty list, which
+  means never. Those figures are starting points chosen against a 200,000-token window, not
+  measured ones: the follow-up to #321 replaces them with sizes read out of the ledger.
 - `max_parallel` — the width the running-agent note measures against. `null`, which `max` ships,
   means the note never appears.
 
@@ -300,8 +336,9 @@ through role-run workers.
 ### The session registry
 
 One more directory sits beside the feed's, `~/.local/state/agent-harness/sessions/`, written by
-session start rather than by any measurement: one small file per session naming the agent
-definitions that session's registry held, which is what decides whether an unnamed spawn can be
+session start and by a spawn that learns of a reload rather than by any measurement: one small
+file per session naming the agent
+definitions that session's registry held, which is the floor under whether an unnamed spawn can be
 routed to a band worker — see [runtime controls](runtime-controls.md). It holds agent names and a
 timestamp, nothing about the work; the files are owner-only in an owner-only directory, swept
 after a fortnight of not being used, and removed by `harness uninstall`.
@@ -457,6 +494,13 @@ a mean, so it prints three points on the curve; `unmeasured` counts the runs who
 reported no tool-call figure, which are named there rather than averaged in as a zero. A role
 with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
 second-largest of eight, and a budget re-seeded from it is a guess wearing a number.
+
+`path` and `over` are the returns themselves: of the returns that named a path, the share whose
+path resolved; and of the returns measured against a cap, the share that ran past it. A return
+that named no path is in neither figure, so a role whose returns are all one-line verdicts
+prints `-` for `path` rather than `0%`, which would read as a role that wrote paths and got
+them all wrong. A row written before the measurement existed, a Codex row and a return nothing
+could be joined to print `-` too.
 
 `--by day` reads a row's `days` slices when it carries them and falls back to its end date when
 it does not, so a session that ran for a fortnight is spread over the days it spent on. The

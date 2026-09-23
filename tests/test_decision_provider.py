@@ -292,7 +292,7 @@ class RegistryTests(Base):
         with self.assertRaises(decision.PolicyError) as caught:
             decision.select_provider({"governance": {"provider": "hosted"}})
         self.assertIn("hosted", str(caught.exception))
-        self.assertIn("known providers are local, none", str(caught.exception))
+        self.assertIn("known providers are jev, local, none", str(caught.exception))
 
     def test_the_example_config_ships_the_default_the_code_assumes(self):
         example = json.loads((REPO / "config.example.json").read_text(encoding="utf-8"))
