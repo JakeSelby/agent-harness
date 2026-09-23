@@ -6,9 +6,11 @@ import subprocess
 from pathlib import Path
 
 STATES = {"qualified", "unqualified", "planned", "unsupported"}
+TIER_RESTRICTIONS = {"enforced", "advisory", "none"}
 SOURCE_PATHS = ("VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates",
                 "config.example.json")
 FREEZE_STATES = {"open", "frozen"}
+SCOPE_VERSION = 1
 
 
 def qualification_source(data):
@@ -94,6 +96,93 @@ def merge_refusal(root, data, ref):
             + " changes qualified runtime source: " + ", ".join(result["paths"])]
 
 
+def invalidation_declaration(data):
+    """The catalog's validated per-target invalidation scope, or `{}` when none is declared.
+
+    Three claims are declared rather than inferred, because a reviewer has to be able to read
+    them: which directory each runtime owns, which files inside such a directory shared code
+    reads for any runtime, and which files are loaded only for the runtime whose session is
+    running. The first two are enforced by tests/test_adapter_directory_isolation.py; the third
+    is a maintainer's claim about call sites, and docs/compatibility.md says so.
+    """
+    declared = data.get("evidence_invalidation")
+    if not declared:
+        return {}
+    if not isinstance(declared, dict) or declared.get("version") != SCOPE_VERSION:
+        raise ValueError("unsupported evidence invalidation scope version")
+    scopes, known = declared.get("runtime_paths"), {row.get("runtime") for row in data.get("clients") or []}
+    if not isinstance(scopes, dict) or len(scopes) < 2:
+        raise ValueError("evidence invalidation scope requires two or more runtime paths")
+    for runtime in sorted(scopes, key=str):
+        if not isinstance(runtime, str) or runtime not in known:
+            raise ValueError("evidence invalidation scope names a runtime no client runs: "
+                             + str(runtime))
+        if scopes[runtime] != "adapters/" + runtime:
+            raise ValueError("evidence invalidation scope must name each runtime's own adapter "
+                             "directory: " + runtime)
+    shared, private = declared.get("shared_files"), declared.get("runtime_files")
+    for names, label in ((shared, "shared_files"), (private, "runtime_files")):
+        if not isinstance(names, list) or not all(isinstance(name, str) and name and "/" not in name
+                                                  and name not in (".", "..") for name in names):
+            raise ValueError("evidence invalidation " + label + " must be plain file names")
+    if not shared:
+        raise ValueError("evidence invalidation scope requires the shared file names, because a "
+                         "narrowed scope that names none fails open")
+    if set(shared) & set(private):
+        raise ValueError("an adapter file is either shared or per-runtime, never both")
+    return {"runtime_paths": dict(scopes), "shared_files": sorted(shared),
+            "runtime_files": sorted(private)}
+
+
+def runtime_scopes(data):
+    """The adapter directory each runtime owns, as the catalog declares it."""
+    return invalidation_declaration(data).get("runtime_paths", {})
+
+
+def evidence_scope(data, client):
+    """The path set whose change invalidates one client's evidence.
+
+    Shared source always counts, and so do the files under another runtime's adapter directory
+    that shared code reads whatever the runtime. The rest of another runtime's directory does
+    not. A runtime the catalog does not map is excluded from nothing, so an unmapped or
+    undeclared target keeps the whole-source rule and the scope fails closed.
+    """
+    declared = invalidation_declaration(data)
+    scopes = declared.get("runtime_paths", {})
+    excluded, shared = [], []
+    if client.get("runtime") in scopes:
+        excluded = sorted(path for name, path in scopes.items() if name != client["runtime"])
+        shared = sorted(path + "/" + name for path in excluded for name in declared["shared_files"])
+    return {"version": SCOPE_VERSION, "paths": list(SOURCE_PATHS), "excluded": excluded,
+            "shared": shared}
+
+
+def scope_pathspec(scope):
+    """The git pathspec for the source a target's evidence is checked against.
+
+    `literal` magic is what keeps an exclusion from widening: a declared directory is matched as
+    the exact path it is, never as a glob.
+    """
+    return list(scope["paths"]) + [":(exclude,literal)" + path for path in scope["excluded"]]
+
+
+def same_scope(declared, scope):
+    """Whether an evidence record claims exactly the scope the catalog grants its client.
+
+    A record is untrusted input, so a malformed claim is one more scope the catalog does not
+    grant rather than a traceback.
+    """
+    if not isinstance(declared, dict) or declared.get("version") != scope["version"]:
+        return False
+    for key in ("paths", "excluded", "shared"):
+        names = declared.get(key)
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            return False
+        if sorted(names) != sorted(scope[key]):
+            return False
+    return True
+
+
 def catalog(root):
     data = json.loads((root / "compatibility" / "catalog.json").read_text())
     if data.get("schema_version") != 1:
@@ -103,6 +192,7 @@ def catalog(root):
     identifiers = [row["id"] for row in data["clients"]]
     if len(identifiers) != len(set(identifiers)):
         raise ValueError("duplicate compatibility client")
+    runtime_scopes(data)
     target = qualification_source(data)
     if target != "HEAD":
         available = subprocess.run(["git", "-C", str(root), "cat-file", "-e", target + "^{commit}"],
@@ -112,6 +202,9 @@ def catalog(root):
     for row in data["clients"]:
         if row.get("status") not in STATES:
             raise ValueError("invalid compatibility status")
+        # A truthy string here would silently claim enforcement for a surface that has no hooks.
+        if not isinstance(row.get("installs_hooks", True), bool):
+            raise ValueError(row["id"] + ": installs_hooks must be true or false")
         if row["status"] == "qualified":
             errors = evidence_errors(root, data, row)
             if errors:
@@ -122,6 +215,7 @@ def catalog(root):
 def evidence_errors(root, data, client):
     errors, passed = [], set()
     target = qualification_source(data)
+    scope = evidence_scope(data, client)
     if not client.get("runtime_version") or not client.get("client_version"):
         errors.append("native runtime and client versions are required")
     for item in client.get("evidence", []):
@@ -155,9 +249,20 @@ def evidence_errors(root, data, client):
         if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             errors.append("native evidence requires a full source commit identity")
             continue
+        declared = record.get("invalidation_scope")
+        if declared is not None and not same_scope(declared, scope):
+            errors.append("evidence claims an invalidation scope the catalog does not grant")
+            continue
+        paths = scope_pathspec(scope) if declared is not None else list(SOURCE_PATHS)
+        # The carve-out cannot ride in the same pathspec: a git exclusion wins over every
+        # positive pattern, so the shared files inside an excluded directory need their own diff.
+        carved = scope["shared"] if declared is not None else []
         ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, target], capture_output=True)
         unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target, "--",
-                                    *SOURCE_PATHS], capture_output=True)
+                                    *paths], capture_output=True)
+        if carved and not unchanged.returncode:
+            unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target,
+                                        "--", *carved], capture_output=True)
         if ancestry.returncode or unchanged.returncode:
             errors.append("runtime source changed or evidence commit is unavailable")
             continue
@@ -211,6 +316,32 @@ def capability_entries(root, runtime):
     if "role_execution" in data:
         entries["role_execution"] = data["role_execution"]
     return entries
+
+
+def tier_restriction(root, client):
+    """Whether the model-tier ceiling binds one client surface, and what makes it bind.
+
+    Enforcement is a hook rewriting a spawn, so a surface that installs no hooks resolves to the
+    adapter's `without_hooks` entry instead: the same prose, none of the refusal. A runtime with
+    no adapter, or none declaring the key, restricts nothing.
+    """
+    runtime = str(client.get("runtime"))
+    path = root / "adapters" / runtime / "capabilities.json"
+    entry = json.loads(path.read_text()).get("tier_restriction") if path.is_file() else None
+    if not isinstance(entry, dict):
+        return {"state": "none", "mechanism": None}
+    # Both branches are validated whichever one this client takes, so a typo in the fallback is
+    # not discovered by the one surface that reads it.
+    resolved = entry
+    for candidate in (entry, entry.get("without_hooks")):
+        if candidate is None:
+            continue
+        if not isinstance(candidate, dict) or candidate.get("state") not in TIER_RESTRICTIONS:
+            raise ValueError(runtime + " declares an unknown tier restriction: "
+                             + json.dumps(candidate))
+        if candidate is not entry and client.get("installs_hooks", True) is False:
+            resolved = candidate
+    return {"state": resolved["state"], "mechanism": resolved.get("mechanism")}
 
 
 def capability_states(root, data, client):
