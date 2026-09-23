@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 18,
-    "story": 219,
+    "story": 225,
     "task": 26,
     "bug": 72,
     "chore": 57,
@@ -5016,6 +5016,19 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S224",
+      "github_number": 703,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/703",
+      "title": "Scripted cases drive the CLI with the contract it actually has: role run, task save, uninstall",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S224.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     }
   ]
