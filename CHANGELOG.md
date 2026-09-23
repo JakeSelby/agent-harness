@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
+  single-coordinator for some time — a sync registers one command per lifecycle event and
+  `runtime_template()` takes that registration from `lib/harness_core/lifecycle.py` — so the
+  eleven per-policy entries the file still listed were replaced unread at every sync, and an
+  entry added there by hand would have been silently discarded. `docs/how-it-works.md` now
+  describes the model: why one process per event rather than one per policy, where precedence is
+  decided, and how the coordinator fails closed. No installed settings file changes, because what
+  sync wrote was already the coordinator registration (#521).
+
 ### Fixed
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed

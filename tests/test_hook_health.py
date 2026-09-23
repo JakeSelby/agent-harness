@@ -18,8 +18,6 @@ spec = importlib.util.spec_from_loader("harness", loader)
 harness = importlib.util.module_from_spec(spec)
 loader.exec_module(harness)
 
-TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
-
 
 @contextlib.contextmanager
 def loud():
@@ -39,8 +37,10 @@ def settings(command):
 
 
 class HookCommandTests(unittest.TestCase):
-    def test_every_template_hook_command_is_found(self):
-        self.assertEqual(len(harness.hook_commands(TEMPLATE)), 11)
+    def test_every_registered_hook_command_is_found(self):
+        # One coordinator command per lifecycle event, so the count follows the event list.
+        template = harness.runtime_template()
+        self.assertEqual(len(harness.hook_commands(template)), len(template["hooks"]))
 
     def test_no_hooks_block_is_no_commands(self):
         self.assertEqual(harness.hook_commands({}), [])

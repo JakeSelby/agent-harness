@@ -137,20 +137,12 @@ class SettingsMergeTests(unittest.TestCase):
             {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "python3 /somewhere/validate-plan-card.py"}]},
             {"matcher": "Write", "hooks": [{"type": "command", "command": "echo mine"}]},
         ]}}
-        merged = harness.merge_claude_settings(legacy, TEMPLATE, CFG)
+        merged = harness.merge_claude_settings(legacy, harness.runtime_template(), CFG)
         post = merged["hooks"]["PostToolUse"]
         commands = [h["command"] for e in post for h in e["hooks"]]
-        self.assertEqual(len([c for c in commands if "validate-plan-card" in c]), 1)
+        self.assertEqual([c for c in commands if "validate-plan-card" in c], [])
         self.assertIn("echo mine", commands)
-        self.assertTrue(any("# harness:plan-card" in c for c in commands))
-
-    def test_plan_card_hook_follows_stance(self):
-        cfg = json.loads(json.dumps(CFG))
-        cfg["stances"]["plan-ceremony"] = "light"
-        merged = harness.merge_claude_settings({}, TEMPLATE, cfg)
-        commands = [h["command"] for entries in merged["hooks"].values() for e in entries for h in e["hooks"]]
-        self.assertFalse(any("plan-card" in c for c in commands))
-        self.assertTrue(any("readonly-bash" in c for c in commands))
+        self.assertTrue(any("# harness:runtime-posttooluse" in c for c in commands))
 
     def test_strip_removes_only_harness_material(self):
         merged = harness.merge_claude_settings({"model": "m", "permissions": {"allow": ["Bash(mine)"]}}, TEMPLATE, CFG)
