@@ -1,0 +1,8 @@
+# Digest: issue #135 (epic)
+
+- {claim: 'Outcome: provider answers typed questions about judgments hooks already make, beside the deterministic check, promoted per point only on labels the harness observes; every path fails open', source: https://github.com/JakeSelby/agent-harness/issues/135, publisher: agent-harness, pub_date: 2026-09-21, accessed: 2026-09-23, confidence: high, class: harness-state}
+- {claim: 'Modes off->shadow->advise->act; in 0.13.0 act may only tighten; never relaxes a deny, never sees grade 2+, never overrides a named role', source: https://github.com/JakeSelby/agent-harness/issues/135, publisher: agent-harness, pub_date: 2026-09-21, accessed: 2026-09-23, confidence: medium, class: harness-state}
+- {claim: '#371 label-yield spike: far below the bar, so #377 hand-labels seed fixtures; #377 is the long pole', source: https://github.com/JakeSelby/agent-harness/issues/135, publisher: agent-harness, pub_date: 2026-09-21, accessed: 2026-09-23, confidence: medium, class: harness-state}
+- {claim: 'Acceptance: per-point agreement, calibration, cost, latency on held-out; a point reaches advise only by meeting its written criterion; shadow adds no context tokens', source: https://github.com/JakeSelby/agent-harness/issues/135, publisher: agent-harness, pub_date: 2026-09-21, accessed: 2026-09-23, confidence: high, class: harness-state}
+- {claim: 'Original proposal led with skill selection and response-style; #141 deferred; #146 broad action-risk screening retired', source: https://github.com/JakeSelby/agent-harness/issues/135, publisher: agent-harness, pub_date: 2026-09-19, accessed: 2026-09-23, confidence: high, class: harness-state}
+- dropped under public-safety rules: 1 item
