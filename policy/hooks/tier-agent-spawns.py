@@ -212,19 +212,28 @@ def is_bare(tool_input):
     return not tool_input.get("model") and is_unnamed(tool_input)
 
 
-def announced(module, transcript, kind):
+def announced(module, session, transcript, kind):
     """Whether this session was told, after it started, that it resolves `kind`.
 
     The runtime's own statement outranks the record written at session start, because it is
     later and it is about this session: a session that reloaded nothing announces nothing, so
-    this can only ever widen what routes. An older `posture.py` beside this hook has no reader
-    and answers no, which is the conservative gate.
+    this can only ever widen what routes. The transcript is the discovery path and the record
+    is the memory — the tail read is bounded, so what it found is kept where the next spawn can
+    read it without the delta still being in the tail. An older `posture.py` beside this hook
+    answers no, which is the conservative gate.
     """
-    reader = getattr(module, "transcript_agents", None) if module else None
-    if reader is None:
+    if module is None:
         return False
+    reader = getattr(module, "transcript_agents", None)
+    keeper = getattr(module, "remember_agents", None)
+    remembered = getattr(module, "session_announced", None)
     try:
-        return kind in (reader(transcript) or ())
+        names = reader(transcript) if reader else None
+        if names is None:
+            names = remembered(session) if remembered else None
+        elif keeper:
+            keeper(session, names)
+        return kind in (names or ())
     except Exception:
         return False
 
@@ -264,7 +273,7 @@ def routable(kind, cwd, session=None, announce=False, transcript=None):
         # out of another session's sweep.
         module.refresh_session_record(session)
     if known is None or kind not in known:
-        if announced(module, transcript, kind):
+        if announced(module, session, transcript, kind):
             return definition(kind, cwd) or {}, None
         notice = (kind + " is installed but this session started before it was; start a new "
                   "session to route unnamed spawns")

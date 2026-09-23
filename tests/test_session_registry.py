@@ -395,7 +395,8 @@ class OlderSiblingTests(RegistryCase):
     routing.
     """
 
-    MISSING = ("session_agents", "note_once", "refresh_session_record")
+    MISSING = ("session_agents", "note_once", "refresh_session_record",
+               "transcript_agents", "session_announced", "remember_agents")
 
     def hook(self, path, name):
         spec = importlib.util.spec_from_file_location(name, str(path))

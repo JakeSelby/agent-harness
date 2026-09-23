@@ -14,11 +14,11 @@ spawn outright. Is there a signal a hook can read that says a session which star
 `harness sync` installed the workers can now resolve them — or does none exist, leaving the gate
 permanent?
 
-## Machine
+## Clients
 
-Apple M5 Pro, 24 GiB, macOS 26.5 (Darwin 25.5.0). Claude Code 2.1.278 for the headless probes;
-the client self-updated to 2.1.280 during the interactive ones. Codex CLI 0.155.0-alpha.9.2 was
-not exercised, for the reason under "Not run". Eight sessions, about $4 of usage.
+Claude Code 2.1.278 for the headless probes; the client self-updated to 2.1.280 during the
+interactive ones, on macOS. Codex CLI 0.155.0-alpha.9.2 was not exercised, for the reason under
+"Not run". Eight sessions in all.
 
 ## Experiment
 
@@ -68,8 +68,10 @@ see what a hook is told.
 The conservative gate stays as the floor, and the session record gained a second source in the
 same change: `posture.transcript_agents` reads the `agent_listing_delta` attachments in the
 session's own transcript, over a bounded tail, and `routable()` in the spawn hook routes to a
-worker the record predates when a later delta names it. Only records with `isInitial` false
-count, and `addedTypes` and `removedTypes` are applied in the order they were written. Run against
+worker the record predates when a later delta names it. Only this session's own attachment records
+count, `addedTypes` and `removedTypes` are applied in the order they were written, an `isInitial`
+listing replaces everything before it, and what the tail found is kept in the session record so
+routing survives the delta scrolling out of a bounded read. Run against
 the transcripts these probes left behind, the reader answers `["probe-iota"]` for the interactive
 session that reloaded and `None` for the headless one that could not.
 

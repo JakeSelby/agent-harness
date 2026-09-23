@@ -144,17 +144,24 @@ def transcript_agents(transcript_path, limit=TRANSCRIPT_TAIL_BYTES):
     except OSError:
         return None
     names = None
-    for line in tail.splitlines():
+    # One record per line, so only `\n` ends one: a body holding a line separator of its own
+    # must not be read as two half-records.
+    for line in tail.split("\n"):
         if AGENT_LISTING not in line:
             continue
         try:
             record = json.loads(line)
         except ValueError:
             continue
-        listing = record.get("attachment") if isinstance(record, dict) else None
+        if not isinstance(record, dict) or record.get("type") != "attachment" or record.get("isSidechain"):
+            continue
+        listing = record.get("attachment")
         if not isinstance(listing, dict) or listing.get("type") != AGENT_LISTING:
             continue
         if listing.get("isInitial"):
+            # A listing a session starts from replaces everything before it, exactly as a
+            # `startup` replaces the record: what an earlier session resolved is not this one's.
+            names = None
             continue
         names = set() if names is None else names
         for key, apply in (("addedTypes", names.add), ("removedTypes", names.discard)):
@@ -241,6 +248,30 @@ def session_agents(session_id, env=None):
     record = read_session_record(session_id, env)
     names = record.get("agents") if record else None
     return [name for name in names if isinstance(name, str)] if isinstance(names, list) else None
+
+
+def session_announced(session_id, env=None):
+    """The types a reload told this session about on an earlier spawn; `[]` when none did."""
+    record = read_session_record(session_id, env)
+    names = record.get("announced") if record else None
+    return [name for name in names if isinstance(name, str)] if isinstance(names, list) else []
+
+
+def remember_agents(session_id, names, env=None):
+    """Keep what a reload announced, so routing outlives the transcript tail. `True` when written.
+
+    The transcript is where an announcement is discovered and the read of it is bounded, so a
+    long session pushes the delta out of the tail; routing that switched off there would be the
+    same defect again on a slower clock. The remembered set is replaced rather than merged,
+    because the reader's answer already accounts for every `removedTypes` in the tail, and a
+    merge would reinstate a worker the session has been told it no longer resolves.
+    """
+    wanted = sorted({name for name in names if isinstance(name, str)}) if names else []
+    record = read_session_record(session_id, env)
+    record = {} if record is None else record
+    if record.get("announced") == wanted:
+        return False
+    return write_session_record(session_id, dict(record, announced=wanted, at=int(time.time())), env)
 
 
 def refresh_session_record(session_id, env=None, older_than=SESSION_REFRESH_SECONDS):

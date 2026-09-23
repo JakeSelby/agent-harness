@@ -12,10 +12,11 @@ Run: python3 -m unittest discover tests
 """
 import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
-from test_session_registry import RegistryCase, WORKERS
+from test_session_registry import GUARD_HOOK, RegistryCase, WORKERS
 
 REPO = Path(__file__).resolve().parent.parent
 POSTURE = REPO / "claude" / "hooks" / "posture.py"
@@ -88,9 +89,45 @@ class GateTests(DeltaCase):
     def test_a_malformed_transcript_leaves_the_gate_closed(self):
         self.install_workers()
         self.record("reviewer")
-        self.announce('{"attachment": {"type": "agent_listing_delta", "addedTypes"',
-                      '{"attachment": {"type": "agent_listing_delta", "addedTypes": "worker-b"}}',
+        self.announce('{"type": "attachment", "attachment": {"type": "agent_listing_delta"',
+                      json.dumps({"type": "attachment", "attachment": {
+                          "type": "agent_listing_delta", "addedTypes": {"worker-b": 1}}}),
                       "agent_listing_delta")
+        self.assertIsNone(self.routed(self.spawn()))
+
+    def test_a_sidechain_delta_is_not_this_session_talking(self):
+        # A subagent's own records ride the same file; its listing is not the parent's.
+        self.install_workers()
+        self.record("reviewer")
+        self.announce(json.dumps({"type": "attachment", "isSidechain": True, "attachment": {
+            "type": "agent_listing_delta", "addedTypes": ["worker-b"], "isInitial": False}}))
+        self.assertIsNone(self.routed(self.spawn()))
+
+    def test_an_initial_listing_after_a_delta_replaces_it(self):
+        # A session starting from a listing resolves that listing and nothing an older one added.
+        self.install_workers()
+        self.record("reviewer")
+        self.announce(listing(["worker-b"]), listing(["reviewer"], initial=True))
+        self.assertIsNone(self.routed(self.spawn()))
+
+    def test_routing_outlives_the_delta_falling_out_of_the_tail(self):
+        # The read is bounded, so a busy session scrolls the announcement away; routing that
+        # stopped there would be the same defect again, on a slower clock.
+        self.install_workers()
+        self.record("reviewer")
+        self.announce(listing(["worker-b"]))
+        self.assertEqual(self.routed(self.spawn()), "worker-b")
+        self.announce(json.dumps({"type": "user", "message": {"role": "user", "content": "x" * 300000}}))
+        self.assertIsNone(posture().transcript_agents(str(self.transcript)))
+        self.assertEqual(self.routed(self.spawn()), "worker-b")
+
+    def test_a_worker_removed_again_is_forgotten_as_well(self):
+        # The memory is replaced by what the tail says, never merged with it.
+        self.install_workers()
+        self.record("reviewer")
+        self.announce(listing(["worker-b"]))
+        self.assertEqual(self.routed(self.spawn()), "worker-b")
+        self.announce(listing([], removed=["worker-b"]))
         self.assertIsNone(self.routed(self.spawn()))
 
     def test_a_missing_transcript_leaves_the_gate_closed(self):
@@ -100,6 +137,25 @@ class GateTests(DeltaCase):
         self.assertIsNone(self.routed(self.spawn()))
 
 
+class GuardTests(DeltaCase):
+    """The pricing hook asks the same question, so a spawn is never priced by another band."""
+
+    def prompt(self):
+        return self.spawn(hook=GUARD_HOOK)["hookSpecificOutput"]["updatedInput"]["prompt"]
+
+    def test_a_delta_prices_the_spawn_by_the_band_it_will_be_routed_to(self):
+        self.install_workers()
+        self.record("reviewer")
+        self.announce(listing(["worker-b"]))
+        self.assertIn("about 39,000 output tokens", self.prompt())  # band B
+
+    def test_a_session_told_nothing_is_still_priced_by_nothing(self):
+        self.install_workers()
+        self.record("reviewer")
+        self.announce(listing(WORKERS, initial=True))
+        self.assertNotIn("Expected spend", self.prompt())
+
+
 class ReaderTests(unittest.TestCase):
     """`posture.transcript_agents` answers unknown rather than empty whenever it cannot tell."""
 
@@ -107,7 +163,6 @@ class ReaderTests(unittest.TestCase):
         self.posture = posture()
 
     def read(self, *lines):
-        import tempfile
         tmp = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
         self.addCleanup(lambda: Path(tmp.name).unlink())
         tmp.write("".join(line + "\n" for line in lines))
@@ -124,6 +179,19 @@ class ReaderTests(unittest.TestCase):
 
     def test_an_initial_listing_alone_is_unknown(self):
         self.assertIsNone(self.read(listing(WORKERS, initial=True)))
+
+    def test_an_initial_listing_resets_what_earlier_deltas_added(self):
+        self.assertIsNone(self.read(listing(["worker-b"]), listing(["reviewer"], initial=True)))
+        self.assertEqual(self.read(listing(["worker-b"]), listing(["reviewer"], initial=True),
+                                   listing(["worker-c"])), ["worker-c"])
+
+    def test_a_record_that_is_not_an_attachment_of_this_session_is_ignored(self):
+        self.assertIsNone(self.read(
+            json.dumps({"type": "user", "attachment": {"type": "agent_listing_delta",
+                                                       "addedTypes": ["worker-b"]}}),
+            json.dumps({"type": "attachment", "isSidechain": True,
+                        "attachment": {"type": "agent_listing_delta",
+                                       "addedTypes": ["worker-b"]}})))
 
     def test_no_transcript_is_unknown(self):
         self.assertIsNone(self.posture.transcript_agents(None))
