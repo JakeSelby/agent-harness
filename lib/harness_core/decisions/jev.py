@@ -21,10 +21,10 @@ same. And `JevProvider.decide` fails open: a missing key, a timeout, an exhauste
 malformed response or an unexpected exception all return the deterministic provider's decision
 unchanged, annotated with why the judgment was not available.
 
-`JevProvider` may tighten a deterministic `allow` into an `ask` and may never widen anything.
-Selecting when it is consulted at all — per-decision-point modes, a sentinel file that disables
-every call, and the field allowlist for outbound state — is #137; the client here is not live
-unless a caller constructs it with `live=True`, so selecting this provider today calls nothing.
+`JevProvider` may tighten a deterministic `allow` into an `ask` and may never widen anything,
+and only where `harness_core.decisions.controls` says it may: that module holds the
+per-decision-point modes, the sentinel file that disables every call and the allowlist for
+outbound state, and a configuration that names none of them leaves every point `off`.
 """
 import hashlib
 import json
@@ -38,6 +38,8 @@ import urllib.request
 from typing import Any, Dict, Optional
 
 from .. import decision
+from . import controls
+from .controls import Controls
 
 # Everything in this block — the endpoint, the default model id, the token ceilings, the
 # response shape and the HTTP status mapping below — is taken from the vendor's documentation
@@ -67,8 +69,9 @@ STATUSES = ("ok", "unknown", "unavailable", "error")
 DEFAULT_THRESHOLD = 0.8
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 MODEL_NAME = re.compile(r"[A-Za-z0-9_.-]{1,80}")
-# Read from the environment only. The harness never reads a key file.
-KEY_VARIABLES = ("TYPESAFE_API_KEY", "JEV_API_KEY")
+# Read from the environment only. The harness never reads a key file. The names live with
+# the rest of the opt-in controls, because a report has to name them without loading this.
+KEY_VARIABLES = controls.KEY_VARIABLES
 
 
 class PackError(ValueError):
@@ -509,10 +512,10 @@ DECISION_PACK = {
     },
 }
 
-# The state fields a caller's context may contribute. Deliberately a fixed list rather than a
-# configurable one: what a user may add to it is #137, and until that lands the outbound shape
-# is whatever this module wrote and nothing else.
-STATE_FIELDS = ("command", "summary")
+# The state fields a caller's context may contribute, and the ceiling on each. The list is
+# the allowlist's whole vocabulary: `controls.Controls` decides which of them a configuration
+# actually lets out, and no other key of a context is ever built into a request.
+STATE_FIELDS = controls.STATE_FIELDS
 MAX_STATE_FIELD = 4096
 
 
@@ -529,17 +532,20 @@ def require_decision_questions(pack: Dict[str, Any]) -> Dict[str, Any]:
     return pack
 
 
-def decision_state(action, counterparty: str,
-                   context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """The state for one governance question: the action, the counterparty, and two strings."""
+def decision_state(action, counterparty: str, context: Optional[Dict[str, Any]] = None,
+                   allowlist: Optional["controls.Controls"] = None) -> Dict[str, Any]:
+    """The state for one governance question: the action, the counterparty, and what is allowed.
+
+    Everything past the four base fields comes from `allowlist.outbound`, so a context key no
+    configuration listed has no way into the request — not trimmed on the way out, never built.
+    """
+    allowlist = controls.Controls.acting() if allowlist is None else allowlist
     state = {"action_class": action.action_class, "counterparty": str(counterparty),
              "grade": action.grade, "grade_scale": "0 reversible to 3 irreversible; "
              "an unknown grade is judged as 1"}
-    for name in STATE_FIELDS:
-        value = (context or {}).get(name)
-        if isinstance(value, str) and value.strip():
-            state[name] = value[:MAX_STATE_FIELD]
-    return state
+    for name, value in allowlist.outbound(context).items():
+        state[name] = value[:MAX_STATE_FIELD]
+    return allowlist.check_outbound(state)
 
 
 class JevProvider(decision.DecisionProvider):
@@ -556,6 +562,13 @@ class JevProvider(decision.DecisionProvider):
     deterministic decision unchanged. A failure of the advisory half must never become a
     failure of the permission answer.
 
+    What happens at all is the `controls.Controls` this provider was built with, resolved per
+    decision from `context["point"]`: `off` calls nothing and says so, `shadow` calls and
+    writes the ledger row alone, `advise` adds the judgment to `rule_matches` and leaves the
+    outcome where the deterministic provider put it, and `act` is the tightening above. A
+    provider built from a configuration is `off` everywhere until one says otherwise, and the
+    sentinel file is read on every decision, so the kill switch needs no restart.
+
     Each call writes one `event` row to the decision ledger carrying the status, the error code
     where there is one, the requested and returned model ids, the pack and request hashes, the
     usage and the latency — never the state and never an answer's prose. A caller that is only
@@ -569,12 +582,19 @@ class JevProvider(decision.DecisionProvider):
                  variant: Optional[str] = None, target: Optional[str] = None,
                  base: Optional[decision.DecisionProvider] = None, client=None,
                  model: str = DEFAULT_MODEL, budget: Optional[Budget] = None,
-                 threshold: float = DEFAULT_THRESHOLD, pack: Optional[Dict[str, Any]] = None):
+                 threshold: float = DEFAULT_THRESHOLD, pack: Optional[Dict[str, Any]] = None,
+                 config: Optional[Dict[str, Any]] = None,
+                 controls: Optional[Controls] = None):
         self.base = base if base is not None else decision.LocalProvider(
             root=root, policy_path=policy_path, variant=variant, target=target)
-        self.client = client if client is not None else JevClient()
+        self.controls = (controls if controls is not None
+                         else Controls.from_config(config) if config is not None
+                         else Controls.acting())
+        self.client = client if client is not None else JevClient(
+            live=self.controls.live(), timeout=self.controls.timeout)
         self.model = model
-        self.budget = budget
+        self.budget = budget if budget is not None else Budget(self.controls.max_requests,
+                                                               self.controls.max_tokens)
         self.threshold = threshold
         self.pack = require_decision_questions(
             pack if pack is not None else DECISION_PACK)
@@ -583,14 +603,24 @@ class JevProvider(decision.DecisionProvider):
     def decide(self, action, counterparty, context=None):
         base = self.base.decide(action, counterparty, context)
         try:
-            return self._advised(action, counterparty, context, base)
+            point = (context or {}).get("point") if isinstance(context, dict) else None
+            mode = self.controls.mode_for(point if point in controls.POINTS else None)
+            if mode == "off":
+                return self._unchanged(base, "off", "no mode selects "
+                                       + (point or "this decision point"))
+            return self._advised(action, counterparty, context, base, mode)
         except Exception:
             return self._unchanged(base, "unavailable", "provider_error")
 
-    def _advised(self, action, counterparty, context, base):
-        result = ask(self.pack, decision_state(action, counterparty, context), self.client,
+    def _advised(self, action, counterparty, context, base, mode="act"):
+        result = ask(self.pack,
+                     decision_state(action, counterparty, context, self.controls), self.client,
                      model=self.model, budget=self.budget, threshold=self.threshold)
         self._log(action, counterparty, result)
+        if mode == "shadow":
+            # Called, logged, and nothing more: a shadow answer reaches the ledger and neither
+            # the model nor the user, which is what makes it measurable before it is trusted.
+            return base
         if result["status"] != "ok":
             return self._unchanged(base, result["status"], result["error"])
         judgment = result["answers"][JUDGMENT]["choice"]
@@ -602,11 +632,19 @@ class JevProvider(decision.DecisionProvider):
                result["answers"][JUDGMENT]["confidence"]))
         outcome, level = base.outcome, base.autonomy_level
         if judgment == "confirm" and outcome == "allow":
-            outcome, level = "ask", min(level, 2)
-            cognition["agent_message"] = (
-                action.action_class + " on " + counterparty + " was judged worth confirming "
-                "(severity " + severity + "): state the exact command and wait for an explicit "
-                "yes.")
+            if mode == "act":
+                outcome, level = "ask", min(level, 2)
+                cognition["agent_message"] = (
+                    action.action_class + " on " + counterparty + " was judged worth confirming "
+                    "(severity " + severity + "): state the exact command and wait for an "
+                    "explicit yes.")
+            else:
+                # `advise`: the judgment is on screen and the deterministic answer still
+                # decides. What it would have done is said plainly, so a reader can see what
+                # `act` would have cost before selecting it.
+                cognition["rule_matches"].append(
+                    "jev: advise only; `act` would have asked before this " +
+                    action.action_class)
         return decision.Decision(outcome=outcome, autonomy_level=level, provider=self.name,
                                  reason=base.reason + "; jev " + judgment + " -> " + outcome,
                                  injected_cognition=cognition)
