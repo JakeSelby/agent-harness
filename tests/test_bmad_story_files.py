@@ -335,11 +335,12 @@ class UpgradeTests(TempRoot):
 
 
 class RealCorpusTests(unittest.TestCase):
-    def test_every_real_stub_reads_as_legacy(self):
+    def test_every_real_artifact_is_a_legacy_stub_or_a_well_formed_story(self):
+        # Legacy stubs parse as None and upgraded stories parse to a layout; a malformed file raises.
         for item in sync.load_manifest()["items"]:
             text = (REPO / item["artifact_path"]).read_text(encoding="utf-8")
             with self.subTest(item["bmad_id"]):
-                self.assertIsNone(sync.artifact_layout(item, text))
+                sync.artifact_layout(item, text)
 
     def test_every_existing_artifact_converts_without_loss(self):
         manifest = sync.load_manifest()
