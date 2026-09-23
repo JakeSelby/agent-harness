@@ -18,7 +18,9 @@ python3 scripts/cost_bench.py static --write    # refresh benchmarks/static.json
 
 `benchmarks/static.json` is the committed figure for the last release. It records files, lines,
 characters, an estimated token count for the default stance selection and for the longest variant
-of every dimension, the five largest files, and what that many tokens cost per model.
+of every dimension, the five largest files, and what that many tokens cost per model. Its
+`scopes` block names the set each count is over, because the caps `harness lint` prints are
+over a narrower one.
 
 - **Tokens are an estimate:** characters divided by four. It is there to show the trend between
   versions with no tokenizer, network call or API key. It is not a billing figure.

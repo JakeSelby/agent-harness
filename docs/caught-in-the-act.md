@@ -76,10 +76,13 @@ exists only because the number was being kept before the hook shipped.
 
 ## What the instrument cannot show yet
 
-- **Detector validity is assumed, not measured.** There is no labelled corpus, so a hit rate is a
-  rate of the detector firing and not yet a rate of the behaviour.
-  [#455](https://github.com/JakeSelby/agent-harness/issues/455) is the corpus, with precision and
-  recall per detector and a floor that lint can fail on.
+- **Detector validity is measured for six detectors of seventeen.** The vendored `ruleprobe`
+  wheel ships a labelled corpus and a scorer, and the labels cover the six generic detectors the
+  engine ships. The eleven written for this repository's own rules are unscored, and no precision
+  floor runs in this repository's CI.
+  [#522](https://github.com/JakeSelby/agent-harness/issues/522) wires the floor in here and labels
+  the rest; until it lands, a hit rate on those eleven is a rate of the detector firing and not yet
+  a rate of the behaviour.
 - **Per-variant rates are observational.** `--rules --by stance` groups sessions by the variant
   that happened to be selected, chosen by one person for reasons the ledger does not record.
   It says what was seen under a variant, never what the variant caused.

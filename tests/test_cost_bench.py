@@ -781,10 +781,15 @@ class ManifestTests(unittest.TestCase):
 
 
 class OracleTests(unittest.TestCase):
+    # The fixture builds exactly as many modules as the oracle expects, which is the count at the
+    # task's pinned `parent_sha`; `tests/test_s516_stale_claims.py` holds that constant to the glob
+    # at that sha. A repin moves both without a hand-typed number here.
+    MODULES = BENCH._oracle(REPO, "hook_ids").EXPECTED_MODULES
+
     def hooks(self, tmp):
         folder = Path(tmp) / "policy" / "hooks"
         folder.mkdir(parents=True)
-        for index in range(18):
+        for index in range(self.MODULES):
             future = "from __future__ import annotations\n" if index == 0 else ""
             (folder / ("hook-%02d.py" % index)).write_text(
                 '"""Hook %d does  one thing.\n\nMore.\n"""\n%simport os\n\n\ndef run():\n    def inner():\n'
@@ -808,7 +813,7 @@ class OracleTests(unittest.TestCase):
         oracle = BENCH._oracle(REPO, "hook_ids")
         with tempfile.TemporaryDirectory() as tmp:
             root = self.hooks(tmp)
-            self.assertEqual(len(oracle.check(root)), 18)
+            self.assertEqual(len(oracle.check(root)), self.MODULES)
             oracle.solve(root)
             self.assertEqual(oracle.check(root), [])
             first = root / "policy" / "hooks" / "hook-00.py"
