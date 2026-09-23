@@ -72,7 +72,7 @@ class RecordTests(unittest.TestCase):
             data = self.record()
         self.assertEqual(sorted(data), ["cases", "client", "client_version", "harness_version",
                                         "invalidation_scope", "kind", "observations", "platform",
-                                        "runtime_version", "source_commit"])
+                                        "runtime_version", "source_commit", "tier_routing"])
         # The record states the path set it survives, and the validator grants that one only.
         self.assertEqual(data["invalidation_scope"]["excluded"], ["adapters/codex"])
         catalog = MODULE.catalog()

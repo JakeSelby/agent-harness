@@ -38,7 +38,9 @@ class ProgressTests(unittest.TestCase):
                                  progress=self.progress)
 
     def lines(self):
-        return [json.loads(line) for line in self.progress.read_text().splitlines()]
+        """The finished cases on disk; the routing declaration is a line but not a result."""
+        items = [json.loads(line) for line in self.progress.read_text().splitlines()]
+        return [item for item in items if "case" in item]
 
     def killed_after(self, count):
         """A runner that dies on the case after `count` finished ones, as a kill would."""
@@ -64,7 +66,7 @@ class ProgressTests(unittest.TestCase):
         data = MODULE.build_record(MODULE.progress_lines(self.progress))
         self.assertEqual(sorted(data), ["cases", "client", "client_version", "harness_version",
                                         "kind", "observations", "platform", "runtime_version",
-                                        "source_commit"])
+                                        "source_commit", "tier_routing"])
         self.assertEqual(data["cases"], {CASES[0]: "passed"})
         self.assertEqual(data["observations"], ["A native session did " + CASES[0] + "."])
 

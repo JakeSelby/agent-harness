@@ -401,13 +401,15 @@ class ProvisionedRoundTests(unittest.TestCase):
 
     def test_a_target_argv_names_the_frozen_clones_own_runner(self):
         argv = self.driver.target_argv("/round/clone", CLAUDE, "cheapest", "/round/out.json",
-                                       [CLAUDE])
+                                       [CLAUDE], {"execution_class": "standard",
+                                                  "assessment_class": "strong"})
         self.assertIn("/round/clone/scripts/native_acceptance.py", argv)
         self.assertEqual(argv[argv.index("--home-confirmed") + 1], CLAUDE)
 
     def test_confirmation_is_not_passed_through_for_a_target_nobody_confirmed(self):
         argv = self.driver.target_argv("/round/clone", CODEX_CLIENT, None, "/round/out.json",
-                                       [CLAUDE])
+                                       [CLAUDE], {"execution_class": "standard",
+                                                  "assessment_class": "strong"})
         self.assertNotIn("--home-confirmed", argv)
 
     def test_confirming_every_surface_at_once_is_refused(self):

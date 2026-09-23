@@ -32,6 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
+from harness_core import qualification  # noqa: E402  the round's class routing, one definition
 from harness_core import compatibility, frameworks  # noqa: E402  (after ROOT, which locates the package)
 
 VERSION = (ROOT / "VERSION").read_text().strip()
@@ -1766,7 +1767,7 @@ def probe(client, name, model, keep, confirmed=()):
 
 
 HEADER_KEYS = ("kind", "client", "harness_version", "runtime_version", "client_version",
-               "platform", "source_commit")
+               "platform", "source_commit", "tier_routing")
 
 
 def progress_path(client, out):
@@ -1790,6 +1791,49 @@ def append_case(path, header, item):
         handle.write(json.dumps(dict(header, **item), sort_keys=True) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def append_routing(path, header):
+    """Declare the round's class routing before the first case runs.
+
+    A line with no case is not a result and `progress_lines` ignores it; what it does is put the
+    executing and assessing classes on disk before anything they could bias has run, so a round
+    killed in its first case still says who ran it.
+    """
+    if path is None:
+        return
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(str(path), "a") as handle:
+        handle.write(json.dumps(dict(header, declared="tier_routing"), sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def logged_routing(items):
+    """Every distinct routing the surviving lines were logged under."""
+    seen = []
+    for item in items:
+        routing = item.get("tier_routing")
+        if routing not in seen:
+            seen.append(routing)
+    return seen
+
+
+def under_routing(items, tier_routing):
+    """`items` logged under this routing, refusing a log that mixes two of them.
+
+    A record whose cases were produced by two different classes cannot say which class produced
+    an observation, and merging them silently is the one thing the routing is recorded to stop.
+    """
+    keep = [item for item in items if item.get("tier_routing") == tier_routing]
+    others = [one for one in logged_routing(items) if one != tier_routing]
+    if others:
+        raise SystemExit(
+            "the durable log holds cases executed under another class routing (%s); rerun them "
+            "under %s or build from their own log"
+            % ("; ".join(sorted(json.dumps(one, sort_keys=True) for one in others)),
+               json.dumps(tier_routing, sort_keys=True)))
+    return keep
 
 
 def progress_lines(path, header=None):
@@ -1847,10 +1891,23 @@ def selected(names):
     return chosen
 
 
-def plan(client, names, model, confirmed=()):
+def routing(client, execution=None, assessment=None):
+    """This target's class routing, refusing a pair that would make the executor its own reader."""
+    try:
+        return qualification.resolve(ROOT, CLIENTS[client]["runtime"],
+                                     execution or qualification.EXECUTION_DEFAULT,
+                                     assessment or qualification.ASSESSMENT_DEFAULT)
+    except ValueError as error:
+        raise SystemExit(str(error))
+
+
+def plan(client, names, model, confirmed=(), tier_routing=None):
     spec = CLIENTS[client]
+    tier_routing = tier_routing or routing(client)
     lines = ["plan: %s, model %s, one disposable %s per case, no client run"
-             % (client, model, spec["home_var"])]
+             % (client, model, spec["home_var"]),
+             "  tiers: " + qualification.describe(tier_routing)]
+    lines += ["  note: " + note for note in tier_routing.get("notes", [])]
     caveat = unobserved_note(client, confirmed)
     if caveat:
         lines.append("  note: " + caveat)
@@ -1860,8 +1917,10 @@ def plan(client, names, model, confirmed=()):
     return "\n".join(lines)
 
 
-def record(client, names, model, keep, runner=probe, progress=None, confirmed=()):
+def record(client, names, model, keep, runner=probe, progress=None, confirmed=(),
+           tier_routing=None):
     spec = CLIENTS[client]
+    tier_routing = tier_routing or routing(client)
     if git("status", "--porcelain"):
         raise SystemExit("the checkout must be clean: native evidence names a source commit")
     version = client_version(spec["command"])
@@ -1873,7 +1932,11 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
         "client_version": version,
         "platform": spec["platform"],
         "source_commit": git("rev-parse", "HEAD"),
+        # Which class executed these cases and which class must read what they observed. Kept in
+        # the per-case header so a resumed round cannot union lines two classes produced.
+        "tier_routing": tier_routing,
     }
+    append_routing(progress, header)
     results = []
     for name in names:
         item = (runner(client, name, model, keep, confirmed) if name in CASES
@@ -1902,17 +1965,23 @@ def main(argv=None):
     parser.add_argument("--home-confirmed", action="append", default=[], metavar="CLIENT",
                         help="a client whose configuration home was compared against a hand run; "
                              "repeat for each, and never for a surface nobody compared")
+    parser.add_argument("--execution-class", default=qualification.EXECUTION_DEFAULT,
+                        help="the capability class of the worker running the cases")
+    parser.add_argument("--assessment-class", default=qualification.ASSESSMENT_DEFAULT,
+                        help="the capability class of the reader assessing the observations")
     args = parser.parse_args(argv)
     names = selected(args.cases)
+    tier_routing = routing(args.client, args.execution_class, args.assessment_class)
     if args.dry_plan:
-        print(plan(args.client, names, args.model, args.home_confirmed))
+        print(plan(args.client, names, args.model, args.home_confirmed, tier_routing))
         return 0
     progress = args.progress or progress_path(args.client, args.out)
     if args.from_progress:
-        data = scoped(args.client, build_record(progress_lines(progress)))
+        data = scoped(args.client, build_record(under_routing(progress_lines(progress),
+                                                             tier_routing)))
     else:
         data = record(args.client, names, args.model, args.keep_home, progress=progress,
-                      confirmed=args.home_confirmed)
+                      confirmed=args.home_confirmed, tier_routing=tier_routing)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.write_text(rendered)

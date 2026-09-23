@@ -58,6 +58,55 @@ launched, so a runner that exits before writing one reports every case `unverifi
 the previous round's passes, and a target that runs past the round deadline is recorded and
 carried rather than raised — the targets after it still run.
 
+## Which class executes, and which class reads
+
+A round carries two capability classes per target, not one. The **execution class**, `standard`
+by default, is the worker that runs the scripted cases, reads their JSON and writes the findings
+file. The **assessment class**, `strong` by default and a floor rather than a preference, is the
+reader that assesses the round's observations, which [what is supported](compatibility.md)
+requires of a reviewer. Both are written into the evidence record as `tier_routing` and into the
+round's `round.json`, so the record says which class produced an observation and which class read
+it.
+
+```sh
+python3 scripts/qualification_round.py --round ../round-v<version> \
+    --execution-class light --execution-class codex-cli-macos=standard
+```
+
+A bare class moves every target; `TARGET=CLASS` moves the one it names, so a Codex target can be
+executed at a different class from a Claude Code one in the same round. Later arguments win.
+
+The classes are resolved through the target runtime's `adapters/<runtime>/bindings.json`, the
+same table `harness tiers` checks; a personal `tiers.<runtime>` override in a user configuration
+is not applied, because a round runs from a frozen clone. Two refusals, both before any client is
+launched:
+
+- An assessment class weaker than `strong`. A cheaper tier may execute the cases; it does not
+  assess them.
+- A cheap execution class that resolves to the assessment class's own model — because the
+  adapter maps both classes to one identifier, because it spells one model two ways, or because
+  it does not map the cheap class at all and an unmapped class resolves upward. The executor
+  would then be the only reader of the evidence it produced. The two identifiers are compared
+  the way the usage ledger compares them, so a date-stamped id and a bare alias of the same
+  model are one model; the comparison errs towards refusing, and two models an operator means
+  to be different are written as two ids neither of which is a prefix of the other.
+- An assessment class the adapter does not map while the execution class is mapped: the reader
+  would inherit whatever model the session happens to be running, which is no named reader.
+
+An unmapped *execution* class beside a mapped assessor — what asking for a class stronger than
+the assessor's does — is disclosed rather than guessed at: that worker inherits the session
+model and the record carries the note saying so.
+
+The routing is written to the durable per-case log before the first case runs and to
+`round.json` before the smoke tier, so a killed round still records which classes were running.
+`--from-progress` refuses a log whose cases were executed under a different routing rather than
+merging them: a record built from two routings cannot say which class produced an observation.
+
+The saving this buys is the issue's estimate, not a measurement: workers ran 0.7×–1.8× their 82K
+output budget, so four targets cost 230K–590K output tokens per round, most of it authoring
+rather than judgement (#338). It is worth nothing without the scripted cases (#336): dropping the
+class on a worker that is still hand-driving the cases buys worse observations and more retries.
+
 ## Client surfaces
 
 Each surface names the environment variable that moves its whole configuration home, which is
