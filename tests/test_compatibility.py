@@ -15,8 +15,10 @@ class CompatibilityTests(unittest.TestCase):
     def test_current_catalog_is_honest_and_blocks_release_only_for_its_state(self):
         data = compatibility.catalog(REPO)
         required = [row["id"] for row in data["clients"] if row.get("required_for_release")]
+        # 0.13.0 requires three CLI targets. codex-cli-linux is not required: it ships as a
+        # stated limitation because the acceptance runner cannot yet drive it (#612).
         self.assertEqual(required, ["claude-code-cli-macos", "claude-code-cli-linux",
-                                    "codex-cli-macos", "codex-cli-linux"])
+                                    "codex-cli-macos"])
         self.assertFalse(any(row["status"] == "qualified" for row in data["clients"]))
         self.assertTrue(all(row["status"] in compatibility.STATES for row in data["clients"]))
         # The expectation follows the catalog's state so it survives a release without an edit.

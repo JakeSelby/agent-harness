@@ -6,8 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.13.0] — 2026-09-23
-
 ### Added
 
 - Where the qualification targets run and how each is provisioned is now written down, because a
@@ -95,6 +93,45 @@ All notable changes to this project are documented here. The format follows
   per target, because one surface agreeing with a hand run says nothing about another, and on an
   unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
   what is in question there is the reading, not the harness (#336).
+- Every decision-provider call now leaves a `kind: "decision"` row in the usage ledger beside the
+  session rows, carrying the decision point, the mode, the status, the requested and the returned
+  model id, the pack and request hashes, the judgment and severity labels, the deterministic
+  outcome and the one an `act` mode would have reached, the token counts, the latency and the
+  session that asked — and none of the state it sent, no prompt, no file path and no environment
+  value, because the row is built key by key from that list and reads nothing else. The
+  counterparty is part of what goes out in the request and could be a path, so a row keeps it only
+  when it matches the `repo:<name>/<branch>` slug the ledger already derives, within a bounded
+  length, and keeps a short digest of anything else. Exported over OTLP the row travels under
+  `harness.decision.*`, its price included, because its `input` and `usd` in the columns a
+  session's land in would have a backend counting the harness's question as session spend. A
+  judgment costs tokens and holds up a turn, and until now neither figure was anywhere: `harness
+  usage --by provider` prices the calls from `policy/prices.json` like any other row and reports
+  the latency distribution beside the statuses, which are separate columns rather than a success
+  rate — an answer the provider abstained from is not the same event as no answer at all. A call
+  whose usage nobody reported is `partial`, so it is named in the unpriced footer rather than read
+  as free, and the rows are counted on that report alone: their tokens were spent asking a
+  question, not by the session, so adding them to a day or a repo would charge a session for a
+  bill it did not run up. The write is an append under the ledger lock rather than the rewrite a
+  session record does, so a call inside a hook's budget does not re-read and rewrite the whole
+  file. `harness doctor` now also names the model every request pins and what the last call
+  returned, since a provider may answer on a model the harness did not ask for and a report priced
+  at the requested one would then be priced at the wrong rate. `telemetry.decisions` is one switch
+  over both ledgers: off, neither row is written (#139).
+- A labelled corpus for the eleven detectors this repository writes itself, and a `corpus` job
+  beside `test` that scores it. `tests/fixtures/detector-corpus/` holds thirteen synthetic
+  transcripts and the labels over them, five positives and five near-misses per detector bar the one whose positive costs two hundred
+  searches, written
+  by `build_sessions.py` beside them; `scripts/detector_corpus.py --floor 0.9` runs both that
+  corpus and the one inside the vendored `ruleprobe` wheel through the whole registry and exits
+  non-zero when a detector's precision or recall falls under the floor, or when a detector has no
+  labelled example at all. Every row `harness usage --rules` prints now has a measured precision
+  and recall rather than a hit count of unknown quality. Two detectors measure 0.83
+  precision: any basename holding `id_rsa` is a hit for `secrets/git-add-secret-file`, so a runbook
+  named after a key is one, and `autonomy/denied-by-grade` matches the grade hook's signature
+  anywhere in a Bash result, so a grep that prints it is one. The floor stays where it is and each
+  miss is recorded in the corpus with the score and the floor it was measured against, so an
+  improvement or a regression both fail the job until the record is updated, while a run at a
+  lower floor leaves the record dormant rather than stale (#522).
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill
   surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
@@ -260,6 +297,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness lint` no longer reads untracked files under `.agent-harness/`. That directory stays
+  unignored so a handoff can read its plans, so any session's local note naming a project outside
+  `docs/` turned the lint red, and the stop gate with it, for every other session in the same
+  checkout. Tracked files there are still linted, and staging a note brings it back into the lint
+  before it can be committed (#605).
 - Remote Control hosts managed by `harness remote-control` now reuse their environment across a
   restart. Claude Code 2.1.280 reads the folder's bridge pointer only when `createSessionInDir`
   is on, and every host was launched with `--no-create-session-in-dir`, so each restart
@@ -365,7 +407,27 @@ All notable changes to this project are documented here. The format follows
   `<number>.none.md` waiver. Every branch used to edit the same Unreleased section, so any two in
   flight conflicted there, and the up-to-date requirement cost a rebase and a full CI rerun per
   landing. (#337)
-
+- An isolated role worker is no longer handed the harness checkout as a read root and pointed at
+  the whole skill corpus. It carries the shared policy as its system text and is mounted only
+  what that policy tells it to open: the skills the resolved rules and stances name, and copies
+  of the `docs/*.md` files they cite. The set is derived from the text itself, so a stance that
+  stops citing a skill stops paying for it, and a worker is never told to obey a rule whose
+  reference it cannot reach. A role adds what its body assumes but the shared text never names
+  with a `skills:` line — `design-loop` for `design-judge`, `all` for `planner`, whose body tells
+  it to read the skills the plan will name — and a name that resolves to no shipped skill fails
+  the run rather than quietly removing that authority. Measured as what is mounted rather than
+  what a run reads, a review layer went from the whole checkout, about 1,073,900 estimated tokens
+  of text, to about 30,800, and the corpus it was offered as skill authority from all 31,600
+  tokens to the 26,600 the policy cites. Each run records the figure under `context` in
+  `status.json` — policy, reference and total against a 50,000-token budget, counted with the
+  approximation `harness lint` applies to always-loaded context — recorded and not enforced,
+  because what a worker is shown is fixed by its contract before any brief is read. On Claude
+  Code the narrowing is enforced by the restricted file tools; under Codex's read-only sandbox it
+  is instruction text, as that runtime's declared input roots already were (#335).
+- The BMad override templates ask each review layer to launch only once the previous layer's
+  worker has exited. This is correctness before economy: a role worker that is still running
+  publishes no token count, so a round with four layers in flight cannot be held under a cap it
+  cannot measure, which is how an observed 450,000-token cap became 985,000 (#335).
 - A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
   `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
   fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with

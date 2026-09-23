@@ -110,7 +110,7 @@
       "client": "cli",
       "platform": "linux",
       "status": "unqualified",
-      "required_for_release": true,
+      "required_for_release": false,
       "evidence": []
     },
     {
