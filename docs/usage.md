@@ -53,7 +53,8 @@ row carries `null`**: the version that ran a past session is not recoverable fro
 transcript, and stamping today's would make the whole history look like this release.
 
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
-`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`, `days`.
+`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
+`days` and, when the row has any, `idless_records`.
 The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
@@ -61,7 +62,13 @@ API response is written as several transcript entries, so counting per line infl
 total — but those entries do not repeat one `usage` object. The early ones carry a partial
 streaming `output_tokens` and the last carries the response's true figure, so taking the first
 undercounts it. The field-wise maximum is the final figure, and a reordered or truncated tail
-cannot lower it. `subagents` counts `Agent` tool calls. The token totals **include the
+cannot lower it. A record that carries no message id is keyed on its `requestId` instead, which
+names one API call: the same call written into both a session file and a subagent file is one
+response, and a call whose other records do carry a message id joins their slot rather than
+opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
+deduplicated at all — it is summed as written, and `idless_records` counts how many such records
+the row's totals include, the session's own and those of the subagent files folded into them.
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
@@ -106,7 +113,8 @@ field names that directory. `agent_id`, `agent_type` and `spawn_depth` come from
 than dropped. Then `model` — the id the agent's own transcript reports, most frequent across its
 assistant records, falling back to the alias the spawn asked for only when it recorded none, so
 a routed spawn and a direct one on the same model group under one name — `effort`, the four
-token fields and `tool_calls`. `tool_use_id` is
+token fields, `tool_calls` and, when the agent's transcript held any, `idless_records`: the
+records in this row's totals that neither a message id nor a request id identified. `tool_use_id` is
 the parent call this row belongs to, `requested_type` is the agent type that call asked for, and
 `rerouted` is the two disagreeing — the measure of how often a spawn hook moved a spawn. A
 requested type is kept only when it is a name the tool could have resolved; anything else is
@@ -239,7 +247,23 @@ waiting for that record, and the line says `(so far)` when it never comes. Whate
 printed, the settled one the stop records afterwards raises the session totals — the agent is
 never named a second time, and the session total is never below the sum of the final figures.
 
-Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
+A prompt also carries one line about the session itself when its context has grown past a size
+the posture calls a full session: `usage-feed: session context 120,000 tokens, past the
+fresh-session threshold of 100,000 — finish the task, write the handoff, start a fresh session`.
+The size is the newest response's input tokens plus the prefix it read from the cache and the
+prefix it wrote into it, which is what every further turn re-reads and what a long session mostly
+costs; the turn line shows none of that.
+
+It is said once per threshold and not once per turn: a session that stays above one is silent
+until it reaches the next, and a resume — or a transcript whose identity changed, which makes the
+reader start over — reads the thresholds already said back out of the state file. A context that
+falls back under a threshold, which is what an in-place compaction does, arms that threshold
+again, because crossing it a second time is a crossing nobody has been told about. The line names
+the highest threshold newly crossed, never one already fed. A context no response has reported
+yet is no crossing, so nothing is said rather than a size of zero being invented. Like every
+other line here it is soft: nothing is blocked.
+
+Five settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
 number of its own:
 
 - `turn_feed: "off"` — nothing is injected anywhere and no file is written.
@@ -249,6 +273,10 @@ number of its own:
   ship this.
 - `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
   means never.
+- `session_nudge_at` — the context sizes, in whole tokens, smallest first and none repeating,
+  that the fresh-session line is said at. `frugal` ships 80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` an empty list, which
+  means never. Those figures are starting points chosen against a 200,000-token window, not
+  measured ones: the follow-up to #321 replaces them with sizes read out of the ledger.
 - `max_parallel` — the width the running-agent note measures against. `null`, which `max` ships,
   means the note never appears.
 
@@ -321,7 +349,8 @@ a context token.
 The file is **append-only**: an outcome is its own record, joined to its decision by
 `decision_id` when the report reads it, and no line is ever rewritten. `input` is the text the
 hook judged, capped at 2 KiB; `input_sha256` is over the **uncapped** text, so the cap loses
-evidence and never identity. No tool output and no assistant prose reaches either field.
+evidence and never identity. No tool output and no assistant prose reaches either field; the
+one field that holds prose is [the completion claim](#the-completion-claim), which is off.
 
 | point | the judgment | the outcome, when there is one |
 | --- | --- | --- |
@@ -345,6 +374,42 @@ A write that fails is counted and swallowed — a log that can change a permissi
 worse than no log — and `telemetry.decisions: false` in `config.json` turns the whole thing off,
 after which no row, no file and no directory is written. See
 [telemetry.md](telemetry.md#the-decision-log-switch).
+
+### The completion claim
+
+One optional pair of fields is the exception, on a `stop-gate` row alone:
+
+```json
+{"kind": "decision", "point": "stop-gate", "deterministic_answer": "blocked",
+ "completion_claim": "…the suite is green and the change is ready to land.",
+ "completion_claim_sha256": "9f21…"}
+```
+
+`completion_claim` is the **last 2 KiB of the turn's final assistant message**, in bytes and cut
+back to a character boundary, read from the transcript the Stop event names because a Stop
+payload carries no assistant text of its own. It is the turn's own message: the scan stops at
+the user prompt that opened the turn, so a turn that ended in a tool call rather than a reply
+claims nothing instead of borrowing the previous turn's words. `completion_claim_sha256` is over
+the uncapped message, on the same rule as `input_sha256`. The two fields exist so that a stop
+claim can be read against the gate evidence sitting on the same row.
+
+It is **off by default** — `telemetry.completion_claim` in `config.json`,
+[telemetry.md](telemetry.md#the-completion-claim-switch) — and with it off the row is exactly
+the row above, with none of these fields present.
+
+With it on the row always says something. Where there is no claim to record, it carries
+`"completion_claim": null` and a `completion_claim_miss` naming why, and no hash:
+
+| `completion_claim_miss` | what happened |
+| --- | --- |
+| `no_transcript_path` | the Stop event named no file — the runtime's gap, not the session's |
+| `unreadable` | the file was named and could not be opened |
+| `oversized` | the file is past 256 MiB, which this hook will not seek into |
+| `no_claim` | the turn was read and ended without assistant prose |
+| `error` | the reader raised; the decision is still recorded |
+
+The read is the last 256 KiB of the file, so it costs the same on a transcript of any size — a
+claim older than that window reads as `no_claim` rather than as the wrong turn's words.
 
 ```sh
 bin/harness usage --by decision        # counts, outcome rates and the unlabelled share per point

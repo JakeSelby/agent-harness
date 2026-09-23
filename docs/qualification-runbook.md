@@ -10,6 +10,10 @@ is only the mechanics of a run.
   dirty tree rather than record a commit that does not describe what ran.
 - The client must be installed and logged in for the account you intend to qualify, and
   `<client> --version` must report a version the runner can parse.
+- Run `python3 scripts/smoke_tier.py` first. It spends no model turn, and the deterministic
+  faults it catches — an unreachable credential, a drifted projection, a runner that misreads a
+  transcript — are the ones that otherwise surface part-way through a paid round. It is advisory
+  and never qualification; see [releasing](releasing.md#freeze-the-qualification-branch).
 - Every probe is one short headless turn and costs money. Use the cheapest model the client
   offers; `--model` defaults to it.
 

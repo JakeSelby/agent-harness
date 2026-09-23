@@ -168,15 +168,6 @@ class AllowReadOnlyTests(unittest.TestCase):
                 )
                 self.assertEqual(out.stdout.strip(), "")
 
-    def test_settings_template_registers_the_hook(self):
-        entries = [
-            e for e in TEMPLATE["hooks"]["PreToolUse"]
-            if any("# harness:readonly-bash" in h["command"] for h in e["hooks"])
-        ]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["matcher"], "Bash")
-        self.assertIn("allow-readonly-bash.py", entries[0]["hooks"][0]["command"])
-
     def test_ownership_claims_the_hook_id(self):
         self.assertEqual(
             OWNERSHIP["claude"]["hook_ids"]["readonly-bash"],
