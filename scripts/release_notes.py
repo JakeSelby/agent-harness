@@ -47,7 +47,7 @@ def write_changelog(version, date, root=ROOT, dry_run=False):
         return text
     path.write_text(text, encoding="utf-8")
     for item in sorted((root / changelog.DIRECTORY).iterdir()):
-        if item.is_file() and item.name not in changelog.IGNORED:
+        if item.is_file() and changelog.is_candidate(item.name):
             item.unlink()
     return text
 

@@ -15,11 +15,12 @@ WAIVER = "none"
 NAME = re.compile(r"^([1-9][0-9]*)\.([a-z]+)\.md$")
 IGNORED = ("README.md",)
 ROOTS = ("bin/", "lib/", "adapters/", "primitives/", "policy/", "docs/", "scripts/")
-MINIMUM_REASON = 20
+MINIMUM_REASON_WORDS = 3
 BASE = "origin/main"
-# Entries for this version and earlier were written into `## [Unreleased]` by hand; a branch
-# cut while VERSION is older may still satisfy the rule with a CHANGELOG.md edit.
-FIRST_FRAGMENT_RELEASE = (0, 13, 0)
+# The last release whose entries are written into `## [Unreleased]` by hand. Until the base
+# branch's CHANGELOG.md carries this version's section, a branch that edits Unreleased is exempt
+# from the fragment rule; the release pull request that folds it is therefore the cut-over.
+LAST_HAND_WRITTEN = "0.13.0"
 
 
 def parse_name(name):
@@ -32,6 +33,15 @@ def parse_name(name):
     return int(match.group(1)), match.group(2)
 
 
+def is_candidate(name):
+    """Whether a file in the directory is meant as a fragment: a visible `.md` other than the README.
+
+    Dotfiles, editor swap and backup files and anything not ending in `.md` are skipped; a `.md`
+    that is meant as a fragment but misnamed is refused, because dropping it loses an entry.
+    """
+    return name.endswith(".md") and not name.startswith(".") and name not in IGNORED
+
+
 def fragments(root):
     """Every fragment as (number, kind, text), in render order. Malformed names are refused."""
     directory = Path(root) / DIRECTORY
@@ -39,7 +49,7 @@ def fragments(root):
     if not directory.is_dir():
         return found
     for path in sorted(directory.iterdir()):
-        if path.name in IGNORED or not path.is_file():
+        if not path.is_file() or not is_candidate(path.name):
             continue
         number, kind = parse_name(path.name)
         text = path.read_text(encoding="utf-8").strip()
@@ -52,7 +62,7 @@ def fragments(root):
 
 def _entry(number, text):
     reference = "(#%d)" % number
-    if not text.endswith(reference):
+    if reference not in text:
         text += " " + reference
     lines = text.splitlines()
     return "\n".join(["- " + lines[0]] + [("  " + line) if line.strip() else "" for line in lines[1:]])
@@ -92,14 +102,26 @@ def assemble(changelog, version, date, entries):
     return changelog[:heading.end()] + "\n" + section + ("\n" + rest if rest else "")
 
 
+class GitUnavailable(Exception):
+    """git is missing or did not answer in time; the rule is skipped, not failed."""
+
+
 def _git(root, *argv):
-    out = subprocess.run(["git", "-C", str(root)] + list(argv), capture_output=True, text=True,
-                         timeout=10)
+    try:
+        out = subprocess.run(["git", "-C", str(root)] + list(argv), capture_output=True, text=True,
+                             timeout=10)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+        raise GitUnavailable(str(error))
     return out.stdout if out.returncode == 0 else None
 
 
-def changed_paths(root, base=BASE):
-    """Paths this branch changes against where it left `base`, uncommitted work included.
+def _lines(text):
+    return [line for line in (text or "").splitlines() if line]
+
+
+def branch_changes(root, base=BASE):
+    """(fork, changed, added) for this branch against where it left `base`, uncommitted work
+    included; `added` holds only files the branch creates.
 
     None when there is no `base` to compare with or the branch has no commit of its own, so a
     checkout sitting on the trunk, a tag build and a push to main are never judged.
@@ -108,52 +130,105 @@ def changed_paths(root, base=BASE):
     fork = _git(root, "merge-base", "HEAD", base)
     if not head or not fork or head.strip() == fork.strip():
         return None
-    diffed = _git(root, "diff", "--name-only", fork.strip())
+    fork = fork.strip()
+    diffed = _git(root, "diff", "--name-only", fork)
+    created = _git(root, "diff", "--name-only", "--diff-filter=A", fork)
     untracked = _git(root, "ls-files", "--others", "--exclude-standard")
-    if diffed is None or untracked is None:
+    if diffed is None or created is None or untracked is None:
         return None
-    return sorted(set(diffed.splitlines() + untracked.splitlines()) - {""})
+    changed = sorted(set(_lines(diffed) + _lines(untracked)))
+    added = sorted(set(_lines(created) + _lines(untracked)))
+    return fork, changed, added
 
 
-def _version(root):
-    try:
-        return tuple(int(part) for part in (Path(root) / "VERSION").read_text().strip().split("."))
-    except (OSError, ValueError):
+def unreleased_span(text):
+    """1-based (first, last) line numbers of the `## [Unreleased]` section body, or None."""
+    lines = (text or "").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith("## [Unreleased]")), None)
+    if start is None:
         return None
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")), len(lines))
+    return start + 1, end
 
 
-def findings(root, paths=None):
-    """Lint findings: a malformed fragment anywhere, or a branch that touches ROOTS without one."""
+def _overlaps(span, first, count):
+    if span is None:
+        return False
+    last = first + max(count, 1) - 1
+    return first <= span[1] and last >= span[0]
+
+
+def touches_unreleased(root, fork):
+    """Whether the branch's CHANGELOG.md diff lands in Unreleased, on either side of the diff,
+    so an entry added there and a release folding it out both count."""
+    diff = _git(root, "diff", "-U0", fork, "--", "CHANGELOG.md")
+    if not diff:
+        return False
+    before = unreleased_span(_git(root, "show", "%s:CHANGELOG.md" % fork))
+    path = Path(root) / "CHANGELOG.md"
+    after = unreleased_span(path.read_text(encoding="utf-8") if path.is_file() else "")
+    for match in re.finditer(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", diff, re.MULTILINE):
+        old_first, old_count, new_first, new_count = match.groups()
+        if (_overlaps(before, int(old_first), int(old_count or 1)) or
+                _overlaps(after, int(new_first), int(new_count or 1))):
+            return True
+    return False
+
+
+def hand_written_release_open(root, fork):
+    """True until the base branch's CHANGELOG.md has a section for LAST_HAND_WRITTEN."""
+    base = _git(root, "show", "%s:CHANGELOG.md" % fork) or ""
+    return not re.search(r"^## \[%s\]" % re.escape(LAST_HAND_WRITTEN), base, re.MULTILINE)
+
+
+def reason_words(text):
+    return [word for word in text.split() if re.search(r"[A-Za-z]", word)]
+
+
+def findings(root, notes=None):
+    """Lint findings: a malformed or misplaced fragment, a thin waiver, or a branch that touches
+    ROOTS without adding a fragment. Why the rule was skipped, if it was, goes to `notes`."""
     root = Path(root)
     hits = []
     try:
         fragments(root)
     except ValueError as error:
         hits.append("changelog: %s" % error)
-    if paths is None:
-        paths = changed_paths(root)
-    if not paths:
-        return hits
-    touched = [path for path in paths if path.startswith(ROOTS)]
-    if not touched:
-        return hits
-    added = [path for path in paths if path.startswith(DIRECTORY + "/")
-             and Path(path).name not in IGNORED and (root / path).is_file()]
-    if added:
-        for path in added:
+    directory = root / DIRECTORY
+    if directory.is_dir():
+        for path in sorted(directory.iterdir()):
+            if path.is_dir():
+                hits.append("changelog: %s/%s/ is a subdirectory; fragments live directly in %s/"
+                            % (DIRECTORY, path.name, DIRECTORY))
+    try:
+        found = branch_changes(root)
+        if found is None:
+            return hits
+        fork, changed, added = found
+        touched = [path for path in changed if path.startswith(ROOTS)]
+        if not touched:
+            return hits
+        new = [path for path in added if path.startswith(DIRECTORY + "/")
+               and path.count("/") == 1 and is_candidate(Path(path).name) and (root / path).is_file()]
+        for path in new:
             try:
-                number, kind = parse_name(Path(path).name)
+                kind = parse_name(Path(path).name)[1]
             except ValueError:
                 continue
-            if kind == WAIVER and len((root / path).read_text(encoding="utf-8").strip()) < MINIMUM_REASON:
-                hits.append("changelog: waiver %s must give a reason of at least %d characters"
-                            % (path, MINIMUM_REASON))
-        return hits
-    version = _version(root)
-    if "CHANGELOG.md" in paths and version is not None and version < FIRST_FRAGMENT_RELEASE:
+            words = reason_words((root / path).read_text(encoding="utf-8"))
+            if kind == WAIVER and len(words) < MINIMUM_REASON_WORDS:
+                hits.append("changelog: waiver %s must give a reason of at least %d words"
+                            % (path, MINIMUM_REASON_WORDS))
+        if new:
+            return hits
+        if hand_written_release_open(root, fork) and touches_unreleased(root, fork):
+            return hits
+    except GitUnavailable as error:
+        if notes is not None:
+            notes.append("changelog: fragment rule skipped, git unavailable (%s)" % error)
         return hits
     hits.append("changelog: this branch changes %s but adds no fragment; add %s/<issue-or-pr>.<%s>.md, "
-                "or %s/<issue-or-pr>.%s.md saying in at least %d characters why no entry is needed"
+                "or %s/<issue-or-pr>.%s.md saying in at least %d words why no entry is needed"
                 % (touched[0] + (" and %d more" % (len(touched) - 1) if len(touched) > 1 else ""),
-                   DIRECTORY, "|".join(KINDS), DIRECTORY, WAIVER, MINIMUM_REASON))
+                   DIRECTORY, "|".join(KINDS), DIRECTORY, WAIVER, MINIMUM_REASON_WORDS))
     return hits

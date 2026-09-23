@@ -1,19 +1,24 @@
 # Changelog fragments
 
 One file per change, so branches in flight never edit the same section of `CHANGELOG.md`.
-Fragments begin after 0.13.0: entries for 0.13.0 itself are written under `## [Unreleased]` in
-`CHANGELOG.md` as before, and a branch cut while `VERSION` is older than 0.13.0 may still satisfy
-the lint that way.
+Fragments begin after 0.13.0. Until `main`'s `CHANGELOG.md` has a `## [0.13.0]` section, a
+branch whose diff lands in `## [Unreleased]` satisfies the lint without a fragment; the 0.13.0
+release pull request, which folds Unreleased into that section, passes by the same exemption, and
+merging it is the cut-over that ends it for every later branch. The version is
+`LAST_HAND_WRITTEN` in `lib/harness_core/changelog.py`, and the exemption is read from the base
+branch rather than the checkout's `VERSION`.
 
-- **Name:** `<issue-or-pr>.<kind>.md`, where the number is the delivery issue (or the pull request
-  when there is no issue) and the kind is `added`, `changed`, `removed` or `fixed`. Anything else
-  in this directory, apart from this file, fails `bin/harness lint`.
+- **Name:** `<issue-or-pr>.<kind>.md`, where the number is the delivery issue (or the pull
+  request when there is no issue) and the kind is `added`, `changed`, `removed` or `fixed`. Any
+  other `.md` in this directory, apart from this file, fails `bin/harness lint`, and so does a
+  subdirectory; dotfiles, editor swap files and other non-`.md` files are ignored. Only a
+  fragment the branch creates counts, not an edit to one already on `main`.
 - **Body:** the entry itself, in the changelog's prose style: full sentences, what changed and
-  why. Wrap it as you would in `CHANGELOG.md`; the bullet and the trailing `(#N)` are added at
-  assembly when the body does not already end with it.
+  why. Wrap it as you would in `CHANGELOG.md`; the bullet and a trailing `(#N)` are added at
+  assembly, the reference only when the body does not already contain it.
 - **Waiver:** a change under `bin/`, `lib/`, `adapters/`, `primitives/`, `policy/`, `docs/` or
   `scripts/` with nothing to announce adds `<issue-or-pr>.none.md` whose body says, in at least
-  20 characters, why. It is a file rather than a pull request body line so that a local lint, a
+  three words, why. It is a file rather than a pull request body line so that a local lint, a
   pull request run and a merge queue run all see the same answer. Waivers are never rendered.
 
 At release time, `python3 scripts/release_notes.py --changelog <version>` inserts a

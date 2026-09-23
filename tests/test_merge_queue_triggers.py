@@ -49,12 +49,34 @@ class WorkflowTriggerTests(unittest.TestCase):
                     self.assertRegex(trigger, r"(?m)^  merge_group:")
         self.assertGreaterEqual(checked, 3)
 
-    def test_a_step_reading_the_pull_request_number_also_gets_the_queue_ref(self):
-        for name, (text, _) in self.workflows().items():
-            if "github.event.pull_request" in text:
-                with self.subTest(workflow=name):
-                    self.assertIn("MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}", text)
+    def steps(self, text):
+        """Each step's text, split at the `- ` that opens it under a job's `steps:`."""
+        found = []
+        for block in re.split(r"(?m)^    steps:\n", text)[1:]:
+            body = re.split(r"(?m)^  [A-Za-z_-]+:\n|^[A-Za-z_-]+:", block)[0]
+            found += [part for part in re.split(r"(?m)^(?=      - )", body) if part.strip()]
+        return found
 
+    def test_the_step_splitter_sees_every_step(self):
+        for name, (text, _) in self.workflows().items():
+            with self.subTest(workflow=name):
+                self.assertEqual(len(self.steps(text)), len(re.findall(r"(?m)^      - ", text)))
+
+    def test_every_step_reading_pull_request_context_also_handles_a_queue_run(self):
+        pull_request_only = re.compile(r"github\.(?:event\.pull_request|head_ref|base_ref)\b")
+        guarded = re.compile(r"(?m)^        if: .*github\.event_name == 'pull_request'")
+        checked = 0
+        for name, (text, _) in self.workflows().items():
+            for step in self.steps(text):
+                if not pull_request_only.search(step):
+                    continue
+                checked += 1
+                with self.subTest(workflow=name, step=step.splitlines()[0]):
+                    self.assertTrue(
+                        "MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}" in step
+                        or guarded.search(step),
+                        "a step reading pull request context needs the queue ref or a guard")
+        self.assertGreaterEqual(checked, 2)
 
 if __name__ == "__main__":
     unittest.main()
