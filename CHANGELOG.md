@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A labelled corpus for the eleven detectors this repository writes itself, and a `corpus` job
+  beside `test` that scores it. `tests/fixtures/detector-corpus/` holds thirteen synthetic
+  transcripts and the labels over them, five positives and five near-misses per detector bar the one whose positive costs two hundred
+  searches, written
+  by `build_sessions.py` beside them; `scripts/detector_corpus.py --floor 0.9` runs both that
+  corpus and the one inside the vendored `ruleprobe` wheel through the whole registry and exits
+  non-zero when a detector's precision or recall falls under the floor, or when a detector has no
+  labelled example at all. Every row `harness usage --rules` prints now has a measured precision
+  and recall rather than a hit count of unknown quality. Two detectors measure 0.83
+  precision: any basename holding `id_rsa` is a hit for `secrets/git-add-secret-file`, so a runbook
+  named after a key is one, and `autonomy/denied-by-grade` matches the grade hook's signature
+  anywhere in a Bash result, so a grep that prints it is one. The floor stays where it is and each
+  miss is recorded in the corpus with the score and the floor it was measured against, so an
+  improvement or a regression both fail the job until the record is updated, while a run at a
+  lower floor leaves the record dormant rather than stale (#522).
+
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill
   surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
@@ -90,6 +106,7 @@ All notable changes to this project are documented here. The format follows
   still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
   the allowlist, where the kill switch lives and whether a credential variable is set — by name,
   never its value (#137).
+
 - One Bash command in twenty that the harness allows is now kept in the decision log as a
   sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
   the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
