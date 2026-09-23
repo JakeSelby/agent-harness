@@ -352,22 +352,28 @@ class RealCorpusTests(unittest.TestCase):
         self.assertEqual(len(report), len(manifest["items"]))
 
     def test_each_conversion_carries_the_original_tail_byte_for_byte(self):
+        # Each item's own legacy stub, with an amendment appended, is converted as well as any file still
+        # in legacy form, so the test keeps its reach after the corpus has been upgraded.
         last_line = re.compile(r"planning context rather than duplicate the issue\.\r?\n")
-        carried_any = 0
-        for item in sync.load_manifest()["items"]:
-            original = (REPO / item["artifact_path"]).read_bytes().decode("utf-8")
-            status, converted, _ = sync.upgrade_text(item, original)
-            if status == "current":
-                continue
+        items = sync.load_manifest()["items"]
+        checked = 0
+        for item in items:
+            amendment = "\n## Amendment — carried\n\nKept byte for byte for {}.\n".format(item["bmad_id"])
+            originals = [sync.render_legacy_stub(item) + amendment]
+            real = (REPO / item["artifact_path"]).read_bytes().decode("utf-8")
+            if sync.upgrade_text(item, real)[0] != "current":
+                originals.append(real)
             with self.subTest(item["bmad_id"]):
-                self.assertEqual(status, "convert")
-                tail = original[last_line.search(original).end():]
-                skeleton = sync.render_artifact(item)
-                if tail and not tail.startswith("\n"):
-                    skeleton += "\n"
-                self.assertEqual(converted, skeleton + tail)
-                carried_any += bool(tail)
-        self.assertGreaterEqual(carried_any, 2)
+                for original in originals:
+                    status, converted, _ = sync.upgrade_text(item, original)
+                    self.assertEqual(status, "convert")
+                    tail = original[last_line.search(original).end():]
+                    skeleton = sync.render_artifact(item)
+                    if tail and not tail.startswith("\n"):
+                        skeleton += "\n"
+                    self.assertEqual(converted, skeleton + tail)
+                checked += 1
+        self.assertEqual(checked, len(items))
 
 
 class DepthTests(TempRoot):
