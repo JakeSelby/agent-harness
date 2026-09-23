@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The Remote Control sessions read asks for newest-first and checks that it got it. The request
+  now names a descending sort by `updated_at`, and a page that comes back in another order is
+  refused like a failed call, because under the fifty-row cap the rows an out-of-order page drops
+  are unknown rather than merely old — the session a host lost minutes ago is exactly the one
+  server order would hide. `harness remote-control status` and `doctor` say so in their
+  not-checked line (#526).
+
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed
   family used to inherit that family's rate. Inheritance under-bills a premium variant by a
   multiple and prints a known-low figure as a known one — `gpt-5.5-pro` is $30/$180 where

@@ -562,19 +562,21 @@ class SupervisorStateTests(unittest.TestCase):
 
 
 class LostSessionTests(unittest.TestCase):
-    # The shape of one page of `GET /v1/code/sessions?limit=50`, observed 2026-09-22.
+    # The shape of one page of `GET /v1/code/sessions`, observed 2026-09-22, in the newest-first
+    # order the request now asks for.
     PAGE = {"data": [
-        {"id": "cse_01LOST", "status": "active", "connection_status": "disconnected",
-         "environment_id": "env_01LIVE", "title": "0.12 release checklist",
-         "updated_at": "2026-09-22T17:49:06.555477Z"},
         {"id": "cse_01HERE", "status": "active", "connection_status": "connected",
          "environment_id": "env_01LIVE", "title": "still served",
          "updated_at": "2026-09-22T17:50:26Z"},
-        {"id": "cse_01OLD", "status": "archived", "connection_status": "disconnected",
-         "environment_id": "env_01LIVE", "title": "archived", "updated_at": "2026-09-21T00:00:00Z"},
+        {"id": "cse_01LOST", "status": "active", "connection_status": "disconnected",
+         "environment_id": "env_01LIVE", "title": "0.12 release checklist",
+         "updated_at": "2026-09-22T17:49:06.555477Z"},
         {"id": "cse_01THEIRS", "status": "active", "connection_status": "disconnected",
          "environment_id": "env_01OTHERMAC", "title": "another device",
-         "updated_at": "2026-09-22T17:00:00Z"}], "next_cursor": None}
+         "updated_at": "2026-09-22T17:00:00Z"},
+        {"id": "cse_01OLD", "status": "archived", "connection_status": "disconnected",
+         "environment_id": "env_01LIVE", "title": "archived",
+         "updated_at": "2026-09-21T00:00:00Z"}], "next_cursor": None}
 
     def test_the_token_comes_out_of_the_keychain_payload(self):
         self.assertEqual(remote_control.oauth_token(

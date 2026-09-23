@@ -367,7 +367,11 @@ def worktree_add_argv(root, path, branch, base, branch_exists):
 
 # --------------------------------------------------------------------------- lost sessions
 
-SESSIONS_URL = "https://api.anthropic.com/v1/code/sessions?limit=50"
+# The cap is a budget, so the page has to be spent on the newest sessions: a lost session is
+# recovered within minutes or not at all, and server order would let 50 stale rows hide it. An
+# unknown query parameter is ignored rather than rejected, which is why `descending_by_update`
+# checks the answer instead of trusting the request.
+SESSIONS_URL = "https://api.anthropic.com/v1/code/sessions?limit=50&sort=updated_at&order=desc"
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 API_HEADERS = {"anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20"}
 # `--session-id` reattach hosts register the lost environment a second time, as a single-session
@@ -390,8 +394,21 @@ def sessions_request(token):
     return Request(SESSIONS_URL, headers=dict(API_HEADERS, Authorization="Bearer " + token))
 
 
+def descending_by_update(rows):
+    """Whether a page is newest-first by `updated_at`, which is the order the cap assumes.
+
+    A row with no timestamp sorts oldest, so a page that omits the field entirely is only
+    descending when it holds fewer than two rows.
+    """
+    stamps = [str(row.get("updated_at") or "") for row in rows]
+    return all(a >= b for a, b in zip(stamps, stamps[1:]))
+
+
 def fetch_sessions(token, opener=None):
     """The account's recent Remote Control sessions, or None when the call fails.
+
+    A page that did not come back newest-first is refused the same way, because under a cap the
+    rows it dropped are then unknown rather than merely old.
 
     A failure here is a report line, never an exit code: the supervisor's other work does not
     depend on the network.
@@ -402,7 +419,10 @@ def fetch_sessions(token, opener=None):
     except Exception:  # noqa: BLE001 - any network or parse failure reads the same to the caller
         return None
     data = payload.get("data") if isinstance(payload, dict) else None
-    return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else None
+    if not isinstance(data, list):
+        return None
+    rows = [row for row in data if isinstance(row, dict)]
+    return rows if descending_by_update(rows) else None
 
 
 def disconnected_sessions(rows, environment_ids):

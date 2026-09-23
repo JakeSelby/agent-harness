@@ -59,6 +59,12 @@ refuses an overwrite; detached worker failures go to `usage.errors.jsonl` beside
 Transcript adapters cannot observe nested tool calls absent from the transcript and do not prove
 that a stance caused a behavior.
 
+A cap on a multi-item read is a budget: ask the source for newest-first, refuse a page that comes
+back in another order, and record at the declaration which end is dropped — when several sources
+compete for one budget, drop the least authoritative first. The Remote Control sessions page
+(`remote_control.fetch_sessions`) and the usage feed's `OPEN_TAIL` both keep the newest, because a
+correction that arrives last is the one a trimmed history must not lose.
+
 ## Decision providers
 
 `lib/harness_core/decision.py` holds one transport-agnostic contract for the question "may this

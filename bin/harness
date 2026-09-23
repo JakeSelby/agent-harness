@@ -1897,7 +1897,8 @@ def remote_control_doctor(cfg: Dict[str, Any]) -> None:
                   else f"{len(mine)} session(s), {lost} disconnected")
         say(f"  remote-control {folder}: pid {pid}, env {env}, {fresh}, {reach}, {served}")
     if rows is None:
-        say("  remote-control sessions: not checked; no claude.ai token, or the API call failed")
+        say("  remote-control sessions: not checked; no claude.ai token, or the API call failed "
+            "or answered out of order")
         return
     stranded = remote_control.disconnected_sessions(rows, host_environment_ids(opts["folders"]))
     if stranded:
@@ -3236,7 +3237,8 @@ def report_lost_sessions(folders: List[Path], opts: Dict[str, Any]) -> int:
     """
     rows = lost_sessions(folders)
     if rows is None:
-        say("lost sessions: not checked; no claude.ai token in the keychain, or the API call failed")
+        say("lost sessions: not checked; no claude.ai token in the keychain, or the API call "
+            "failed or answered out of order")
         return 0
     if not rows:
         say("lost sessions: none")
@@ -3327,8 +3329,9 @@ def claude_oauth_token() -> Optional[str]:
 def lost_sessions(folders: Iterable[Path]) -> Optional[List[Dict[str, Any]]]:
     """Sessions still active but disconnected on an environment this Mac registered.
 
-    None means the question could not be asked — no token, or the call failed — which reads
-    differently from an empty list and is reported as such.
+    None means the question could not be asked — no token, or the call failed, or the page came
+    back in an order the cap cannot be trusted under — which reads differently from an empty list
+    and is reported as such.
     """
     token = claude_oauth_token()
     if not token:
