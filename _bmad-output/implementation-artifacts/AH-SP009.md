@@ -30,7 +30,7 @@ own brainstorm gate when no user is present?
 
 What waits on it, as the issue records: it blocks #558 (the `delegated` stance variants, the
 `superpowers` mode and detection) and the live set (#560), and "the preamble decision feeds the arms
-story" (#559, replay arms as built profiles). The epic #552 lists it first in dependency order.
+story" (#559, replay arms as built profiles). The epic #552 lists it first in dependency order [Source: #552].
 [Source: https://github.com/JakeSelby/agent-harness/issues/553]
 
 ## Experiment
@@ -96,3 +96,5 @@ spike was meant to inform; the PRD does not cite the spike.]
 ## Change log
 
 - 2026-09-23: written from the issue and pull-request record.
+- 2026-09-23: corrected after sample review: explicit sources for claims taken from the epic or a sibling
+  issue, and the fit of each binding and current-state claim rechecked against the record.
