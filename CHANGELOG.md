@@ -14,9 +14,114 @@ All notable changes to this project are documented here. The format follows
   by naming it in `agentType`; the usage ledger does record every workflow agent, but those rows
   carry no tool use id, so the reroute join is empty for all of them. The record names the two
   changes the code needs. `docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md` (#540).
+- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
+  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
+  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
+  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
+  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
+  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
+  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
+  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
+  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
+  may never widen a decision, and every path with no usable answer — no key, a timeout, an
+  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
+  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
+  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
+  to the decision ledger, and never the state. Answers are not deterministic across identical
+  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
+  no handler for any other scheme, because a bearer key goes out with every request; a request is
+  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
+  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
+  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
+  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
+  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
+  from the vendor's documentation and have not been verified against the live service from this
+  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
+- `telemetry.completion_claim`, off by default, records the agent's completion claim on a
+  `stop-gate` decision row: the last 2 KiB of the turn's final assistant message, read from the
+  transcript at Stop because the Stop payload carries no assistant text, with the hash over the
+  uncapped message. Verifying what an agent said it had done against the gate result needs the
+  two on one row, and until now the row held only the gate. It is its own switch, and off,
+  because it is the only field in the decision log that holds assistant prose; with it off the
+  row is byte for byte what it was. The claim is the turn's own: the scan stops at the user
+  prompt that opened it, so a turn that ended in a tool call claims nothing rather than
+  repeating the previous turn's words. The read is a bounded tail, so it costs the same on a
+  transcript of any size, and where there is no claim the row carries a null one beside a
+  `completion_claim_miss` naming why — a runtime that supplied no path reads differently from
+  evidence that is gone (#387).
+- Every replay-benchmark row records `cache_miss_ratio` beside its cache-normalised cost: the
+  share of the run's prefix the provider re-wrote rather than served, summed over every turn the
+  run opened. The arithmetic is the one `harness usage --by prefix` applies to a ledger row, and
+  is imported from that module rather than restated, but the two figures answer different
+  questions and a fan-out run will differ: the replay counts a subagent thread's fresh prefix as
+  part of what the run cost, where the session figure subtracts it. `benchmarks/history.jsonl`
+  and `history.md` carry each arm's mean of it, so a candidate that buys fewer tokens by
+  re-writing its prefix more often is visible in the history rather than hidden inside the
+  dollars. A run whose CLI output carries no per-turn cache figures, or any one of whose turns
+  reports its usage without them, is `null`, never zero, since zero is a run that held its whole
+  prefix (#497).
+### Changed
+
+- `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
+  single-coordinator for some time — a sync registers one command per lifecycle event and
+  `runtime_template()` takes that registration from `lib/harness_core/lifecycle.py` — so the
+  eleven per-policy entries the file still listed were replaced unread at every sync, and an
+  entry added there by hand would have been silently discarded. `docs/how-it-works.md` now
+  describes the model: why one process per event rather than one per policy, where precedence is
+  decided, and how the coordinator fails closed. Two places that still described registration as
+  conditional are corrected with it: `docs/preferences.md` said the `plan-ceremony` stance decides
+  whether the plan-card validator is registered, where it decides whether the validator runs, and
+  `claude/OWNERSHIP.json` now says in the manifest itself that a hook id's `stance` and `variant`
+  name when a policy acts, never whether it is registered. No installed settings file changes,
+  because what sync wrote was already the coordinator registration (#521).
+### Added
+
+- The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
+  the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
+  behind each state. It is derived from a `tier_restriction` entry in
+  `adapters/<runtime>/capabilities.json` rather than written into the rendered docs: the Claude
+  Code CLI and VS Code surfaces read `enforced`, because `claude/hooks/tier-agent-spawns.py`
+  rewrites a spawn asking for the strongest class by name. Every Codex surface reads `advisory`:
+  the coordinator runs there and a Codex `Agent` call still passes the role, marker, evasion and
+  brief checks, but the tier rewrite sits behind a `runtime == "claude-code"` gate in
+  `lib/harness_core/lifecycle.py`. The plugin-marketplace install reads `advisory` because it
+  installs no hooks at all. The generated note states what `enforced` does not cover — the
+  session's own model, which the harness never writes; a `delegation` variant other than
+  `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
+  now links to the row instead of restating it (#520).
+### Changed
+
+- The delegation rule now states that subagents never message a peer, and the builder role says
+  what a blocked builder does instead: stop, finish what does not depend on the answer, and return
+  the question under **Deviations** for the caller. A delivered message bills as a typed prompt on
+  the receiver and again on the sender when the reply lands, and turn count is what the delegation
+  arithmetic is sensitive to, while the measured coordination wins in the literature all come from
+  mediating writes at write time rather than from agents conversing; `delegation-tiering` carries
+  that reasoning with the three papers cited. Session-to-session `SendMessage` between
+  human-facing sessions is unchanged (#539).
 
 ### Fixed
 
+- An assistant transcript record that carries no message id is deduplicated by its `requestId`
+  rather than counted once per line. Every such record used to open a slot of its own, so a
+  runtime or version that writes one id-less response several times — as the streaming lines of
+  one API call — inflated the session total and its turn count without any bound. A request id
+  names one call, so it deduplicates unscoped by file: the same call written into both a session
+  file and a subagent file is one response, and a call whose other records do carry a message id
+  joins their slot, in whichever order the files are read, instead of being billed twice. A
+  record with neither id is unknown rather than a duplicate and is left undeduplicated; session
+  and subagent rows carry `idless_records` counting how many such records their totals include,
+  the session's own and those of the subagent files folded into them, so a row without the field
+  is known to have been deduplicated whole. Rows from transcripts whose records all carry message
+  ids are unchanged (#519).
+- The Remote Control sessions read checks that its capped page arrived newest-first. The endpoint
+  takes no sort parameter, and its page is ordered by `last_event_at` rather than `updated_at`, so
+  the order is asserted on arrival and a page that is not descending is refused: under the
+  fifty-row cap the rows such a page dropped are unknown rather than merely old, and the session a
+  host lost minutes ago is exactly the one another order would hide. `harness remote-control
+  status` prints `not checked (page order unknown)` for a refusal, which no longer reads like an
+  account with nothing lost, and both it and `doctor` now say `in the newest 50` when the account
+  has more sessions than one page (#526).
 - The repository's own copy states the figures its code holds. The landing copy said nineteen
   detectors where the registry holds seventeen, six from the vendored engine and eleven written
   for these rules, and a new test derives that count from the rule pack and fails when `README.md`
