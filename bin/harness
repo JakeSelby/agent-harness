@@ -54,6 +54,7 @@ from harness_core import reconcile, lifecycle, tasks, compatibility, workers, in
 from harness_core import frameworks
 from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
+from harness_core import changelog as changelog_fragments
 from harness_core import decision as decisions_provider
 # The opt-in block for a provider that leaves the machine. Importing the controls does not
 # import the provider: nothing that reaches the network is loaded unless a config names it.
@@ -2355,10 +2356,14 @@ def cmd_lint(args: argparse.Namespace) -> int:
         scope = str(root)
     hits = hits + check_context_cap(root) + check_cost_sidecars(root) + check_stance_constraints(root)
     hits += check_collisions(root)
+    notes: List[str] = []
+    # Fragments are this repository's release process, so the rule uses projection drift's guard.
+    if not getattr(args, "staged", False) and (root / "primitives" / "roles").is_dir():
+        hits += changelog_fragments.findings(root, notes)
     if (root / "primitives" / "roles").is_dir():
         hits += ["projection drift: " + name + "; run `harness generate`"
                  for name in primitive_catalog.projection_drift(root)]
-    for h in hits:
+    for h in hits + notes:
         say(h)
     if not getattr(args, "staged", False) and always_loaded_groups(root):
         say(context_summary(root))

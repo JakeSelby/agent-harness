@@ -321,6 +321,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Pull requests to `main` land through a merge queue, and changelog entries after 0.13.0 are
+  one fragment file per change under `changelog.d/`. Every pull request workflow also runs on
+  `merge_group`, and the issue-ownership and landing-copy checks read the queued pull request's
+  number from the queue branch, since a queued entry whose checks never report stalls the queue.
+  `scripts/release_notes.py --changelog <version>` assembles the fragments into a version section
+  in a stable order, and `bin/harness lint` fails a branch that changes `bin/`, `lib/`,
+  `adapters/`, `primitives/`, `policy/`, `docs/` or `scripts/` without a fragment or a
+  `<number>.none.md` waiver. Every branch used to edit the same Unreleased section, so any two in
+  flight conflicted there, and the up-to-date requirement cost a rebase and a full CI rerun per
+  landing. (#337)
+
 - A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
   `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
   fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
