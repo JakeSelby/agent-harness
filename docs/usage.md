@@ -54,7 +54,7 @@ transcript, and stamping today's would make the whole history look like this rel
 
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
-`days` and, when the row has any, `idless_records`.
+`days`, `raw_vs_deduped` and, when the row has any, `idless_records`.
 The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
@@ -68,7 +68,22 @@ response, and a call whose other records do carry a message id joins their slot 
 opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
 deduplicated at all — it is summed as written, and `idless_records` counts how many such records
 the row's totals include, the session's own and those of the subagent files folded into them.
-A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls. The token totals **include the
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls.
+
+`raw_vs_deduped` is **the measured size of that inflation**: the per-line sum of the four token
+fields over the deduplicated total the row carries, across the same records — the session's own
+and those of the subagent files folded into it. `1.0` says the transcript held nothing to
+remove; `2.4` says counting every line would have billed this session for two and a half times
+what it spent. One ratio rather than one per field, because the fields are deduplicated by the
+same slots and the row already carries each of them for a reader who wants them apart. A Codex
+session row, whose runtime reports cumulative snapshots rather than a figure per record, carries
+the string `"unknown"` rather than `1.0`, which would claim a measurement nobody made. A
+subagent row, a worker row and a row written before this release carry **no such key at all**,
+and a reader — `harness usage` included — reads that absence as unknown for the same reason.
+The footer figure `harness usage` prints is the window's raw sum over its counted sum: each
+row's ratio weighted by the deduplicated tokens that row contributed to the columns above it,
+which under `--by day` are its in-window slices and not its whole total. The OTLP export carries
+a row's own value as the `raw_vs_deduped` attribute, and a row without the key exports none. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
@@ -376,12 +391,13 @@ one field that holds prose is [the completion claim](#the-completion-claim), whi
 | `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
 | `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
 
-An approved Bash command is not logged. The harness answers the permission question on a small
+An approved Bash command is not *graded*. The harness answers the permission question on a small
 minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a
-prompt or a refusal is the judgment a label can grade. `not_run` is deliberately not called
-"denied": a user who refused, a user who interrupted the turn and a session that crashed all
-look the same from a hook, and naming one of them would put a label in the file that nobody
-measured.
+prompt or a refusal is the judgment a label can grade. A sample of the approvals is kept all the
+same, as [sampled allows](#sampled-allows) below, which carry no outcome. `not_run` is
+deliberately not called "denied": a user who refused, a user who interrupted the turn and a
+session that crashed all look the same from a hook, and naming one of them would put a label in
+the file that nobody measured.
 
 Both runtimes write, for the events both raise. Band routing happens on Claude Code alone, so
 Codex records no `tier-agent-spawns` row; `adapters/codex/capabilities.json` names that gap.
@@ -390,6 +406,48 @@ A write that fails is counted and swallowed — a log that can change a permissi
 worse than no log — and `telemetry.decisions: false` in `config.json` turns the whole thing off,
 after which no row, no file and no directory is written. See
 [telemetry.md](telemetry.md#the-decision-log-switch).
+
+### Sampled allows
+
+One Bash command in twenty that the harness **allowed** is written as a `grade-bash` row of its
+own:
+
+```json
+{"kind": "decision", "point": "grade-bash", "deterministic_answer": "allow", "sampled": true,
+ "sample_rate": 20, "input": "cargo test --release", "outcome": null}
+```
+
+They exist because the graded rows are all prompts: a check that may only tighten an allow into
+an ask has nothing to measure its false alarms against without the commands nobody was asked
+about. They are **negatives, not judgments** — `sampled: true`, never an outcome, passed by at
+SessionEnd rather than closed as `not_run`, and counted by `usage --by decision` on a
+`grade-bash (sampled)` line of their own so they cannot dilute the outcome rates of the graded
+rows.
+
+Only an allow the harness actually gave is sampled. A command it answered nothing about is the
+runtime's own to decide and may still be prompted on or refused, so it is no evidence of an
+allow and no row: that covers a grade-1 command under the `execute` stance, and every command
+on Codex, where a plain approval is dropped from the hook output and the client's own default
+stands. A confirmed command — one re-run with the confirmation marker after a prompt — is not
+sampled either; it belongs to the `ask` row that prompted it.
+
+Which commands are sampled is the **command text's own hash**, not a random draw, so the same
+corpus samples the same commands and a measurement over these rows is reproducible. That makes
+the sample one of **distinct commands, not of invocations**: a command in the sample is logged
+every time it runs and one outside it never is, so the row count says how often those particular
+commands ran and multiplying it by `sample_rate` estimates nothing. Read it as a corpus to
+replay a candidate check over, which is what it is for.
+
+The `input` of a sampled row is **redacted**, unlike the text of a prompt the user was shown:
+the value of every assignment and every credential flag, quoted or not (`FOO=…`, `--password=…`,
+`--token …`, `-p…`), every secret shape the [rule detectors](#rule-telemetry) match, and the home
+directory written `~` so no username reaches the row. `input_sha256` is over the **redacted**
+text on these rows and over the original on every other row: the hash of an original next to the
+redacted text would put a short secret within reach of a dictionary attack.
+
+`telemetry.allow_sample_rate` sets the rate and `0` stops it;
+[telemetry.md](telemetry.md#the-allowed-command-sample) has the switch, and `decisions: false`
+turns it off with everything else.
 
 ### The completion claim
 
@@ -433,6 +491,11 @@ bin/harness usage --by decision        # counts, outcome rates and the unlabelle
 
 The **unlabelled share** is the column to read first: an outcome rate over the two decisions
 that happened to be labelled is not evidence about the point.
+
+`harness decisions eval` replays the labelled rows of this file through a question pack and
+reports how closely the judgment tracked them, with a threshold fitted per decision point. What
+it measures, what it writes and what its labels do not prove are in
+[runtime controls](runtime-controls.md).
 
 ## Reading it
 

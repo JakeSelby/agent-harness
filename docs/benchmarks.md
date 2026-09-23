@@ -35,6 +35,19 @@ over a narrower one.
   version. Both use the same characters-over-four estimate. Which cap binds, and why:
   [how-it-works](how-it-works.md#context-discipline).
 
+### Recorded trims
+
+One row per change that set out to shrink the static figure, before and after, from
+`scripts/cost_bench.py static` run on that change's branch. `benchmarks/history.jsonl` cannot hold
+these: its rows are replay ratios against a bare arm on one model and one day, and a static trim
+has no arm. Read the rows in order; none of them is a live measurement.
+
+| Change | Always-loaded | Listings | Total |
+| --- | --- | --- | --- |
+| Baseline at 0.12.0 | 5,198 | 2,326 | 7,524 |
+| After shortening skill and agent descriptions (#430) | 5,198 | 1,980 | 7,185 |
+| After trimming the output style (#430) | 4,539 | 1,980 | 6,519 |
+
 ## Live replay
 
 `scripts/cost_bench.py replay` runs the pinned tasks in `benchmarks/tasks.json` headlessly, once

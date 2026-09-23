@@ -317,6 +317,41 @@ def record_usage(per_message, key, usage, day="", model=""):
                 slot[name] = value
 
 
+# What a row says when nothing measured its raw figure: a Codex row, a worker row, a row
+# written before this release. Never 1.0 by default — that would claim the deduplication
+# removed nothing, which is a measurement nobody made.
+RAW_UNKNOWN = "unknown"
+
+
+def add_raw(raw, usage):
+    """Sum one record's usage as written, before any deduplication. See `inflation`."""
+    if raw is None:
+        return
+    for name, field in FIELDS:
+        try:
+            value = int(usage.get(field) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            raw[name] = raw.get(name, 0) + value
+
+
+def inflation(raw, totals):
+    """The raw per-line sum over the deduplicated total, across the four token fields together.
+
+    One ratio rather than one per field: the fields are deduplicated by the same slots, so four
+    figures would be four views of one measurement, and the row already carries every field for
+    a reader who wants them apart. A transcript with nothing to remove measures 1.0, which is
+    the finding — not the default, which is `RAW_UNKNOWN`.
+    """
+    if not raw:
+        return RAW_UNKNOWN
+    counted = sum(max(int(totals.get(name) or 0), 0) for name, _ in FIELDS)
+    if counted <= 0:
+        return RAW_UNKNOWN
+    return round(sum(max(int(raw.get(name) or 0), 0) for name, _ in FIELDS) / float(counted), 3)
+
+
 def summed(per_message):
     """The four token totals over the messages, each counted once at its largest figure.
 
@@ -454,7 +489,8 @@ def note_model(counts, name, order):
     counts[name] = (hits + 1, order)
 
 
-def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, links=None):
+def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, links=None,
+               raw=None):
     """One `kind: "subagent"` row from one `agent-<id>.jsonl`, or None when it holds no turn.
 
     The sibling `agent-<id>.meta.json` names the agent type and the spawn depth; the transcript
@@ -468,7 +504,9 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, lin
 
     `shared` is the session's message-id map. The row keeps its own total, but the session's
     total is taken over that shared map, so a message id written both here and as a sidechain
-    line in the session file is one message and is paid for once.
+    line in the session file is one message and is paid for once. `raw` is that map's
+    undeduplicated counterpart: this file's records are in the session's totals, so they are in
+    the session's `raw_vs_deduped` too.
 
     `budget` in seconds and `max_bytes` from the tail are for a caller working against a hook
     timeout: the detached `SessionEnd` worker has all the time in the world and passes neither,
@@ -505,12 +543,12 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, lin
                 handle.seek(size - max_bytes)
                 handle.readline()
                 partial = True
-        for index, raw in enumerate(handle):
+        for index, line in enumerate(handle):
             if deadline is not None and not index % 256 and time.monotonic() > deadline:
                 partial = True
                 break
             try:
-                entry = json.loads(raw.decode("utf-8", "replace"))
+                entry = json.loads(line.decode("utf-8", "replace"))
             except Exception:
                 continue
             if not isinstance(entry, dict):
@@ -547,6 +585,7 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, lin
                 idless += 1
                 key = ("line", str(path), idless)
             record_usage(per_message, key, usage, stamp[:10], message.get("model") or "")
+            add_raw(raw, usage)
             if shared is not None:
                 record_usage(shared, key, usage, stamp[:10], message.get("model") or "")
             # A slot folded into another keeps the turn it was already counted for.
@@ -783,7 +822,7 @@ def mark_returns(agents, briefs, returns, roots):
             row["return_over_budget"] = word_count(text) > cap
 
 
-def agent_rows(transcript, session_id="", shared=None, version=None, links=None):
+def agent_rows(transcript, session_id="", shared=None, version=None, links=None, raw=None):
     """Every subagent row belonging to one session transcript, by path.
 
     Claude Code writes each subagent to `<session>/subagents/agent-<id>.jsonl` beside the
@@ -799,7 +838,7 @@ def agent_rows(transcript, session_id="", shared=None, version=None, links=None)
     except OSError:
         return rows
     for file in files:
-        row = _agent_row(file, shared, version=version, links=links)
+        row = _agent_row(file, shared, version=version, links=links, raw=raw)
         if row:
             row["session_id"] = session_id or path.stem
             rows.append(row)
@@ -808,10 +847,11 @@ def agent_rows(transcript, session_id="", shared=None, version=None, links=None)
 
 def scan_all(transcript, session_id="", cwd="", prior=None, rescan=False):
     """Every row one transcript yields: the session first, then one row per subagent."""
-    shared, links = {}, {}
-    agents = agent_rows(transcript, session_id, shared, version=stamped_version(rescan), links=links)
+    shared, links, raw = {}, {}, {}
+    agents = agent_rows(transcript, session_id, shared, version=stamped_version(rescan),
+                        links=links, raw=raw)
     record = scan(transcript, session_id, cwd, prior, rescan, agents=agents, shared=shared,
-                  links=links)
+                  links=links, raw=raw)
     if record is None:
         return []
     if record.get("runtime") != "claude-code":
@@ -823,7 +863,7 @@ def scan_all(transcript, session_id="", cwd="", prior=None, rescan=False):
 
 
 def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=None, shared=None,
-         links=None):
+         links=None, raw=None):
     """One record from one transcript, or None when there is nothing worth recording.
 
     `prior` is the record this session already has, when there is one; `rescan` says the read
@@ -839,6 +879,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     """
     per_message = {} if shared is None else shared
     links = {} if links is None else links
+    # The same records as `per_message`, summed per line instead of per slot: the row reports
+    # the two against each other as `raw_vs_deduped` rather than discarding the raw figure.
+    raw = {} if raw is None else raw
     idless = 0
     models, agent_calls, seen, requested = [], set(), set(), {}
     briefs = {}
@@ -858,7 +901,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             return scan_codex(transcript, session_id, cwd, prior, rescan)
         if agents is None:
             agents = agent_rows(transcript, session_id, per_message,
-                                version=stamped_version(rescan), links=links)
+                                version=stamped_version(rescan), links=links, raw=raw)
         for line in handle:
             try:
                 entry = json.loads(line)
@@ -908,6 +951,11 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 continue
             if kind != "assistant":
                 continue
+            # A record whose `message` is not a dict holds no usage, no model and no blocks,
+            # and reading one as a mapping used to abort the scan of the whole transcript;
+            # `_agent_row` has always skipped it.
+            if not isinstance(message, dict):
+                continue
             model = message.get("model")
             for index, block in enumerate(content or []):
                 # One API response is written as several lines that repeat the same message id,
@@ -953,7 +1001,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 # silently deduplicated against a record it may have nothing to do with.
                 idless += 1
                 key = ("line", "session", idless)
-            record_usage(per_message, key, message.get("usage") or {}, stamp[:10], model or "")
+            usage = message.get("usage") or {}
+            record_usage(per_message, key, usage, stamp[:10], model or "")
+            add_raw(raw, usage)
             # Claude Code writes the effort in force on every assistant record, as `effort` and
             # again as `perTurnEffort`; a sidechain line carries the subagent's, not this
             # session's, so only the session's own records are weighed.
@@ -1016,6 +1066,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     unknown = idless + sum(int(row.get("idless_records") or 0) for row in agents or [])
     if unknown:
         record["idless_records"] = unknown
+    # How much the deduplication above removed, over the same slots: the totals include the
+    # subagent files, so the raw figure does too.
+    record["raw_vs_deduped"] = inflation(raw, totals)
     weights = {}
     for mid, chosen in efforts.items():
         weights[chosen] = weights.get(chosen, 0) + ((per_message.get(mid) or {}).get("output") or 0)
@@ -1316,6 +1369,9 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
     chosen = dominant(weights) or effort
     record["effort"] = chosen or None
     record["effort_source"] = "turn_context" if chosen else None
+    # Codex reports cumulative snapshots, not a figure per record, so there is no per-line sum
+    # to measure a deduplication against and none is invented.
+    record["raw_vs_deduped"] = RAW_UNKNOWN
     days = codex_days(raw_days, turns_by_day, record)
     if slices_agree(days, record):
         record["days"] = days

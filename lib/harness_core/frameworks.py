@@ -33,12 +33,18 @@ Input roots are declaration, never a signal: `_bmad/` names the framework but ap
 about editing it. They travel into the refusal instead, so the sentence that refuses a spawn also
 says which roots the isolated worker has to be given.
 
+An optional `install` block carries the rest of what a framework costs the harness: where the
+override templates live, where they are installed, which directory says the framework is present,
+and where its skills declare the surface those templates rely on. `harness integration check|apply
+<id>` reads it, so the CLI holds no framework name either, and the session hook's presence probe is
+the block's `detect` path rather than a literal in the hook.
+
 A descriptor that will not parse or will not validate is not enforcement that quietly stopped: the
 loader keeps why it was ignored, and the spawn hook says so once per session.
 """
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTORS = ROOT / "policy" / "integrations"
@@ -129,6 +135,8 @@ def problems(data, role_check=None):
     corroboration = data.get("corroboration", 2)
     if not (isinstance(corroboration, int) and not isinstance(corroboration, bool) and corroboration >= 2):
         found.append("corroboration must be an integer of at least 2")
+    if "install" in data:
+        found += _install_problems(data["install"])
     spawns = data.get("spawns")
     if not (isinstance(spawns, list) and spawns):
         return found + ["spawns must be a non-empty list"]
@@ -147,6 +155,49 @@ def problems(data, role_check=None):
                          "must run, so this mapping could never refuse anything")
         found += _signal_problems(where, spawn, roots)
     return found
+
+
+INSTALL_STRINGS = ("detect", "templates", "destination", "suffix", "skill_surface")
+# The three that are resolved against a repository root or against this checkout. `apply` writes
+# under one of them, so an absolute path or a `..` segment in a descriptor is a write outside the
+# repository the operator named, and the descriptor is the wrong place to discover that.
+INSTALL_PATHS = ("detect", "templates", "destination")
+
+
+def _outside(value):
+    """Whether a declared path would leave the root it is resolved against."""
+    parts = PurePosixPath(value.strip()).parts
+    return value.strip().startswith("/") or ".." in parts or (parts and parts[0].endswith(":"))
+
+
+def _install_problems(install):
+    """What is wrong with the optional install block `harness integration check|apply` reads."""
+    if not isinstance(install, dict):
+        return ["install must be an object"]
+    found = []
+    for field in INSTALL_STRINGS:
+        value = install.get(field)
+        if not (isinstance(value, str) and value.strip()):
+            found.append("install." + field + " must be a non-empty string")
+        elif field in INSTALL_PATHS and _outside(value):
+            found.append("install." + field + " must be a relative path inside the repository, "
+                         "with no `..` segment")
+    roots = install.get("skill_roots")
+    if not (isinstance(roots, list) and roots
+            and all(isinstance(r, str) and r.strip() for r in roots)):
+        found.append("install.skill_roots must be a non-empty list of paths")
+    elif [r for r in roots if _outside(r)]:
+        found.append("install.skill_roots must all be relative paths inside the repository, "
+                     "with no `..` segment")
+    return found
+
+
+def installable(name, directory=None):
+    """The descriptor `name`, or None. Used by the CLI, which also needs its install block."""
+    for data in descriptors(directory):
+        if data["id"] == name:
+            return data
+    return None
 
 
 def _constrained(role):
