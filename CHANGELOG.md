@@ -23,9 +23,11 @@ All notable changes to this project are documented here. The format follows
   and syncs nothing. `--spend-cap` applies to each tag's schedule on its own. A profile's
   credential is keyed on its absolute path, so a temporary one is not signed in: name a signed-in
   `--harness-config` for the tag to be synced into when the run is meant to spend. That profile
-  must start with no harness files in it, is put back exactly as it was after each tag, and cannot
-  serve `candidate` in the same run; the pinned checkout is readable, never writable, from the
-  arm, and every refusal happens before the first launch (#599).
+  must start with no harness files in it and cannot serve `candidate` in the same run; after each
+  tag the sync is taken back out of it — what it added is removed and `settings.json` is put back
+  atomically from a copy — while credential files are never copied, rewritten or deleted; the
+  pinned checkout is readable, never writable, from the arm, and every refusal happens before the
+  first launch (#599).
 
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill

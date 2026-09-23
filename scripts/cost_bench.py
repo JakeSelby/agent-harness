@@ -409,6 +409,20 @@ def refuse_live_config(config_dir, base=None, bare=None):
 
 # Paths a harness sync leaves in a profile as regular files, beside the links it makes.
 HARNESS_FILES = ("CLAUDE.md", "CLAUDE.personal.md", "rules/harness-stances", "skills/harness-*")
+# Names the harness manifest manages: a link at one of these is the harness's whatever it leads to.
+HARNESS_NAMES = ("rules", "skills", "hooks", "output-styles", "CLAUDE.md", "stances", "agents")
+# The one file a sync rewrites in place when the profile already holds it. Everything else it
+# writes is new, or is at a path `harness_residue` refuses beforehand.
+SYNC_MERGES = ("settings.json",)
+
+
+def leads_into_harness(link):
+    """Whether a symlink resolves to somewhere under a checkout holding `bin/harness`."""
+    try:
+        target = Path(link).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    return any((parent / "bin" / "harness").is_file() for parent in [target] + list(target.parents))
 
 
 def harness_residue(config_dir):
@@ -417,9 +431,19 @@ def harness_residue(config_dir):
     A pinned tag is synced into a profile holding none of it, for two reasons. The sync runs with a
     HOME of its own and so with an empty manifest, and a sync that finds links it did not record
     calls them unmanaged and stops with the profile half rewritten. And a profile already carrying
-    another version's layer would mix it into the arm and label the result with the tag."""
+    another version's layer would mix it into the arm and label the result with the tag.
+
+    A link counts only when it leads into a harness checkout or sits at a name the harness
+    manifest manages; the CLI writes links of its own (`debug/latest`) into a profile it merely
+    signed into, and those are not residue."""
     root = Path(config_dir).expanduser()
-    found = sorted(rel for rel, kind in profile_entries(root).items() if kind == "link")
+    found = []
+    for rel, kind in profile_entries(root).items():
+        if kind != "link":
+            continue
+        top = rel.split("/", 1)[0]
+        if top in HARNESS_NAMES or Path(rel).name in HARNESS_NAMES or leads_into_harness(root / rel):
+            found.append(rel)
     for pattern in HARNESS_FILES:
         found += sorted(p.relative_to(root).as_posix() for p in root.glob(pattern))
     settings = root / "settings.json"
@@ -449,32 +473,96 @@ def profile_entries(root):
     return out
 
 
-def restore_profile(root, saved, before):
-    """Put `root` back as `saved` holds it: what appeared since goes, what was there is rewritten.
+def _digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
-    `before` is `profile_entries` of `root` when `saved` was copied. Only paths absent from it are
-    deleted, so nothing the profile held beforehand can be lost here; the run's own writes into
-    the profile — the CLI's state as well as the tag's projection — go with the rest."""
-    root, saved = Path(root), Path(saved)
-    now = profile_entries(root)
-    for rel in sorted(now, key=lambda r: -r.count("/")):  # deepest first
+
+def profile_listing(root):
+    """`{relative path: (kind, detail)}`: a file's size and sha256, a link's target, a directory's
+    nothing. What a write would change, recorded so that only what changed is ever touched."""
+    root, out = Path(root), {}
+    for rel, kind in profile_entries(root).items():
         path = root / rel
-        if before.get(rel) == now[rel] or not (path.exists() or path.is_symlink()):
-            continue
-        if now[rel] == "dir":
-            shutil.rmtree(str(path))
+        if kind == "link":
+            out[rel] = (kind, os.readlink(str(path)))
+        elif kind == "file":
+            out[rel] = (kind, (path.stat().st_size, _digest(path)))
         else:
+            out[rel] = (kind, None)
+    return out
+
+
+def atomic_write(path, data):
+    """Write `data` to `path` through a temp file in the same directory, fsync and rename, so a
+    full disk or an interrupt leaves either the old bytes or the new ones and never a stump."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix="." + path.name + ".")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.exists():
+            os.chmod(tmp, path.stat().st_mode & 0o7777)
+        os.replace(tmp, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def copy_aside(config, dest, listing):
+    """Copy the files a sync rewrites in place into `dest`; the relative paths copied.
+
+    Only those files: a credential file is never copied, so nothing here can ever write one back.
+    The copy is built under a temporary name and re-read afterwards, and it counts as a copy only
+    when every byte matches; a copy that failed halfway is not one the restore may use."""
+    config, dest = Path(config), Path(dest)
+    partial = dest.with_name(dest.name + ".partial")
+    partial.mkdir(parents=True)
+    copied = [rel for rel in SYNC_MERGES if listing.get(rel, ("",))[0] == "file"]
+    for rel in copied:
+        (partial / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(config / rel), str(partial / rel))
+    for rel in copied:
+        if _digest(partial / rel) != listing[rel][1][1]:
+            raise RuntimeError("the copy of %s does not match the original" % rel)
+    partial.rename(dest)
+    return copied
+
+
+def undo_sync(config, before, saved, copied):
+    """Take back what a sync and a run wrote into `config`, and nothing else.
+
+    `before` is `profile_listing` of `config` from before the sync, `saved` the directory
+    `copy_aside` built and `copied` what it holds. What was not there before goes. A file that
+    was there and whose bytes changed is put back only from its copy, and only through an atomic
+    write; a changed file with no copy, such as a credential the CLI refreshed during the run, is
+    left exactly as the run left it, because rolling a refreshed token back signs the profile
+    out. Nothing is rewritten whose bytes already match."""
+    config, saved = Path(config), Path(saved)
+    now = profile_listing(config)
+    for rel in sorted((r for r in now if r not in before), key=lambda r: -r.count("/")):
+        path = config / rel
+        if path.is_symlink() or path.is_file():
             path.unlink()
-    for rel in sorted(before, key=lambda r: r.count("/")):  # parents first
-        path, copy = root / rel, saved / rel
-        if before[rel] == "dir":
-            path.mkdir(exist_ok=True)
-        elif before[rel] == "link":
-            if path.is_symlink() or path.exists():
-                path.unlink()
-            os.symlink(os.readlink(str(copy)), str(path))
-        else:
-            shutil.copy2(str(copy), str(path))
+        elif path.is_dir():
+            shutil.rmtree(str(path))
+    for rel in copied:
+        if rel not in before or before[rel][0] != "file":
+            continue
+        current = now.get(rel)
+        if current is not None and current == before[rel]:
+            continue
+        data = (saved / rel).read_bytes()
+        if (config / rel).is_symlink() or (config / rel).is_dir():
+            raise RuntimeError("%s is no longer a file; its copy is kept" % rel)
+        if (config / rel).is_file() and (config / rel).read_bytes() == data:
+            continue
+        (config / rel).parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(config / rel, data)
 
 
 def sync_tag(repo, ref, parent, config_dir=None, python=sys.executable):
@@ -515,28 +603,35 @@ def sync_tag(repo, ref, parent, config_dir=None, python=sys.executable):
 def synced_tag(repo, ref, tmp=None, config_dir=None, python=sys.executable, bare=None):
     """`sync_tag`, undone afterwards, exception or not.
 
-    The temporary directories go. A named `config_dir` is a profile the owner keeps, so it is
-    copied aside before the sync and put back exactly as it was once the tag's schedule is over:
-    the next tag, or the next invocation, then finds it as clean as this one did. If putting it
-    back fails, the copy is kept and its path named rather than deleted with the rest."""
+    The temporary directories go. A named `config_dir` is a profile the owner keeps, so what the
+    sync wrote into it is taken back once the tag's schedule is over (`undo_sync`), and the next
+    tag, or the next invocation, finds it as this one did. If taking it back fails for any reason,
+    an interrupt included, the copy of what was rewritten is kept and its path named."""
     parent = Path(tempfile.mkdtemp(prefix="cost-tag-", dir=tmp))
-    config = saved = before = None
+    config = saved = before = copied = None
+    keep = False
     try:
         if config_dir:
             config = Path(config_dir).expanduser()
             check_sync_target(config, bare)
-            before, saved = profile_entries(config), parent / "saved-profile"
-            shutil.copytree(str(config), str(saved), symlinks=True)
+            before = profile_listing(config)
+            copied = copy_aside(config, parent / "saved-profile", before)
+            saved = parent / "saved-profile"  # only once the copy is whole
         yield sync_tag(repo, ref, parent, config_dir, python)
     finally:
         if saved is not None:
             try:
-                restore_profile(config, saved, before)
-            except Exception:
-                print("cost-bench: could not put %s back as it was; its copy is kept at %s"
-                      % (config, saved), file=sys.stderr)
+                undo_sync(config, before, saved, copied)
+            except BaseException:
+                keep = True
+                print("cost-bench: could not take the sync back out of %s; the copy of what it "
+                      "rewrote is kept at %s" % (config, saved), file=sys.stderr)
                 raise
-        shutil.rmtree(str(parent), ignore_errors=True)
+            finally:
+                if not keep:
+                    shutil.rmtree(str(parent), ignore_errors=True)
+        else:
+            shutil.rmtree(str(parent), ignore_errors=True)
 
 
 def parse_result(stdout):
@@ -1126,9 +1221,15 @@ def cmd_replay(args):
     if harness_config and not harness_config.is_dir():
         raise SystemExit("cost-bench: the harness profile %s does not exist; sign in to it once, then "
                          "sync the harness into it" % harness_config)
+    # Every refusal before the first launch of any tag, so no tag's schedule is spent and then
+    # stranded by a refusal the next one meets.
+    harness = None
+    if CANDIDATE in tags:
+        harness = Path(args.harness_repo).expanduser() if args.harness_repo else installed_harness(home)
+        if harness is None:
+            raise SystemExit("cost-bench: ~/.claude/CLAUDE.md does not lead to a harness checkout; name the "
+                             "installed one with --harness-repo")
     if harness_config and any(tag != CANDIDATE for tag in tags):
-        # Every refusal before the first launch of any tag, so no tag's schedule is spent and then
-        # stranded by a refusal the next one meets.
         check_sync_target(harness_config, bare)
         if CANDIDATE in tags:
             raise SystemExit("cost-bench: --harness-config %s cannot serve candidate and a pinned tag "
@@ -1148,7 +1249,7 @@ def cmd_replay(args):
     common = {"tasks": tasks, "plan": plan, "home": home, "bare": bare,
               "prices": json.loads((ROOT / "policy" / "prices.json").read_text(encoding="utf-8")).get("models", {}),
               "cli_version": _text([args.claude, "--version"], env=scrubbed_env()),
-              "harness_config": harness_config, "per_tag_out": len(tags) > 1}
+              "harness_config": harness_config, "harness": harness, "per_tag_out": len(tags) > 1}
     status = 0
     for tag in tags:
         if tag == CANDIDATE:
@@ -1175,10 +1276,7 @@ def replay_tag(tag, args, common, synced=None):
             print("cost-bench: tag %s is synced into a temporary profile, which is not signed in; "
                   "name a signed-in --harness-config to sync into instead" % tag, file=sys.stderr)
     else:
-        harness = Path(args.harness_repo).expanduser() if args.harness_repo else installed_harness(home)
-        if harness is None:
-            raise SystemExit("cost-bench: ~/.claude/CLAUDE.md does not lead to a harness checkout; name the "
-                             "installed one with --harness-repo")
+        harness = common["harness"]
         version = (harness / "VERSION").read_text(encoding="utf-8").strip()
         sha = _text(["git", "-C", str(harness), "rev-parse", "HEAD"])
         harness_config, source = common["harness_config"], None

@@ -2,9 +2,12 @@
 under is neither read nor written while it happens. No test here launches an agent: the harness
 under sync is a stub that records the environment it was given."""
 import argparse
+import contextlib
 import io
 import json
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +26,9 @@ config = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR")
 config.mkdir(parents=True, exist_ok=True)
 (config / "CLAUDE.md").write_text("synced %s" % (root / "VERSION").read_text().strip(), encoding="utf-8")
 (config / "env.json").write_text(json.dumps(dict(os.environ), sort_keys=True), encoding="utf-8")
+settings = config / "settings.json"
+if settings.is_file():  # merged in place, as the real sync merges its hooks into it
+    settings.write_text(settings.read_text() + ' {"hooks": "hooks/harness"}', encoding="utf-8")
 (config / "rules").mkdir(exist_ok=True)
 link = config / "rules" / ("stub-%s.md" % (root / "VERSION").read_text().strip())
 if not link.is_symlink():
@@ -252,6 +258,8 @@ def signed_in_profile(root):
     root = Path(root)
     (root / "statsig").mkdir(parents=True)
     (root / ".claude.json").write_text('{"signed": "in"}', encoding="utf-8")
+    (root / ".credentials.json").write_text('{"token": "before"}', encoding="utf-8")
+    (root / "settings.json").write_text('{"theme": "dark"}', encoding="utf-8")
     (root / "statsig" / "cache").write_text("state", encoding="utf-8")
     return root
 
@@ -323,11 +331,13 @@ class NamedProfileTests(unittest.TestCase):
                 self.run_replay(args, self.patched(repo, failing))
             self.assertEqual(contents(profile), before)
 
-    def refused_before_launch(self, tmp, repo, tags, profile, home=None):
+    def refused_before_launch(self, tmp, repo, tags, profile, home=None, installed=None, **over):
         """Runs the replay with a launcher that must never be called; returns the refusal."""
         launched = mock.Mock(side_effect=AssertionError("launched after a refusal"))
-        args = replay_args(tmp, repo, tag=tags, harness_config=str(profile))
+        args = replay_args(tmp, repo, tag=tags, harness_config=str(profile) if profile else None, **over)
         stack = self.patched(repo, launched, home)
+        if installed is not None:
+            stack[3] = mock.patch.object(BENCH, "installed_harness", installed)
         cli = mock.Mock(side_effect=AssertionError("asked the CLI after a refusal"))
         stack[2] = mock.patch.object(BENCH, "_text", cli)
         with self.assertRaises(SystemExit) as caught:
@@ -385,6 +395,132 @@ class NamedProfileTests(unittest.TestCase):
                 return [], False
             self.run_replay(args, self.patched(repo, fake_replay))
             self.assertEqual(outs, [repo / "benchmarks" / "1.0.0" / "v1" / BENCH.RESULTS])
+
+
+class UndoSyncTests(unittest.TestCase):
+    """The profile is not rolled back; the sync is taken out of it. Credentials are never touched."""
+
+    def prices(self, repo):
+        (repo / "policy").mkdir()
+        (repo / "policy" / "prices.json").write_text(json.dumps({"models": {}}), encoding="utf-8")
+
+    def test_a_credential_the_run_refreshed_is_left_as_the_run_left_it(self):
+        """settings.json, which the sync merged, comes back byte for byte; the credential file the
+        CLI rewrote mid-run keeps its new bytes, since rolling a refreshed token back signs the
+        profile out; everything the sync and the run added is gone."""
+        def fake_replay(tasks, opts, launch=None, out=None):
+            config = Path(opts["harness_config"])
+            self.assertIn("hooks/harness", (config / "settings.json").read_text(encoding="utf-8"))
+            (config / ".credentials.json").write_text('{"token": "refreshed"}', encoding="utf-8")
+            (config / "projects").mkdir()
+            (config / "projects" / "run.jsonl").write_text("{}", encoding="utf-8")
+            Path(out).write_text("", encoding="utf-8")
+            return [], False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            self.prices(repo)
+            profile = signed_in_profile(Path(tmp) / "bench-harness")
+            before = contents(profile)
+            args = replay_args(tmp, repo, harness_config=str(profile))
+            tests = NamedProfileTests()
+            self.assertEqual(tests.run_replay(args, tests.patched(repo, fake_replay)), 0)
+            after = contents(profile)
+            self.assertEqual((profile / ".credentials.json").read_text(encoding="utf-8"), '{"token": "refreshed"}')
+            self.assertEqual((profile / "settings.json").read_text(encoding="utf-8"), '{"theme": "dark"}')
+            expected = [(rel, kind, b'{"token": "refreshed"}' if rel == ".credentials.json" else data)
+                        for rel, kind, data in before]
+            self.assertEqual(after, expected)
+
+    def test_a_copy_aside_that_fails_halfway_leaves_the_profile_untouched_and_launches_nothing(self):
+        launched = mock.Mock(side_effect=AssertionError("launched after a failed copy"))
+
+        def broken_copy(src, dst, *a, **k):
+            Path(dst).write_bytes(b"trunc")  # what a full disk leaves
+            raise OSError(28, "No space left on device")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            self.prices(repo)
+            profile = signed_in_profile(Path(tmp) / "bench-harness")
+            before = contents(profile)
+            args = replay_args(tmp, repo, harness_config=str(profile), **{"tmp": str(Path(tmp) / "scratch")})
+            Path(args.tmp).mkdir()
+            tests = NamedProfileTests()
+            stack = tests.patched(repo, launched) + [mock.patch.object(BENCH.shutil, "copy2", broken_copy)]
+            with self.assertRaises(OSError):
+                tests.run_replay(args, stack)
+            launched.assert_not_called()
+            self.assertEqual(contents(profile), before)
+            self.assertEqual(sorted(Path(args.tmp).iterdir()), [])  # no copy was ever marked saved
+
+    def test_a_copy_that_does_not_match_the_original_is_not_a_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = signed_in_profile(Path(tmp) / "p")
+            listing = BENCH.profile_listing(profile)
+            (profile / "settings.json").write_text('{"theme": "light"}', encoding="utf-8")  # moved under us
+            with self.assertRaises(RuntimeError):
+                BENCH.copy_aside(profile, Path(tmp) / "saved", listing)
+            self.assertFalse((Path(tmp) / "saved").exists())
+
+    def test_a_failed_undo_keeps_the_copy_and_names_its_path_even_on_interrupt(self):
+        for failure in (RuntimeError("disk"), KeyboardInterrupt()):
+            with tempfile.TemporaryDirectory() as tmp:
+                repo = harness_repo(Path(tmp) / "repo")
+                profile = signed_in_profile(Path(tmp) / "bench-harness")
+                err = io.StringIO()
+                with mock.patch.object(BENCH, "undo_sync", mock.Mock(side_effect=failure)), \
+                        contextlib.redirect_stderr(err), self.assertRaises(type(failure)):
+                    with BENCH.synced_tag(repo, "v1", config_dir=str(profile)):
+                        pass
+                kept = re.search(r"kept at (\S+)", err.getvalue())
+                self.assertIsNotNone(kept, err.getvalue())
+                self.assertEqual((Path(kept.group(1)) / "settings.json").read_text(encoding="utf-8"),
+                                 '{"theme": "dark"}')
+                shutil.rmtree(kept.group(1).rsplit("/saved-profile", 1)[0], ignore_errors=True)
+
+    def test_every_restore_write_is_atomic_and_skipped_when_bytes_already_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = signed_in_profile(Path(tmp) / "p")
+            before = BENCH.profile_listing(profile)
+            copied = BENCH.copy_aside(profile, Path(tmp) / "saved", before)
+            self.assertEqual(copied, ["settings.json"])
+            self.assertFalse((Path(tmp) / "saved").is_dir() and any(
+                p.name.endswith(".partial") for p in Path(tmp).iterdir()))
+            untouched = (profile / "settings.json").stat().st_ino
+            BENCH.undo_sync(profile, before, Path(tmp) / "saved", copied)
+            self.assertEqual((profile / "settings.json").stat().st_ino, untouched)  # not rewritten
+            (profile / "settings.json").write_text("changed", encoding="utf-8")
+            with mock.patch.object(BENCH, "atomic_write", wraps=BENCH.atomic_write) as atomic:
+                BENCH.undo_sync(profile, before, Path(tmp) / "saved", copied)
+            atomic.assert_called_once()
+            self.assertEqual((profile / "settings.json").read_text(encoding="utf-8"), '{"theme": "dark"}')
+            self.assertEqual([p.name for p in profile.iterdir() if p.name.startswith(".settings")], [])
+
+    def test_only_a_link_into_a_harness_or_at_a_managed_name_is_residue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            profile = signed_in_profile(Path(tmp) / "p")
+            (profile / "debug").mkdir()
+            (profile / "debug" / "x.log").write_text("", encoding="utf-8")
+            (profile / "debug" / "latest").symlink_to(profile / "debug" / "x.log")
+            self.assertEqual(BENCH.harness_residue(profile), [])
+            self.assertIsNone(BENCH.check_sync_target(profile))
+            (profile / "misc").symlink_to(repo / "VERSION")
+            self.assertEqual(BENCH.harness_residue(profile), ["misc"])
+            (profile / "misc").unlink()
+            (profile / "rules").mkdir()
+            (profile / "rules" / "own.md").symlink_to(profile / "debug" / "x.log")
+            self.assertEqual(BENCH.harness_residue(profile), ["rules/own.md"])
+
+    def test_candidate_beside_a_pinned_tag_needs_a_resolvable_install_before_anything_launches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            self.prices(repo)
+            tests = NamedProfileTests()
+            message = tests.refused_before_launch(tmp, repo, ["v1", "candidate"], None,
+                                                  installed=lambda home: None, harness_repo=None)
+            self.assertIn("--harness-repo", message)
 
 
 if __name__ == "__main__":

@@ -78,10 +78,16 @@ python3 scripts/cost_bench.py replay --model <id> \
   profile is refused. Because a profile's credential is keyed on its absolute path, a directory
   made for the run is not signed in; name a signed-in `--harness-config` as the directory each
   tag is synced into when the run is meant to spend. That profile must hold no harness files
-  already, is copied aside before each tag's sync and put back exactly as it was after the tag's
-  schedule, exception or not, and cannot serve `candidate` in the same run. Every one of these
-  refusals happens before the first launch of any tag. The pinned checkout is admitted to the
-  harness arm's fence for reading only, and a pinned tag's results go in a folder named for it.
+  already (a link counts only when it leads into a harness checkout or sits at a name the harness
+  manages; the CLI's own `debug/latest` does not), and it cannot serve `candidate` in the same
+  run. After each tag's schedule, exception or interrupt included, the sync is taken back out of
+  it rather than the profile rolled back: what the sync and the run added is removed, and the one
+  file a sync rewrites in place, `settings.json`, is put back from a copy taken beforehand through
+  an atomic write. Credential files are never copied, rewritten or deleted, so a token the CLI
+  refreshed during the run stays refreshed. If taking the sync back fails, the copy is kept and
+  its path printed. Every one of these refusals happens before the first launch of any tag. The
+  pinned checkout is admitted to the harness arm's fence for reading only, and a pinned tag's
+  results go in a folder named for it.
 
 - **The arms differ by environment only.** Both get one command line: the same `--model`,
   `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network
