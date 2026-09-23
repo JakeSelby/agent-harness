@@ -91,9 +91,9 @@ prints the drift between the frozen commit and `origin/main` under the runtime s
 `VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`, `config.example.json` —
 and `harness freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
 them, because such a change costs part of the round again. How much of it is scoped per target: a
-change under one runtime's adapter directory invalidates only that runtime's targets, and a change
-to shared source invalidates them all. The rule and its limits are in
-[compatibility](compatibility.md).
+change under one runtime's adapter directory invalidates only that runtime's targets, unless it
+touches a file shared code reads for every runtime, and a change to shared source invalidates them
+all. The carve-out and its limits are in [compatibility](compatibility.md).
 Return `state` to `open` after the tag. The evidence commit must stay an ancestor of the
 qualification source commit, which `evidence_errors` enforces, so a diverged release branch fails
 closed rather than publishing an unqualified source.

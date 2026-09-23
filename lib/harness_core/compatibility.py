@@ -95,51 +95,91 @@ def merge_refusal(root, data, ref):
             + " changes qualified runtime source: " + ", ".join(result["paths"])]
 
 
-def runtime_scopes(data):
-    """The adapter directory each runtime owns, as the catalog declares it.
+def invalidation_declaration(data):
+    """The catalog's validated per-target invalidation scope, or `{}` when none is declared.
 
-    A directory here is private to its runtime, so a change inside it invalidates only that
-    runtime's evidence. The claim is gated by tests/test_adapter_directory_isolation.py.
+    Three claims are declared rather than inferred, because a reviewer has to be able to read
+    them: which directory each runtime owns, which files inside such a directory shared code
+    reads for any runtime, and which files are loaded only for the runtime whose session is
+    running. The first two are enforced by tests/test_adapter_directory_isolation.py; the third
+    is a maintainer's claim about call sites, and docs/compatibility.md says so.
     """
     declared = data.get("evidence_invalidation")
     if not declared:
         return {}
-    if declared.get("version") != SCOPE_VERSION:
+    if not isinstance(declared, dict) or declared.get("version") != SCOPE_VERSION:
         raise ValueError("unsupported evidence invalidation scope version")
-    scopes = declared.get("runtime_paths")
+    scopes, known = declared.get("runtime_paths"), {row.get("runtime") for row in data.get("clients") or []}
     if not isinstance(scopes, dict) or len(scopes) < 2:
         raise ValueError("evidence invalidation scope requires two or more runtime paths")
-    for runtime in sorted(scopes):
+    for runtime in sorted(scopes, key=str):
+        if not isinstance(runtime, str) or runtime not in known:
+            raise ValueError("evidence invalidation scope names a runtime no client runs: "
+                             + str(runtime))
         if scopes[runtime] != "adapters/" + runtime:
             raise ValueError("evidence invalidation scope must name each runtime's own adapter "
                              "directory: " + runtime)
-    return dict(scopes)
+    shared, private = declared.get("shared_files"), declared.get("runtime_files")
+    for names, label in ((shared, "shared_files"), (private, "runtime_files")):
+        if not isinstance(names, list) or not all(isinstance(name, str) and name and "/" not in name
+                                                  and name not in (".", "..") for name in names):
+            raise ValueError("evidence invalidation " + label + " must be plain file names")
+    if not shared:
+        raise ValueError("evidence invalidation scope requires the shared file names, because a "
+                         "narrowed scope that names none fails open")
+    if set(shared) & set(private):
+        raise ValueError("an adapter file is either shared or per-runtime, never both")
+    return {"runtime_paths": dict(scopes), "shared_files": sorted(shared),
+            "runtime_files": sorted(private)}
+
+
+def runtime_scopes(data):
+    """The adapter directory each runtime owns, as the catalog declares it."""
+    return invalidation_declaration(data).get("runtime_paths", {})
 
 
 def evidence_scope(data, client):
     """The path set whose change invalidates one client's evidence.
 
-    Shared source always counts; another runtime's adapter directory does not. A runtime the
-    catalog does not map is excluded from nothing, so an unmapped or undeclared target keeps the
-    whole-source rule and the scope fails closed.
+    Shared source always counts, and so do the files under another runtime's adapter directory
+    that shared code reads whatever the runtime. The rest of another runtime's directory does
+    not. A runtime the catalog does not map is excluded from nothing, so an unmapped or
+    undeclared target keeps the whole-source rule and the scope fails closed.
     """
-    scopes = runtime_scopes(data)
-    excluded = sorted(path for name, path in scopes.items() if name != client.get("runtime"))
-    if client.get("runtime") not in scopes:
-        excluded = []
-    return {"version": SCOPE_VERSION, "paths": list(SOURCE_PATHS), "excluded": excluded}
+    declared = invalidation_declaration(data)
+    scopes = declared.get("runtime_paths", {})
+    excluded, shared = [], []
+    if client.get("runtime") in scopes:
+        excluded = sorted(path for name, path in scopes.items() if name != client["runtime"])
+        shared = sorted(path + "/" + name for path in excluded for name in declared["shared_files"])
+    return {"version": SCOPE_VERSION, "paths": list(SOURCE_PATHS), "excluded": excluded,
+            "shared": shared}
 
 
 def scope_pathspec(scope):
-    """Render a scope as the git pathspec a diff of the invalidating source uses."""
-    return list(scope["paths"]) + [":(exclude)" + path for path in scope["excluded"]]
+    """The git pathspec for the source a target's evidence is checked against.
+
+    `literal` magic is what keeps an exclusion from widening: a declared directory is matched as
+    the exact path it is, never as a glob.
+    """
+    return list(scope["paths"]) + [":(exclude,literal)" + path for path in scope["excluded"]]
 
 
 def same_scope(declared, scope):
-    """Whether an evidence record claims exactly the scope the catalog grants its client."""
+    """Whether an evidence record claims exactly the scope the catalog grants its client.
+
+    A record is untrusted input, so a malformed claim is one more scope the catalog does not
+    grant rather than a traceback.
+    """
     if not isinstance(declared, dict) or declared.get("version") != scope["version"]:
         return False
-    return all(sorted(declared.get(key) or []) == sorted(scope[key]) for key in ("paths", "excluded"))
+    for key in ("paths", "excluded", "shared"):
+        names = declared.get(key)
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            return False
+        if sorted(names) != sorted(scope[key]):
+            return False
+    return True
 
 
 def catalog(root):
@@ -210,9 +250,15 @@ def evidence_errors(root, data, client):
             errors.append("evidence claims an invalidation scope the catalog does not grant")
             continue
         paths = scope_pathspec(scope) if declared is not None else list(SOURCE_PATHS)
+        # The carve-out cannot ride in the same pathspec: a git exclusion wins over every
+        # positive pattern, so the shared files inside an excluded directory need their own diff.
+        carved = scope["shared"] if declared is not None else []
         ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, target], capture_output=True)
         unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target, "--",
                                     *paths], capture_output=True)
+        if carved and not unchanged.returncode:
+            unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target,
+                                        "--", *carved], capture_output=True)
         if ancestry.returncode or unchanged.returncode:
             errors.append("runtime source changed or evidence commit is unavailable")
             continue

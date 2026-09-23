@@ -9,8 +9,15 @@ from test_harness import REPO
 from harness_core import compatibility
 
 
-SCOPE = {"version": 1, "runtime_paths": {"claude-code": "adapters/claude-code",
-                                         "codex": "adapters/codex"}}
+SCOPE = {"version": 1,
+         "runtime_paths": {"claude-code": "adapters/claude-code", "codex": "adapters/codex"},
+         "shared_files": ["capabilities.json"], "runtime_files": ["hook.py"]}
+CLIENTS = [{"runtime": "claude-code"}, {"runtime": "codex"}, {"runtime": "cursor"}]
+
+
+def declaring(scope=SCOPE):
+    """A catalog fragment that declares `scope` for the runtimes its clients run."""
+    return {"clients": CLIENTS, "evidence_invalidation": scope}
 
 
 class ScopeDeclarationTests(unittest.TestCase):
@@ -24,34 +31,64 @@ class ScopeDeclarationTests(unittest.TestCase):
             self.assertEqual(path, "adapters/" + runtime)
 
     def test_an_undeclared_or_unmapped_runtime_keeps_the_whole_source_rule(self):
-        for data in ({}, {"evidence_invalidation": SCOPE}):
+        for data in ({}, declaring()):
             with self.subTest(data=data):
                 scope = compatibility.evidence_scope(data, {"runtime": "cursor"})
-                self.assertEqual(scope["excluded"], [])
+                self.assertEqual((scope["excluded"], scope["shared"]), ([], []))
                 self.assertEqual(compatibility.scope_pathspec(scope),
                                  list(compatibility.SOURCE_PATHS))
 
     def test_a_mapped_runtime_is_scoped_to_shared_source_and_its_own_adapter(self):
-        scope = compatibility.evidence_scope({"evidence_invalidation": SCOPE},
-                                             {"runtime": "claude-code"})
+        scope = compatibility.evidence_scope(declaring(), {"runtime": "claude-code"})
         self.assertEqual(scope["excluded"], ["adapters/codex"])
-        self.assertEqual(compatibility.scope_pathspec(scope)[-1], ":(exclude)adapters/codex")
+        self.assertEqual(scope["shared"], ["adapters/codex/capabilities.json"])
+        self.assertEqual(compatibility.scope_pathspec(scope)[-1],
+                         ":(exclude,literal)adapters/codex")
         self.assertIn("adapters", compatibility.scope_pathspec(scope))
 
+    def test_a_record_whose_scope_lists_are_not_strings_is_a_refusal_not_a_traceback(self):
+        scope = compatibility.evidence_scope(declaring(), {"runtime": "claude-code"})
+        for broken in ({"version": 1}, {"version": 1, "paths": "adapters", "excluded": [],
+                                        "shared": []},
+                       dict(scope, excluded=[None]), dict(scope, shared=[{"path": "adapters"}]),
+                       dict(scope, version=2), "not an object"):
+            with self.subTest(broken=broken):
+                self.assertFalse(compatibility.same_scope(broken, scope))
+        self.assertTrue(compatibility.same_scope(dict(scope), scope))
+
+    def test_a_runtime_with_no_adapter_directory_narrows_nothing_for_anyone(self):
+        # `adapters/cursor` does not exist, so declaring it excludes no file from any diff; the
+        # isolation test is what holds the declared directories to files that are really there.
+        scope = compatibility.evidence_scope(
+            declaring(dict(SCOPE, runtime_paths=dict(SCOPE["runtime_paths"],
+                                                     cursor="adapters/cursor"))),
+            {"runtime": "cursor"})
+        self.assertEqual(sorted(scope["excluded"]), ["adapters/claude-code", "adapters/codex"])
+
     def test_a_scope_that_does_not_name_a_runtimes_own_directory_is_refused(self):
+        paths = SCOPE["runtime_paths"]
         cases = [
-            ({"version": 2, "runtime_paths": SCOPE["runtime_paths"]}, "unsupported evidence"),
-            ({"version": 1, "runtime_paths": {"codex": "adapters/codex"}}, "two or more runtime"),
-            ({"version": 1, "runtime_paths": ["adapters/codex"]}, "two or more runtime"),
-            ({"version": 1, "runtime_paths": {"claude-code": "adapters/codex",
-                                              "codex": "adapters/codex"}}, "own adapter directory"),
-            ({"version": 1, "runtime_paths": {"claude-code": "lib", "codex": "adapters/codex"}},
+            (dict(SCOPE, version=2), "unsupported evidence"),
+            (dict(SCOPE, runtime_paths={"codex": "adapters/codex"}), "two or more runtime"),
+            (dict(SCOPE, runtime_paths=["adapters/codex"]), "two or more runtime"),
+            (dict(SCOPE, runtime_paths={"claude-code": "adapters/codex",
+                                        "codex": "adapters/codex"}), "own adapter directory"),
+            (dict(SCOPE, runtime_paths={"claude-code": "lib", "codex": "adapters/codex"}),
              "own adapter directory"),
+            (dict(SCOPE, runtime_paths=dict(paths, **{"grok": "adapters/grok"})),
+             "no client runs"),
+            (dict(SCOPE, runtime_paths=dict(paths, **{"../codex": "adapters/../codex"})),
+             "no client runs"),
+            (dict(SCOPE, shared_files=[]), "requires the shared file names"),
+            (dict(SCOPE, shared_files=["adapters/codex/capabilities.json"]), "plain file names"),
+            (dict(SCOPE, shared_files=["../capabilities.json"]), "plain file names"),
+            (dict(SCOPE, runtime_files=".."), "plain file names"),
+            (dict(SCOPE, runtime_files=["capabilities.json"]), "shared or per-runtime"),
         ]
         for declared, message in cases:
             with self.subTest(declared=declared):
                 with self.assertRaisesRegex(ValueError, message):
-                    compatibility.runtime_scopes({"evidence_invalidation": declared})
+                    compatibility.runtime_scopes(declaring(declared))
 
 
 class ScopedInvalidationTests(unittest.TestCase):
@@ -67,11 +104,11 @@ class ScopedInvalidationTests(unittest.TestCase):
         self.git("init", "--quiet", "-b", "main")
         self.write("VERSION", "1.0.0\n")
         self.write("lib/core.py", "shared = 1\n")
-        self.write("adapters/claude-code/hook.py", "print('one')\n")
-        self.write("adapters/codex/hook.py", "print('one')\n")
+        for runtime in ("claude-code", "codex"):
+            self.write("adapters/" + runtime + "/hook.py", "print('one')\n")
+            self.write("adapters/" + runtime + "/capabilities.json", "{}\n")
         self.commit("qualification source")
-        self.data = {"harness_version": "1.0.0", "required_cases": ["installation"],
-                     "evidence_invalidation": SCOPE}
+        self.data = dict(declaring(), harness_version="1.0.0", required_cases=["installation"])
         self.record = {"kind": "native", "harness_version": "1.0.0", "runtime_version": "1.2",
                        "client_version": "1.2", "platform": "fixture-os",
                        "source_commit": self.git("rev-parse", "HEAD"),
@@ -125,6 +162,16 @@ class ScopedInvalidationTests(unittest.TestCase):
     def test_a_shared_source_change_still_invalidates_every_target(self):
         self.write("lib/core.py", "shared = 2\n")
         self.commit("shared fix")
+        for runtime in ("claude-code", "codex"):
+            with self.subTest(runtime=runtime):
+                self.assertIn("runtime source changed or evidence commit is unavailable",
+                              self.errors(runtime))
+
+    def test_a_shared_file_in_another_runtimes_directory_invalidates_every_target(self):
+        # `capabilities.json` is read for every runtime whatever the session runs, so it is
+        # carved back into the shared set even inside an excluded directory.
+        self.write("adapters/codex/capabilities.json", '{"stances": {}}\n')
+        self.commit("codex capabilities change")
         for runtime in ("claude-code", "codex"):
             with self.subTest(runtime=runtime):
                 self.assertIn("runtime source changed or evidence commit is unavailable",

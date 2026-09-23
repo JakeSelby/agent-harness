@@ -129,18 +129,35 @@ not empirical evidence.
 Evidence is invalidated per target, not per repository. A target's path set is the shared runtime
 source — `VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`,
 `config.example.json` — minus every *other* runtime's adapter directory, as the catalog's
-`evidence_invalidation` block maps them. A fix confined to `adapters/codex` therefore leaves the
-Claude Code targets of a round standing, and the reverse holds; a change to shared source, or to a
-file under `adapters/` that no runtime owns, still invalidates every target.
+`evidence_invalidation` block maps them, **except for the files inside such a directory that
+shared code reads whatever runtime is running**. Those are carved back into the shared set and
+invalidate every target. The block names them: today `bindings.json` (`harness tiers` checks both
+adapters' class tables in one command), `capabilities.json` (stance coverage and catalog
+reconciliation read every runtime's) and `worker.py` (`harness role run --runtime` chooses the
+adapter by flag, so either runtime's worker is reachable from either session). Only `hook.py` is
+private to its runtime: a client executes its own runtime's hook, and `harness sync` writes the
+other one's path into a config file without reading it.
+
+So a fix confined to `adapters/codex/hook.py` leaves the Claude Code targets of a round standing,
+and the reverse holds. A change to shared source, to a carved-out file in any adapter directory,
+or to a file under `adapters/` that no runtime owns, still invalidates every target.
 
 The scope fails closed. A runtime the catalog does not map is excluded from nothing and keeps the
-whole-source rule, a declared path that is not that runtime's own `adapters/<runtime>` directory is
-rejected, and a record that carries no `invalidation_scope` is checked against the whole source.
+whole-source rule; a declared path that is not that runtime's own `adapters/<runtime>` directory,
+or that names a runtime no client runs, is rejected; a declaration that carves out no shared file
+at all is rejected rather than trusted; exclusions are emitted as literal pathspecs so no glob or
+`..` can widen them; and a record that carries no `invalidation_scope`, or one whose scope is
+malformed or differs from what the catalog grants, is checked against the whole source or refused.
 Each record states the scope it was validated under, so a reviewer reads the assumption from the
-artifact instead of recomputing it; a record claiming any other scope is refused. The claim the
-narrowing rests on — that no runtime's loader reads a file under another's adapter directory — is
-asserted by `tests/test_adapter_directory_isolation.py`, which scans the runtime source for a
-hardcoded adapter path rather than taking it on trust.
+artifact instead of recomputing it.
+
+`tests/test_adapter_directory_isolation.py` holds the declaration to the source: it parses every
+tracked Python file under the shared paths — failing on one it cannot parse, rather than skipping
+it — asserts it still finds the loaders it is meant to cover, and fails when shared code builds a
+path to an adapter file the block does not declare, names another runtime's directory outright, or
+reaches an adapter through a symlink. What it cannot prove is the `runtime_files` half: that
+`hook.py` is only ever loaded for the runtime whose session is running is a maintainer's reading of
+the call sites, and a wrong entry there is coupling this scope would miss.
 
 Per-*case* scoping, which would invalidate only the acceptance cases whose declared source paths
 changed, is not implemented. It would replace the published requirement with "no change under the
