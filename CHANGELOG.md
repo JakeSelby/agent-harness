@@ -9,12 +9,16 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - Every replay-benchmark row records `cache_miss_ratio` beside its cache-normalised cost: the
-  share of the run's prefix the provider re-wrote rather than served, summed over the run's turns
-  and computed by the same module `harness usage --by prefix` uses, so the two figures cannot
-  drift apart. `benchmarks/history.jsonl` and `history.md` carry each arm's mean of it, so a
-  candidate that buys fewer tokens by re-writing its prefix more often is visible in the history
-  rather than hidden inside the dollars. A run whose CLI output carries no per-turn cache figures
-  is `null`, never zero, since zero is a run that held its whole prefix (#497).
+  share of the run's prefix the provider re-wrote rather than served, summed over every turn the
+  run opened. The arithmetic is the one `harness usage --by prefix` applies to a ledger row, and
+  is imported from that module rather than restated, but the two figures answer different
+  questions and a fan-out run will differ: the replay counts a subagent thread's fresh prefix as
+  part of what the run cost, where the session figure subtracts it. `benchmarks/history.jsonl`
+  and `history.md` carry each arm's mean of it, so a candidate that buys fewer tokens by
+  re-writing its prefix more often is visible in the history rather than hidden inside the
+  dollars. A run whose CLI output carries no per-turn cache figures, or any one of whose turns
+  reports its usage without them, is `null`, never zero, since zero is a run that held its whole
+  prefix (#497).
 
 ### Fixed
 

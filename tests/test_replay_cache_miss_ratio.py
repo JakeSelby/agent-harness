@@ -3,10 +3,12 @@
 output only: no test here launches an agent. Run: python3 -m unittest discover tests"""
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+import isolation
 from test_harness import REPO
 from test_cost_bench import Launch, TASK, options  # the runner's own fakes, not a second set
 
@@ -24,9 +26,9 @@ def load(name):
 BENCH = load("cost_bench")
 
 
-def result(cost=0.5):
-    return {"type": "result", "subtype": "success", "is_error": False, "num_turns": 3,
-            "total_cost_usd": cost,
+def result(cost=0.5, error=False):
+    return {"type": "result", "subtype": "error_during_execution" if error else "success",
+            "is_error": error, "num_turns": 3, "total_cost_usd": cost,
             "usage": {"input_tokens": 10, "output_tokens": 20,
                       "cache_creation_input_tokens": 30, "cache_read_input_tokens": 40}}
 
@@ -37,6 +39,13 @@ def turn(thread=None, read=0, write=0, model="claude-test-20260101"):
             "message": {"model": model,
                         "usage": {"cache_read_input_tokens": read,
                                   "cache_creation_input_tokens": write}}}
+
+
+def silent_turn(thread=None):
+    """A turn whose usage block reports tokens and no cache fields at all."""
+    return {"type": "assistant", "parent_tool_use_id": thread,
+            "message": {"model": "claude-test-20260101",
+                        "usage": {"input_tokens": 12, "output_tokens": 34}}}
 
 
 def row(arm, cost=1.0, miss=0.1, error=False, **extra):
@@ -71,6 +80,19 @@ class PerRunRatioTests(unittest.TestCase):
         stream = [turn(None, read=0, write=0), result()]
         self.assertIsNone(BENCH.parse_result(json.dumps(stream))["cache_miss_ratio"])
 
+    def test_one_turn_reporting_no_cache_fields_makes_the_whole_run_unknown(self):
+        """Counted as two zeroes it would dilute the run's ratio towards a held prefix, which is
+        the one reading the ledger's rule forbids: unknown is never averaged with known."""
+        stream = [turn(None, read=0, write=9000), silent_turn(), result()]
+        self.assertIsNone(BENCH.parse_result(json.dumps(stream))["cache_miss_ratio"])
+
+    def test_a_turn_missing_one_of_the_two_cache_fields_is_unknown_too(self):
+        partial = {"type": "assistant", "parent_tool_use_id": None,
+                   "message": {"model": "claude-test-20260101",
+                               "usage": {"cache_read_input_tokens": 500}}}
+        stream = [turn(None, read=1000, write=1000), partial, result()]
+        self.assertIsNone(BENCH.parse_result(json.dumps(stream))["cache_miss_ratio"])
+
     def test_a_run_that_served_its_whole_prefix_reports_zero_not_unknown(self):
         stream = [turn(None, read=5000, write=0), result()]
         self.assertEqual(BENCH.parse_result(json.dumps(stream))["cache_miss_ratio"], 0.0)
@@ -92,25 +114,70 @@ class PerRunRatioTests(unittest.TestCase):
         self.assertEqual([r["error"] for r in rows], [True, True])
         self.assertIsNone(rows[0]["cache_miss_ratio"])
 
+    def test_a_run_that_errored_after_spending_cache_still_reports_unknown(self):
+        """The turns are real and the tool counts are kept as diagnostics, but an aborted run's
+        prefix is not the prefix it would have held, so the figure is not its spend."""
+        stream = json.dumps([turn(None, read=9000, write=1000), result(error=True)])
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, _ = BENCH.replay([TASK], options(tmp, reps=1), Launch([stream] * 2))
+        self.assertEqual([r["error"] for r in rows], [True, True])
+        for errored in rows:
+            self.assertIsNone(errored["cache_miss_ratio"])
+            self.assertIsNotNone(errored["first_call_cache_write"])
+
 
 class BackfillTests(unittest.TestCase):
+    """`backfill_rows` fingerprints the inherited profile, so every case here runs under a
+    temporary home rather than globbing the developer's own."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self._old_environ = dict(os.environ)
+        isolation.isolate_home(self.home)
+        self.raw = self.home / "raw"
+        self.raw.mkdir()
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._old_environ)
+        self.tmp.cleanup()
+
+    def kept(self, name, stream):
+        (self.raw / name).write_text(stream, encoding="utf-8")
+
     def test_a_row_written_before_the_field_existed_gets_it_from_the_raw_output(self):
-        stream = json.dumps([turn(None, read=9000, write=1000), result()])
-        with tempfile.TemporaryDirectory() as tmp:
-            raw = Path(tmp) / "raw"
-            raw.mkdir()
-            (raw / "demo-harness-1.json").write_text(stream, encoding="utf-8")
-            old = {"task": "demo", "arm": "harness", "rep": 1}
-            rows, missing = BENCH.backfill_rows([old], raw)
+        self.kept("demo-harness-1.json", json.dumps([turn(None, read=9000, write=1000), result()]))
+        rows, missing = BENCH.backfill_rows([{"task": "demo", "arm": "harness", "rep": 1}],
+                                            self.raw, home=self.home)
         self.assertEqual(missing, [])
         self.assertEqual(rows[0]["cache_miss_ratio"], 0.1)
 
     def test_a_row_with_no_raw_output_stays_unknown_rather_than_borrowing_one(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            rows, missing = BENCH.backfill_rows([{"task": "demo", "arm": "bare", "rep": 1}],
-                                                Path(tmp))
+        rows, missing = BENCH.backfill_rows([{"task": "demo", "arm": "bare", "rep": 1}],
+                                            self.raw, home=self.home)
         self.assertEqual(len(missing), 1)
         self.assertIsNone(rows[0]["cache_miss_ratio"])
+
+    def test_a_missing_raw_file_clears_the_live_figure_rather_than_keeping_it(self):
+        """The row is reported as missing, so its stream fields say what this pass could read.
+        A figure kept from the run itself would read as one the enrichment confirmed."""
+        live = {"task": "demo", "arm": "bare", "rep": 1, "cache_miss_ratio": 0.42,
+                "spawns": 3, "tool_counts": {"Bash": 2}}
+        rows, missing = BENCH.backfill_rows([live], self.raw, home=self.home)
+        self.assertEqual(len(missing), 1)
+        self.assertIsNone(rows[0]["cache_miss_ratio"])
+        self.assertIsNone(rows[0]["spawns"])
+        self.assertEqual(rows[0]["tool_counts"], {})
+
+    def test_an_errored_row_is_not_given_a_ratio_the_runner_would_have_refused(self):
+        self.kept("demo-bare-1.json", json.dumps([turn(None, read=9000, write=1000),
+                                                  result(error=True)]))
+        errored = {"task": "demo", "arm": "bare", "rep": 1, "error": True}
+        rows, missing = BENCH.backfill_rows([errored], self.raw, home=self.home)
+        self.assertEqual(missing, [])
+        self.assertIsNone(rows[0]["cache_miss_ratio"])
+        self.assertEqual(rows[0]["first_call_cache_write"], 1000)
 
 
 class HistoryTests(unittest.TestCase):
@@ -145,9 +212,11 @@ class HistoryTests(unittest.TestCase):
         self.assertIn("| n/a | n/a |", text)
         header, rule = text.splitlines()[4], text.splitlines()[5]
         self.assertEqual(header.count("|"), rule.count("|"))
-        for line in text.splitlines():
-            if line.startswith("| 2026-01-01"):
-                self.assertEqual(line.count("|"), header.count("|"))
+        data = [line for line in text.splitlines()
+                if line.startswith("| 2") and line.split("|")[1].strip()[:2] == "20"]
+        self.assertEqual(len(data), 2)  # the legacy row is width-checked too, not skipped
+        for line in data:
+            self.assertEqual(line.count("|"), header.count("|"))
 
 
 if __name__ == "__main__":

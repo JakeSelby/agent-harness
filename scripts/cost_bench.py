@@ -373,7 +373,7 @@ def parse_result(stdout):
     else:
         tokens = {kind: int((result.get("usage") or {}).get(kind) or 0) for kind in TOKEN_KINDS}
     first_turns, seen, first_write, tools = [], set(), None, {}
-    cache = {"cache_read": 0, "cache_write": 0, "turns": 0}
+    cache = {"cache_read": 0, "cache_write": 0, "turns": 0, "known": True}
     for message in messages:
         if not isinstance(message, dict) or message.get("type") != "assistant":
             continue
@@ -387,8 +387,11 @@ def parse_result(stdout):
             continue
         if first_write is None:
             first_write = int(body["usage"].get("cache_creation_input_tokens") or 0)
-        cache["cache_read"] += int(body["usage"].get("cache_read_input_tokens") or 0)
-        cache["cache_write"] += int(body["usage"].get("cache_creation_input_tokens") or 0)
+        for field, key in (("cache_read", "cache_read_input_tokens"),
+                           ("cache_write", "cache_creation_input_tokens")):
+            if key not in body["usage"]:
+                cache["known"] = False  # one silent turn and the run's total is not its spend
+            cache[field] += int(body["usage"].get(key) or 0)
         cache["turns"] += 1
         if thread in seen:
             continue
@@ -411,10 +414,11 @@ def run_miss_ratio(cache):
     thread the run opened, subagents included: a fan-out writes a fresh prefix, and here that is
     part of what the run cost rather than something to subtract.
 
-    None when the CLI output carried no per-turn usage at all, and when the turns it did carry
-    report neither reads nor writes. Zero is a run that served its whole prefix from cache, and a
-    run that cannot say must never be read as that one."""
-    if not cache["turns"]:
+    None when the CLI output carried no per-turn usage at all, when a turn's usage block omits
+    either cache field, and when the turns it did carry report neither reads nor writes. Zero is
+    a run that served its whole prefix from cache, and a run that cannot say must never be read
+    as that one: a silent turn counted as two zeroes would be averaged in as a held prefix."""
+    if not cache["turns"] or not cache["known"]:
         return None
     ratio = cache_prefix.miss_ratio(cache, "")
     return None if ratio is None else round(ratio, 4)
@@ -560,7 +564,10 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
                    cost_normalised_usd=normalised_cost(parsed["cost_usd"], parsed["first_turns"], opts["prices"]),
                    **{field: parsed[field] for field in STREAM_FIELDS})
         if parsed["is_error"] or done.returncode:
-            return dict(row, error=True, error_kind=parsed["subtype"] or "exit %s" % done.returncode)
+            # The other stream fields diagnose an errored run; a miss ratio only describes one
+            # that finished, and an aborted run's turns are not the spend it would have had.
+            return dict(row, error=True, cache_miss_ratio=None,
+                        error_kind=parsed["subtype"] or "exit %s" % done.returncode)
         try:
             row["passed"] = bool(opts.get("scorer", score)(task, workdir, opts["repo"])[0])
         except Exception as exc:  # a check that cannot run says nothing about the agent's work
@@ -852,10 +859,12 @@ def backfill_rows(rows, raw_dir, config_dir=None, home=None):
         except (OSError, ValueError):
             missing.append(path.name)
             for field in STREAM_FIELDS:
-                new.setdefault(field, {} if field == "tool_counts" else None)
+                new[field] = {} if field == "tool_counts" else None
             out.append(new)
             continue
         new.update({field: parsed[field] for field in STREAM_FIELDS})
+        if new.get("error"):
+            new["cache_miss_ratio"] = None  # the same rule `run_one` applies to an errored run
         out.append(new)
     return out, missing
 
