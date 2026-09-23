@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `docs/spikes/` records the measurements a decision was taken on, starting with the in-run budget
+  nudge: whether a running subagent should be told mid-run how its spend compares with its soft
+  budget. Measured on one machine's ledger, 2 of 89 budgeted subagent runs overran, the excess was
+  4.5% of subagent output, and in the larger sample of runs whose brief carried no budget the
+  median overrun was discovered with one tool call left — too late to act on — so nothing is built
+  and the record says which numbers would change the answer (#322).
 - A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
   the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
   this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
