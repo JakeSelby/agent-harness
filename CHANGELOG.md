@@ -11,7 +11,7 @@ All notable changes to this project are documented here. The format follows
 - A qualification round names two capability classes per target rather than one: an execution
   class, `standard` by default, for the worker that runs the scripted cases and writes the
   findings, and an assessment class, `strong` by default and a floor rather than a preference,
-  for the reader that assesses the observations. Now that ten of the eleven cases are scripts,
+  for the reader that assesses the observations. Now that the required cases are scripts,
   running them is reading JSON and writing a file, which is not work the strong tier is needed
   for; assessing what they observed is, and the published procedure requires a reviewer. Both
   classes are written into the evidence record and the round record, so the evidence says which
@@ -30,6 +30,32 @@ All notable changes to this project are documented here. The format follows
   adapter's table and not a personal `tiers` override, because a round runs from a frozen clone. The
   saving is the issue's estimate and not a measurement: 230K–590K output tokens per round, most
   of it authoring rather than judgement (#338).
+- Every required acceptance case now has a driver in `scripts/native_acceptance.py`, so
+  `--dry-plan` no longer says of any case that it is not automated yet. Nine of them are new here;
+  most were prose in an evidence record that a worker re-implemented by hand each round, which is
+  where most of a round's orchestrator tokens went. They include `spawn-confinement`, which #291
+  added to the required set: it spawns a framework's review work with no `subagent_type` at all,
+  carrying only the sentences the integration descriptor itself declares — read from the
+  descriptor rather than restated, so a driver cannot keep passing after the descriptor stopped
+  naming them — and reads the refusal beside an ordinary spawn that must still run, because a
+  guard that refuses everything would otherwise read as a pass. Each new case emits the
+  observation string a reviewer assesses, and each returns `unverified` rather than a pass when
+  the behaviour it is about was not observed: a runtime that writes no subagent record is a named
+  gap, and a model that declined a turn is not a control. `gate-invalidation` delivers its Stop
+  events to the runtime's own coordinator rather than paying for eleven client turns, and says so
+  in its observation. The provisioning and driver that used to live only in each round's scratch
+  copy are committed as `scripts/qualification_provision.py` and `scripts/qualification_round.py`;
+  the clone comes from this repository's own object store, and the pinned BMad installer, for the
+  optional integration suite a minor release runs by hand, is the only step that reaches the
+  network. The runner also gained a Codex configuration home — its own
+  `CODEX_HOME`, the `codex exec --json` invocation and the rollout layout — derived from
+  `adapters/codex/worker.py`, `policy/hooks/usage-log.py` and the documentation. No Codex round
+  has been driven through it, so every Codex verdict is reported `unverified` with its
+  observation kept until an operator compares one against a hand run and passes
+  `--home-confirmed`, which is the discipline `permission-controls` already owes. Confirmation is
+  per target, because one surface agreeing with a hand run says nothing about another, and on an
+  unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
+  what is in question there is the reading, not the harness (#336).
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill
   surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
@@ -222,27 +248,6 @@ All notable changes to this project are documented here. The format follows
   4.5% of subagent output, and in the larger sample of runs whose brief carried no budget the
   median overrun was discovered with one tool call left — too late to act on — so nothing is built
   and the record says which numbers would change the answer (#322).
-- Every one of the eleven required acceptance cases now has a driver in
-  `scripts/native_acceptance.py`, so `--dry-plan` no longer says of any case that it is not
-  automated yet. Ten of them were prose in an evidence record that a worker re-implemented by
-  hand each round, which is most of what a round's orchestrator tokens were spent on. Each new
-  case emits the observation string a reviewer assesses, and each returns `unverified` rather
-  than a pass when the behaviour it is about was not observed: a runtime that writes no subagent
-  record is a named gap, a model that declined a turn is not a control, a BMad framework checkout
-  that was not provisioned is a reason and never a skip. `gate-invalidation` delivers its Stop
-  events to the runtime's own coordinator rather than paying for eleven client turns, and says so
-  in its observation. The provisioning and driver that used to live only in each round's scratch
-  copy are committed as `scripts/qualification_provision.py` and `scripts/qualification_round.py`;
-  the clone comes from this repository's own object store, and the pinned BMad installer is the
-  only step that reaches the network. The runner also gained a Codex configuration home — its own
-  `CODEX_HOME`, the `codex exec --json` invocation and the rollout layout — derived from
-  `adapters/codex/worker.py`, `policy/hooks/usage-log.py` and the documentation. No Codex round
-  has been driven through it, so every Codex verdict is reported `unverified` with its
-  observation kept until an operator compares one against a hand run and passes
-  `--home-confirmed`, which is the discipline `permission-controls` already owes. Confirmation is
-  per target, because one surface agreeing with a hand run says nothing about another, and on an
-  unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
-  what is in question there is the reading, not the harness (#336).
 - A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
   the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
   this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
@@ -375,14 +380,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- Four faults in the qualification scripts, each of which would have cost a paid round to find.
+- Three faults in the qualification scripts, each of which would have cost a paid round to find.
   The round's clone passed `--shared=false` to `git clone`, an option that takes no value, so
   every provision exited; `bidirectional-handoff` sent the same `--revision` twice expecting a
   refusal second, where `lib/harness_core/tasks.py` refuses only a revision that has been spent,
   and it sent the writing runtime as a contract field the same module rejects, so the case could
-  never have passed; `bmad-workflow` applied into the checkout every target shares and passed on
-  any declaration it found there, so a second target or a rerun passed having written nothing —
-  it now applies into its own copy and asserts this apply wrote one; and the round driver left a
+  never have passed; and the round driver left a
   previous target record in place, so a runner that exited before writing `--out` reported the
   older round's passes as this round's. A previous record is now moved aside first and an absent
   one is every case `unverified`, a target or smoke tier that runs past the deadline is recorded

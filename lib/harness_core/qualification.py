@@ -1,6 +1,6 @@
 """Which capability class executes a qualification target, and which class reads what it wrote.
 
-Ten of the eleven required cases are now scripts (#336): a target's worker runs a script, reads
+Every required case is now a script (#336): a target's worker runs a script, reads
 JSON and writes findings, which is not work that needs the strong tier. What does need it is the
 assessment — the published procedure requires a reviewer to assess the observations, and a
 cheaper worker that produced the evidence must never be the only reader of it.

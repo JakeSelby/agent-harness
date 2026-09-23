@@ -210,42 +210,39 @@ class StanceLinkTests(unittest.TestCase):
         self.assertEqual(MODULE.link_target(MODULE.stance_link(self.home, "cost")), "")
 
 
-class BmadLayerTests(unittest.TestCase):
+class SpawnConfinementTests(unittest.TestCase):
+    """The case reads the integration descriptor rather than restating what it declares."""
+
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.repo = Path(self.tmp.name)
-        (self.repo / "_bmad" / "custom").mkdir(parents=True)
+        self.data, self.spawn = MODULE.descriptor_spawn()
 
-    def layer(self, name, body):
-        (self.repo / "_bmad" / "custom" / name).write_text(body)
+    def test_the_declared_spawn_comes_from_a_committed_descriptor_that_validates(self):
+        self.assertEqual(MODULE.frameworks.problems(self.data), [])
+        self.assertTrue(self.spawn["phrases"])
 
-    def test_every_applied_layer_declaring_a_role_is_found_with_its_roles(self):
-        self.layer("bmad-code-review.user.toml",
-                   'a = "harness-role: reviewer\\n..."\nb = "harness-role: spec-reviewer\\n..."\n')
-        found = MODULE.layer_declarations(self.repo)
-        self.assertEqual(found["bmad-code-review.user.toml"], {"reviewer", "spec-reviewer"})
-
-    def test_a_checkout_with_no_declaration_reads_as_none(self):
-        self.layer("bmad-build.user.toml", 'a = "no declaration here"\n')
-        self.assertEqual(MODULE.layer_declarations(self.repo), {})
-
-    def test_the_case_itself_is_unverified_rather_than_skipped_without_a_checkout(self):
-        home = home_in(self.tmp.name)
-        home.harness = lambda *args, **kwargs: ""
-        home.seed = lambda *args, **kwargs: None
-        with patch.dict(MODULE.os.environ, {MODULE.BMAD_ENV: ""}):
-            self.assertIsNone(MODULE.bmad_checkout())
+    def test_no_valid_descriptor_is_unverified_rather_than_a_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "broken.json").write_text("{not json")
+            Path(directory, "empty.json").write_text(json.dumps({"spawns": []}))
             with self.assertRaises(MODULE.Unverified) as caught:
-                MODULE.case_bmad_workflow(home)
-        self.assertIn(MODULE.BMAD_ENV, str(caught.exception))
+                MODULE.descriptor_spawn(directory)
+        self.assertIn("no valid integration descriptor", str(caught.exception))
 
-    def test_an_apply_that_wrote_nothing_is_visible_in_the_layer_contents(self):
-        self.layer("bmad-code-review.user.toml", 'a = "harness-role: reviewer"\n')
-        before = MODULE.layer_contents(self.repo)
-        self.assertEqual(MODULE.layer_contents(self.repo), before)
-        self.layer("bmad-code-review.user.toml", 'a = "harness-role: reviewer"\nb = 1\n')
-        self.assertNotEqual(MODULE.layer_contents(self.repo), before)
+    def test_the_brief_carries_the_descriptors_own_sentences_and_names_no_type(self):
+        brief = MODULE.framework_brief(self.spawn, self.data["corroboration"])
+        self.assertIn("no subagent_type", brief)
+        for phrase in self.spawn["phrases"][:self.data["corroboration"]]:
+            self.assertIn(phrase, brief)
+
+    def test_a_descriptor_with_too_few_phrases_to_corroborate_is_unverified(self):
+        with self.assertRaises(MODULE.Unverified) as caught:
+            MODULE.framework_brief({"id": "thin", "phrases": ["only one"]}, 3)
+        self.assertIn("corroboration", str(caught.exception))
+
+    def test_the_refusal_clauses_are_the_ones_the_harness_actually_writes(self):
+        source = (REPO / "lib" / "harness_core" / "frameworks.py").read_text()
+        self.assertIn(MODULE.FRAMEWORK_ORIGIN, source)
+        self.assertIn(MODULE.FRAMEWORK_ROOTS, source)
 
 
 class HandoffRevisionTests(unittest.TestCase):
@@ -348,7 +345,7 @@ class ProvisionedRoundTests(unittest.TestCase):
 
     def test_the_round_exports_only_the_checkout_it_provisioned(self):
         self.assertEqual(self.provision.environment({"bmad": "/round/bmad"}),
-                         {MODULE.BMAD_ENV: "/round/bmad"})
+                         {self.provision.BMAD_ENV: "/round/bmad"})
         self.assertEqual(self.provision.environment({"bmad": None}), {})
 
     def test_a_round_directory_inside_any_checkout_of_this_repository_is_refused(self):

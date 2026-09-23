@@ -2,7 +2,8 @@
 """Provision one qualification round's scratch directory, once, from this checkout.
 
 Every round before this one built the same three things by hand in a per-round scratch copy: a
-frozen clone of the commit under qualification, a BMad framework checkout for the workflow case,
+frozen clone of the commit under qualification, a BMad framework checkout for the optional
+integration suite,
 and a place to keep each target's record. Hand-built means unreviewed, and a clone taken from the
 wrong commit invalidates the round it is used for, so it is a committed script instead.
 
@@ -88,11 +89,13 @@ def clone(out, commit):
 
 
 def bmad(out):
-    """A BMad framework checkout for the workflow case, from the pinned installer.
+    """A BMad framework checkout for the optional integration suite, from the pinned installer.
 
-    The only step here that reaches the network. It is opt-in because a round that is not running
-    `bmad-workflow` should not pay for it, and because an installer this script cannot find is a
-    reported gap rather than a failed provision.
+    No required case reads it: `framework-spawn-routing` builds its recipe from the integration
+    descriptor and runs no framework workflow. The checkout is for the native review suite
+    docs/releasing.md asks for once per minor release, which an operator runs by hand. It is the
+    only step here that reaches the network, so it is opt-in, and an installer this script cannot
+    find is a reported gap rather than a failed provision.
     """
     target = out / BMAD
     target.mkdir(parents=True, exist_ok=True)
@@ -121,8 +124,8 @@ def provision(out, commit, want_bmad):
         if note:
             report["notes"].append(note)
     else:
-        report["notes"].append("no BMad framework checkout was asked for, so bmad-workflow will "
-                               "report itself unverified")
+        report["notes"].append("no BMad framework checkout was asked for; only the optional "
+                               "integration suite needs one")
     return report
 
 
@@ -157,7 +160,8 @@ def main(argv=None):
                         help="round directory, outside this checkout")
     parser.add_argument("--commit", help="commit to qualify (default: HEAD of this checkout)")
     parser.add_argument("--bmad", action="store_true",
-                        help="install the pinned BMad framework checkout; the only network step")
+                        help="install the pinned BMad framework checkout for the optional integration "
+                             "suite; the only network step")
     parser.add_argument("--print-env", action="store_true",
                         help="print the exports a round needs, one per line, and provision nothing")
     args = parser.parse_args(argv)

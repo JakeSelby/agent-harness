@@ -46,16 +46,13 @@ def provision_record(round_dir):
 
 
 def environment(report):
-    """The round's own exports on top of the operator's, never instead of them.
+    """The operator's environment, unchanged: no required case reads anything the round adds.
 
     The credentials a client uses are the operator's and are passed through by name by the runner
-    itself; the round adds only the checkouts it provisioned.
+    itself. A provisioned BMad checkout is for the optional integration suite, run by hand.
     """
     import os
-    env = dict(os.environ)
-    if report.get("bmad"):
-        env["HARNESS_ACCEPTANCE_BMAD"] = report["bmad"]
-    return env
+    return dict(os.environ)
 
 
 def smoke(clone, env):
