@@ -22,8 +22,9 @@ against its own later events.
 
 `telemetry.completion_claim`, off by default, adds `completion_claim` and its hash to a
 stop-gate row: the tail of the turn's final assistant message, read from the transcript the
-Stop event names. It is the only assistant prose this file ever holds, which is why it is a
-switch of its own and why it is off. See `claim_fields`.
+Stop event names, or a null claim beside the reason there is none. It is the only assistant
+prose this file ever holds, which is why it is a switch of its own and why it is off. See
+`claim_fields`.
 
 This module sits beside the hooks rather than in `lib/harness_core`, for the reason
 `telemetry.py` gives: a hook is reached through `~/.claude/hooks/harness` and nothing above
@@ -56,17 +57,20 @@ RAN = "ran"
 
 # The completion claim: the tail of the turn's final assistant message, on a stop-gate row and
 # nowhere else. It is the one place this log holds model prose, so it has its own switch and
-# that switch is off. Capped like `input`, hashed over the uncapped message for the same reason.
+# that switch is off. 2 KiB of it, measured in bytes as `input` is, hashed over the whole.
 MAX_CLAIM = 2048
 # The read is the last CLAIM_TAIL_BYTES of the file, so it costs the same on a transcript of any
 # size, and a file past MAX_TRANSCRIPT is not opened at all — nothing that large is a transcript
 # whose last line this hook should be seeking to inside a Stop hook's budget.
 CLAIM_TAIL_BYTES = 256 * 1024
 MAX_TRANSCRIPT = 256 * 1024 * 1024
+# Why a row carries no claim, recorded on the row itself. `no_transcript_path` is the runtime's
+# gap and the rest are the file's; `error` is the reader raising, which nothing has been seen to
+# do. A reader of the log tells a claim nobody made from a claim nobody could read.
+CLAIM_MISSES = ("no_transcript_path", "unreadable", "oversized", "no_claim", "error")
 
 _CONFIG = []
 _ERRORS = [0]
-_CLAIM_MISSES = [0]
 
 
 def home():
@@ -132,16 +136,6 @@ def claim_enabled(cfg=None):
 def errors():
     """How many writes this process swallowed. A hook's decision never depends on it."""
     return _ERRORS[0]
-
-
-def claim_misses():
-    """How many rows the switch asked for a claim on and did not get one for.
-
-    A transcript that is missing, unreadable, too large or holding no assistant prose is an
-    absence somebody reading the log has to be able to see. Counted separately from `errors`:
-    nothing failed to be written, the evidence was not there to write.
-    """
-    return _CLAIM_MISSES[0]
 
 
 def now_ts(now=None):
@@ -211,28 +205,26 @@ def tail_text(target=None, limit=TAIL_BYTES):
         return ""
 
 
-def _assistant_message(record):
-    """The assistant message in one transcript record, or None for anything else.
+def _message_of(record):
+    """The message object in one transcript record, or None for a record that holds none.
 
-    Both runtimes in one shape: Claude Code holds the message under `message` on an `assistant`
-    record, a Codex rollout wraps the same object in a `response_item`, and each carries its own
-    `role`. A sidechain record is a subagent's turn and never the session's own last word.
+    Both runtimes in one shape: Claude Code holds the message under `message`, a Codex rollout
+    wraps the same object in a `response_item`, and each carries its own `role`. A sidechain
+    record is a subagent's turn and never part of the session's own.
     """
     if not isinstance(record, dict) or record.get("isSidechain"):
         return None
-    if record.get("type") == "assistant":
+    if record.get("type") in ("assistant", "user"):
         message = record.get("message")
     elif record.get("type") == "response_item":
         message = record.get("payload")
     else:
         message = record
-    if not isinstance(message, dict) or message.get("role") != "assistant":
-        return None
-    return message
+    return message if isinstance(message, dict) else None
 
 
 def _message_text(message):
-    """The prose of an assistant message: every text block, joined, and nothing else.
+    """The prose of a message: every text block, joined, and nothing else.
 
     A block with no `text` is a tool call, a thought or an image, none of which is a claim.
     """
@@ -246,37 +238,44 @@ def _message_text(message):
     return "\n".join(parts).strip()
 
 
-def final_assistant_text(transcript):
-    """The prose of the newest main-line assistant message, or None when there is none.
+def _starts_the_turn(message):
+    """Whether this message is the user's own words, and so the far edge of the current turn.
 
-    Bounded on both sides — see MAX_TRANSCRIPT and CLAIM_TAIL_BYTES — so the cost of this read
-    does not grow with the session. The first line of the window is usually a fragment; it fails
-    to parse, which is what discards it, and a turn whose last assistant record is a tool call
-    is passed over for the newest one that actually said something.
+    Claude Code writes a tool result as a `user` record, so a scan that stopped at every user
+    record would stop in the middle of the turn it is reading; one that stopped at none would
+    take a claim from the turn before when this turn ended in a tool call.
     """
-    if not transcript:
-        return None
-    try:
-        target = os.path.expanduser(str(transcript))
-        if os.path.getsize(target) > MAX_TRANSCRIPT:
-            return None
-        with open(target, "rb") as stream:
-            try:
-                stream.seek(-CLAIM_TAIL_BYTES, os.SEEK_END)
-            except OSError:
-                stream.seek(0)
-            tail = stream.read().decode("utf-8", "replace")
-    except OSError:
-        return None
-    for line in reversed(tail.splitlines()):
-        if '"assistant"' not in line:
+    if message.get("role") != "user":
+        return False
+    content = message.get("content")
+    if isinstance(content, list):
+        return not any(isinstance(b, dict)
+                       and b.get("type") in ("tool_result", "function_call_output")
+                       for b in content)
+    return True
+
+
+def _claim_in(tail):
+    """The claim in a tail of transcript, or None when this turn ended without one.
+
+    Newest first, back to the user message that opened the turn. Lines are split on `\n` alone:
+    a JSON string can carry U+2028, U+2029, U+0085 and the other characters `splitlines` breaks
+    on, and splitting there would tear a record in half and silently read an older turn. The
+    first line of the window is usually a fragment, which fails to parse and is discarded.
+    """
+    for line in reversed(tail.split("\n")):
+        if '"assistant"' not in line and '"user"' not in line:
             continue
         try:
             record = json.loads(line)
         except ValueError:
             continue
-        message = _assistant_message(record)
+        message = _message_of(record)
         if message is None:
+            continue
+        if _starts_the_turn(message):
+            return None
+        if message.get("role") != "assistant":
             continue
         text = _message_text(message)
         if text:
@@ -284,24 +283,59 @@ def final_assistant_text(transcript):
     return None
 
 
+def read_claim(transcript):
+    """`(claim, miss)`: the turn's claim and why there is none, exactly one of them set.
+
+    The miss is a reason a reader of the log can act on. `no_transcript_path` is a runtime that
+    named no file — a gap in what the event carries, not in the session — where `unreadable`,
+    `oversized` and `no_claim` are all about a file that was named. The read is bounded on both
+    sides, see MAX_TRANSCRIPT and CLAIM_TAIL_BYTES, so it costs the same at any session length.
+    """
+    if not transcript:
+        return None, "no_transcript_path"
+    target = os.path.expanduser(str(transcript))
+    try:
+        if os.path.getsize(target) > MAX_TRANSCRIPT:
+            return None, "oversized"
+        with open(target, "rb") as stream:
+            try:
+                stream.seek(-CLAIM_TAIL_BYTES, os.SEEK_END)
+            except OSError:
+                stream.seek(0)
+            tail = stream.read().decode("utf-8", "replace")
+    except OSError:
+        return None, "unreadable"
+    text = _claim_in(tail)
+    return (text, None) if text else (None, "no_claim")
+
+
+def _capped(text):
+    """The last MAX_CLAIM **bytes** of the claim, cut back to a character boundary.
+
+    Bytes rather than characters because the cap is there to bound the file on disk, and one
+    emoji is four of them.
+    """
+    raw = text.encode("utf-8")
+    return text if len(raw) <= MAX_CLAIM else raw[-MAX_CLAIM:].decode("utf-8", "ignore")
+
+
 def claim_fields(transcript, cfg=None):
     """The completion-claim fields for a decision row, or `{}` when there are none to add.
 
     `{}` whenever the switch is off, so the row is byte for byte the row written before this
-    existed. With it on, a claim that cannot be read counts in `claim_misses()` and the row is
-    still written: missing evidence is never a reason to lose the decision it was evidence for.
+    existed. With it on the row always says something: the claim and its hash, or a null claim
+    beside the reason there is none. Missing evidence is recorded, never a reason to lose the
+    decision it was evidence for, so nothing here raises.
     """
-    try:
-        if not claim_enabled(cfg):
-            return {}
-        text = final_assistant_text(transcript)
-        if not text:
-            _CLAIM_MISSES[0] += 1
-            return {}
-        return {"completion_claim": text[-MAX_CLAIM:], "completion_claim_sha256": digest(text)}
-    except Exception:
-        _CLAIM_MISSES[0] += 1
+    if not claim_enabled(cfg):
         return {}
+    try:
+        text, miss = read_claim(transcript)
+    except Exception:
+        text, miss = None, "error"
+    if text is None:
+        return {"completion_claim": None, "completion_claim_miss": miss}
+    return {"completion_claim": _capped(text), "completion_claim_sha256": digest(text)}
 
 
 def _append(row, target=None):

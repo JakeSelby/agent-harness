@@ -14,7 +14,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -47,7 +46,7 @@ def claude_transcript(*messages):
 
 
 class ReaderTests(unittest.TestCase):
-    """`final_assistant_text` over each shape a transcript actually holds."""
+    """`read_claim` over each shape a transcript actually holds."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -59,9 +58,9 @@ class ReaderTests(unittest.TestCase):
                              encoding="utf-8")
         return str(self.path)
 
-    def test_the_newest_main_line_assistant_message_wins(self):
+    def test_the_newest_assistant_message_of_the_turn_wins(self):
         self.path.write_text(claude_transcript("first", CLAIM), encoding="utf-8")
-        self.assertEqual(decisions.final_assistant_text(str(self.path)), CLAIM)
+        self.assertEqual(decisions.read_claim(str(self.path)), (CLAIM, None))
 
     def test_a_codex_rollout_carries_the_same_claim(self):
         path = self.write(
@@ -70,29 +69,68 @@ class ReaderTests(unittest.TestCase):
             {"type": "response_item", "payload": {"type": "message", "role": "assistant",
                                                   "content": [{"type": "output_text",
                                                                "text": CLAIM}]}})
-        self.assertEqual(decisions.final_assistant_text(path), CLAIM)
+        self.assertEqual(decisions.read_claim(path), (CLAIM, None))
 
     def test_a_subagent_turn_is_not_the_sessions_last_word(self):
         path = self.write(
+            {"type": "user", "message": {"role": "user", "content": "go"}},
             {"type": "assistant", "message": {"role": "assistant",
                                               "content": [{"type": "text", "text": CLAIM}]}},
             {"type": "assistant", "isSidechain": True,
              "message": {"role": "assistant",
                          "content": [{"type": "text", "text": "subagent report"}]}})
-        self.assertEqual(decisions.final_assistant_text(path), CLAIM)
+        self.assertEqual(decisions.read_claim(path), (CLAIM, None))
 
-    def test_a_trailing_tool_call_is_passed_over_for_the_newest_prose(self):
+    def test_a_tool_call_and_its_result_do_not_end_the_turn(self):
+        """Claude Code writes a tool result as a user record; the scan reads through both."""
         path = self.write(
+            {"type": "user", "message": {"role": "user", "content": "go"}},
+            {"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": "true"}}]}},
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "content": "ok"}]}},
+            {"type": "assistant", "message": {"role": "assistant",
+                                              "content": [{"type": "text", "text": CLAIM}]}})
+        self.assertEqual(decisions.read_claim(path), (CLAIM, None))
+
+    def test_a_turn_that_ended_in_a_tool_call_claims_nothing(self):
+        """The previous turn's claim is not this turn's, so the scan stops at the prompt."""
+        path = self.write(
+            {"type": "user", "message": {"role": "user", "content": "go"}},
             {"type": "assistant", "message": {"role": "assistant",
                                               "content": [{"type": "text", "text": CLAIM}]}},
+            {"type": "user", "message": {"role": "user", "content": "and again"}},
             {"type": "assistant", "message": {"role": "assistant", "content": [
                 {"type": "tool_use", "name": "Bash", "input": {"command": "true"}}]}})
-        self.assertEqual(decisions.final_assistant_text(path), CLAIM)
+        self.assertEqual(decisions.read_claim(path), (None, "no_claim"))
 
-    def test_a_missing_or_silent_transcript_is_no_claim_and_not_an_error(self):
-        self.assertIsNone(decisions.final_assistant_text(""))
-        self.assertIsNone(decisions.final_assistant_text(str(self.path / "nope")))
-        self.assertIsNone(decisions.final_assistant_text(self.write({"type": "user"})))
+    def test_a_line_separator_inside_the_claim_does_not_tear_the_record(self):
+        """`splitlines` breaks on U+2028, which a JSON string carries raw. `split` does not."""
+        claim = "Fixed.\u2028The suite is green."
+        # `ensure_ascii=False`, as the runtime's own writer does: `JSON.stringify` leaves the
+        # separator raw in the line, which is the whole reason the reader cannot use `splitlines`.
+        self.path.write_text("\n".join(json.dumps(line, ensure_ascii=False) for line in (
+            {"type": "user", "message": {"role": "user", "content": "go"}},
+            {"type": "assistant", "message": {"role": "assistant",
+                                              "content": [{"type": "text", "text": claim}]}},
+        )) + "\n", encoding="utf-8")
+        self.assertIn("\u2028", self.path.read_text(encoding="utf-8"))
+        self.assertEqual(decisions.read_claim(str(self.path)), (claim, None))
+
+    def test_a_claim_older_than_the_tail_is_out_of_the_window(self):
+        """The read is the last CLAIM_TAIL_BYTES and nothing before them."""
+        filler = json.dumps({"type": "system", "text": "x" * 900})
+        with open(str(self.path), "w", encoding="utf-8") as stream:
+            stream.write(json.dumps({"type": "assistant", "message": {
+                "role": "assistant", "content": [{"type": "text", "text": CLAIM}]}}) + "\n")
+            while stream.tell() < decisions.CLAIM_TAIL_BYTES * 2:
+                stream.write(filler + "\n")
+        self.assertEqual(decisions.read_claim(str(self.path)), (None, "no_claim"))
+
+    def test_each_way_of_having_no_claim_names_itself(self):
+        self.assertEqual(decisions.read_claim(""), (None, "no_transcript_path"))
+        self.assertEqual(decisions.read_claim(str(self.path / "nope")), (None, "unreadable"))
+        self.assertEqual(decisions.read_claim(self.write({"type": "user"})), (None, "no_claim"))
 
     def test_a_transcript_past_the_size_bound_is_not_read_at_all(self):
         path = self.write({"type": "assistant", "message": {
@@ -100,73 +138,69 @@ class ReaderTests(unittest.TestCase):
         saved = decisions.MAX_TRANSCRIPT
         decisions.MAX_TRANSCRIPT = 8
         try:
-            self.assertIsNone(decisions.final_assistant_text(path))
+            self.assertEqual(decisions.read_claim(path), (None, "oversized"))
         finally:
             decisions.MAX_TRANSCRIPT = saved
 
-    def test_the_read_is_a_bounded_tail_of_a_large_transcript(self):
-        """The Stop hook's cost must not grow with the session, so the bound is pinned here."""
-        filler = json.dumps({"type": "user", "message": {"role": "user", "content": "x" * 900}})
-        with open(str(self.path), "w", encoding="utf-8") as stream:
-            for _ in range(8000):  # about 7 MiB, some thirty times the tail that is read
-                stream.write(filler + "\n")
-            stream.write(json.dumps({"type": "assistant", "message": {
-                "role": "assistant", "content": [{"type": "text", "text": CLAIM}]}}) + "\n")
-        self.assertGreater(self.path.stat().st_size, 6 * 1024 * 1024)
-        started = time.time()
-        self.assertEqual(decisions.final_assistant_text(str(self.path)), CLAIM)
-        self.assertLess(time.time() - started, 2.0)
-
 
 class FieldTests(unittest.TestCase):
-    """`claim_fields`, which is where the switch and the cap are decided."""
+    """`claim_fields`, which is where the switch, the cap and the recorded miss are decided."""
+
+    ON = {"telemetry": {"completion_claim": True}}
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / "transcript.jsonl"
         self.path.write_text(claude_transcript(CLAIM), encoding="utf-8")
-        self.addCleanup(self.reset)
-        self.reset()
-
-    def reset(self):
-        decisions._CLAIM_MISSES[0] = 0
-        del decisions._CONFIG[:]
+        self.addCleanup(decisions._CONFIG.clear)
+        decisions._CONFIG.clear()
 
     def test_the_switch_is_off_unless_it_is_turned_on(self):
         self.assertFalse(decisions.claim_enabled({}))
         self.assertFalse(decisions.claim_enabled({"telemetry": {"decisions": True}}))
         self.assertFalse(decisions.claim_enabled({"telemetry": {"completion_claim": "yes"}}))
-        self.assertTrue(decisions.claim_enabled({"telemetry": {"completion_claim": True}}))
+        self.assertTrue(decisions.claim_enabled(self.ON))
 
-    def test_off_adds_no_field_and_counts_no_miss(self):
+    def test_off_adds_no_field_at_all(self):
         self.assertEqual(decisions.claim_fields(str(self.path), {}), {})
-        self.assertEqual(decisions.claim_misses(), 0)
+        self.assertEqual(decisions.claim_fields("", {}), {})
 
     def test_on_carries_the_claim_and_its_hash(self):
-        fields = decisions.claim_fields(str(self.path),
-                                        {"telemetry": {"completion_claim": True}})
+        fields = decisions.claim_fields(str(self.path), self.ON)
         self.assertEqual(fields["completion_claim"], CLAIM)
         self.assertEqual(fields["completion_claim_sha256"], decisions.digest(CLAIM))
+        self.assertNotIn("completion_claim_miss", fields)
 
     def test_a_message_past_the_cap_keeps_its_tail_and_hashes_the_whole(self):
         long = "prologue " * 400 + CLAIM
         self.assertGreater(len(long), decisions.MAX_CLAIM)
         self.path.write_text(claude_transcript(long), encoding="utf-8")
-        fields = decisions.claim_fields(str(self.path),
-                                        {"telemetry": {"completion_claim": True}})
-        self.assertEqual(len(fields["completion_claim"]), decisions.MAX_CLAIM)
-        self.assertEqual(fields["completion_claim"], long[-decisions.MAX_CLAIM:])
-        self.assertTrue(fields["completion_claim"].endswith(CLAIM))
+        fields = decisions.claim_fields(str(self.path), self.ON)
+        claim = fields["completion_claim"]
+        self.assertEqual(claim, long[-decisions.MAX_CLAIM:])
+        self.assertTrue(claim.endswith(CLAIM))
         self.assertEqual(fields["completion_claim_sha256"], decisions.digest(long))
-        self.assertNotEqual(fields["completion_claim_sha256"],
-                            decisions.digest(fields["completion_claim"]))
+        self.assertNotEqual(fields["completion_claim_sha256"], decisions.digest(claim))
 
-    def test_a_claim_that_cannot_be_read_is_a_counted_miss_and_no_field(self):
-        on = {"telemetry": {"completion_claim": True}}
-        self.assertEqual(decisions.claim_fields("", on), {})
-        self.assertEqual(decisions.claim_fields(str(self.path) + ".gone", on), {})
-        self.assertEqual(decisions.claim_misses(), 2)
+    def test_the_cap_is_bytes_and_cuts_on_a_character_boundary(self):
+        long = "\u00e9" * 2000 + "done"  # two bytes each, so the cut lands mid-character
+        self.path.write_text(claude_transcript(long), encoding="utf-8")
+        claim = decisions.claim_fields(str(self.path), self.ON)["completion_claim"]
+        self.assertLessEqual(len(claim.encode("utf-8")), decisions.MAX_CLAIM)
+        self.assertGreater(len(claim.encode("utf-8")), decisions.MAX_CLAIM - 4)
+        self.assertTrue(claim.endswith("done"))
+        self.assertTrue(long.endswith(claim))
+
+    def test_a_claim_that_cannot_be_read_is_a_null_claim_and_the_reason(self):
+        no_path = decisions.claim_fields("", self.ON)
+        self.assertEqual(no_path, {"completion_claim": None,
+                                   "completion_claim_miss": "no_transcript_path"})
+        gone = decisions.claim_fields(str(self.path) + ".gone", self.ON)
+        self.assertEqual(gone, {"completion_claim": None,
+                                "completion_claim_miss": "unreadable"})
+        for fields in (no_path, gone):
+            self.assertIn(fields["completion_claim_miss"], decisions.CLAIM_MISSES)
 
 
 class SettingsTests(unittest.TestCase):
@@ -244,11 +278,14 @@ class StopGateRowTests(unittest.TestCase):
         self.assertEqual(row["completion_claim"], CLAIM)
         self.assertEqual(row["completion_claim_sha256"], decisions.digest(CLAIM))
 
-    def test_a_stop_event_naming_no_transcript_still_writes_the_decision(self):
+    def test_a_stop_event_naming_no_transcript_records_the_miss_on_the_row(self):
+        """A runtime that names no file is a gap a reader of the log has to be able to see."""
         self.config({"telemetry": {"completion_claim": True}})
         row = self.row()
         self.assertEqual(row["deterministic_answer"], "blocked")
-        self.assertNotIn("completion_claim", row)
+        self.assertIsNone(row["completion_claim"])
+        self.assertEqual(row["completion_claim_miss"], "no_transcript_path")
+        self.assertNotIn("completion_claim_sha256", row)
 
 
 if __name__ == "__main__":

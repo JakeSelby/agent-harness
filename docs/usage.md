@@ -356,16 +356,31 @@ One optional pair of fields is the exception, on a `stop-gate` row alone:
  "completion_claim_sha256": "9f21…"}
 ```
 
-`completion_claim` is the **last 2 KiB of the turn's final assistant message**, read from the
-transcript the Stop event names, because a Stop payload carries no assistant text of its own.
-`completion_claim_sha256` is over the uncapped message, on the same rule as `input_sha256`. It
-exists so that a stop claim can be read against the gate evidence sitting on the same row.
+`completion_claim` is the **last 2 KiB of the turn's final assistant message**, in bytes and cut
+back to a character boundary, read from the transcript the Stop event names because a Stop
+payload carries no assistant text of its own. It is the turn's own message: the scan stops at
+the user prompt that opened the turn, so a turn that ended in a tool call rather than a reply
+claims nothing instead of borrowing the previous turn's words. `completion_claim_sha256` is over
+the uncapped message, on the same rule as `input_sha256`. The two fields exist so that a stop
+claim can be read against the gate evidence sitting on the same row.
 
 It is **off by default** — `telemetry.completion_claim` in `config.json`,
 [telemetry.md](telemetry.md#the-completion-claim-switch) — and with it off the row is exactly
-the row above, with neither field present. With it on, a transcript that is missing, unreadable
-or larger than 256 MiB writes the row without the claim and counts the miss; the read is a
-bounded tail, so it costs the same on a transcript of any size.
+the row above, with none of these fields present.
+
+With it on the row always says something. Where there is no claim to record, it carries
+`"completion_claim": null` and a `completion_claim_miss` naming why, and no hash:
+
+| `completion_claim_miss` | what happened |
+| --- | --- |
+| `no_transcript_path` | the Stop event named no file — the runtime's gap, not the session's |
+| `unreadable` | the file was named and could not be opened |
+| `oversized` | the file is past 256 MiB, which this hook will not seek into |
+| `no_claim` | the turn was read and ended without assistant prose |
+| `error` | the reader raised; the decision is still recorded |
+
+The read is the last 256 KiB of the file, so it costs the same on a transcript of any size — a
+claim older than that window reads as `no_claim` rather than as the wrong turn's words.
 
 ```sh
 bin/harness usage --by decision        # counts, outcome rates and the unlabelled share per point

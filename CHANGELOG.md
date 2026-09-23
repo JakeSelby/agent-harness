@@ -14,9 +14,12 @@ All notable changes to this project are documented here. The format follows
   uncapped message. Verifying what an agent said it had done against the gate result needs the
   two on one row, and until now the row held only the gate. It is its own switch, and off,
   because it is the only field in the decision log that holds assistant prose; with it off the
-  row is byte for byte what it was. The read is a bounded tail, so it costs the same on a
-  transcript of any size, and a transcript that is missing, unreadable or over 256 MiB writes
-  the row without the claim and counts the miss (#387).
+  row is byte for byte what it was. The claim is the turn's own: the scan stops at the user
+  prompt that opened it, so a turn that ended in a tool call claims nothing rather than
+  repeating the previous turn's words. The read is a bounded tail, so it costs the same on a
+  transcript of any size, and where there is no claim the row carries a null one beside a
+  `completion_claim_miss` naming why — a runtime that supplied no path reads differently from
+  evidence that is gone (#387).
 
 ### Fixed
 

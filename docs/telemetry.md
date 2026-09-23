@@ -66,8 +66,9 @@ a brief — capped at 2 KiB, which is the one reason to turn it off on a shared 
 
 This one defaults to **off**. It adds `completion_claim` to a `stop-gate` decision row: the last
 2 KiB of the turn's final assistant message, read from the transcript at Stop, with the hash
-over the uncapped message — [usage.md](usage.md#the-completion-claim) describes the fields. It
-is what lets a stop claim be read against the gate result sitting on the same row.
+over the uncapped message — or a null claim beside the reason there is none.
+[usage.md](usage.md#the-completion-claim) describes the fields and the reasons. It is what lets
+a stop claim be read against the gate result sitting on the same row.
 
 It is off because it is the only place the decision log holds assistant prose, and that is a
 different thing to keep on a shared machine from a log of commands. `decisions: false` turns it
