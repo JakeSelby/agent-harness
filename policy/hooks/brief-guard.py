@@ -117,7 +117,8 @@ def effective_role(payload, tool_input, posture, router, table, variant):
     if len(models) < 2:
         return None
     route, _ = router.band_route(posture, models, payload.get("cwd"), table(),
-                                 payload.get("session_id"))
+                                 payload.get("session_id"),
+                                 transcript=payload.get("transcript_path"))
     return route["worker"] if route else None
 
 

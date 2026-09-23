@@ -12,6 +12,6 @@
   "recovery": [
     "Preserve reported conflicts, adopted backups, external viewer adapter descriptors and external viewer installations.",
     "To return to v0.11.1, run `harness remote-control uninstall` if you installed it, remove the `telemetry` block from your configuration and run `harness sync` once from the v0.11.1 checkout; v0.11.1 ignores `decisions.jsonl` and restores the fixed output style from its own settings template.",
-    "Use `harness uninstall --dry-run` before uninstalling, and follow docs/runtime-installation.md for rollback and ownership recovery; use docs/bmad.md for task continuation."
+    "Use `harness uninstall --dry-run` before uninstalling, and follow docs/runtime-installation.md for rollback and ownership recovery; use docs/task-continuation.md for task continuation."
   ]
 }

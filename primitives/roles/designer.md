@@ -1,6 +1,6 @@
 ---
 name: designer
-description: Implement one pass of visual design work toward a locked target — a UI surface, a page, a scene or a rendered asset — validate that it runs, capture it, and return the capture paths. Never scores its own work; the caller sends the capture to `design-judge`. Use for the build and fix steps of the design loop, and for original visual or 3D design work that warrants the strongest class.
+description: Implement one pass of visual design work toward a locked target — a UI surface, page, scene or rendered asset — validate it runs, and return the capture paths. Never scores its own work. Use for the build and fix steps of the design loop, and for original visual or 3D design work.
 tier: frontier
 authority: workspace-write
 context: fresh

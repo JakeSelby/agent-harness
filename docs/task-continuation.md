@@ -1,8 +1,5 @@
 # Continue a task in either runtime
 
-Shared task continuation is a harness capability and names no planning framework; the
-[BMad integration](bmad.md) is one of the things it carries work for.
-
 The shared human-readable snapshot is `.agent-harness/progress.md`; session start reads the old
 `.claude/progress.md` only when the shared file is absent. Plans live in `.agent-harness/plans/`.
 Native transcripts and memory stay in their own runtime stores.

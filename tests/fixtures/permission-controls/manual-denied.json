@@ -1,0 +1,19 @@
+{
+  "is_error": false,
+  "num_turns": 2,
+  "permission_denials": [
+    {
+      "tool_input": {
+        "command": "touch ./permission-probe.txt",
+        "description": "Create permission-probe.txt file"
+      },
+      "tool_name": "Bash",
+      "tool_use_id": "manual-denied-tool-use-1"
+    }
+  ],
+  "result": "The command was blocked by a security restriction. The file could not be created in the working directory despite it being listed as allowed. This appears to be a permission boundary preventing the file creation.",
+  "session_id": "manual-denied-session",
+  "stop_reason": "end_turn",
+  "subtype": "success",
+  "type": "result"
+}

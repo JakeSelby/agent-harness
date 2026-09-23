@@ -15,12 +15,14 @@ from unittest.mock import patch
 
 from test_harness import REPO
 from test_native_acceptance import MODULE
-from harness_core import lifecycle, compatibility
+from harness_core import lifecycle, compatibility, frameworks
 
 
 def descriptors():
-    return [json.loads(path.read_text(encoding="utf-8"))
-            for path in sorted((REPO / "policy" / "integrations").glob("*.json"))]
+    """Every shipped descriptor the hook would actually classify against."""
+    found = [json.loads(path.read_text(encoding="utf-8"))
+             for path in sorted((REPO / "policy" / "integrations").glob("*.json"))]
+    return [data for data in found if data.get("spawns") and not frameworks.problems(data)]
 
 
 class CaseRegistrationTests(unittest.TestCase):
@@ -44,6 +46,7 @@ class RecipeTests(unittest.TestCase):
     def test_the_recipe_is_built_from_the_descriptor_and_names_no_framework_in_the_runner(self):
         source = (REPO / "scripts" / "native_acceptance.py").read_text()
         self.assertNotIn("bmad", source.casefold())
+        self.assertTrue(descriptors())
         for data in descriptors():
             layer, role, roots, recipe = MODULE.descriptor_recipe(data)
             with self.subTest(descriptor=data["id"]):
@@ -77,6 +80,7 @@ class HookAssertionTests(unittest.TestCase):
         return out.get("permissionDecision", ""), out.get("permissionDecisionReason", "")
 
     def test_the_fixture_recipe_is_refused_however_the_spawn_is_named(self):
+        self.assertTrue(descriptors())
         for data in descriptors():
             _, role, roots, recipe = MODULE.descriptor_recipe(data)
             for named_as in (None, "general-purpose", "worker-a"):
@@ -84,16 +88,29 @@ class HookAssertionTests(unittest.TestCase):
                     decision, why = self.answer(recipe, named_as, "r-%s" % named_as)
                     self.assertEqual(decision, "deny")
                     self.assertIn("harness role run " + role, why)
-                    self.assertEqual([root for root in roots if root in why], roots)
+                    self.assertEqual(MODULE.offered_roots(why), set(roots))
 
-    def test_the_refusal_offers_no_read_root_the_descriptor_did_not_declare(self):
+    def test_the_offered_read_roots_are_compared_as_a_set_not_by_substring(self):
+        """`_bmad` is a prefix of `_bmad-output`, so containment would pass on the wrong list."""
         data = descriptors()[0]
         _, _, roots, recipe = MODULE.descriptor_recipe(data)
         _, why = self.answer(recipe, None, "roots")
-        offered = [item.strip() for group in MODULE.re.findall(r"read roots: (.*?)(?:\. |$)", why)
-                   for item in group.split(",")]
-        self.assertTrue(offered)
-        self.assertEqual([item for item in offered if item and item not in roots], [])
+        self.assertEqual(MODULE.offered_roots(why), set(roots))
+        short = min(roots, key=len)
+        longer = [root for root in roots if root != short and root.startswith(short)]
+        self.assertTrue(longer, roots)
+        partial = why.replace("read roots: " + ", ".join(roots),
+                              "read roots: " + ", ".join(longer))
+        self.assertNotEqual(MODULE.offered_roots(partial), set(roots))
+
+
+class DescriptorSelectionTests(unittest.TestCase):
+    def test_a_descriptor_the_hook_would_ignore_is_not_the_one_the_case_builds_on(self):
+        """The runner and the hook have to agree on which descriptors are in force."""
+        broken = dict(descriptors()[0])
+        broken["schema_version"] = 99
+        self.assertTrue(frameworks.problems(broken))
+        self.assertNotIn(broken, descriptors())
 
 
 if __name__ == "__main__":

@@ -231,6 +231,12 @@ then check both skill projections and verify that existing customizations are un
 Keep `--shims` in the recorded reinstall command while these workflows require the legacy names.
 This repairs dependency discovery; a passing check still does not qualify workflow execution.
 
+## Continue a task in either runtime
+
+Shared task continuation is a harness capability and names no planning framework, so it has its own page:
+[continue a task in either runtime](task-continuation.md). A handoff carries the
+framework checkout and the baseline commit when a framework owns the artifacts.
+
 ## The optional integration suite
 
 This framework's own workflow is not run in a release qualification round. `required_cases` carries

@@ -44,7 +44,7 @@ loader keeps why it was ignored, and the spawn hook says so once per session.
 """
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 DESCRIPTORS = ROOT / "policy" / "integrations"
@@ -158,6 +158,16 @@ def problems(data, role_check=None):
 
 
 INSTALL_STRINGS = ("detect", "templates", "destination", "suffix", "skill_surface")
+# The three that are resolved against a repository root or against this checkout. `apply` writes
+# under one of them, so an absolute path or a `..` segment in a descriptor is a write outside the
+# repository the operator named, and the descriptor is the wrong place to discover that.
+INSTALL_PATHS = ("detect", "templates", "destination")
+
+
+def _outside(value):
+    """Whether a declared path would leave the root it is resolved against."""
+    parts = PurePosixPath(value.strip()).parts
+    return value.strip().startswith("/") or ".." in parts or (parts and parts[0].endswith(":"))
 
 
 def _install_problems(install):
@@ -169,10 +179,16 @@ def _install_problems(install):
         value = install.get(field)
         if not (isinstance(value, str) and value.strip()):
             found.append("install." + field + " must be a non-empty string")
+        elif field in INSTALL_PATHS and _outside(value):
+            found.append("install." + field + " must be a relative path inside the repository, "
+                         "with no `..` segment")
     roots = install.get("skill_roots")
     if not (isinstance(roots, list) and roots
             and all(isinstance(r, str) and r.strip() for r in roots)):
         found.append("install.skill_roots must be a non-empty list of paths")
+    elif [r for r in roots if _outside(r)]:
+        found.append("install.skill_roots must all be relative paths inside the repository, "
+                     "with no `..` segment")
     return found
 
 

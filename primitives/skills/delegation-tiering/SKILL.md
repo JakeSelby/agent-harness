@@ -1,6 +1,6 @@
 ---
 name: delegation-tiering
-description: Decide whether to spawn a subagent and which model tier and reasoning effort it should run on. Use when planning a fan-out, choosing a subagent model, writing a workflow script's opts.model, authoring an agent definition, setting a repo's cost posture, or when a delegation decision is non-obvious. Carries the evidence, the bands, the safety conditions and the untrusted-content protocol behind the standing rule.
+description: Decide whether to spawn a subagent, and on which model tier and reasoning effort. Use when planning a fan-out, choosing a subagent model, writing a workflow script's opts.model, authoring an agent definition, setting a repo's cost posture, or when a delegation decision is non-obvious.
 ---
 
 # Delegation and model tiering

@@ -147,7 +147,7 @@
         },
         {
           "name": "Live usage feed",
-          "line": "The orchestrator sees what each turn and each subagent cost. A decision log on this machine records what a hook decided and what settled it; only harness usage reads it.",
+          "line": "The orchestrator sees what each turn and each subagent cost, and hears once when its context passes the size your stance sets. A decision log records what a hook decided.",
           "doc": "docs/usage.md"
         },
         {
@@ -174,7 +174,7 @@
         },
         {
           "name": "Review Card plans",
-          "line": "Every plan opens with a one-screen card and stops at a build gate until you say build.",
+          "line": "Every plan opens with a one-screen card, rendered in the native plan pane and approved there rather than by a typed reply.",
           "doc": "primitives/skills/plan-authoring"
         },
         {
@@ -218,6 +218,11 @@
           "name": "Autonomy stances",
           "line": "Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.",
           "doc": "primitives/stances/autonomy"
+        },
+        {
+          "name": "Judgment stays local by default",
+          "line": "An external judgment provider is off at every decision point until you turn it on, sends only the fields you list, and one file switches every call off.",
+          "doc": "docs/runtime-controls.md"
         }
       ]
     }

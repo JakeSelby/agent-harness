@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -121,6 +122,24 @@ class SessionNoticeTests(Surface):
         self.assertEqual(module.integrations_present(str(REPO), str(self.base)),
                          [("bmad", "BMad Method")])
         self.assertEqual(module.integrations_present(str(REPO), str(self.base / "elsewhere")), [])
+
+    def test_the_notice_runs_the_real_check_and_reports_only_the_notable_lines(self):
+        """End to end: the hook's own subprocess, its filter, and the framework-named prefix."""
+        subprocess.run(["git", "init", "-q", str(self.base)], check=True)
+        module = load_hook()
+        lines = module.integration_lines(str(REPO), str(self.base))
+        self.assertEqual(len(lines), 1, lines)
+        self.assertTrue(lines[0].startswith("BMad Method integration check: "), lines[0])
+        self.assertIn("template not installed (harness integration apply bmad)", lines[0])
+        self.assertNotIn("skipped", lines[0])  # a skill the repository lacks is not news
+
+    def test_the_notice_is_silent_once_the_overrides_are_in_place(self):
+        subprocess.run(["git", "init", "-q", str(self.base)], check=True)
+        self.assertEqual(self.cli("integration", "apply", "bmad", str(self.base))[0], 0)
+        self.assertEqual(load_hook().integration_lines(str(REPO), str(self.base)), [])
+
+    def test_a_directory_that_is_not_a_repository_says_nothing(self):
+        self.assertEqual(load_hook().integration_lines(str(REPO), str(self.base)), [])
 
     def test_a_descriptor_with_no_install_block_is_not_probed(self):
         module = load_hook()
