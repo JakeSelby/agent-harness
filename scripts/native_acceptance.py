@@ -1303,6 +1303,42 @@ def descriptor_spawn(directory=INTEGRATIONS):
                      "against")
 
 
+# The point `framework_deny` in `lib/harness_core/lifecycle.py` logs when a descriptor classifies
+# a spawn as a constrained role, and the answer it logs beside it. That call is the only writer of
+# the point, and it writes it on the same path that returns the refusal, so the row is the
+# refusal as the hook made it. The row holds the session and the fingerprinted brief, not the
+# refusal's wording and not a tool-use id: see `logged_refusals`.
+FRAMEWORK_POINT = "framework-spawn"
+
+
+def logged_refusals(home, session_id):
+    """The decision log's framework-spawn denials for `session_id`, oldest first.
+
+    The log is `decisions.jsonl` under the disposable home's own state directory, which is where
+    `policy/hooks/decisions.py` writes when the client runs a hook with that home as `HOME`. A
+    headless client need not repeat a PreToolUse deny's reason in its answer, so this is how the
+    case sees a refusal the client did not report. A line that does not parse is skipped rather
+    than read as a refusal.
+    """
+    path = home.root / ".local" / "state" / "agent-harness" / "decisions.jsonl"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    rows = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if (isinstance(row, dict) and row.get("kind") == "decision"
+                and row.get("point") == FRAMEWORK_POINT
+                and row.get("deterministic_answer") == "deny"
+                and session_id and row.get("session_id") == session_id):
+            rows.append(row)
+    return rows
+
+
 def framework_brief(spawn, corroboration):
     """A brief carrying enough of a declared spawn's own sentences to be recognised."""
     phrases = list(spawn.get("phrases") or [])[:max(2, corroboration)]
@@ -1334,19 +1370,30 @@ def case_spawn_confinement(home):
     if wrote:
         raise AssertionError("an unnamed spawn carrying the descriptor's own %s sentences wrote "
                              "%s subagent transcript(s)" % (spawn["id"], len(wrote)))
-    if CONFINEMENT_DENY not in text:
-        raise Unverified("the unnamed framework spawn wrote no subagent transcript, but the "
-                         "constrained-role refusal was not in what the client reported, so the "
-                         "classification itself was not observed")
+    logged = logged_refusals(home, refused["session_id"])
+    reported = CONFINEMENT_DENY in text
+    if not logged and not reported:
+        raise Unverified("the unnamed framework spawn wrote no subagent transcript, but neither the "
+                         "harness decision log held a %s deny for its session nor was the "
+                         "constrained-role refusal in what the client reported, so the "
+                         "classification itself was not observed" % FRAMEWORK_POINT)
     notes = ["an Agent spawn naming no subagent_type, carrying only the descriptor's own %s "
-             "sentences, was refused with \"%s\" and wrote 0 subagent transcripts"
-             % (spawn["id"], CONFINEMENT_DENY)]
-    for clause, what in ((FRAMEWORK_ORIGIN, "what it recognised"),
-                         (FRAMEWORK_ROOTS, "the read roots that worker needs")):
-        if clause not in text:
-            raise AssertionError(observed(notes, "the refusal did not name %s" % what))
-    notes.append("and the refusal named both the framework work it recognised and the input roots "
-                 "the isolated worker needs")
+             "sentences, wrote 0 subagent transcripts" % spawn["id"]]
+    if logged:
+        notes.append("the harness decision log recorded %s %s deny row(s) for its session"
+                     % (len(logged), FRAMEWORK_POINT))
+    if reported:
+        notes.append("the client reported the refusal \"%s\"" % CONFINEMENT_DENY)
+        for clause, what in ((FRAMEWORK_ORIGIN, "what it recognised"),
+                             (FRAMEWORK_ROOTS, "the read roots that worker needs")):
+            if clause not in text:
+                raise AssertionError(observed(notes, "the refusal did not name %s" % what))
+        notes.append("and the refusal named both the framework work it recognised and the input "
+                     "roots the isolated worker needs")
+    else:
+        # The row carries no reason, so the wording is the unit tests' to hold, not this run's.
+        notes.append("the client did not repeat the refusal, and the log row carries no reason, so "
+                     "its wording was not observed in this run")
     ordinary = home.session(SPAWN_PROMPT)
     if not home.subagents(ordinary["session_id"]):
         raise AssertionError(observed(notes, "the false-positive check failed: an ordinary unnamed "
@@ -1688,7 +1735,8 @@ CASES = {
                          "workspace"),
     "spawn-confinement": (case_spawn_confinement,
                           "spawn a framework's review work with no subagent_type at all, carrying "
-                          "only the descriptor's own sentences, and read the refusal beside an "
+                          "only the descriptor's own sentences, and read the refusal from the "
+                          "harness decision log and the client's answer beside an "
                           "ordinary spawn that must still run"),
     "cost-posture": (case_cost_posture,
                      "sync a non-default cost variant, spawn an unnamed subagent in a new native "
