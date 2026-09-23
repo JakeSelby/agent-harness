@@ -15,7 +15,9 @@ def prepare(executable, work, root, workspace, read_roots, instructions, binding
     command = [executable, "-p", "--safe-mode", "--restricted", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                "--setting-sources", "", "--tools", "Read,Grep,Glob", "--permission-mode", "dontAsk",
                "--permission-prompts", "none", "--disable-slash-commands", "--no-chrome", "--no-session-persistence",
-               "--add-dir", str(workspace), "--add-dir", str(root), "--output-format", "json",
+               # The harness checkout is deliberately not a read root: the shared policy reaches
+               # the worker as the system prompt, and its skill authority arrives in read_roots.
+               "--add-dir", str(workspace), "--output-format", "json",
                "--append-system-prompt-file", str(work / "instructions.md"), "--model", bindings["model"]]
     if bindings.get("effort"):
         command += ["--effort", bindings["effort"]]

@@ -298,6 +298,27 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- An isolated role worker is no longer handed the harness checkout as a read root and pointed at
+  the whole skill corpus. It carries the shared policy as its system text and is mounted only
+  what that policy tells it to open: the skills the resolved rules and stances name, and copies
+  of the `docs/*.md` files they cite. The set is derived from the text itself, so a stance that
+  stops citing a skill stops paying for it, and a worker is never told to obey a rule whose
+  reference it cannot reach. A role adds what its body assumes but the shared text never names
+  with a `skills:` line — `design-loop` for `design-judge`, `all` for `planner`, whose body tells
+  it to read the skills the plan will name — and a name that resolves to no shipped skill fails
+  the run rather than quietly removing that authority. Measured as what is mounted rather than
+  what a run reads, a review layer went from the whole checkout, about 1,073,900 estimated tokens
+  of text, to about 30,800, and the corpus it was offered as skill authority from all 31,600
+  tokens to the 26,600 the policy cites. Each run records the figure under `context` in
+  `status.json` — policy, reference and total against a 50,000-token budget, counted with the
+  approximation `harness lint` applies to always-loaded context — recorded and not enforced,
+  because what a worker is shown is fixed by its contract before any brief is read. On Claude
+  Code the narrowing is enforced by the restricted file tools; under Codex's read-only sandbox it
+  is instruction text, as that runtime's declared input roots already were (#335).
+- The BMad override templates ask each review layer to launch only once the previous layer's
+  worker has exited. This is correctness before economy: a role worker that is still running
+  publishes no token count, so a round with four layers in flight cannot be held under a cap it
+  cannot measure, which is how an observed 450,000-token cap became 985,000 (#335).
 - A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
   `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
   fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
