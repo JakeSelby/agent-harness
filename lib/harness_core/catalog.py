@@ -205,7 +205,28 @@ def role_contract(root, name):
     # still apply. Absent means the variant decides, which is the default for every other role.
     if fields.get("posture", "fixed") != "fixed":
         raise ValueError("shared role posture, when present, must be 'fixed': " + name)
+    role_skills(root, fields)
     return fields, body
+
+
+def role_skills(root, fields):
+    """The skill directories a role declares beyond the ones the shared policy cites, as paths.
+
+    Each name must resolve to a shipped skill, because a typo would quietly remove authority the
+    role's body assumes. `all` is the planner's case: its body tells it to read the skills the
+    plan will name, and which those are is not known until the brief is read.
+    """
+    shipped = root / "primitives" / "skills"
+    declared = [part.strip() for part in str(fields.get("skills", "")).split(",") if part.strip()]
+    if declared == ["all"]:
+        return sorted(p for p in shipped.iterdir() if (p / "SKILL.md").is_file())
+    paths = []
+    for skill in declared:
+        path = shipped / identifier(skill)
+        if not (path / "SKILL.md").is_file():
+            raise ValueError("role declares an unknown skill: " + skill)
+        paths.append(path)
+    return paths
 
 
 def native_model(tiers, tier):

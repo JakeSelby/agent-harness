@@ -1412,19 +1412,10 @@ def upsert(record, path=None, drop=()):
         return Path(path) if path else usage_path()
     path = Path(path) if path else usage_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock = path.with_name(path.name + ".lock")
-    held = False
-    for _ in range(20):
-        try:
-            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            held = True
-            break
-        except FileExistsError:
-            time.sleep(0.05)
-        except OSError:
-            break
-    if not held:
+    lock = acquire(path)
+    if lock is None:
         raise RuntimeError("usage lock unavailable; no record was overwritten")
+    held = True
     try:
         rows = []
         replaced = {row_key(r) for r in records} | drop
@@ -1444,11 +1435,77 @@ def upsert(record, path=None, drop=()):
         tmp.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
         os.replace(str(tmp), str(path))
     finally:
-        if held:
-            try:
-                lock.unlink()
-            except OSError:
-                pass
+        release(lock, held)
+    return path
+
+
+def acquire(path):
+    """The lock file beside the ledger, held, or None when another writer would not let go."""
+    lock = path.with_name(path.name + ".lock")
+    for _ in range(20):
+        try:
+            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return lock
+        except FileExistsError:
+            time.sleep(0.05)
+        except OSError:
+            return None
+    return None
+
+
+def release(lock, held=True):
+    if held and lock is not None:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def errors_path(path=None):
+    """`usage.errors.jsonl` beside the ledger this path names."""
+    return (Path(path) if path else usage_path()).with_suffix(".errors.jsonl")
+
+
+def record_error(error, path=None, where=""):
+    """Append one swallowed failure beside the ledger. Never raises.
+
+    The same file this hook's own crash lands in, because a write that failed silently is
+    unknown rather than absent: a report with no rows in it has somewhere to be explained. The
+    exception type, never its message — a message can carry a path or a value.
+    """
+    entry = {"time": time.time(), "error": type(error).__name__ if isinstance(error, BaseException)
+             else str(error)}
+    if where:
+        entry["where"] = where
+    try:
+        target = errors_path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry) + "\n")
+    except OSError:
+        return False
+    return True
+
+
+def append_row(record, path=None):
+    """Append one row to the ledger without rewriting it, and return its path.
+
+    For a row nothing ever replaces. `upsert` reads and rewrites the whole file, which is right
+    for a session record refreshed while the session runs and wrong for a row written once
+    inside a hook's budget: a ledger of tens of thousands of lines would be re-read and
+    rewritten on every provider call. The append is one write of one line, under the same lock,
+    so a concurrent rewrite can neither interleave with it nor drop it.
+    """
+    path = Path(path) if path else usage_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = acquire(path)
+    if lock is None:
+        raise RuntimeError("usage lock unavailable; the record was not appended")
+    try:
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record) + "\n")
+    finally:
+        release(lock)
     return path
 
 
@@ -1676,8 +1733,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
     except Exception as exc:
-        failure = usage_path().with_suffix(".errors.jsonl")
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        with failure.open("a") as stream:
-            stream.write(json.dumps({"time": time.time(), "error": type(exc).__name__}) + "\n")
+        record_error(exc)
         sys.exit(1)

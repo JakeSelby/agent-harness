@@ -27,6 +27,17 @@ change. What the release must carry before it can be tagged is the next section.
    that runs it, qualify the target by hand as well and compare the two results before the
    automated verdict is trusted. Record that comparison with the round's observations, and replace
    the recorded decline in `tests/fixtures/permission-controls/` if the round produces a real one.
+   Every other case gained a driver at the same time, and `scripts/qualification_provision.py`
+   and `scripts/qualification_round.py` provision and drive the round; the
+   [runbook](qualification-runbook.md) is the mechanics. The same hand comparison is owed once
+   per case on its first live round. A Codex target reports `unverified` whatever it observed
+   until `--home-confirmed` says its configuration home was compared against a hand run.
+   The scripted cases are executed at the `standard` capability class and their observations are
+   assessed at `strong`; both classes are recorded in the evidence record and in the round
+   record, and a round whose cheap executor would be the only reader of its own evidence is
+   refused rather than run. The classes, the per-target overrides and the refusals are in the
+   [runbook](qualification-runbook.md). The expected saving is #338's estimate rather than a
+   measurement: 230K–590K output tokens per round, most of it authoring rather than judgement.
 2. On a minor release, run the optional BMad integration suite once, on one target, before the
    tag: the native four-layer review described in [BMad](bmad.md). It gates nothing — a red result
    is an issue to file, not a blocked release — and its outcome is recorded in the release pull
@@ -36,8 +47,13 @@ change. What the release must carry before it can be tagged is the next section.
    overwriting other contributors' history. Preserve personal configuration and the live checkout.
 4. Set `VERSION`, `compatibility/catalog.json` and `compatibility/migration.json` to the same
    release. Record exact migration actions and recovery even when the only action is reviewing a
-   dry run. Regenerate projections and release notes. Run the CI commands and the Python floor suite
-   on committed HEAD; then run:
+   dry run. Regenerate projections and release notes. Fold the changelog into the version section:
+   for 0.13.0, by hand from `## [Unreleased]` as before, and that release pull request is the
+   cut-over that ends the lint's Unreleased exemption; from the next release on, with
+   `python3 scripts/release_notes.py --changelog <version>`, which assembles the `changelog.d/`
+   fragments in a stable order and deletes them (see
+   [`changelog.d/README.md`](../changelog.d/README.md)). Run the CI commands and the Python floor
+   suite on committed HEAD; then run:
 
    ```sh
    python3 scripts/release_preflight.py
@@ -115,7 +131,8 @@ python3 scripts/smoke_tier.py            # --list names each check, running none
 ```
 
 It runs the acceptance runner's self-tests against recorded transcripts, the documentation-link
-check, the credential-reachability probe for the host that will run the round, and the
+check, the precondition probe for each target's client, login and Docker daemon on the host that
+will run the round (the [runbook](qualification-runbook.md#target-hosts) establishes them), and the
 disposable-home sync, projection-drift and lifecycle checks. Each defect it catches is one that
 would otherwise be found part-way through a round and cost the whole round again. A green tier is
 **not** qualification: it observes no client, writes nothing under `compatibility/evidence/` and

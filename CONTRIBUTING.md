@@ -115,16 +115,32 @@ Every instruction has one right home. First match wins:
 
 ## Landing a pull request (maintainers)
 
-The `main` ruleset requires linear history and an up-to-date branch, so a landing follows one
-shape. Each line here cost a broken landing before it was written down.
+`main` takes pull requests through a merge queue and requires linear history, so a landing
+follows one shape. Each line here cost a broken landing before it was written down.
 
-- Bring the branch up to date with `git merge --no-edit origin/main`, never a rebase or a
-  force-push; squash-merging keeps history linear regardless of merge commits on the branch.
+- A merge enqueues. `gh pr merge --squash` still works: it adds the pull request to the queue,
+  whose own merge method (squash) decides how it lands. The queue builds a temporary
+  `gh-readonly-queue/main/pr-<n>-<sha>` branch holding `main` plus every entry ahead of it, runs
+  the required checks there, and merges once they are green. The queue
+  replaces the up-to-date requirement, so there is no need to merge `origin/main` into a branch
+  just to land it. When a branch does need `main` (a conflict), use
+  `git merge --no-edit origin/main`, never a rebase or a force-push.
+- A queue failure removes the pull request from the queue; the entries behind it are rebuilt
+  without it and carry on. `gh pr view <n>` shows it no longer queued, the pull request's timeline
+  says it was removed from the merge queue, and the failing run is listed by
+  `gh run list --event merge_group`, on a branch named for the pull request. Fix it on the
+  branch and merge again. A check that never reports on the queue branch stalls the queue until
+  its timeout, which is why every pull request workflow also runs on `merge_group`.
+- After 0.13.0, every change under `bin/`, `lib/`, `adapters/`, `primitives/`, `policy/`, `docs/`
+  or `scripts/` carries a changelog fragment,
+  `changelog.d/<issue-or-pr>.<added|changed|removed|fixed>.md`, instead of an edit to
+  `CHANGELOG.md`, so two branches never conflict over one section; see
+  [`changelog.d/README.md`](changelog.d/README.md). `bin/harness lint` fails a branch without one.
 - Run the gate and read its exit code directly. `python3 -m unittest discover -s tests | tail -1`
   hides a red suite behind `tail`'s exit code; redirect to a log and test for `^OK`.
 - `gh pr checks <n> --watch` returns at once when no check has registered yet, and a merge right
   after is refused. Wait until `gh pr checks <n>` lists every required check, then watch, then
-  `gh pr merge --squash`. Never `--admin`.
+  `gh pr merge --squash` to enqueue. Never `--admin`.
 - `scripts/bmad_issue_sync.py new` files the issue and then races the list endpoint. When it prints
   "not reserved", wait a few seconds and run `reserve --issue N --kind K --parent P`. Two worktrees
   reserving at once can take the same ID; keep `main`'s entry and re-reserve the other issue.

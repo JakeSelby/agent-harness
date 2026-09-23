@@ -8,22 +8,91 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- A labelled corpus for the eleven detectors this repository writes itself, and a `corpus` job
-  beside `test` that scores it. `tests/fixtures/detector-corpus/` holds thirteen synthetic
-  transcripts and the labels over them, five positives and five near-misses per detector bar the one whose positive costs two hundred
-  searches, written
-  by `build_sessions.py` beside them; `scripts/detector_corpus.py --floor 0.9` runs both that
-  corpus and the one inside the vendored `ruleprobe` wheel through the whole registry and exits
-  non-zero when a detector's precision or recall falls under the floor, or when a detector has no
-  labelled example at all. Every row `harness usage --rules` prints now has a measured precision
-  and recall rather than a hit count of unknown quality. Two detectors measure 0.83
-  precision: any basename holding `id_rsa` is a hit for `secrets/git-add-secret-file`, so a runbook
-  named after a key is one, and `autonomy/denied-by-grade` matches the grade hook's signature
-  anywhere in a Bash result, so a grep that prints it is one. The floor stays where it is and each
-  miss is recorded in the corpus with the score and the floor it was measured against, so an
-  improvement or a regression both fail the job until the record is updated, while a run at a
-  lower floor leaves the record dormant rather than stale (#522).
+- Where the qualification targets run and how each is provisioned is now written down, because a
+  release session had to rediscover it every time. `docs/compatibility.md` names the binary
+  source, the login and the host for each of the four CLI targets: every round to date ran on one
+  Mac, Codex on macOS is the binary bundled in the ChatGPT desktop app logged in with a ChatGPT
+  session, and both Linux targets run in a container on that Mac built from the new
+  `scripts/linux-target.Dockerfile`, which pins both clients. The runbook's new target-hosts
+  section gives the commands in order. The smoke tier's `credentials` check now takes
+  `--targets`, which a qualification round passes through, and fails at once, naming the target,
+  when a client is off `PATH`, the Codex login is missing or the Docker daemon a Linux target
+  needs does not answer; with no targets named it checks what this host can run and reports a
+  macOS target on a Linux host as skipped. The runbook also records that the acceptance runner
+  does not yet carry a Codex session login into its disposable home, so Codex evidence can only
+  be produced by hand until it does. (#408)
+- `scripts/cost_bench.py replay --tag` runs a pinned git ref of this repository, and is repeatable,
+  so `--tag v0.12.0 --tag v0.13.0 --model <id>` measures two harness versions against bare in one
+  invocation and writes a history row for each, labelled with the version and commit of the ref it
+  actually ran rather than of whatever harness happens to be installed. Each ref is checked out
+  with its history intact and projected by its own `bin/harness sync` into a config directory of
+  its own, run with a temporary HOME as well as an explicit `CLAUDE_CONFIG_DIR`: the profile the
+  owner runs under is neither read nor written, and the owner's identity and stance selection —
+  which a sync renders out of `~/.config/agent-harness/config.json` — stay out of the measurement,
+  so two tags are asked the same question. Every ref is resolved before the first launch, a ref
+  that does not resolve is a named error rather than a quietly missing row, and both temporary
+  directories go even when a run in the middle of a tag's schedule raises. The harness arm's fence
+  admits the pinned checkout its profile links into, and `--dry-run` prints the schedule per tag
+  and syncs nothing. `--spend-cap` applies to each tag's schedule on its own. A profile's
+  credential is keyed on its absolute path, so a temporary one is not signed in: name a signed-in
+  `--harness-config` for the tag to be synced into when the run is meant to spend. That profile
+  must start with no harness files in it, none of the names the sync writes may be a link out of
+  it, and it cannot serve `candidate` in the same run; after each tag the sync is taken back out
+  of it — exactly what its own manifest records is removed and `settings.json` is put back
+  atomically from a copy — while anything else written during the run stays and credential files
+  are never copied, rewritten or deleted, and the profile is checked afterwards so a tag whose
+  sync recorded elsewhere stops the run with the leftovers named rather than stranding the next
+  one; the pinned checkout is readable, never writable, from the arm, and every refusal about the
+  target is decided before the first launch (#599).
 
+- A qualification round names two capability classes per target rather than one: an execution
+  class, `standard` by default, for the worker that runs the scripted cases and writes the
+  findings, and an assessment class, `strong` by default and a floor rather than a preference,
+  for the reader that assesses the observations. Now that the required cases are scripts,
+  running them is reading JSON and writing a file, which is not work the strong tier is needed
+  for; assessing what they observed is, and the published procedure requires a reviewer. Both
+  classes are written into the evidence record and the round record, so the evidence says which
+  class produced an observation and which class read it, and either can be moved per target with
+  `--execution-class TARGET=CLASS`. Three pairs are refused before any client is launched: an
+  assessment class weaker than `strong` or one the adapter does not map at all, and a cheap
+  execution class that resolves to the assessment class's own model, whether because the table
+  maps both to one identifier, spells one model two ways, or maps the cheap class not at all so
+  that it resolves upward — in each case the worker that produced the evidence would be its only
+  reader. The two identifiers are compared through the usage ledger's own normalisation rather
+  than as strings, so a date-stamped id and a bare alias of one model are one model. An unmapped
+  execution class beside a mapped assessor is disclosed in the record rather than guessed at.
+  The routing is written to the durable log before the first case and to the round record before
+  the smoke tier, so a killed round still says which classes were running, and `--from-progress`
+  refuses a log that mixes two routings rather than merging them. The resolution reads the
+  adapter's table and not a personal `tiers` override, because a round runs from a frozen clone. The
+  saving is the issue's estimate and not a measurement: 230K–590K output tokens per round, most
+  of it authoring rather than judgement (#338).
+- Every required acceptance case now has a driver in `scripts/native_acceptance.py`, so
+  `--dry-plan` no longer says of any case that it is not automated yet. Nine of them are new here;
+  most were prose in an evidence record that a worker re-implemented by hand each round, which is
+  where most of a round's orchestrator tokens went. They include `spawn-confinement`, which #291
+  added to the required set: it spawns a framework's review work with no `subagent_type` at all,
+  carrying only the sentences the integration descriptor itself declares — read from the
+  descriptor rather than restated, so a driver cannot keep passing after the descriptor stopped
+  naming them — and reads the refusal beside an ordinary spawn that must still run, because a
+  guard that refuses everything would otherwise read as a pass. Each new case emits the
+  observation string a reviewer assesses, and each returns `unverified` rather than a pass when
+  the behaviour it is about was not observed: a runtime that writes no subagent record is a named
+  gap, and a model that declined a turn is not a control. `gate-invalidation` delivers its Stop
+  events to the runtime's own coordinator rather than paying for eleven client turns, and says so
+  in its observation. The provisioning and driver that used to live only in each round's scratch
+  copy are committed as `scripts/qualification_provision.py` and `scripts/qualification_round.py`;
+  the clone comes from this repository's own object store, and the pinned BMad installer, for the
+  optional integration suite a minor release runs by hand, is the only step that reaches the
+  network. The runner also gained a Codex configuration home — its own
+  `CODEX_HOME`, the `codex exec --json` invocation and the rollout layout — derived from
+  `adapters/codex/worker.py`, `policy/hooks/usage-log.py` and the documentation. No Codex round
+  has been driven through it, so every Codex verdict is reported `unverified` with its
+  observation kept until an operator compares one against a hand run and passes
+  `--home-confirmed`, which is the discipline `permission-controls` already owes. Confirmation is
+  per target, because one surface agreeing with a hand run says nothing about another, and on an
+  unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
+  what is in question there is the reading, not the harness (#336).
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill
   surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
@@ -106,7 +175,6 @@ All notable changes to this project are documented here. The format follows
   still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
   the allowlist, where the kill switch lives and whether a credential variable is set — by name,
   never its value (#137).
-
 - One Bash command in twenty that the harness allows is now kept in the decision log as a
   sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
   the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
@@ -285,6 +353,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Pull requests to `main` land through a merge queue, and changelog entries after 0.13.0 are
+  one fragment file per change under `changelog.d/`. Every pull request workflow also runs on
+  `merge_group`, and the issue-ownership and landing-copy checks read the queued pull request's
+  number from the queue branch, since a queued entry whose checks never report stalls the queue.
+  `scripts/release_notes.py --changelog <version>` assembles the fragments into a version section
+  in a stable order, and `bin/harness lint` fails a branch that changes `bin/`, `lib/`,
+  `adapters/`, `primitives/`, `policy/`, `docs/` or `scripts/` without a fragment or a
+  `<number>.none.md` waiver. Every branch used to edit the same Unreleased section, so any two in
+  flight conflicted there, and the up-to-date requirement cost a rebase and a full CI rerun per
+  landing. (#337)
+
 - A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
   `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
   fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
@@ -352,6 +431,42 @@ All notable changes to this project are documented here. The format follows
   session's own model, which the harness never writes; a `delegation` variant other than
   `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
   now links to the row instead of restating it (#520).
+- `scripts/smoke_tier.py` runs the repository's deterministic pre-qualification checks as one
+  command that spends no model turn: the acceptance runner's self-tests against recorded
+  transcripts under `tests/fixtures/transcripts/`, the documentation-link check, the
+  credential-reachability probe, and the disposable-home sync, projection-drift and lifecycle
+  checks. Three of the four defects the 0.11.0 qualification round recorded were deterministic
+  plumbing faults of exactly this kind, each found part-way through a paid round that then had to
+  be run again. Every check is bounded by a timeout, so an unauthenticatable environment is
+  reported as an error rather than as a three-hundred-second hang, and a check that could not run
+  is `unverified` and never a pass. The tier is additive and never qualification: it observes no
+  client, and the run fails if anything it ran wrote under `compatibility/evidence/` or into the
+  catalog. CI runs it as a `smoke` job that the branch ruleset does not require, and
+  `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
+  block a freeze (#334).
+
+### Fixed
+
+- Three faults in the qualification scripts, each of which would have cost a paid round to find.
+  The round's clone passed `--shared=false` to `git clone`, an option that takes no value, so
+  every provision exited; `bidirectional-handoff` sent the same `--revision` twice expecting a
+  refusal second, where `lib/harness_core/tasks.py` refuses only a revision that has been spent,
+  and it sent the writing runtime as a contract field the same module rejects, so the case could
+  never have passed; and the round driver left a
+  previous target record in place, so a runner that exited before writing `--out` reported the
+  older round's passes as this round's. A previous record is now moved aside first and an absent
+  one is every case `unverified`, a target or smoke tier that runs past the deadline is recorded
+  and carried rather than raised, `--print-env` quotes every value it prints, a round directory
+  inside any checkout or worktree of this repository is refused, and a `clone` directory this
+  script did not create is refused rather than deleted. `hook-composition` now matches text only
+  the `grade-bash` hook writes rather than the stance name, which a model can echo without any
+  hook having decided, and `custom-stance` names the resolved variant by its bytes where a
+  surface copies it instead of linking it (#336).
+- The credential probe answers for a variable holding something that is not a path, where asking
+  the filesystem about it used to raise and carry the value into the error's own message — a
+  service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
+  An unusable value is now treated as a file that is not there, and the reason names the variable
+  and never the value (#334).
 
 ### Changed
 

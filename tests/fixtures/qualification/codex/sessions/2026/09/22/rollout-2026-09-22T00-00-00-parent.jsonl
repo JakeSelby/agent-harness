@@ -1,0 +1,3 @@
+{"type": "session_meta", "timestamp": "2026-09-22T00:00:00Z", "payload": {"id": "00000000-0000-7000-8000-0000000000c1", "cwd": "/tmp/probe", "source": "exec"}}
+{"type": "turn_context", "timestamp": "2026-09-22T00:00:01Z", "payload": {"model": "placeholder-model", "permission_mode": "read-only"}}
+{"type": "event_msg", "timestamp": "2026-09-22T00:00:02Z", "payload": {"type": "agent_message", "message": "SPAWNED"}}
