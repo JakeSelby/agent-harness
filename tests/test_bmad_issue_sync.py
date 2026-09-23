@@ -702,7 +702,7 @@ class NewIssueTests(unittest.TestCase):
             gh.call_args.kwargs["input_data"],
             {"title": "A defect", "body": "Body", "labels": ["type::bug"], "milestone": 7},
         )
-        reserve.assert_called_once_with(self.manifest, "owner/repo", 2, "bug", 1)
+        reserve.assert_called_once_with(self.manifest, "owner/repo", 2, "bug", 1, False)
 
     def test_new_files_nothing_when_the_map_or_parent_is_invalid(self):
         with mock.patch.object(sync, "audit_manifest", return_value=["broken mapping"]), mock.patch.object(
@@ -762,9 +762,145 @@ class NewIssueTests(unittest.TestCase):
                 self.assertEqual(
                     sync.main(["new", "--title", "T", "--kind", "story", "--body-file", str(body), "--parent", "1"]), 0
                 )
-        create.assert_called_once_with(self.manifest, "owner/repo", "T", "## Problem\n", "story", 1, None)
+        create.assert_called_once_with(
+            self.manifest, "owner/repo", "T", "## Problem\n", "story", 1, None, False
+        )
         self.assertIn("filed #2 and reserved AH-S002", out.getvalue())
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SiblingReservationTests(unittest.TestCase):
+    """The counter alone cannot see a reservation made in another checkout of this repository."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.shared = Path(temp.name) / "shared"
+        self.shared.mkdir()
+        self.git("init", "--quiet", "-b", "main")
+        self.git("config", "user.name", "t")
+        self.git("config", "user.email", "t")
+        with mock.patch.object(sync, "ROOT", self.shared):
+            sync.write_manifest(sync.build_manifest([issue(1, "feat: first")], "owner/repo"))
+        self.git("add", "-A")
+        self.git("commit", "--quiet", "-m", "initial")
+        self.sibling = Path(temp.name) / "sibling"
+        self.git("worktree", "add", "--quiet", "-b", "side", str(self.sibling))
+
+    def git(self, *args, **kwargs):
+        subprocess.run(
+            ["git", "-C", str(kwargs.get("cwd", self.shared))] + list(args),
+            check=True,
+            capture_output=True,
+        )
+
+    def reserve(self, root, number, **kwargs):
+        with mock.patch.object(sync, "ROOT", root), mock.patch.object(
+            sync, "fetch_issues", return_value=[issue(number, "fix: something")]
+        ), redirect_stdout(io.StringIO()) as out:
+            item = sync.reserve(sync.load_manifest(), "owner/repo", number, "bug", None, **kwargs)
+        return item, out.getvalue()
+
+    def test_a_second_reservation_from_the_same_counter_is_refused(self):
+        first, _ = self.reserve(self.shared, 2)
+        self.assertEqual(first["bmad_id"], "AH-B001")
+        with self.assertRaises(RuntimeError) as caught:
+            self.reserve(self.sibling, 3)
+        message = str(caught.exception)
+        self.assertIn("AH-B001 is not free", message)
+        self.assertIn("AH-B001 is already taken in worktree {}".format(self.shared.resolve()), message)
+        self.assertIn("--advance", message)
+
+    def test_advance_skips_the_taken_ids_and_says_which(self):
+        self.reserve(self.shared, 2)
+        item, printed = self.reserve(self.sibling, 3, advance=True)
+        self.assertEqual(item["bmad_id"], "AH-B002")
+        self.assertIn("notice: --advance left AH-B001..AH-B001 unused", printed)
+        with mock.patch.object(sync, "ROOT", self.sibling):
+            self.assertEqual(sync.load_manifest()["next_ids"]["bug"], 3)
+
+    def test_a_reservation_committed_on_another_branch_is_seen(self):
+        self.reserve(self.shared, 2)
+        self.git("add", "-A")
+        self.git("commit", "--quiet", "-m", "reserve")
+        self.git("checkout", "--quiet", "-b", "parked")
+        self.git("reset", "--quiet", "--hard", "HEAD~1")
+        with self.assertRaisesRegex(RuntimeError, r"AH-B001 is already taken in branch (main|side)"):
+            self.reserve(self.sibling, 3)
+
+    def test_a_counter_a_sibling_has_already_run_past_is_refused(self):
+        with mock.patch.object(sync, "ROOT", self.sibling):
+            manifest = sync.load_manifest()
+            manifest["next_ids"]["bug"] = 4
+            sync.write_manifest(manifest)
+        with self.assertRaisesRegex(RuntimeError, r"already counted bug up to 4"):
+            self.reserve(self.shared, 2)
+
+    def test_an_unrelated_kind_is_untouched_by_the_survey(self):
+        self.reserve(self.shared, 2)
+        with mock.patch.object(sync, "ROOT", self.sibling), mock.patch.object(
+            sync, "fetch_issues", return_value=[issue(3, "chore: something")]
+        ):
+            item = sync.reserve(sync.load_manifest(), "owner/repo", 3, "chore", None)
+        self.assertEqual(item["bmad_id"], "AH-C001")
+
+
+class SiblingSurveyUnitTests(unittest.TestCase):
+    def test_refs_without_the_map_are_skipped_without_desynchronising_the_batch(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        subprocess.run(["git", "-C", str(root), "init", "--quiet", "-b", "main"], check=True)
+        for name in ("user.name", "user.email"):
+            subprocess.run(["git", "-C", str(root), "config", name, "t"], check=True)
+        (root / "README.md").write_text("first\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "commit", "--quiet", "-m", "no map"], check=True)
+        subprocess.run(["git", "-C", str(root), "branch", "mapped"], check=True)
+        with mock.patch.object(sync, "ROOT", root):
+            sync.write_manifest(sync.build_manifest([issue(1, "feat: first")], "owner/repo"))
+            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-C", str(root), "commit", "--quiet", "-m", "map"], check=True
+            )
+            blobs = sync.blobs_at_refs(["refs/heads/mapped", "refs/heads/main"])
+        self.assertEqual(list(blobs), ["refs/heads/main"])
+        self.assertEqual(json.loads(blobs["refs/heads/main"])["next_ids"]["story"], 2)
+
+    def test_the_survey_degrades_to_nothing_outside_a_git_repository(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        with mock.patch.object(sync, "ROOT", Path(temp.name)):
+            used, claimed, unreadable = sync.survey_ids_elsewhere("bug")
+        self.assertEqual((dict(used), claimed, unreadable), ({}, 1, []))
+
+    def test_a_remote_head_this_clone_cannot_read_is_reported(self):
+        answers = {
+            ("remote",): "origin\n",
+            ("fetch", "--quiet", "origin"): "",
+            ("ls-remote", "--heads", "origin"): "beef refs/heads/here\ndead refs/heads/gone\n",
+        }
+        def fake(args, input_data=None, text=True):
+            if args[0] == "cat-file":
+                return "beef commit 12\ndead missing\n"
+            return answers.get(tuple(args))
+        with mock.patch.object(sync, "git_output", side_effect=fake):
+            self.assertEqual(sync.unreadable_remote_heads(), ["refs/heads/gone"])
+
+    def test_an_exhausted_range_is_not_offered_as_something_to_skip_into(self):
+        report, floor = sync.collision_report("bug", 998, {999: {"branch side"}}, 1, [])
+        self.assertEqual(floor, 1000)
+        self.assertIn("the bug range is exhausted", report)
+        self.assertNotIn("--advance", report)
+
+    def test_an_unreadable_remote_head_is_named_in_the_refusal(self):
+        report, _ = sync.collision_report("bug", 1, {1: {"branch side"}}, 1, ["refs/heads/gone"])
+        self.assertIn("warning: refs/heads/gone could not be scanned", report)
+
+    def test_a_clear_counter_produces_no_report(self):
+        report, floor = sync.collision_report("bug", 7, {3: {"branch side"}}, 4, [])
+        self.assertIsNone(report)
+        self.assertEqual(floor, 4)

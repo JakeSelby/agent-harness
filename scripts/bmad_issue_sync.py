@@ -17,12 +17,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-MAP_PATH = ROOT / "_bmad-output" / "issue-map.json"
+MAP_RELATIVE_PATH = "_bmad-output/issue-map.json"
+MAP_PATH = ROOT / MAP_RELATIVE_PATH
 ARTIFACT_DIR = ROOT / "_bmad-output" / "implementation-artifacts"
 BEGIN = "<!-- bmad-traceability:start -->"
 END = "<!-- bmad-traceability:end -->"
 GH_TIMEOUT_SECONDS = 30
+GIT_TIMEOUT_SECONDS = 30
 MISSING = object()
+ADVANCE_HELP = "skip IDs a sibling branch or worktree already took, leaving them unused"
 KINDS = ("epic", "story", "task", "bug", "chore", "spike", "decision")
 PREFIX = {
     "epic": "E",
@@ -692,7 +695,157 @@ def apply_manifest(manifest):
                 raise
 
 
-def reserve(manifest, repo, issue_number, kind, parent_number):
+def git_output(args, input_data=None, text=True):
+    """Run a read-only git command in ROOT, returning None when git cannot answer."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(ROOT)] + list(args),
+            input=input_data,
+            capture_output=True,
+            text=text,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return None if result.returncode else result.stdout
+
+
+def blobs_at_refs(refs):
+    """Read one path out of many refs in a single git process, skipping refs without it."""
+    if not refs:
+        return {}
+    query = "".join("{}:{}\n".format(ref, MAP_RELATIVE_PATH) for ref in refs)
+    raw = git_output(["cat-file", "--batch"], input_data=query.encode("utf-8"), text=False)
+    if raw is None:
+        return {}
+    blobs = {}
+    offset = 0
+    for ref in refs:
+        end = raw.find(b"\n", offset)
+        if end < 0:
+            break
+        header = raw[offset:end].split()
+        if len(header) != 3 or header[1] != b"blob":
+            offset = end + 1
+            continue
+        try:
+            size = int(header[2])
+        except ValueError:
+            break
+        blobs[ref] = raw[end + 1:end + 1 + size]
+        offset = end + 1 + size + 1
+    return blobs
+
+
+def sibling_maps():
+    """Every issue map this clone can see besides the one in this working tree.
+
+    An uncommitted reservation in another worktree is exactly what a counter-only check
+    misses, so each linked worktree is read from its working copy rather than its HEAD.
+    """
+    listing = git_output(["worktree", "list", "--porcelain"])
+    for line in (listing or "").splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = Path(line[len("worktree "):])
+        try:
+            if path.resolve() == ROOT.resolve():
+                continue
+            yield "worktree {}".format(path), (path / MAP_RELATIVE_PATH).read_bytes()
+        except OSError:
+            continue
+    refs = (git_output(["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"]) or "").split()
+    for ref, blob in blobs_at_refs(refs).items():
+        yield "branch {}".format(re.sub(r"^refs/(heads|remotes)/", "", ref)), blob
+
+
+def unreadable_remote_heads():
+    """Heads git ls-remote advertises whose commits this clone holds no object for.
+
+    Their maps cannot be scanned, so the survey below is incomplete by exactly this much.
+    """
+    remotes = git_output(["remote"])
+    if remotes is None or "origin" not in remotes.split():
+        return []
+    git_output(["fetch", "--quiet", "origin"])
+    listing = git_output(["ls-remote", "--heads", "origin"])
+    if listing is None:
+        return ["origin (could not be reached)"]
+    heads = {}
+    for line in listing.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            heads[parts[1]] = parts[0]
+    if not heads:
+        return []
+    query = "".join("{}\n".format(sha) for sha in sorted(set(heads.values())))
+    raw = git_output(["cat-file", "--batch-check"], input_data=query)
+    if raw is None:
+        return sorted(heads)
+    absent = {line.split()[0] for line in raw.splitlines() if line.strip().endswith(" missing")}
+    return sorted(ref for ref, sha in heads.items() if sha in absent)
+
+
+def survey_ids_elsewhere(kind):
+    """Which IDs of `kind` sibling maps already spend, and how far their counters have run.
+
+    Returns the in-use numbers mapped to where each was seen, the highest sibling counter,
+    and the remote branches that could not be read.
+    """
+    pattern = re.compile(r"^AH-{}(\d{{3}})$".format(PREFIX[kind]))
+    used = defaultdict(set)
+    claimed = 1
+    for source, text in sibling_maps():
+        try:
+            data = json.loads(text)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for item in data.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            match = pattern.match(str(item.get("bmad_id")))
+            if match:
+                used[int(match.group(1))].add(source)
+        counter = (data.get("next_ids") or {}).get(kind)
+        if type(counter) is int and counter > claimed:
+            claimed = counter
+    return used, claimed, unreadable_remote_heads()
+
+
+def collision_report(kind, sequence, used, claimed, unreadable):
+    """The refusal text for a counter that a sibling map has already overtaken."""
+    floor = max([claimed] + [number + 1 for number in used])
+    if sequence >= floor:
+        return None, floor
+    lines = [
+        "next {} ID AH-{}{:03d} is not free: the counter in {} trusts this checkout alone, and "
+        "another branch or worktree has already gone past it".format(
+            kind, PREFIX[kind], sequence, MAP_RELATIVE_PATH
+        )
+    ]
+    for number in sorted(number for number in used if number >= sequence):
+        lines.append(
+            "  AH-{}{:03d} is already taken in {}".format(
+                PREFIX[kind], number, ", ".join(sorted(used[number]))
+            )
+        )
+    if claimed > sequence:
+        lines.append("  a sibling map has already counted {} up to {}".format(kind, claimed))
+    for ref in unreadable:
+        lines.append("  warning: {} could not be scanned".format(ref))
+    lines.append(
+        "rebase onto the branch that took them; the {} range is exhausted, so there is "
+        "nothing left to skip to".format(kind)
+        if floor > 999
+        else "rebase onto the branch that took them, or re-run with --advance to reserve "
+        "AH-{}{:03d} and leave the gap".format(PREFIX[kind], floor)
+    )
+    return "\n".join(lines), floor
+
+
+def reserve(manifest, repo, issue_number, kind, parent_number, advance=False):
     if any(item["github_number"] == issue_number for item in manifest["items"]):
         raise RuntimeError("issue #{} already has a BMad ID".format(issue_number))
     errors = audit_manifest(manifest)
@@ -708,6 +861,19 @@ def reserve(manifest, repo, issue_number, kind, parent_number):
     sequence = manifest["next_ids"][kind]
     if type(sequence) is not int or sequence < 1 or sequence > 999:
         raise RuntimeError("next {} ID sequence is invalid: {}".format(kind, sequence))
+    used, claimed, unreadable = survey_ids_elsewhere(kind)
+    for ref in unreadable:
+        print("notice: {} could not be scanned for IDs already in use".format(ref))
+    report, floor = collision_report(kind, sequence, used, claimed, unreadable)
+    if report and not advance:
+        raise RuntimeError(report)
+    if report:
+        if floor > 999:
+            raise RuntimeError("next {} ID sequence is invalid: {}".format(kind, floor))
+        print("notice: --advance left AH-{}{:03d}..AH-{}{:03d} unused; they are taken elsewhere".format(
+            PREFIX[kind], sequence, PREFIX[kind], floor - 1
+        ))
+        sequence = floor
     bmad_id = "AH-{}{:03d}".format(PREFIX[kind], sequence)
     if any(item["bmad_id"] == bmad_id for item in manifest["items"]):
         raise RuntimeError("next {} ID {} is already in use".format(kind, bmad_id))
@@ -734,7 +900,7 @@ def reserve(manifest, repo, issue_number, kind, parent_number):
     return item
 
 
-def create_issue(manifest, repo, title, body, kind, parent_number, milestone):
+def create_issue(manifest, repo, title, body, kind, parent_number, milestone, advance=False):
     """File an issue already typed, then reserve its ID, so new work never starts unmapped."""
     errors = audit_manifest(manifest)
     if errors:
@@ -757,7 +923,7 @@ def create_issue(manifest, repo, title, body, kind, parent_number, milestone):
         # GitHub drops labels silently when the token cannot write them.
         if fields["labels"][0] not in {label["name"] for label in created.get("labels", [])}:
             raise RuntimeError("GitHub did not apply {}".format(fields["labels"][0]))
-        return reserve(manifest, repo, number, kind, parent_number)
+        return reserve(manifest, repo, number, kind, parent_number, advance)
     except (RuntimeError, OSError, KeyError, TypeError, ValueError) as error:
         raise RuntimeError(
             "issue #{} was filed but not reserved; fix the cause and run reserve --issue {}: {!r}".format(
@@ -791,12 +957,14 @@ def main(argv=None):
     reserve_parser.add_argument("--issue", type=int, required=True)
     reserve_parser.add_argument("--kind", choices=KINDS, required=True)
     reserve_parser.add_argument("--parent", type=int)
+    reserve_parser.add_argument("--advance", action="store_true", help=ADVANCE_HELP)
     new_parser = subparsers.add_parser("new")
     new_parser.add_argument("--title", required=True)
     new_parser.add_argument("--kind", choices=KINDS, required=True)
     new_parser.add_argument("--body-file", required=True, help="Markdown file holding the issue body")
     new_parser.add_argument("--parent", type=int)
     new_parser.add_argument("--milestone", type=int, help="milestone number, not its title")
+    new_parser.add_argument("--advance", action="store_true", help=ADVANCE_HELP)
     args = parser.parse_args(argv)
     if args.command == "bootstrap":
         if MAP_PATH.exists():
@@ -844,11 +1012,18 @@ def main(argv=None):
     if args.command == "new":
         body = Path(args.body_file).read_text(encoding="utf-8")
         item = create_issue(
-            manifest, manifest["repository"], args.title, body, args.kind, args.parent, args.milestone
+            manifest,
+            manifest["repository"],
+            args.title,
+            body,
+            args.kind,
+            args.parent,
+            args.milestone,
+            args.advance,
         )
         print("filed #{} and reserved {}".format(item["github_number"], item["bmad_id"]))
         return 0
-    item = reserve(manifest, manifest["repository"], args.issue, args.kind, args.parent)
+    item = reserve(manifest, manifest["repository"], args.issue, args.kind, args.parent, args.advance)
     print("reserved {} for issue #{}".format(item["bmad_id"], item["github_number"]))
     return 0
 
