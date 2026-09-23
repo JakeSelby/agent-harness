@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 227,
     "task": 27,
-    "bug": 80,
+    "bug": 81,
     "chore": 66,
     "spike": 10,
     "decision": 12
@@ -5390,6 +5390,19 @@
       "type": "task",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T026.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B080",
+      "github_number": 728,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/728",
+      "title": "A native evidence record pairs its observations with the wrong cases",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B080.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
