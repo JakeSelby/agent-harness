@@ -52,7 +52,8 @@ Seven facts shape the whole file:
   can only grow. A subagent's transcript is capped by bytes and by the clock.
 
 No budget, threshold, model name or role name lives here: every number comes from the cost
-table, every switch from `switches.turn_feed`, `switches.nudge_at` and `switches.max_parallel`.
+table, every switch from `switches.turn_feed`, `switches.nudge_at`, `switches.session_nudge_at`
+and `switches.max_parallel`.
 A variant that sets none of them feeds nothing. Any failure at all emits nothing and exits 0,
 and no line the feed emits is ever a decision.
 """
@@ -75,9 +76,10 @@ HOOKS = Path(__file__).resolve().parent
 PREFIX = "usage-feed: "
 # A journal line is one `os.write`. Far under PIPE_BUF, which is what makes an append atomic.
 MAX_LINE = 4096
-# How many message ids stay open for a later line to raise. One API response is written as
-# several lines repeating its id, and a response whose id is evicted before its final, largest
-# figure arrives would be counted twice; a tail this long is far past that window.
+# How many message ids stay open for a later line to raise, newest kept and oldest evicted. One
+# API response is written as several lines repeating its id, and a response whose id is evicted
+# before its final, largest figure arrives would be counted twice; a tail this long is far past
+# that window.
 OPEN_TAIL = 64
 MAX_LISTED = 5
 # Stops waiting for a line, and ids whose spend is already in the totals. Both bound what one
@@ -206,7 +208,8 @@ def new_state():
             "subagents": {"output": 0, "tool_calls": 0, "count": 0, "unknown": 0},
             "journal_offset": 0, "running": {}, "pending": [], "counted": [],
             "figures": {}, "unsummed": {}, "open": [], "pruned": 0, "said_turn": None,
-            "rounds": {}, "said_unknown": [], "said_measure": False}
+            "rounds": {}, "said_unknown": [], "said_measure": False,
+            "context": None, "said_nudge": []}
 
 
 def load_state(path):
@@ -250,10 +253,15 @@ def load_state(path):
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             del state["rounds"][agent]
     state["said_measure"] = bool(state.get("said_measure"))
-    for key in ("pending", "counted", "open", "said_unknown"):
+    for key in ("pending", "counted", "open", "said_unknown", "said_nudge"):
         if not isinstance(state.get(key), list):
             state[key] = []
     state["said_unknown"] = [v for v in state["said_unknown"] if isinstance(v, str)]
+    state["said_nudge"] = [v for v in state["said_nudge"]
+                           if isinstance(v, int) and not isinstance(v, bool) and v > 0]
+    size = state.get("context")
+    if not (isinstance(size, int) and not isinstance(size, bool) and size > 0):
+        state["context"] = None
     return state
 
 
@@ -388,6 +396,33 @@ def _slot(state, mid):
     return item
 
 
+def _whole(value):
+    """A token figure as a whole number, or 0. Nothing a transcript can hold raises out of here.
+
+    `OverflowError` is the one that matters: JSON admits `1e400`, Python reads it as an infinity,
+    and `int()` on that raises. A record is read once, the offset past it is saved, and an
+    uncaught raise there would silence the feed for the rest of the session.
+    """
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+#: What a response read, across the three fields it is reported in. They do not overlap:
+#: `input_tokens` is what was sent uncached, and the other two are the prefix read from the
+#: cache and the prefix written into it, so the context is their sum and not any one of them.
+CONTEXT_KEYS = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+
+
+def _context(usage):
+    """One response's context size. Zero when the fields are absent, which is not a size."""
+    total = 0
+    for key in CONTEXT_KEYS:
+        total += max(0, _whole(usage.get(key)))
+    return total
+
+
 def _apply(state, entry):
     """One transcript line against the running totals. Sidechain lines belong to a subagent."""
     if not isinstance(entry, dict) or entry.get("isSidechain"):
@@ -413,11 +448,14 @@ def _apply(state, entry):
     mid = message.get("id") if isinstance(message.get("id"), str) else ""
     usage = message.get("usage")
     usage = usage if isinstance(usage, dict) else {}
+    context = _context(usage)
+    if context:
+        # What the next response will re-read, as of the newest response on file. Not summed
+        # and not a maximum: a context that shrank because the session was compacted has
+        # shrunk, and the older, larger figure describes a session that no longer exists.
+        state["context"] = context
     slot = _slot(state, mid)
-    try:
-        output = int(usage.get("output_tokens") or 0)
-    except (TypeError, ValueError):
-        output = 0
+    output = _whole(usage.get("output_tokens"))
     if output > slot[1]:
         # Only the rise is added, so a partial streaming count followed by the true figure is
         # one message counted once at its largest.
@@ -487,11 +525,13 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
         if (state.get("inode") != inode or state.get("head") != head
                 or state["offset"] > size or size < state["size"]):
             # Compaction, a rotation, a replacement — of any size. What came before is unknowable
-            # about the transcript; what the journal recorded is still true and stays.
+            # about the transcript; what the journal recorded is still true and stays, and so is
+            # what has already been said. A reset that really did shrink the context re-arms the
+            # session nudge through the size itself, not by forgetting the line was fed.
             seen = state.get("inode") is not None
             kept = {key: state[key] for key in
                     ("journal_offset", "running", "pending", "counted", "figures", "unsummed",
-                     "subagents", "pruned", "rounds", "said_unknown")}
+                     "subagents", "pruned", "rounds", "said_unknown", "said_nudge")}
             state = dict(new_state(), **kept)
             state["inode"], state["head"] = inode, head
             state["offset"] = max(0, size - COLD_TAIL)
@@ -1116,6 +1156,14 @@ def settings(env):
     return table, mode, nudges, width
 
 
+def session_nudges(table):
+    """The context sizes the posture calls a full session, smallest first; empty means silent."""
+    switches = table.get("switches") if isinstance(table, dict) else None
+    switches = switches if isinstance(switches, dict) else {}
+    return sorted(v for v in switches.get("session_nudge_at") or []
+                  if isinstance(v, int) and not isinstance(v, bool) and v > 0)
+
+
 def budgets(row):
     """The row's two soft budgets, each only when it is a positive whole number."""
     if not isinstance(row, dict):
@@ -1213,6 +1261,39 @@ def turn_line(state):
     if totals["unknown"] or state.get("partial"):
         text += " (partial)"
     return text
+
+
+def session_line(state, thresholds):
+    """One line the first time the session's context passes a threshold, or None.
+
+    The turn line reports what a turn produced. What a long session costs is mostly the context
+    every further turn re-reads, which no figure in the feed shows, so this is the one line that
+    says continuing here is the expensive choice. It is soft: nothing is blocked.
+
+    Once per threshold, never once per turn. Every threshold at or below the current size is
+    marked said, so a session that stays above one is silent until it reaches the next, and a
+    resume reads the same marks out of the same state file. A threshold the context has since
+    fallen back under is unmarked, because a compaction that halved the session and an hour of
+    work that filled it again is a crossing the orchestrator has not been told about.
+
+    A size no transcript line has supplied yet is not a crossing: the line would name a
+    threshold nothing was measured against, and reporting the context of an unread transcript
+    as zero would be a lie either way.
+    """
+    size = state.get("context")
+    if not thresholds or not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        return None
+    said = state.setdefault("said_nudge", [])
+    said[:] = [level for level in said if level <= size]
+    fresh = [level for level in thresholds if size >= level and level not in said]
+    if not fresh:
+        return None
+    said.extend(fresh)
+    # The largest of the ones newly crossed, which is not the largest passed: a threshold
+    # already said is not news, and naming it would read as a line repeating itself.
+    return (PREFIX + "session context " + plural(size, "token") + ", past the fresh-session "
+            "threshold of " + "{:,}".format(fresh[-1]) + " — finish the task, write the "
+            "handoff, start a fresh session")
 
 
 def shows(mode, ratio, nudges):
@@ -1441,7 +1522,7 @@ def on_agent_return(payload, env):
 
 
 def on_prompt(payload, env):
-    """The turn line, the width note, then the subagents that finished since the last prompt."""
+    """The turn line, the session nudge, the width note, then the subagents that have finished."""
     table, mode, nudges, width = settings(env)
     if mode == "off":
         return None
@@ -1464,6 +1545,10 @@ def on_prompt(payload, env):
             return None
         turn = turn_line(state) if mode == "every-turn" else None
         lines = [turn] if turn else []
+        # Not a subagent's line and not a figure to compare: it is said under `thresholds` too.
+        nudge = session_line(state, session_nudges(table))
+        if nudge:
+            lines.append(nudge)
         note = width_line(running_now(state), width)
         if note:
             lines.append(note)

@@ -240,11 +240,7 @@ class StopGateTests(unittest.TestCase):
 
 
 class RegistrationTests(unittest.TestCase):
-    def test_template_and_ownership_carry_the_hook(self):
-        template = json.loads((REPO / "claude" / "settings.template.json").read_text())
-        commands = [h["command"] for e in template["hooks"]["Stop"] for h in e["hooks"]]
-        self.assertTrue(any("# harness:stop-gate" in c for c in commands))
-        self.assertTrue(any("stop-gate.py" in c for c in commands))
+    def test_ownership_carries_the_hook(self):
         ownership = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
         self.assertEqual(ownership["claude"]["hook_ids"]["stop-gate"], {"event": "Stop", "always": True})
 

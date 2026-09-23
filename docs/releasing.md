@@ -98,6 +98,22 @@ Return `state` to `open` after the tag. The evidence commit must stay an ancesto
 qualification source commit, which `evidence_errors` enforces, so a diverged release branch fails
 closed rather than publishing an unqualified source.
 
+Before the round starts, and again at the freeze commit, run the deterministic smoke tier. It
+spends no model turn and costs about two minutes:
+
+```sh
+python3 scripts/smoke_tier.py            # --list names each check, running none
+```
+
+It runs the acceptance runner's self-tests against recorded transcripts, the documentation-link
+check, the credential-reachability probe for the host that will run the round, and the
+disposable-home sync, projection-drift and lifecycle checks. Each defect it catches is one that
+would otherwise be found part-way through a round and cost the whole round again. A green tier is
+**not** qualification: it observes no client, writes nothing under `compatibility/evidence/` and
+appears in no catalog record, and the run fails if any check touches either. The tier is
+**advisory** for now — CI runs it as a `smoke` job the branch ruleset does not require — until it
+is decided whether a red tier may block a freeze.
+
 **Fix no defect mid-round.** A round runs all four required targets to completion and collects
 their defects; a fix landed between targets invalidates the targets already observed and forces a
 re-run of each. Land the collected fixes together on `main` afterwards, cut a new freeze commit,

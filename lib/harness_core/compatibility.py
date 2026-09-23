@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 STATES = {"qualified", "unqualified", "planned", "unsupported"}
+TIER_RESTRICTIONS = {"enforced", "advisory", "none"}
 SOURCE_PATHS = ("VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates",
                 "config.example.json")
 FREEZE_STATES = {"open", "frozen"}
@@ -201,6 +202,9 @@ def catalog(root):
     for row in data["clients"]:
         if row.get("status") not in STATES:
             raise ValueError("invalid compatibility status")
+        # A truthy string here would silently claim enforcement for a surface that has no hooks.
+        if not isinstance(row.get("installs_hooks", True), bool):
+            raise ValueError(row["id"] + ": installs_hooks must be true or false")
         if row["status"] == "qualified":
             errors = evidence_errors(root, data, row)
             if errors:
@@ -312,6 +316,32 @@ def capability_entries(root, runtime):
     if "role_execution" in data:
         entries["role_execution"] = data["role_execution"]
     return entries
+
+
+def tier_restriction(root, client):
+    """Whether the model-tier ceiling binds one client surface, and what makes it bind.
+
+    Enforcement is a hook rewriting a spawn, so a surface that installs no hooks resolves to the
+    adapter's `without_hooks` entry instead: the same prose, none of the refusal. A runtime with
+    no adapter, or none declaring the key, restricts nothing.
+    """
+    runtime = str(client.get("runtime"))
+    path = root / "adapters" / runtime / "capabilities.json"
+    entry = json.loads(path.read_text()).get("tier_restriction") if path.is_file() else None
+    if not isinstance(entry, dict):
+        return {"state": "none", "mechanism": None}
+    # Both branches are validated whichever one this client takes, so a typo in the fallback is
+    # not discovered by the one surface that reads it.
+    resolved = entry
+    for candidate in (entry, entry.get("without_hooks")):
+        if candidate is None:
+            continue
+        if not isinstance(candidate, dict) or candidate.get("state") not in TIER_RESTRICTIONS:
+            raise ValueError(runtime + " declares an unknown tier restriction: "
+                             + json.dumps(candidate))
+        if candidate is not entry and client.get("installs_hooks", True) is False:
+            resolved = candidate
+    return {"state": resolved["state"], "mechanism": resolved.get("mechanism")}
 
 
 def capability_states(root, data, client):

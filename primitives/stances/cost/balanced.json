@@ -8,7 +8,8 @@
     "compaction": "clear-at-task-end",
     "budget_multiplier": 1.0,
     "turn_feed": "every-turn",
-    "nudge_at": [1.0, 1.5]
+    "nudge_at": [1.0, 1.5],
+    "session_nudge_at": [120000, 160000]
   },
   "default_band": "B",
   "rows": {
