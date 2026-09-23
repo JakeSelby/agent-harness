@@ -82,7 +82,9 @@ class BmadMappingTests(unittest.TestCase):
         result = mock.Mock(stdout=json.dumps([page]))
         with tempfile.TemporaryDirectory() as temp, mock.patch.object(
             checker, 'ISSUE_MAP', self.write_map(temp, numbers)
-        ), mock.patch.object(checker.subprocess, 'run', return_value=result), mock.patch.dict(
+        ), mock.patch.object(checker.subprocess, 'run', return_value=result), mock.patch.object(
+            checker, 'require_story_depth', return_value='depth: ok'
+        ), mock.patch.dict(
             os.environ, {'GITHUB_REPOSITORY': 'owner/repo', 'PR_NUMBER': '1'}
         ), redirect_stdout(io.StringIO()) as out:
             checker.main()
