@@ -1,6 +1,6 @@
 ---
 name: spec-reviewer
-description: Fresh-context check of a diff against what was asked for — the issue, the plan or the pull request body. Returns scope deviations only: work nobody asked for, work asked for and missing, acceptance criteria the diff does not prove. No quality, style or correctness findings, no fixes. Use before the `reviewer` agent, in a context that never saw the work being written.
+description: Fresh-context check of a diff against what was asked for — the issue, the plan or the pull request body. Returns scope deviations only: work nobody asked for, work asked for and missing, acceptance criteria the diff does not prove. No quality or correctness findings. Use before the `reviewer` agent.
 tier: standard
 authority: read-only
 context: fresh

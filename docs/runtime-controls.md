@@ -113,9 +113,116 @@ and the status mapping come from the vendor's documentation and have not been ch
 the live service from this repository. Answers are not
 deterministic across identical requests, so nothing promises a repeated request answers the same
 way — only that the same request hashes the same. Credentials come from `TYPESAFE_API_KEY` or
-`JEV_API_KEY` in the environment; no key file is ever read. The client is not live unless it is
-constructed with `live=True`, so selecting this provider today calls nothing: the opt-in
-configuration, the per-decision-point modes and the sentinel that disables every call are #137.
+`JEV_API_KEY` in the environment; no key file is ever read.
+
+## What a provider that leaves the machine may do, and send
+
+Selecting `jev` is not consent to a request. `lib/harness_core/decisions/controls.py` resolves
+three separate questions per decision, and all three must agree before anything is sent.
+
+**How far this point may be judged.** `governance.jev.mode` sets the default and
+`governance.jev.modes.<point>` overrides it for one of the decision points the ledger already
+names — `grade-bash`, `stop-gate`, `tier-agent-spawns`, `brief-guard`, `evasion-deny`. `off`
+calls nothing. `shadow` calls, writes the ledger row and returns the deterministic decision
+untouched, so an answer can be measured before it is trusted: nothing reaches the model or the
+user. `advise` puts the judgment in `rule_matches`, says what `act` would have done, and changes
+no outcome. `act` lets a judgment turn an `allow` into an `ask`, and nothing else. Every mode
+defaults to `off`, so a configuration written before this existed makes no request; a mode, a
+point or a field the harness does not know fails at `harness config set`, not at the first call,
+and a point name this harness does not know reads `off` rather than the default. Each call
+writes one ledger row carrying the mode, the judgment label, the severity level, the
+deterministic outcome and the outcome acting on the judgment would have reached, so a `shadow`
+answer can be compared against the decision it did not change. Labels only: never the state.
+
+**Whether anything may go out at all.** `~/.local/state/agent-harness/jev-disabled` is the kill
+switch: while that file exists every mode reads `off`, with no configuration change and no
+restart, because the sentinel is read per decision rather than at construction.
+`governance.jev.sentinel` moves it, absolute or resolved against the state directory, never
+against the working directory. The kill switch is read per decision rather than at
+construction, so a session that was running when the file appeared stops calling, and starts
+again when it is removed, without a restart. A live request also needs a key in the environment; without
+one the call fails open to the deterministic answer like any other failure.
+
+**What may leave.** `governance.jev.state_fields` is an allowlist, empty by default, over
+exactly two fields: `command` and `summary`. Everything else in a caller's context — a file
+path, a prompt, an environment value, tool output, assistant prose — has no field to travel in
+and is never built into the request, which carries the action class, the counterparty, the grade
+and the grade scale besides. A listed field whose text matches one of the shared secret shapes
+is dropped whole rather than masked, and if that pattern list cannot be loaded no free text is
+sent at all. Redaction recognises the shapes it knows; a credential that reads like ordinary
+prose still travels, which is why the allowlist is two fields and not a free vocabulary.
+
+`governance.jev.timeout` (2 seconds by default, inside the hook budget),
+`governance.jev.max_requests` and `governance.jev.max_tokens` bound the rest, and they bound a
+session rather than a process: a hook is a new process per event, so the counters live in
+`~/.local/state/agent-harness/jev-spend.json` keyed by session id, under the lock, read before
+each check and added to as each request is charged. A spend file that cannot be read or written
+leaves the in-process count standing rather than failing a decision. `harness doctor`
+prints the mode per point, the allowlist, where the kill switch lives and whether a credential
+variable is set — by name, never its value.
+
+## Measuring a provider before trusting it
+
+A typed answer is not evidence that it was the right one. `harness decisions eval` replays the
+labelled rows of the [decision log](usage.md) — real inputs, the answer the deterministic hook
+gave, and the outcome the session later showed — through a question pack in `shadow` mode, and
+writes a report to `~/.local/state/agent-harness/jev-eval.json` or wherever `--out` says.
+
+```sh
+bin/harness decisions eval --replay tests/fixtures/jev/eval/responses.json   # no socket
+bin/harness decisions eval --point grade-bash --split heldout --out report.json
+bin/harness decisions eval --live --max-requests 50 --usd-per-mtok 3 --budget-usd 2
+```
+
+A **pack is versioned**. `lib/harness_core/decisions/packs.py` holds each one as an id, a
+`major.minor.patch` version and the hash of its content, frozen at construction so nothing that
+holds a pack can rewrite a criterion between the hash being taken and the request being built.
+The provider puts the id and the version on every ledger row beside the request hash, so a row
+resolves to the words that were asked. A threshold fitted against one version says nothing
+about another, and `Pack.verify` refuses the mismatch rather than carrying the number across.
+
+The **split is seeded by content**: a case lands in `dev` or `heldout` by the hash of the
+decision point and the capped input a request would actually carry — not the row's
+`input_sha256`, which is over the uncapped text and would put one identical request on both
+sides — never by `random` and never by position, so a re-run reproduces the split and adding
+rows does not reshuffle the old ones. A request hash found on both sides is a refusal, not a
+warning. Thresholds are fitted on `dev` alone; **only the held-out block is evidence**, and the
+dev block is in the file so a reader can see how far the fitted split flatters the fit.
+`--split dev` prints it with a line saying as much. There is no global default, and a point
+with no labelled dev case is reported **unfitted** rather than given the shipped 0.8 as though
+it had been measured.
+
+The fit is scored under the provider's own semantics: below the threshold, and for `unknown`
+or no answer at all, the deterministic answer is what is compared against the label, because
+that is what the harness would have done. Scoring an abstention as a miss would drive every fit
+to the lowest confidence in the set. The report carries, per point and per split: accuracy, the
+same rate for the deterministic answer alone as the baseline to beat, how many cases the
+provider could have changed at all (it may tighten an allow into an ask and never widen one),
+the confusion by label, agreement with the deterministic answer over the labelled cases, a
+calibration table over the confidence with its expected calibration error and a bootstrap
+interval drawn from hashed indices rather than a linear congruential generator, input and
+output tokens, cost per 1,000 decisions where a price was given, the returned model ids, and an
+`unusable` block counting unavailable calls, errors and abstentions — none of which is ever
+counted as a pass. The report holds no clock and no absolute path, and no input text, so two
+runs over one log are byte-identical and the file can be sent on.
+
+What the labels do **not** prove is in the report's own `caveats`, and is the first thing to
+read. `grade-bash` logs a row only where the harness said `ask` or `deny`, so the set is the
+prompts and never the commands allowed through without one; `ran` is a user approving something
+they were asked about, which is evidence the prompt was unnecessary and not proof; `not_run`
+does not separate a refusal from an interrupted turn. A flip rate over `--repeat` passes is
+zero by construction under `--replay`, because a recorded response cannot disagree with itself,
+and latency under `--replay` is the runner's and is reported as unmeasured rather than as a
+number whose name claims the service produced it.
+
+Ordinary runs need `--replay` and open no socket at all, which is also why a replay ignores the
+kill switch: the switch gates requests and a replay makes none. `--replay` and `--live` together
+are refused rather than silently ordered. `--live` needs `--max-requests`; `--budget-usd` needs
+`--usd-per-mtok` beside it, because no price for this provider is published here and a dollar
+ceiling nobody can convert is not a ceiling; and a live run with an empty
+`governance.jev.state_fields` is refused as pointless, since every request would carry the same
+four base fields and differ in nothing. A live run sends under the user's own allowlist, so an
+evaluation cannot send a field a hook is not allowed to send.
 
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.

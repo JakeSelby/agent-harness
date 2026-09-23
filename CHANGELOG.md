@@ -17,6 +17,96 @@ All notable changes to this project are documented here. The format follows
   `harness bmad check|apply` is kept as an alias, and installed override files are
   unaffected either way (#349).
 
+- Every session row carries `raw_vs_deduped`, the measured size of the usage deduplication: the
+  per-line sum of the four token fields over the deduplicated total the row reports, taken over
+  the same records — the session's own and those of the subagent files folded into it. The
+  totals are corrected once per message id at that id's largest figure, and the raw sum used to
+  be discarded, so a session whose transcript repeated every response and one that repeated none
+  reported the same figure with no way to tell them apart. `harness usage` prints the
+  ratio for the window as a footer figure beside `unpriced` — each row's ratio weighted by the
+  deduplicated tokens it contributed to the columns above, so the figure is the window's raw sum
+  over its counted sum — and the OTLP export carries the row's own as a `raw_vs_deduped`
+  attribute. A Codex session row, whose runtime reports cumulative snapshots rather than a figure
+  per record, reads `unknown` rather than `1.0`, which would claim a measurement nobody made; a
+  subagent row, a worker row and a row written before this release carry no such key, which the
+  report reads as unknown and counts in the footer (#518).
+- `harness decisions eval` replays the labelled rows of the decision log through a question
+  pack and reports how closely the judgment tracked them, so a provider can be measured before
+  it is trusted. The evaluated set is the real log — the input a hook judged, the deterministic
+  answer it gave and the outcome the session later showed — replayed in `shadow` mode against a
+  recorded fixture, so an ordinary run opens no socket, writes no ledger row and needs no
+  credential. Question packs are versioned: a pack carries an id, a `major.minor.patch` version
+  and the hash of its content, is frozen at construction so nothing holding one can rewrite a
+  criterion between the hash being taken and the request being built, and the provider puts the
+  id and version on every ledger row beside the request hash. The dev and held-out split is
+  seeded by the hash of the decision point and the capped input a request actually carries,
+  rather than by `random` or by the row's hash of the uncapped text, so a re-run reproduces it,
+  new rows do not reshuffle the old ones, and one identical request cannot sit on both sides —
+  which is refused outright rather than reported. Thresholds are fitted per decision point on
+  the dev split and only the held-out block is evidence; there is no global default, because a
+  cutoff optimal on one workload does not transfer, and a point with no labelled dev case is
+  reported unfitted rather than given the shipped 0.8 as though it had been measured. The fit is
+  scored under the provider's own semantics — below the threshold the deterministic answer is
+  what is compared against the label, since that is what the harness would have done, and
+  scoring an abstention as a miss would drive every fit to the lowest confidence in the set. The
+  report names accuracy, the deterministic answer's own accuracy as the baseline to beat, how
+  many cases the provider could have changed at all, the confusion by label, agreement with the
+  deterministic answer, a calibration table over the confidence with its expected calibration
+  error and a bootstrap interval drawn from hashed indices, the flip rate over repeated passes,
+  tokens, cost per 1,000 decisions where a price was given, the returned model ids, and an
+  `unusable` block in which an unavailable call, an error and an abstention are each counted and
+  none is ever a pass. It carries no clock, no absolute path and no input text, so two runs over
+  one log are byte-identical and the file can be sent on. What the labels do not prove is in the report itself: `grade-bash`
+  records a row only where the harness asked or denied, `ran` is a user approving something they
+  were asked about rather than proof the prompt was unneeded, and `not_run` does not tell a
+  refusal from an interrupted turn. `--live` is the opt-in path and needs an explicit request
+  ceiling; `--budget-usd` needs a price beside it, because none is published here and a dollar
+  ceiling nobody can convert is not a ceiling; `--replay` and `--live` together are refused
+  rather than silently ordered; and a live run under an empty `governance.jev.state_fields` is
+  refused as pointless, since every request would then differ in nothing (#138).
+- The `jev` decision provider is opt-in per decision point, and sends only what a configuration
+  lists. `governance.jev.mode` sets a default and `governance.jev.modes.<point>` overrides it for
+  one of the points the decision ledger already names: `off` calls nothing, `shadow` calls and
+  writes the ledger row where neither the model nor the user sees it, `advise` adds the judgment
+  and says what acting on it would have done, and `act` may turn an `allow` into an `ask` and
+  nothing else. Every mode defaults to `off`, so a configuration written before this existed
+  makes no request, and an unknown mode, decision point or field is refused at
+  `harness config set` rather than at the first call. Two controls sit outside the modes:
+  `~/.local/state/agent-harness/jev-disabled` disables every call while it exists, read per
+  decision so the switch needs no restart or configuration change, and the allowlist
+  `governance.jev.state_fields` is empty by default and covers `command` and `summary` alone:
+  a file path, a prompt, an environment value, tool output or assistant prose has no field to go in
+  and is never built into a request. A listed field whose text matches one of the shared secret
+  shapes is dropped whole rather than masked, and free text is withheld entirely when that
+  pattern list cannot be loaded; redaction recognises the shapes it knows, which is why the
+  allowlist is two fields rather than a free vocabulary. The request timeout defaults to two
+  seconds inside the hook budget, and a request and token ceiling bound the session rather than
+  the process: a hook is a new process per event, so the counters are kept in the state directory
+  keyed by session id under the existing lock, and a spend file that cannot be read or written
+  leaves the in-process count standing rather than failing a decision. Each call writes one
+  ledger row carrying the mode, the judgment label, the severity level, the deterministic outcome
+  and the outcome acting on it would have reached, so a `shadow` answer can be compared against
+  the decision it did not change; labels only, never the state. Every failure path
+  still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
+  the allowlist, where the kill switch lives and whether a credential variable is set — by name,
+  never its value (#137).
+- One Bash command in twenty that the harness allows is now kept in the decision log as a
+  sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
+  the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
+  tighten an allow into an ask had nothing to measure its false alarms against. Only an allow
+  the harness itself gave is sampled — a command it left to the runtime may still be prompted on
+  or refused, and on Codex an approval is dropped from the hook output — and a confirmed command
+  belongs to the prompt it answered. Which commands are kept is each command's own hash rather
+  than a random draw, so the same corpus samples the same commands on every machine and a
+  measurement over these rows is reproducible; the sample is therefore of distinct commands, not
+  of invocations, and the row count cannot be weighted by the rate to estimate how many commands
+  ran. The rows carry no outcome and no match key, are passed by at SessionEnd rather than closed
+  as `not_run`, and `harness usage --by decision` counts them on a `grade-bash (sampled)` line of
+  their own, so a point's outcome rates and unlabelled share are unchanged. The text is redacted
+  before it is capped — assignment values, credential flags, every secret shape the rule
+  detectors match and the home directory as `~` — and the row's hash is over the redacted text,
+  so a short secret cannot be recovered from the hash beside it. `telemetry.allow_sample_rate`
+  sets the rate and `0` turns it off, as does `telemetry.decisions: false` (#386).
 - A spike record measures what the Claude Code Workflow tool does to the delegation guards. A
   script's `agent()` calls produce no `Agent` tool call, so band routing, the brief guard and the
   constrained-role refusal never see them, and a script can run a read-only harness role in session
@@ -189,6 +279,30 @@ All notable changes to this project are documented here. The format follows
   because what sync wrote was already the coordinator registration (#521).
 ### Added
 
+- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
+  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
+  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
+  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
+  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
+  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
+  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
+  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
+  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
+  may never widen a decision, and every path with no usable answer — no key, a timeout, an
+  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
+  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
+  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
+  to the decision ledger, and never the state. Answers are not deterministic across identical
+  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
+  no handler for any other scheme, because a bearer key goes out with every request; a request is
+  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
+  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
+  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
+  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
+  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
+  from the vendor's documentation and have not been verified against the live service from this
+  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
+
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
   the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
   behind each state. It is derived from a `tier_restriction` entry in
@@ -205,6 +319,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The standing context every session loads is 1,005 estimated tokens smaller, 7,524 to 6,519 on
+  `scripts/cost_bench.py static`. The `scannable` output style keeps all nine of its rules and
+  loses the worked examples and the register table, 1,528 tokens to 862; the fifteen skill and
+  eleven agent descriptions lose their capability restatements and keep every condition and
+  literal user phrasing a session selects on, 2,326 tokens of listings to 1,980. Because a
+  description is the trigger mechanism, those phrases are now frozen in
+  `tests/test_description_trigger_phrases.py`, which fails when one is dropped rather than
+  reworded, and a new skill or role must declare its own. Before-and-after rows are in
+  `docs/benchmarks.md`; the third change the issue names, deferring action-gated rule text behind
+  the hooks that fire on the act, is framed as an unrun spike in
+  `docs/spikes/2026-09-22-deferred-rule-text.md` and nothing about it is implemented (#430).
 - `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
   and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
   native approval is the gate. The typed `build` reply was a convention no tooling could observe,
@@ -243,6 +368,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An assistant transcript record whose `message` is not an object is skipped rather than read as
+  one. Such a record holds no usage, no model and no content blocks, and reading it aborted the
+  scan of the whole transcript, so one malformed line cost the session its entire row; the
+  subagent reader beside it has always skipped the same shape (#518).
 - An assistant transcript record that carries no message id is deduplicated by its `requestId`
   rather than counted once per line. Every such record used to open a slot of its own, so a
   runtime or version that writes one id-less response several times — as the streaming lines of
