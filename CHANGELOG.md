@@ -20,8 +20,67 @@ All notable changes to this project are documented here. The format follows
   `claude/OWNERSHIP.json` now says in the manifest itself that a hook id's `stance` and `variant`
   name when a policy acts, never whether it is registered. No installed settings file changes,
   because what sync wrote was already the coordinator registration (#521).
+### Added
+
+- The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
+  the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
+  behind each state. It is derived from a `tier_restriction` entry in
+  `adapters/<runtime>/capabilities.json` rather than written into the rendered docs: the Claude
+  Code CLI and VS Code surfaces read `enforced`, because `claude/hooks/tier-agent-spawns.py`
+  rewrites a spawn asking for the strongest class by name. Every Codex surface reads `advisory`:
+  the coordinator runs there and a Codex `Agent` call still passes the role, marker, evasion and
+  brief checks, but the tier rewrite sits behind a `runtime == "claude-code"` gate in
+  `lib/harness_core/lifecycle.py`. The plugin-marketplace install reads `advisory` because it
+  installs no hooks at all. The generated note states what `enforced` does not cover — the
+  session's own model, which the harness never writes; a `delegation` variant other than
+  `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
+  now links to the row instead of restating it (#520).
+### Changed
+
+- The delegation rule now states that subagents never message a peer, and the builder role says
+  what a blocked builder does instead: stop, finish what does not depend on the answer, and return
+  the question under **Deviations** for the caller. A delivered message bills as a typed prompt on
+  the receiver and again on the sender when the reply lands, and turn count is what the delegation
+  arithmetic is sensitive to, while the measured coordination wins in the literature all come from
+  mediating writes at write time rather than from agents conversing; `delegation-tiering` carries
+  that reasoning with the three papers cited. Session-to-session `SendMessage` between
+  human-facing sessions is unchanged (#539).
 
 ### Fixed
+
+- An assistant transcript record that carries no message id is deduplicated by its `requestId`
+  rather than counted once per line. Every such record used to open a slot of its own, so a
+  runtime or version that writes one id-less response several times — as the streaming lines of
+  one API call — inflated the session total and its turn count without any bound. A request id
+  names one call, so it deduplicates unscoped by file: the same call written into both a session
+  file and a subagent file is one response, and a call whose other records do carry a message id
+  joins their slot, in whichever order the files are read, instead of being billed twice. A
+  record with neither id is unknown rather than a duplicate and is left undeduplicated; session
+  and subagent rows carry `idless_records` counting how many such records their totals include,
+  the session's own and those of the subagent files folded into them, so a row without the field
+  is known to have been deduplicated whole. Rows from transcripts whose records all carry message
+  ids are unchanged (#519).
+- The Remote Control sessions read checks that its capped page arrived newest-first. The endpoint
+  takes no sort parameter, and its page is ordered by `last_event_at` rather than `updated_at`, so
+  the order is asserted on arrival and a page that is not descending is refused: under the
+  fifty-row cap the rows such a page dropped are unknown rather than merely old, and the session a
+  host lost minutes ago is exactly the one another order would hide. `harness remote-control
+  status` prints `not checked (page order unknown)` for a refusal, which no longer reads like an
+  account with nothing lost, and both it and `doctor` now say `in the newest 50` when the account
+  has more sessions than one page (#526).
+- The repository's own copy states the figures its code holds. The landing copy said nineteen
+  detectors where the registry holds seventeen, six from the vendored engine and eleven written
+  for these rules, and a new test derives that count from the rule pack and fails when `README.md`
+  or `product.json` drifts from it. `docs/field-scan.md` and `docs/caught-in-the-act.md` no longer
+  say the conflict engine is empty (four constraints ship and lint fails on them), that the
+  always-loaded cap cites no source (it quotes the memory documentation and the measured standing
+  context) or that there is no labelled corpus: the vendored wheel ships one, it scores six of the
+  seventeen detectors, and the remaining eleven and the precision floor in CI are #522.
+  `benchmarks/static.json` and the `harness lint` context line each name the set they count, which
+  differ, and `benchmarks/oracles/hook_ids.py` says its module count is the count at the task's
+  pinned `parent_sha` rather than at HEAD. The always-loaded line ratchet is now the line cap
+  itself: the binding cap is tokens, the line cap is the secondary guard, and a third budget four
+  lines below it only obscured which one binds (#516).
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed
   family used to inherit that family's rate. Inheritance under-bills a premium variant by a
