@@ -9,7 +9,8 @@ Code's folder-trust dialog has been accepted (the `hasTrustDialogAccepted` flag 
 per project), the same consent that gates a repository's `.claude/settings.json` hooks, or
 where the root is listed in ~/.config/agent-harness/trusted.txt by `harness trust`.
 Bounded: after MAX_BLOCKS consecutive blocks the turn is released, so a gate that can never
-pass cannot trap a session. A timeout releases the turn as unverified; unexpected errors block. Neither records success.
+pass cannot trap a session. The count is kept per session, so two sessions stopping in the same
+checkout never reset each other's; a session silent for STALE_SECONDS is forgotten. A timeout releases the turn as unverified; unexpected errors block. Neither records success.
 """
 import hashlib
 import importlib.util
@@ -22,6 +23,7 @@ import time
 from pathlib import Path
 
 MAX_BLOCKS = 8
+STALE_SECONDS = 24 * 3600
 BUDGET_SECONDS = 240
 TAIL_LINES = 30
 GATE_FILES = ("AGENTS.md", "CLAUDE.md")
@@ -241,9 +243,28 @@ def reason(path, cmd, code, output):
     )
 
 
-def release(path, state, session, note):
+def live_sessions(state, now):
+    """The per-session block counts in `state`, without entries silent for STALE_SECONDS."""
+    sessions = state.get("sessions")
+    if not isinstance(sessions, dict):
+        return {}
+    kept = {}
+    for session, entry in sessions.items():
+        try:
+            blocks, seen = int(entry["blocks"]), float(entry["seen"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if now - seen < STALE_SECONDS:
+            kept[session] = {"blocks": blocks, "seen": seen}
+    return kept
+
+
+def release(path, session, note):
+    # Re-read: the gate can run for minutes, and another session may have recorded blocks meanwhile.
+    sessions = live_sessions(read_state(path), time.time())
+    sessions.pop(session, None)
     write_state(path, {"green_hash": None, "status": "unverified", "reason": note,
-                       "blocks": 0, "session_id": session})
+                       "sessions": sessions})
     sys.stderr.write("stop-gate: " + note + "\n")
 
 
@@ -279,28 +300,27 @@ def main():
     try:
         failure = run_gate(root, commands)
     except subprocess.TimeoutExpired:
-        release(path, state, session, f"gate ran past {BUDGET_SECONDS}s; letting the turn end")
+        release(path, session, f"gate ran past {BUDGET_SECONDS}s; letting the turn end")
         log_gate(payload, root, commands, "released", "timeout")
         return
     if failure is None:
         if tree_hash(root) != current:
-            release(path, state, session, "working tree changed during the gate; result unverified")
+            release(path, session, "working tree changed during the gate; result unverified")
             log_gate(payload, root, commands, "released", "unverified")
             return
-        write_state(path, {"green_hash": current, "status": "passed", "blocks": 0, "session_id": session})
+        write_state(path, {"green_hash": current, "status": "passed", "sessions": {}})
         log_gate(payload, root, commands, "released", "passed")
         return
 
-    try:
-        blocks = int(state.get("blocks", 0)) if state.get("session_id") == session else 0
-    except (TypeError, ValueError):
-        blocks = 0
-    blocks += 1
+    now = time.time()
+    sessions = live_sessions(read_state(path), now)
+    blocks = sessions.get(session, {}).get("blocks", 0) + 1
     if blocks >= MAX_BLOCKS:
-        release(path, state, session, f"released after {MAX_BLOCKS} blocks; gate still red")
+        release(path, session, f"released after {MAX_BLOCKS} blocks; gate still red")
         log_gate(payload, root, commands, "released", "failed")
         return
-    write_state(path, {"green_hash": None, "status": "failed", "blocks": blocks, "session_id": session})
+    sessions[session] = {"blocks": blocks, "seen": now}
+    write_state(path, {"green_hash": None, "status": "failed", "sessions": sessions})
     log_gate(payload, root, commands, "blocked", "failed")
     cmd, code, output = failure
     print(json.dumps({"decision": "block", "reason": reason(gate_file(root), cmd, code, output)}))
