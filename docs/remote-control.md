@@ -8,13 +8,20 @@ a server in the folder, and one server serves one folder. `harness remote-contro
 server per configured folder alive under launchd, so the folders are reachable after a reboot
 with no terminal open.
 
+Serve each workspace root from its own entry. A host runs with its folder as the working
+directory, so every session it starts loads that folder's `CLAUDE.md`, skills and hooks; one host
+for a parent directory of several repositories loads none of theirs.
+
 ## Configure
 
 Add the folders to the user configuration, then install:
 
 ```json
 "remote_control": {
-  "folders": ["~/repos/project-one", "~/repos/project-two"],
+  "folders": [
+    "~/repos/project-one",
+    {"path": "~/repos/notes", "spawn": "same-dir", "env": {"EXAMPLE_FLAG": "1"}}
+  ],
   "spawn": "worktree",
   "permission_mode": "default",
   "keep_awake": false
@@ -27,9 +34,13 @@ harness remote-control status                # launchd state and log path per fo
 harness remote-control uninstall             # unload and remove every agent
 ```
 
+- **`folders`** entries are a path, or an object with a `path` and optionally its own `spawn`,
+  which overrides the block's, and `env`, string names to string values added to that host's
+  launchd environment. The launchd label is derived from the path alone, so switching an entry
+  between the two forms keeps its agent.
 - **`spawn`** is passed to `--spawn`. `worktree` gives each phone-started session its own git
   worktree, so two sessions never share a checkout; `same-dir` and `session` are Claude Code's
-  other modes.
+  other modes. A folder that is not a git repository needs `same-dir`.
 - **`permission_mode`** is passed to `--permission-mode` and applies to every session the server
   starts. The server is reachable from any device signed in to your account, so choose it as
   you would for an unattended session.
@@ -38,6 +49,22 @@ harness remote-control uninstall             # unload and remove every agent
 
 Re-run `install` after changing the block. An agent whose definition is unchanged is left
 running, because reloading it would cut off the sessions its server is carrying.
+
+The host runs without `--no-create-session-in-dir`. Claude Code 2.1.280 reads the folder's
+bridge pointer, and so reuses the environment on a relaunch, only while `createSessionInDir` is
+on; with the flag, every restart registered a new environment. The cost is the one session each
+host pre-creates in its folder, which is reused across restarts while the pointer is fresh.
+
+A host that reused an environment at start keeps its sessions and its environment when it is
+stopped with `SIGTERM`. One that did not — the first host after an upgrade, or after a pointer
+expired — archives every session and deregisters its environment on `SIGTERM`. So a changed
+agent whose host is running is *adopted* rather than replaced: `install` reads the environment
+from the host's log, writes the folder's pointer for it with no pid, sends `SIGKILL` to the
+`claude` process, which skips the shutdown path, and then reloads the agent, whose new host
+reuses the environment. `--dry-run` names the environment it would adopt.
+
+Restart a host only with `harness remote-control install`, never `launchctl kickstart -k`: that
+sends `SIGTERM`, and a host that did not reuse its environment archives its sessions on it.
 
 ## Keeping sessions across a restart: `heal`
 
@@ -75,11 +102,23 @@ branching from the default branch when it did not, so a session picked up by a l
 directory. A worktree the host `kept … · uncommitted changes` is left alone, and every line is
 acted on once.
 
+## Reconnecting sessions: `heal`
+
+After its per-folder pass, heal reads the account's sessions once and, for each one still
+`active` with a `disconnected` bridge on an environment this Mac holds — any environment a
+host's log names, plus the one in each configured folder's pointer — calls
+`POST /v1/environments/<env>/bridge/reconnect`, which puts the session back in its environment's
+queue for the host to pick up. Each attempt is one `reconnect <session> on <env>: <status>` line
+in the heal log, a session is tried at most once every ten minutes, `--dry-run` sends nothing,
+and a missing token or a failed call never stops the pass. An archived session is not touched:
+unarchiving needs more than the login token, so it stays a manual step.
+
 ## Sessions that were lost anyway: `status`
 
 `harness remote-control status` asks the account which sessions are still `active` with a
 `disconnected` bridge on an environment this Mac registered, and prints the reattach command for
-each. It does not run them. A `claude remote-control --session-id <id>` host registers the lost
+each, for any session heal could not reconnect. It does not run them. A
+`claude remote-control --session-id <id>` host registers the lost
 environment a *second* time, as a single-session environment, and the client then routes new chats
 to it — recovering five sessions that way leaves five stray environments competing for new work,
 and in 2.1.278 each host binds to the session the previous one was asked for rather than its own
