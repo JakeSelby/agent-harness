@@ -12,10 +12,26 @@
     "role-confinement",
     "cost-posture",
     "gate-invalidation",
-    "bmad-workflow",
+    "framework-spawn-routing",
     "bidirectional-handoff",
-    "migration-uninstall"
+    "migration-uninstall",
+    "spawn-confinement"
   ],
+  "evidence_invalidation": {
+    "version": 1,
+    "runtime_paths": {
+      "claude-code": "adapters/claude-code",
+      "codex": "adapters/codex"
+    },
+    "shared_files": [
+      "bindings.json",
+      "capabilities.json",
+      "worker.py"
+    ],
+    "runtime_files": [
+      "hook.py"
+    ]
+  },
   "clients": [
     {
       "id": "claude-code-cli-macos",
@@ -124,12 +140,14 @@
     "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
     "Planner publication is mediated by the harness after constrained workers return result data.",
     "The architecture-viewer integration is a preview for a separately installed implementation. A local protocol 1 candidate passed process-level harness acceptance; no viewer is bundled, and native viewer interaction and distribution/license clearance remain unverified.",
-    "The usage feed is a Claude Code capability: Codex raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back there and no such event is registered.",
+    "The usage feed is a Claude Code capability: Codex raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, the fresh-session nudge, in-flight width and finished-subagent spend are not fed back there and no such event is registered.",
     "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred.",
     "BMad review confinement is requested in the routed layer text rather than enforced at the spawn hook: a client can run a review layer as an unnamed native subagent, unconfined, and still report a result. Observed on Claude Code; a confined run writes isolated-worker state. Tracked in #291.",
     "On Codex, output-filter rewrites are never applied: a rewrite travels only with an allow, and the filtered commands are not auto-allowed. Tracked in #292.",
     "Under Codex auto permissions an isolated role worker launched from inside a sandboxed turn has no network access and stalls until its deadline; it completes under an acknowledged bypass. Tracked in #293.",
     "harness sync links user-level stance selections only; a HARNESS_STANCE_ variable or a project selection changes what harness stances and the hooks resolve, not the linked stance text. Tracked in #276 and #294.",
-    "The 0.11.1 spawn guards refuse a constrained role's brief re-issued verbatim under another name, or carrying a `harness-role:` line; a client that paraphrases the brief and names no role is not caught, so BMad review confinement still depends on the client following the routed instructions. Tracked in #291 and #300."
+    "The 0.11.1 spawn guards refuse a constrained role's brief re-issued verbatim under another name, or carrying a `harness-role:` line; a client that paraphrases the brief and names no role is not caught, so BMad review confinement still depends on the client following the routed instructions. Tracked in #291 and #300.",
+    "No third-party framework's own workflow is exercised natively in a release qualification round. Framework layering is qualified through a synthetic recipe driven at the spawn hook; that a given framework's workflow completes on a given client is not claimed by a release. The BMad Method integration is exercised by an optional suite whose last result is recorded separately, at the harness version, framework version and client stated there.",
+    "Constrained-role confinement is enforced at the spawn hook only for a framework a declared descriptor covers. From 0.13.0 the hook classifies a spawn against the descriptors in policy/integrations/, so a covered recipe layer is refused whatever the client named it, and the two entries above describe 0.11.1 through 0.12.0 and stop applying at that release. What remains: recognition needs one of the framework's own layer names as the spawn type, or two sentences of its prompt text, or one of those sentences beside a path out of its routed text, so a brief rewritten with none of that, or a framework or a release no descriptor covers, still runs as an unnamed native subagent, unconfined, and can still report a result. Observed on the Claude Code CLI on Linux, where one confined run required five attempts; a confined run writes isolated-worker state. Tracked in #291."
   ]
 }

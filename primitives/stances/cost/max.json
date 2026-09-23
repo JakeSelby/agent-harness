@@ -6,7 +6,8 @@
     "max_parallel": null,
     "fast_mode": "allowed",
     "compaction": "compact-allowed",
-    "nudge_at": []
+    "nudge_at": [],
+    "session_nudge_at": []
   },
   "rows": {
     "gatherer": {"class": "strong", "effort": "medium"},

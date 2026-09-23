@@ -260,7 +260,8 @@ class OneRouterTests(HookCase):
         def patched(name):
             loaded = real(name)
             if name == "tier-agent-spawns":
-                def band_route(posture, models, cwd, table=None, session=None, announce=False):
+                def band_route(posture, models, cwd, table=None, session=None, announce=False,
+                               transcript=None):
                     asked.append(cwd)
                     return {"worker": "gatherer", "row": {}}, None
                 loaded.band_route = band_route

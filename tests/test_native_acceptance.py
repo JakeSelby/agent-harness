@@ -71,16 +71,18 @@ class RecordTests(unittest.TestCase):
         with patch.dict(MODULE.CASES, automated):
             data = self.record()
         self.assertEqual(sorted(data), ["cases", "client", "client_version", "harness_version",
-                                        "kind", "observations", "platform", "runtime_version",
-                                        "source_commit", "tier_routing"])
+                                        "invalidation_scope", "kind", "observations", "platform",
+                                        "runtime_version", "source_commit", "tier_routing"])
+        # The record states the path set it survives, and the validator grants that one only.
+        self.assertEqual(data["invalidation_scope"]["excluded"], ["adapters/codex"])
         catalog = MODULE.catalog()
         # A released catalog accepts evidence for its pinned qualification source, not for HEAD.
         source = compatibility.qualification_source(catalog)
         data["source_commit"] = MODULE.run(["git", "-C", str(REPO), "rev-parse", source]).stdout.strip()
         data["runtime_version"] = data["client_version"] = "2.0.0"
         rendered = json.dumps(data).encode()
-        client = {"id": CLIENT, "runtime_version": "2.0.0", "client_version": "2.0.0",
-                  "platform": "macos",
+        client = {"id": CLIENT, "runtime": "claude-code", "runtime_version": "2.0.0",
+                  "client_version": "2.0.0", "platform": "macos",
                   "evidence": [{"path": "compatibility/catalog.json",
                                 "sha256": hashlib.sha256(rendered).hexdigest()}]}
         with patch.object(compatibility.Path, "read_bytes", return_value=rendered):

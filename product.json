@@ -63,7 +63,7 @@
         },
         {
           "name": "Fresh-context review",
-          "line": "Scope is checked against the ask, then quality, by agents that never saw the code being written.",
+          "line": "Scope is checked against the ask, then quality, by agents that never saw the code, and a framework's own review spawns are held to that whatever they call themselves.",
           "doc": "claude/agents/reviewer.md"
         },
         {
@@ -104,9 +104,9 @@
           "doc": "docs/runtime-controls.md"
         },
         {
-          "name": "Capability classes",
-          "line": "frontier, strong, standard, light. Each adapter maps them to its own models.",
-          "doc": "docs/role-workers.md"
+          "name": "Declared integrations",
+          "line": "A planning framework declares itself in one descriptor. harness integration check|apply installs its overrides, and the spawn hook confines its review layers.",
+          "doc": "docs/bmad.md"
         },
         {
           "name": "Honest compatibility",
@@ -132,7 +132,7 @@
         },
         {
           "name": "Model tiering",
-          "line": "Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.",
+          "line": "Roles ask for a capability class, one of frontier, strong, standard and light, not a model name. Gathering files doesn't run on the model that reviews your code.",
           "doc": "primitives/stances/delegation"
         },
         {
@@ -147,7 +147,7 @@
         },
         {
           "name": "Live usage feed",
-          "line": "The orchestrator sees what each turn and each subagent cost. A decision log on this machine records what a hook decided and what settled it; only harness usage reads it.",
+          "line": "The orchestrator sees what each turn and each subagent cost, and hears once when its context passes the size your stance sets. A decision log records what a hook decided.",
           "doc": "docs/usage.md"
         },
         {
@@ -174,7 +174,7 @@
         },
         {
           "name": "Review Card plans",
-          "line": "Every plan opens with a one-screen card and stops at a build gate until you say build.",
+          "line": "Every plan opens with a one-screen card, rendered in the native plan pane and approved there rather than by a typed reply.",
           "doc": "primitives/skills/plan-authoring"
         },
         {
@@ -218,6 +218,11 @@
           "name": "Autonomy stances",
           "line": "Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.",
           "doc": "primitives/stances/autonomy"
+        },
+        {
+          "name": "Judgment stays local by default",
+          "line": "An external judgment provider is off at every decision point until you turn it on, sends only the fields you list, and one file switches every call off.",
+          "doc": "docs/runtime-controls.md"
         }
       ]
     }
