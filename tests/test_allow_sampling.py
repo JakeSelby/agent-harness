@@ -40,6 +40,8 @@ harness = _load("sampling_harness", REPO / "bin" / "harness")
 # than a silently different sample.
 CORPUS = ["echo %d" % index for index in range(40)]
 SAMPLED = ["echo 26", "echo 39"]
+# In the sample and graded 1, which under the `execute` stance the harness answers nothing about.
+GRADE_ONE = "mkdir -p /tmp/build-18"
 
 
 class SampleTests(unittest.TestCase):
@@ -82,38 +84,60 @@ class SampleTests(unittest.TestCase):
 class RedactionTests(unittest.TestCase):
     """What a sampled row may hold: the shape of a command, never a value inside one."""
 
-    def redact(self, text):
-        return decisions.redact(text, decisions.secret_shapes())
+    def redact(self, text, home_dir=None):
+        return decisions.redact(text, decisions.secret_shapes(), home_dir)
 
     def test_an_assignment_keeps_its_name_and_loses_its_value(self):
         self.assertEqual(self.redact("DEPLOY_TOKEN=hunter2 ./release.sh"),
                          "DEPLOY_TOKEN=" + decisions.REDACTED + " ./release.sh")
 
-    def test_an_option_that_looks_like_an_assignment_is_left_alone(self):
-        self.assertEqual(self.redact("rg --max-count=3 needle src/"),
-                         "rg --max-count=3 needle src/")
+    def test_a_quoted_value_is_lost_whole(self):
+        self.assertEqual(self.redact('API_TOKEN="abc def" ./release.sh'),
+                         "API_TOKEN=" + decisions.REDACTED + " ./release.sh")
+        self.assertEqual(self.redact("API_TOKEN='abc def' ./release.sh"),
+                         "API_TOKEN=" + decisions.REDACTED + " ./release.sh")
+
+    def test_an_assignment_that_starts_a_later_command_is_redacted_too(self):
+        for text, where in (("cd build && TOKEN=abc make", "&&"),
+                            ("cd build; TOKEN=abc make", ";"),
+                            ("(TOKEN=abc make)", "("),
+                            ("echo x | TOKEN=abc make", "|")):
+            self.assertNotIn("abc", self.redact(text), "missed an assignment after " + where)
+
+    def test_a_credential_flag_loses_its_value_in_either_spelling(self):
+        self.assertEqual(self.redact("curl --password=s3cret https://x"),
+                         "curl --password=" + decisions.REDACTED + " https://x")
+        self.assertEqual(self.redact("curl --token abc123 https://x"),
+                         "curl --token " + decisions.REDACTED + " https://x")
+        self.assertEqual(self.redact("curl --api-key=k1 --user bob https://x"),
+                         "curl --api-key=" + decisions.REDACTED + " --user "
+                         + decisions.REDACTED + " https://x")
+        self.assertEqual(self.redact("mysql -phunter2 db"),
+                         "mysql -p" + decisions.REDACTED + " db")
+
+    def test_an_option_that_only_looks_like_a_credential_keeps_its_value(self):
+        # A short flag's value is attached, so the directory `mkdir -p` names is evidence and
+        # is kept; an unrelated long option is not a credential at all.
+        self.assertEqual(self.redact("mkdir -p build && rg --max-count=3 needle src/"),
+                         "mkdir -p build && rg --max-count=3 needle src/")
+
+    def test_the_home_directory_is_written_as_a_tilde(self):
+        self.assertEqual(self.redact("ls /users/someone/repos", "/users/someone"),
+                         "ls ~/repos")
 
     def test_the_shapes_are_the_registry_own_list_and_not_a_copy_of_it(self):
         detectors = _load("sampling_detectors", REPO / "claude" / "hooks" / "rule-detectors.py")
-        self.assertEqual([s.pattern for s in decisions.secret_shapes()],
+        self.assertEqual([shape.pattern for shape in decisions.secret_shapes()],
                          list(detectors.SECRET_PATTERNS))
 
-    def test_an_engine_that_cannot_be_read_writes_no_row_at_all(self):
-        saved = list(decisions._SHAPES)
-        decisions._SHAPES[:] = [None]
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                target = Path(tmp) / "decisions.jsonl"
-                self.assertIsNone(decisions.record_allowed(SAMPLED[0], {}, "claude-code",
-                                                           target=target, cfg={}))
-                self.assertFalse(target.exists())
-        finally:
-            decisions._SHAPES[:] = saved
+    def test_the_wheel_is_the_one_the_registry_pins(self):
+        source = (REPO / "claude" / "hooks" / "rule-detectors.py").read_text(encoding="utf-8")
+        self.assertIn(decisions.ENGINE_WHEEL, source,
+                      "the sampler and the registry read different engines")
 
     def test_a_sampled_row_carries_no_secret_looking_token(self):
         secret = "sk-" + "a" * 24
-        command = [c for c in CORPUS if decisions.in_sample(c, 20)][0]
-        text = command + " | curl -H 'Authorization: Bearer " + "b" * 24 + "' -d " + secret
+        text = SAMPLED[0] + " | curl -H 'Authorization: Bearer " + "b" * 24 + "' -d " + secret
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "decisions.jsonl"
             decisions.record_allowed(text, {"session_id": "s-1"}, "claude-code",
@@ -122,8 +146,70 @@ class RedactionTests(unittest.TestCase):
         self.assertNotIn(secret, row["input"])
         self.assertNotIn("b" * 24, row["input"])
         self.assertEqual(row["input"].count(decisions.REDACTED), 2)
-        self.assertEqual(row["input_sha256"], decisions.digest(text),
-                         "the hash is over the text as it was, so identity survives redaction")
+
+    def test_the_hash_is_over_the_redacted_text_and_not_the_command(self):
+        # The original beside the redaction would put a short secret within reach of a
+        # dictionary attack, which is the one way a removed value could come back.
+        text = SAMPLED[0] + " --token hunter2"
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "decisions.jsonl"
+            decisions.record_allowed(text, {}, "claude-code", target=target,
+                                     cfg={"telemetry": {"allow_sample_rate": 1}})
+            row = json.loads(target.read_text(encoding="utf-8"))
+        self.assertEqual(row["input_sha256"], decisions.digest(row["input"]))
+        self.assertNotEqual(row["input_sha256"], decisions.digest(text))
+
+
+class EngineTests(unittest.TestCase):
+    """`_read_shapes` against the wheel it is pointed at: every failure is None, never a raise."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "lib" / "vendor").mkdir(parents=True)
+
+    def wheel(self, source):
+        import zipfile
+
+        path = self.root / "lib" / "vendor" / decisions.ENGINE_WHEEL
+        with zipfile.ZipFile(str(path), "w") as archive:
+            archive.writestr(decisions.SHAPES_MODULE, source)
+        return path
+
+    def test_the_pinned_wheel_in_this_checkout_is_read(self):
+        self.assertTrue(decisions._read_shapes(REPO))
+
+    def test_a_vendor_directory_with_no_wheel_reads_nothing(self):
+        self.assertIsNone(decisions._read_shapes(self.root))
+
+    def test_a_wheel_that_is_not_an_archive_reads_nothing(self):
+        (self.root / "lib" / "vendor" / decisions.ENGINE_WHEEL).write_text("not a zip")
+        self.assertIsNone(decisions._read_shapes(self.root))
+
+    def test_a_module_with_no_pattern_list_reads_nothing(self):
+        self.wheel("OTHER = ['x']\n")
+        self.assertIsNone(decisions._read_shapes(self.root))
+
+    def test_a_pattern_list_that_is_not_a_literal_reads_nothing(self):
+        self.wheel(decisions.SHAPES_NAME + " = build_the_patterns()\n")
+        self.assertIsNone(decisions._read_shapes(self.root))
+
+    def test_the_patterns_in_the_named_list_are_compiled(self):
+        self.wheel(decisions.SHAPES_NAME + " = ['zzz-[0-9]{4}']\n")
+        shapes = decisions._read_shapes(self.root)
+        self.assertEqual([shape.pattern for shape in shapes], ["zzz-[0-9]{4}"])
+
+    def test_an_engine_that_cannot_be_read_writes_no_row_at_all(self):
+        saved = list(decisions._SHAPES)
+        decisions._SHAPES[:] = [decisions._read_shapes(self.root)]
+        try:
+            target = self.root / "decisions.jsonl"
+            self.assertIsNone(decisions.record_allowed(SAMPLED[0], {}, "claude-code",
+                                                       target=target, cfg={}))
+            self.assertFalse(target.exists())
+        finally:
+            decisions._SHAPES[:] = saved
 
 
 class RowTests(unittest.TestCase):
@@ -212,7 +298,8 @@ class DispatchTests(unittest.TestCase):
         env.update({"HOME": str(self.home), "HARNESS_HOME": str(self.home)})
         return env
 
-    def dispatch(self, *events):
+    def dispatch(self, *events, **kwargs):
+        runtime = kwargs.pop("runtime", "claude-code")
         script = (
             "import json, sys\n"
             "sys.path.insert(0, %r)\n"
@@ -220,7 +307,7 @@ class DispatchTests(unittest.TestCase):
             "for event in json.load(sys.stdin):\n"
             "    print(json.dumps(lifecycle.dispatch(sys.argv[1], event)))\n"
         ) % str(REPO / "lib")
-        out = subprocess.run([sys.executable, "-c", script, "claude-code"],
+        out = subprocess.run([sys.executable, "-c", script, runtime],
                              input=json.dumps(list(events)), env=self.env(),
                              capture_output=True, text=True, timeout=180)
         self.assertEqual(out.returncode, 0, out.stderr)
@@ -241,6 +328,26 @@ class DispatchTests(unittest.TestCase):
                             for a in answers))
         self.assertEqual([(r["input"], r["sampled"]) for r in self.rows()],
                          [(c, True) for c in SAMPLED])
+
+    def test_a_command_the_harness_answered_nothing_about_is_not_an_allow(self):
+        # Grade 1 under the `execute` stance: the harness neither prompts nor approves, and the
+        # runtime may still ask or refuse, so there is no allow here to sample.
+        answer = self.dispatch(self.bash(GRADE_ONE))[0]
+        self.assertEqual(answer.get("hookSpecificOutput", {}).get("permissionDecision"), None)
+        self.assertEqual(self.rows(), [])
+
+    def test_codex_writes_no_sampled_row_because_its_approval_is_never_emitted(self):
+        answer = self.dispatch(self.bash(SAMPLED[0]), runtime="codex")[0]
+        self.assertNotIn("permissionDecision", answer.get("hookSpecificOutput", {}))
+        self.assertEqual(self.rows(), [])
+
+    def test_session_end_leaves_a_sampled_row_unlabelled(self):
+        self.dispatch(*[self.bash(c) for c in SAMPLED])
+        self.dispatch({"hook_event_name": "SessionEnd", "session_id": "s-1",
+                       "cwd": str(self.home)})
+        rows = self.rows()
+        self.assertEqual([r["kind"] for r in rows], ["decision", "decision"])
+        self.assertEqual([r["outcome"] for r in decisions.joined(rows)], [None, None])
 
     def test_a_confirmed_command_belongs_to_the_prompt_it_answered(self):
         marked = "HARNESS_CONFIRMED=1 " + SAMPLED[0]

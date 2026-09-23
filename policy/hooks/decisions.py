@@ -67,17 +67,34 @@ RAN = "ran"
 DEFAULT_SAMPLE_RATE = 20
 
 # A sampled row is the one place this log writes text nobody prompted about, so the text is
-# redacted first: the value of every leading-word assignment, which is how a secret reaches a
-# command line, and every shape the rule detectors match. Those shapes are read out of the
-# vendored measurement engine — see `secret_shapes` — so there is one list and this file holds
-# no copy of it. `input_sha256` stays over the original text, so the redaction loses evidence
-# and never identity, exactly as the 2 KiB cap does.
+# redacted first and the row holds nothing but the redacted text: the value of every assignment
+# and of every credential flag, every shape the rule detectors match, and the home directory as
+# `~` so no username reaches the row. Those shapes are read out of the vendored measurement
+# engine — see `secret_shapes` — so there is one list and this file holds no copy of it.
+# `input_sha256` on a sampled row is over the **redacted** text, unlike every other row: the
+# hash of an original beside the redacted text is a dictionary attack on a short secret, which
+# is the one way a value could be recovered from the row it was taken out of. Identity within
+# the sample survives, because two rows that redact alike are alike in all this row kept.
 REDACTED = "<redacted>"
+# The engine the shapes come from, at the version `rule-detectors.py` pins: one list, one file,
+# one pin. `tests/test_allow_sampling.py` fails when this name and that import drift apart.
+ENGINE_WHEEL = "ruleprobe-0.1.0-py3-none-any.whl"
 SHAPES_MODULE = "ruleprobe/detectors/common.py"
 SHAPES_NAME = "SECRET_PATTERNS"
-# `FOO=secret cmd` and `cmd --flag=value` are told apart by what precedes the name: an
-# assignment starts a word, an option does not.
-ASSIGNMENT_RE = re.compile(r"(^|\s)([A-Za-z_][A-Za-z0-9_]*)=(\S+)")
+# A value is a quoted string or a bare word, so `API_TOKEN="abc def"` loses the whole of it.
+VALUE = r'''"[^"]*"|'[^']*'|\S+'''
+# An assignment starts a word — after nothing, after whitespace, or after the `;`, `&&`, `|` or
+# `(` that starts the next command — so `FOO=secret cmd` loses its value where the `value` of
+# `cmd --flag=value` is kept. A credential flag is the other way a secret reaches a command
+# line, long or short, with or without a space after it.
+ASSIGNMENT_RE = re.compile(r"(^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=(" + VALUE + ")")
+CREDENTIAL_FLAGS = ("password", "passwd", "pass", "username", "user", "token", "api-key",
+                    "api_key", "apikey", "secret", "key")
+FLAG_RE = re.compile(r"(--(?:" + "|".join(CREDENTIAL_FLAGS) + r")(?:=|\s+))(" + VALUE + ")",
+                     re.IGNORECASE)
+# The short form takes its value attached, as `-phunter2` does; `-p` with a space after it is
+# `mkdir -p dir` far more often than it is a password, and that value is kept.
+SHORT_FLAG_RE = re.compile(r"(^|[\s;&|(])(-[pu])(" + VALUE + ")")
 
 _SHAPES = []
 
@@ -197,40 +214,63 @@ def secret_shapes():
     Read out of the vendored `ruleprobe` wheel rather than imported from it: importing the
     engine inside a PreToolUse hook costs a fifth of a second, and a copy of the list in this
     file would be both a second source of truth and, to `harness lint`, a secret pattern
-    written into a committed file. `rule-detectors.py` takes the same list from the same place.
-    None stops the sampling, which is the safe direction: no row rather than an unredacted one.
+    written into a committed file. `rule-detectors.py` takes the same list from the same wheel,
+    at the same pinned version. None stops the sampling, which is the safe direction: no row
+    rather than an unredacted one.
     """
     if not _SHAPES:
         _SHAPES.append(_read_shapes())
     return _SHAPES[0]
 
 
-def _read_shapes():
+def _read_shapes(root=None):
+    """`SHAPES_NAME` out of `SHAPES_MODULE` in the pinned wheel, compiled, or None.
+
+    None for every way this can fail — no checkout, no wheel, a wheel that is not a zip, a
+    module that has been renamed, a list that is not literal — because each of them means the
+    same thing to the caller: the text cannot be redacted, so it is not written.
+    """
     import ast
     import zipfile
 
-    root = checkout_root()
-    vendor = None if root is None else sorted((root / "lib" / "vendor").glob("ruleprobe-*.whl"))
-    if not vendor:
+    root = checkout_root() if root is None else Path(root)
+    if root is None:
+        return None
+    wheel = root / "lib" / "vendor" / ENGINE_WHEEL
+    if not wheel.is_file():
         return None
     try:
-        source = zipfile.ZipFile(str(vendor[-1])).read(SHAPES_MODULE).decode("utf-8")
+        with zipfile.ZipFile(str(wheel)) as archive:
+            source = archive.read(SHAPES_MODULE).decode("utf-8")
         for node in ast.parse(source).body:
             if not isinstance(node, ast.Assign):
                 continue
-            if any(getattr(t, "id", "") == SHAPES_NAME for t in node.targets):
-                return [re.compile(p) for p in ast.literal_eval(node.value)]
+            if any(getattr(target, "id", "") == SHAPES_NAME for target in node.targets):
+                return [re.compile(pattern) for pattern in ast.literal_eval(node.value)]
     except Exception:
         return None
     return None
 
 
-def redact(text, shapes):
-    """`text` with assignment values and every shape in `shapes` replaced by REDACTED."""
+def _value(match, keep):
+    """One match with its value replaced by REDACTED, keeping the first `keep` groups."""
+    return "".join(match.group(index + 1) for index in range(keep)) + REDACTED
+
+
+def redact(text, shapes, home_dir=None):
+    """`text` with every value a secret can hide in replaced by REDACTED. See SHAPES_MODULE.
+
+    Assignments and credential flags lose their values, quoted or not; every shape in `shapes`
+    is replaced wherever it appears; and the home directory is written `~`, so a row carries no
+    username even when a path names one.
+    """
     text = ASSIGNMENT_RE.sub(lambda m: m.group(1) + m.group(2) + "=" + REDACTED, text)
+    text = FLAG_RE.sub(lambda m: _value(m, 1), text)
+    text = SHORT_FLAG_RE.sub(lambda m: _value(m, 2), text)
     for shape in shapes:
         text = shape.sub(REDACTED, text)
-    return text
+    root = str(home() if home_dir is None else home_dir).rstrip("/")
+    return text.replace(root, "~") if root and root != "/" else text
 
 
 def errors():
@@ -508,10 +548,13 @@ def record_allowed(command, event=None, runtime="", target=None, now=None, cfg=N
     """Log one allowed command, if it is in the sample. Returns its id, or None. Never raises.
 
     The negatives for shadow evaluation: `deterministic_answer: allow`, `sampled: true` and the
-    rate it was drawn at. The row carries no outcome and no match key, because there is no
-    judgment here to label and an allow that later "ran" grades nothing; a reader joins nothing
-    to it and `usage --by decision` counts it apart from the graded rows. The text is redacted
-    before it is capped, unlike the text of a prompt the user was shown. See DEFAULT_SAMPLE_RATE.
+    rate it was drawn at. Only a command the harness itself allowed reaches here — a command it
+    said nothing about is the runtime's to answer and may yet be prompted on or refused, so it
+    is no evidence of an allow. The row carries no outcome and no match key, because there is
+    no judgment here to label and an allow that later "ran" grades nothing; nothing joins to it,
+    `close_session` passes it by and `usage --by decision` counts it apart from the graded rows.
+    The text is redacted before it is capped, unlike the text of a prompt the user was shown.
+    See DEFAULT_SAMPLE_RATE.
     """
     try:
         if not isinstance(command, str) or not command.strip() or not enabled(cfg):
@@ -522,9 +565,11 @@ def record_allowed(command, event=None, runtime="", target=None, now=None, cfg=N
         shapes = secret_shapes()
         if shapes is None:
             return None
+        written = redact(command, shapes)
         row = _decision_row("grade-bash", "allow", command, event, runtime, None, now,
-                            written=redact(command, shapes))
-        row.update({"sampled": True, "sample_rate": rate})
+                            written=written)
+        # The hash of a sampled row is over the redacted text, not the original: see REDACTED.
+        row.update({"input_sha256": digest(written), "sampled": True, "sample_rate": rate})
         _append(row, target)
         return row["decision_id"]
     except Exception:
@@ -614,7 +659,8 @@ def close_session(session_id, points=("grade-bash",), outcome=NOT_RUN, target=No
     A Bash ask whose PostToolUse never arrived is the session's answer to it, and the session
     is over: nothing else will ever arrive. Only the points whose outcome is observed this way
     are closed, so a decision that is simply not labelled yet stays unlabelled and shows up in
-    the report's unlabelled share rather than as a fabricated result.
+    the report's unlabelled share rather than as a fabricated result. A sampled allow is passed
+    by: nobody was asked about it, so "not run" would be a label about a prompt that never was.
     """
     try:
         if not session_id or not enabled():
@@ -626,6 +672,8 @@ def close_session(session_id, points=("grade-bash",), outcome=NOT_RUN, target=No
             if row.get("kind") == "outcome" or row.get("session_id") != session_id:
                 continue
             if row.get("point") not in points or row["decision_id"] in answered:
+                continue
+            if row.get("sampled"):
                 continue
             answered.add(row["decision_id"])
             if observe(row["decision_id"], outcome, row.get("point") or "", session_id,

@@ -357,8 +357,8 @@ after which no row, no file and no directory is written. See
 
 ### Sampled allows
 
-One Bash command in twenty that the harness let through without a prompt is written as a
-`grade-bash` row of its own:
+One Bash command in twenty that the harness **allowed** is written as a `grade-bash` row of its
+own:
 
 ```json
 {"kind": "decision", "point": "grade-bash", "deterministic_answer": "allow", "sampled": true,
@@ -367,20 +367,31 @@ One Bash command in twenty that the harness let through without a prompt is writ
 
 They exist because the graded rows are all prompts: a check that may only tighten an allow into
 an ask has nothing to measure its false alarms against without the commands nobody was asked
-about. They are **negatives, not judgments** — `sampled: true`, never an outcome, and
-`usage --by decision` counts them on a `grade-bash (sampled)` line of their own so they cannot
-dilute the outcome rates of the rows that were graded.
+about. They are **negatives, not judgments** — `sampled: true`, never an outcome, passed by at
+SessionEnd rather than closed as `not_run`, and counted by `usage --by decision` on a
+`grade-bash (sampled)` line of their own so they cannot dilute the outcome rates of the graded
+rows.
 
-Which commands are sampled is the command's **own hash**, not a random draw: the same corpus
-replayed samples the same commands, and a command that is in the sample is in it every time it
-runs. `sample_rate` on the row is the denominator a reader weights by. A confirmed command —
-one re-run with the confirmation marker after a prompt — is never sampled; it belongs to the
-`ask` row that prompted it.
+Only an allow the harness actually gave is sampled. A command it answered nothing about is the
+runtime's own to decide and may still be prompted on or refused, so it is no evidence of an
+allow and no row: that covers a grade-1 command under the `execute` stance, and every command
+on Codex, where a plain approval is dropped from the hook output and the client's own default
+stands. A confirmed command — one re-run with the confirmation marker after a prompt — is not
+sampled either; it belongs to the `ask` row that prompted it.
 
-The `input` of a sampled row is **redacted** first, unlike the text of a prompt the user was
-shown: the value of every leading-word assignment, so `TOKEN=… cmd` keeps the shape and loses
-the value, and every secret shape the [rule detectors](#rule-telemetry) match. `input_sha256` is
-still over the original text, so the redaction loses evidence and never identity.
+Which commands are sampled is the **command text's own hash**, not a random draw, so the same
+corpus samples the same commands and a measurement over these rows is reproducible. That makes
+the sample one of **distinct commands, not of invocations**: a command in the sample is logged
+every time it runs and one outside it never is, so the row count says how often those particular
+commands ran and multiplying it by `sample_rate` estimates nothing. Read it as a corpus to
+replay a candidate check over, which is what it is for.
+
+The `input` of a sampled row is **redacted**, unlike the text of a prompt the user was shown:
+the value of every assignment and every credential flag, quoted or not (`FOO=…`, `--password=…`,
+`--token …`, `-p…`), every secret shape the [rule detectors](#rule-telemetry) match, and the home
+directory written `~` so no username reaches the row. `input_sha256` is over the **redacted**
+text on these rows and over the original on every other row: the hash of an original next to the
+redacted text would put a short secret within reach of a dictionary attack.
 
 `telemetry.allow_sample_rate` sets the rate and `0` stops it;
 [telemetry.md](telemetry.md#the-allowed-command-sample) has the switch, and `decisions: false`

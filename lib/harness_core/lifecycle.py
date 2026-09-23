@@ -270,16 +270,20 @@ def log_bash_decision(runtime, event, results, command=None, confirmed=False):
     and plan-mode investigation all fold together into one answer, and only one is given.
 
     An allowed command goes to `record_allowed`, which keeps one in twenty of them as an
-    ungraded negative. A confirmed command is not one of those: it reached here because the
-    user answered a prompt the harness raised, so it is the earlier `ask` row's story.
+    ungraded negative — but only where the harness gave the allow *and the runtime was told*.
+    A command the harness said nothing about is the runtime's own to answer and may still be
+    prompted on or refused, and on Codex a plain approval is dropped from the output for the
+    reason `_encode_pre` gives, so neither is evidence that anything was allowed. A confirmed
+    command is not one either: it reached here because the user answered a prompt the harness
+    raised, so it belongs to the earlier `ask` row.
     """
     module = decisions()
     if module is None:
         return
     answers = [r.get("hookSpecificOutput", {}).get("permissionDecision") for r in results]
-    answer = next((choice for choice in ("deny", "ask") if choice in answers), None)
-    if not answer:
-        if not confirmed:
+    answer = next((choice for choice in ("deny", "ask", "allow") if choice in answers), None)
+    if answer not in ("deny", "ask"):
+        if answer == "allow" and not confirmed and runtime != "codex":
             module.record_allowed(command if command is not None
                                   else event["tool_input"]["command"], event, runtime)
         return

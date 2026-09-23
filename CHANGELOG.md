@@ -8,31 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- One Bash command in twenty that the harness allows without a prompt is now kept in the decision
-  log as a sampled negative: a `grade-bash` row with `deterministic_answer: allow`,
-  `sampled: true` and the `sample_rate` it was drawn at. The graded rows are all prompts, so a
-  check that may only tighten an allow into an ask had nothing to measure its false alarms
-  against. Which commands are kept is each command's own hash rather than a random draw, so the
-  same corpus samples the same commands on every machine and a measurement over these rows is
-  reproducible. They carry no outcome and no match key — "it ran" grades nothing — and
-  `harness usage --by decision` counts them on a `grade-bash (sampled)` line of their own, so a
-  point's outcome rates and unlabelled share are unchanged. The text of a sampled row is redacted
-  first, assignment values and every secret shape the rule detectors match, because it is text
-  nobody was prompted about; the hash stays over the original, so redaction loses evidence and
-  never identity. `telemetry.allow_sample_rate` sets the rate and `0` turns it off, as does
-  `telemetry.decisions: false` (#386).
-- `telemetry.completion_claim`, off by default, records the agent's completion claim on a
-  `stop-gate` decision row: the last 2 KiB of the turn's final assistant message, read from the
-  transcript at Stop because the Stop payload carries no assistant text, with the hash over the
-  uncapped message. Verifying what an agent said it had done against the gate result needs the
-  two on one row, and until now the row held only the gate. It is its own switch, and off,
-  because it is the only field in the decision log that holds assistant prose; with it off the
-  row is byte for byte what it was. The claim is the turn's own: the scan stops at the user
-  prompt that opened it, so a turn that ended in a tool call claims nothing rather than
-  repeating the previous turn's words. The read is a bounded tail, so it costs the same on a
-  transcript of any size, and where there is no claim the row carries a null one beside a
-  `completion_claim_miss` naming why — a runtime that supplied no path reads differently from
-  evidence that is gone (#387).
+- One Bash command in twenty that the harness allows is now kept in the decision log as a
+  sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
+  the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
+  tighten an allow into an ask had nothing to measure its false alarms against. Only an allow
+  the harness itself gave is sampled — a command it left to the runtime may still be prompted on
+  or refused, and on Codex an approval is dropped from the hook output — and a confirmed command
+  belongs to the prompt it answered. Which commands are kept is each command's own hash rather
+  than a random draw, so the same corpus samples the same commands on every machine and a
+  measurement over these rows is reproducible; the sample is therefore of distinct commands, not
+  of invocations, and the row count cannot be weighted by the rate to estimate how many commands
+  ran. The rows carry no outcome and no match key, are passed by at SessionEnd rather than closed
+  as `not_run`, and `harness usage --by decision` counts them on a `grade-bash (sampled)` line of
+  their own, so a point's outcome rates and unlabelled share are unchanged. The text is redacted
+  before it is capped — assignment values, credential flags, every secret shape the rule
+  detectors match and the home directory as `~` — and the row's hash is over the redacted text,
+  so a short secret cannot be recovered from the hash beside it. `telemetry.allow_sample_rate`
+  sets the rate and `0` turns it off, as does `telemetry.decisions: false` (#386).
 - Every replay-benchmark row records `cache_miss_ratio` beside its cache-normalised cost: the
   share of the run's prefix the provider re-wrote rather than served, summed over every turn the
   run opened. The arithmetic is the one `harness usage --by prefix` applies to a ledger row, and

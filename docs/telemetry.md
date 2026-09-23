@@ -64,17 +64,20 @@ a brief — capped at 2 KiB, which is the one reason to turn it off on a shared 
 { "telemetry": { "allow_sample_rate": 0 } }
 ```
 
-`allow_sample_rate` is how many allowed Bash commands one logged row stands for: **20 by
-default**, so one command in twenty that the harness let through without a prompt is written to
-the decision log as an ungraded negative, and `0` writes none of them.
-[usage.md](usage.md#sampled-allows) describes the row.
+`allow_sample_rate` is the one-in-how-many: **20 by default**, so one distinct command in twenty
+of those the harness allows is written to the decision log as an ungraded negative, and `0`
+writes none of them. [usage.md](usage.md#sampled-allows) describes the row, and why the sample
+is of distinct commands rather than of invocations.
 
 It is on because the graded rows are all prompts, and a check that may only turn an allow into
 an ask cannot be measured for false alarms against prompts alone. The sample is drawn from each
 command's own hash rather than from a random draw, so the same commands are sampled on every
-machine and a measurement over these rows is reproducible. The text of a sampled row is redacted
-first — assignment values and every secret shape the rule detectors match — because it is text
-nobody was prompted about; a graded row still holds the command as the user saw it.
+machine and a measurement over these rows is reproducible. Only an allow the harness itself
+gave is sampled, never a command it left to the runtime to answer. The text of a sampled row is redacted first —
+assignment values, credential flags, every secret shape the rule detectors match and the home
+directory as `~` — because it is text nobody was prompted about, and the row's hash is over the
+redacted text so nothing removed from it can be recovered; a graded row still holds the command
+as the user saw it.
 
 Set it to `0` on a machine where a log of commands nobody approved is unwelcome.
 `decisions: false` turns it off along with the rest of the log, and nothing here is exported:
