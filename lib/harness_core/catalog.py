@@ -205,7 +205,25 @@ def role_contract(root, name):
     # still apply. Absent means the variant decides, which is the default for every other role.
     if fields.get("posture", "fixed") != "fixed":
         raise ValueError("shared role posture, when present, must be 'fixed': " + name)
+    role_skills(root, fields)
     return fields, body
+
+
+def role_skills(root, fields):
+    """The skill directories a role declares, as paths; an undeclared role reads none.
+
+    An isolated worker is pointed at these and nothing else, so the whole skill corpus is not
+    part of what it may load. Each name must resolve to a shipped skill, because a typo would
+    silently widen nothing and quietly remove the authority the role's body assumes.
+    """
+    named = [part.strip() for part in str(fields.get("skills", "")).split(",") if part.strip()]
+    paths = []
+    for skill in named:
+        path = root / "primitives" / "skills" / identifier(skill)
+        if not (path / "SKILL.md").is_file():
+            raise ValueError("role declares an unknown skill: " + skill)
+        paths.append(path)
+    return paths
 
 
 def native_model(tiers, tier):

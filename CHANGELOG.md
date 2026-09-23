@@ -81,6 +81,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- An isolated role worker now carries the shared policy and the skills its own contract names,
+  instead of being pointed at the whole skill corpus and handed the harness checkout as a read
+  root. A role declares what it needs with a `skills:` line — `plan-authoring` for `planner`,
+  `design-loop` for `design-judge` — and a name that resolves to no shipped skill fails the run
+  rather than quietly removing authority the role's body assumes. The saving is the point: a
+  review layer resolves at about 4,200 estimated tokens where it previously stood in front of
+  about 35,800, so the four layers of a review round cost roughly 17,000 rather than 143,000.
+  Each run records the figure under `context` in `status.json`, as policy tokens, skill tokens
+  and a total against a 30,000-token budget, counted with the same characters-per-token
+  approximation `harness lint` applies to always-loaded context, so a role that grows expensive
+  is visible in the record rather than only in a bill. The budget is recorded and not enforced,
+  because what a worker may load is fixed by its contract before any brief is read (#335).
+- The BMad override templates ask each review layer to launch only once the previous layer's
+  worker has exited. This is correctness before economy: a role worker that is still running
+  publishes no token count, so a round with four layers in flight cannot be held under a cap it
+  cannot measure, which is how an observed 450,000-token cap became 985,000 (#335).
+
 - A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
   `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
   fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with

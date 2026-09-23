@@ -38,6 +38,18 @@ read other native-permitted paths. Claude's restricted file tools use the suppli
 The default deadline is 300 seconds; `--timeout` accepts 1–3600 seconds. Interrupting the runner
 or reaching its deadline terminates its process group and prevents artifact publication.
 
+## What a worker loads
+
+A worker carries the shared instructions, the rules, the resolved stances and its own role body,
+and nothing else of the harness: the checkout is not one of its read roots, and it is pointed at
+only the skills its contract's `skills:` line names — `plan-authoring` for `planner`,
+`design-loop` for `design-judge`, none for the review roles. A role that names an unshipped skill
+fails to resolve rather than running without the authority its body assumes. `status.json` records
+the estimate under `context`, as policy tokens, skill tokens and their total against a 30,000-token
+budget, counted with the same characters-per-token approximation `harness lint` uses. A review
+layer resolves at roughly 4,000 tokens where it once carried about 35,800, which is what makes a
+four-layer round affordable.
+
 A role's class (`tier:` in its contract) resolves through the adapter's `tiers` table in
 `bindings.json`, so omit `--model` unless you mean to override it. An adapter that maps no model
 for the class requires the caller's actual session model; the worker does not resolve downward

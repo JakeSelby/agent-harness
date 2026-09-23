@@ -5,6 +5,7 @@ tier: frontier
 authority: read-only
 context: fresh
 delegation: none
+skills: design-loop
 posture: fixed
 ---
 

@@ -5,6 +5,7 @@ tier: strong
 authority: artifact-write
 context: fresh
 delegation: none
+skills: plan-authoring
 ---
 
 # Planner

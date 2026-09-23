@@ -16,6 +16,13 @@ from . import catalog, keychain, reconcile
 
 LIMIT = 1024 * 1024
 RUNTIMES = {"codex": "codex", "claude-code": "claude"}
+# Characters per token, the tokenizer-free approximation `bin/harness` and `scripts/cost_bench.py`
+# use; the tests assert the three agree. Good for a budget and a trend, never for billing.
+CHARS_PER_TOKEN = 4.0
+# What a worker may load before it stops being cheap: the shared policy it carries plus every byte
+# of the skill authority it is pointed at. Recorded per run rather than enforced, because the cost
+# of a run is a property of the role's contract and is fixed before any brief is read (issue #335).
+CONTEXT_BUDGET_TOKENS = 30000
 
 
 def harness_version(root):
@@ -97,8 +104,35 @@ def resolution(root, config, runtime, name, model=None, prompt=None):
     sentence = budget(root, row, prompt)
     if sentence:
         record["budget"] = posture_figures(root, row)
-    return {"fields": fields, "bindings": bindings, "instructions": "\n\n---\n\n".join(parts),
+    instructions = "\n\n---\n\n".join(parts)
+    skills = catalog.role_skills(root, fields)
+    return {"fields": fields, "bindings": bindings, "instructions": instructions,
+            "skills": skills, "context": context_estimate(instructions, skills),
             "posture": record, "budget_sentence": sentence}
+
+
+def est_tokens(chars):
+    """Characters to tokens, the tokenizer-free approximation. See CHARS_PER_TOKEN."""
+    return int(round(chars / CHARS_PER_TOKEN))
+
+
+def context_estimate(instructions, skills):
+    """What this worker may load, in estimated tokens: shared policy plus its skill authority.
+
+    Not the workspace and not the brief: those are the caller's, and vary per run. This is the
+    standing cost the role's own contract fixes, which is what a review layer pays four times.
+    """
+    authority = 0
+    for path in skills:
+        for item in sorted(path.rglob("*")):
+            if item.is_file():
+                try:
+                    authority += len(item.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError):
+                    continue
+    return {"policy_tokens": est_tokens(len(instructions)), "skill_tokens": est_tokens(authority),
+            "total_tokens": est_tokens(len(instructions) + authority),
+            "budget_tokens": CONTEXT_BUDGET_TOKENS}
 
 
 def posture_figures(root, row):
@@ -233,6 +267,7 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
         raise ValueError("--read-dir must name an existing directory")
     ready = resolution(root, config, runtime, name, model, prompt)
     fields, bindings, instructions = ready["fields"], ready["bindings"], ready["instructions"]
+    skills = ready["skills"]
     if ready["budget_sentence"]:
         prompt = prompt.rstrip() + ready["budget_sentence"]
     if bool(artifact) != (fields["authority"] == "artifact-write"):
@@ -255,7 +290,8 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
               "harness_version": harness_version(root),
               "model": bindings["model"], "workspace": str(workspace),
               "effort": bindings.get("model_reasoning_effort", bindings.get("effort")),
-              "read_roots": [str(workspace), str(root)] + list(map(str, read_roots)),
+              "read_roots": [str(workspace)] + [str(p) for p in skills] + list(map(str, read_roots)),
+              "context": ready["context"],
               "mode": "isolated-cli", "status": "starting", "started_at": time.time(),
               # The runner supervising this worker, so a reader can tell a live run from one whose
               # process died mid-flight; `orphaned()` decides, and never without the start token.
@@ -274,9 +310,18 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
             cwd = work / "cwd"
             cwd.mkdir()
             instructions += "\n\nProject to inspect (read-only): " + str(workspace)
-            instructions += "\nShared skill authority (read-only): " + str(root / "primitives/skills")
+            # Only the skills this role declares, and no path into the harness checkout: the
+            # policy above is the whole of the shared authority a worker is given, so it cannot
+            # spend a review layer reading the corpus it was never asked about (issue #335).
+            if skills:
+                instructions += ("\nSkill authority (read-only), the only skills this role reads: "
+                                 + ", ".join(str(p) for p in skills))
+            else:
+                instructions += "\nThis role reads no skill authority: the policy above is complete."
             instructions += "\nAdditional read-only inputs: " + ", ".join(map(str, read_roots))
-            command = native.prepare(executable, work, root, workspace, read_roots, instructions, bindings, original, env)
+            command = native.prepare(executable, work, root, workspace,
+                                     [Path(p) for p in skills] + read_roots,
+                                     instructions, bindings, original, env)
             record["status"] = "running"
             reconcile.atomic_text(status_path, json.dumps(record, indent=2) + "\n")
             code = execute(command, prompt, env, cwd, run_dir, timeout)
