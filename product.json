@@ -174,7 +174,7 @@
         },
         {
           "name": "Review Card plans",
-          "line": "Every plan opens with a one-screen card and stops at a build gate until you say build.",
+          "line": "Every plan opens with a one-screen card, rendered in the native plan pane and approved there rather than by a typed reply.",
           "doc": "primitives/skills/plan-authoring"
         },
         {

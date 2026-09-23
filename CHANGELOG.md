@@ -21,7 +21,18 @@ All notable changes to this project are documented here. The format follows
   session's own model, which the harness never writes; a `delegation` variant other than
   `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
   now links to the row instead of restating it (#520).
+
 ### Changed
+
+- `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
+  and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
+  native approval is the gate. The typed `build` reply was a convention no tooling could observe,
+  and a plan written straight to disk reached no plan view at all. Because the runtime fixes the
+  filename before any content exists and plan mode permits no other write, `/build` takes the
+  newest file in the plans directory, renames it to a topic slug, says that path in its first
+  message and commits it. `/plan` asks before entering plan mode, since entering it is the user's
+  call, and a runtime with no plan mode keeps the previous behaviour as an explicit branch: write
+  the file named for the topic, open it for the reviewer, close on the build line (#439).
 
 - The delegation rule now states that subagents never message a peer, and the builder role says
   what a blocked builder does instead: stop, finish what does not depend on the answer, and return

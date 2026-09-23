@@ -125,7 +125,7 @@ Numbered, answerable in chat by number ("1 A, 2 your rec"). Three lines each:
 > *Recommend* ribbons — the real boundary lines already exist and stay crisp at every zoom.
 > *Alternative* the gradient technique, which we need anyway for runtime cell changes.
 
-With nothing to decide, write **None — reply `build`**. Never invent decisions to fill the
+With nothing to decide, write **None — approve to proceed**. Never invent decisions to fill the
 section, and never leave a real one buried in the addendum.
 
 ## Revisions
@@ -159,30 +159,39 @@ reviewer replies to. Three shapes, and nothing improvised.
 3. **`## Decisions`** — the numbered blocks, verbatim. The reviewer answers by number in chat,
    so they must be readable where they type.
 4. **A workspace-relative markdown link** to the plan file, with a note on how to preview it.
-5. **The closing line**, exactly: *Reply **build** to proceed, or keep refining.*
+5. **The closing line**, only where there is no plan mode, exactly: *Reply **build** to
+   proceed, or keep refining.* Under plan mode the message ends at the link.
 
 Deliberately excluded: the diagram (the file holds it), the steps, the
 risks, the addendum. Those are what the file is for. Do not summarize them either.
 
-**Put the file on screen before you post the message.** A link in chat is a path, not a
-rendering: in some clients it is clickable, in others it is dead text, and a plan written
-straight to disk never reaches a native plan view, because nothing registered it as one. The
-reviewer is then asked to approve a document they cannot see. So if the runtime can open a file
-beside the conversation, open the plan there first, and pass an **absolute** path unless you have
-confirmed that relative ones resolve; a rejected path is the common failure and it is silent.
-If the runtime cannot, say in the message how to open the file. The same applies on every
+**Under plan mode the file is already the review surface.** Plan mode designates the plan file
+and names it itself — a slug of your opening words plus two random words, fixed before any
+content exists — so you neither choose the name nor rename it while planning; `/build` renames
+it to a topic slug once writes are allowed again. Write the card there, post the message, and
+call `ExitPlanMode`: the native approval is the gate, and asking for a typed *build* on top of
+it is a second gate nothing downstream can read.
+
+**Without plan mode, put the file on screen before you post the message.** A link in chat is a
+path, not a rendering: in some clients it is clickable, in others it is dead text, and a plan
+written straight to disk never reaches a native plan view, because nothing registered it as one.
+The reviewer is then asked to approve a document they cannot see. So if the runtime can open a
+file beside the conversation, open the plan there first, and pass an **absolute** path unless you
+have confirmed that relative ones resolve; a rejected path is the common failure and it is
+silent. If the runtime cannot, say in the message how to open the file. The same applies on every
 revision round, since the reviewer is reading a changed file, not the one they opened before.
 
 **Revision round, after feedback.** Much shorter — the reviewer already knows the plan:
 
 1. **One line naming what changed**, matching the card's **Changed this round** line.
 2. **Only the decisions still open**, renumbered from 1.
-3. **The link and the closing line.**
+3. **The link, and the closing line only where there is no plan mode.**
 
 Never re-post At a glance on a revision. If the scope moved enough to need re-reading, say so in
 the change line and let the file carry it.
 
-**No decisions outstanding.** Verdict, At a glance, the link, and *Reply **build** to proceed.*
+**No decisions outstanding.** Verdict, At a glance, the link, then `ExitPlanMode` — or *Reply
+**build** to proceed* where there is no plan mode.
 Never invent decisions to fill the block — an empty one is a signal, not a gap.
 
 **Why the message is short.** The hook validates files, not messages. Nothing enforces this
@@ -194,6 +203,8 @@ Use `harness role run planner` with `--runtime`, the explicit session `--model`,
 a `--prompt-file` brief and `--artifact <new-plan.md>`. The isolated worker receives the shared
 role and resolved stances, and returns plan content; the harness validates and publishes it.
 Read the artifact and post the review message yourself. Existing plans are not overwritten.
+Run the worker before entering plan mode: it writes an artifact, and plan mode permits no write
+but the designated plan file — so inside it, copy the worker's card across rather than delegating.
 See `docs/role-workers.md` for input directories, status and native qualification limits.
 
 ## Self-check before handing it over
