@@ -1102,25 +1102,95 @@ def select(home, dimension, variant, expected=0):
     return home.harness("sync", expected=expected)
 
 
-def case_stance_switch(home):
-    """docs/compatibility.md step 2: the same spawn under two delegation variants.
+VOICE_PROMPT = ("Compare Python's list, tuple and set on mutability, ordering, duplicates and "
+                "hashability.")
+# A markdown table's separator row with at least two columns; prose and bullets never carry one.
+TABLE_RULE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$", re.M)
+# What each shipped voice variant says about tables, read from the resolved text itself.
+VOICE_TABLE_RULES = ("no tables", "at most one table")
 
-    The pass is the client's own behaviour changing with the selection — one subagent transcript
-    under `tiered` and the stance's own refusal with none under `off` — with the resolved link
-    read beside it. A client that never spawned under `tiered` was not observed switching, so the
-    case is `unverified` rather than passing on the refusal alone.
+
+def has_table(text):
+    return bool(TABLE_RULE.search(str(text)))
+
+
+def voice_rule(home):
+    """The resolved voice text's own sentence about tables, or ``""`` when it cannot be read."""
+    try:
+        body = " ".join(stance_link(home, "voice").read_text().lower().split())
+    except OSError:
+        return ""
+    for rule in VOICE_TABLE_RULES:
+        if rule in body:
+            return rule
+    return ""
+
+
+def output_style(home):
+    """The `outputStyle` the synced client settings select, or ``""``."""
+    try:
+        data = json.loads((home.client_dir / "settings.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    return str(data.get("outputStyle") or "")
+
+
+def voice_verdict(scannable, card):
+    """Whether the two replies differ the way `scannable` and `answer-card` say they should.
+
+    `scannable` allows one table for three or more items compared across the same fields and
+    `answer-card` forbids tables, so the comparison prompt tells them apart only when the first
+    reply carries a table and the second does not. Replies that agree observed no switch.
     """
-    home.seed(stances={"delegation": "tiered"})
-    home.harness("sync")
+    first, second = has_table(scannable), has_table(card)
+    if first and not second:
+        return
+    if first == second:
+        raise Unverified("the same comparison prompt was answered %s under both voice variants, "
+                         "so the replies cannot tell scannable from answer-card"
+                         % ("with a markdown table" if first else "without a table"))
+    raise AssertionError("under voice=answer-card, whose text forbids tables, the reply carried a "
+                         "markdown table while the scannable reply did not: " + redact(card[-200:]))
+
+
+def voice_cycle(home):
+    """Cycle `voice` scannable -> answer-card; return the observation and any unverified reason."""
+    link = stance_link(home, "voice")
+    variants = sorted((ROOT / "primitives" / "stances" / "voice").glob("*.md"))
+    first = (link_target(link, variants), voice_rule(home), output_style(home))
+    scannable = home.answer(home.session(VOICE_PROMPT, tools=()))
+    select(home, "voice", "answer-card")
+    second = (link_target(link, variants), voice_rule(home), output_style(home))
+    card = home.answer(home.session(VOICE_PROMPT, tools=()))
+    if first[0] and second[0] and first[0] == second[0]:
+        raise AssertionError("the resolved voice link stayed at " + first[0])
+    if first[1] and second[1] and first[1] == second[1]:
+        raise AssertionError("the resolved voice text said %r under both variants" % first[1])
+    text = ("Cycling voice scannable -> answer-card, the resolved voice.md moved %s -> %s, its "
+            "text about tables read %s -> %s, and settings.json outputStyle read %s -> %s"
+            % (first[0] or "<not a link>", second[0] or "<not a link>",
+               repr(first[1]) if first[1] else "<not read>",
+               repr(second[1]) if second[1] else "<not read>",
+               first[2] or "<unset>", second[2] or "<unset>"))
+    try:
+        voice_verdict(scannable, card)
+    except Unverified as error:
+        return text, str(error)
+    return (text + "; the same comparison prompt, in a fresh headless turn each time, was "
+            "answered with a markdown table under scannable and with none under answer-card"), ""
+
+
+def delegation_cycle(home):
+    """Cycle `delegation` tiered -> off; return the observation, or ``""`` and why it was not."""
     gap = native_only(home, "a spawn's subagent transcript")
     link = stance_link(home, "delegation")
     tiered_target = link_target(link)
     if gap:
-        raise Unverified(gap + "; the resolved delegation link read " + (tiered_target or "<none>"))
+        return "", gap + "; the resolved delegation link read " + (tiered_target or "<none>")
     tiered = home.session(SPAWN_COUNT_PROMPT)
     if not home.subagents(tiered["session_id"]):
-        raise Unverified("the tiered variant's session wrote no subagent transcript, so no switch "
-                         "was observed")
+        return "", ("the tiered variant's session wrote no subagent transcript, so no delegation "
+                    "switch was observed")
     select(home, "delegation", "off")
     off_target = link_target(link)
     denied = home.session(SPAWN_COUNT_PROMPT)
@@ -1129,6 +1199,10 @@ def case_stance_switch(home):
     if spawned:
         raise AssertionError("the off variant still wrote %s subagent transcript(s)" % len(spawned))
     if DELEGATION_DENY not in answer:
+        calls, readable = agent_calls(home, denied["session_id"])
+        if readable and not calls:
+            return "", ("under delegation=off the model attempted no spawn (its transcript holds no "
+                        "Agent tool call), so the stance's refusal was not exercised")
         raise AssertionError("the off variant wrote no subagent transcript but the client never "
                              "reported the stance's own refusal: " + redact(answer[-200:]))
     if tiered_target and off_target and tiered_target == off_target:
@@ -1136,8 +1210,30 @@ def case_stance_switch(home):
     return ("Cycling delegation tiered -> off in one home with a fresh headless session each time, "
             "the same unnamed Agent spawn ran under tiered (1 subagent transcript) and under off "
             "was refused with \"%s\" and 0 subagent transcripts; the resolved delegation.md link "
-            "moved %s -> %s." % (DELEGATION_DENY, tiered_target or "<not a link>",
-                                 off_target or "<not a link>"))
+            "moved %s -> %s" % (DELEGATION_DENY, tiered_target or "<not a link>",
+                                off_target or "<not a link>")), ""
+
+
+def case_stance_switch(home):
+    """docs/compatibility.md step 2: a delegation and a communication stance, each switched.
+
+    `delegation` is cycled tiered -> off: one subagent transcript under `tiered` and the stance's
+    own refusal with none under `off`, with the resolved link read beside it. A client that never
+    spawned under `tiered`, or never attempted the spawn under `off`, was not observed switching.
+    `voice` is then cycled scannable -> answer-card and the same comparison prompt is asked under
+    each, with the resolved voice text and output style read beside the replies; replies that
+    agree on carrying a table observed nothing. Either half unobserved makes the case `unverified`
+    with the other half's observation kept.
+    """
+    home.seed(stances={"delegation": "tiered", "voice": "scannable"})
+    home.harness("sync")
+    delegation, delegation_gap = delegation_cycle(home)
+    voice, voice_gap = voice_cycle(home)
+    notes = [text for text in (delegation, voice) if text]
+    gaps = [text for text in (delegation_gap, voice_gap) if text]
+    if gaps:
+        raise Unverified("; ".join(notes + gaps))
+    return delegation + "; then, c" + voice[1:] + "."
 
 
 PROOF_PLAIN = ("# Proof stance: plain\n\n"
@@ -1148,12 +1244,96 @@ PROOF_PROMPT = "Reply with the single word OK, then obey your proof stance."
 MISSING_VARIANT = "has no variant 'nonesuch'"
 
 
-def case_custom_stance(home):
-    """docs/compatibility.md step 4: a dimension the repository does not ship, from an external root.
+PROJECT_FILE = "harness-project.json"
+OVERRIDE_LINE = "Effective session stance proof=plain"
 
-    A custom dimension is prose on every runtime, so the assertion is the client's own reply
-    changing with the selection, and a selection that names no variant being refused by the sync
-    with the previously resolved link left where it was.
+
+def closing_word(text):
+    """The reply's last non-empty line as one bare upper-case word, or ``""``."""
+    lines = [line for line in str(text).splitlines() if line.strip()]
+    return re.sub(r"[^A-Z]", "", lines[-1].upper()) if lines else ""
+
+
+def resolved_variant(output, dimension):
+    """The variant `harness stances --json` resolved for one dimension, or ``""``."""
+    text = str(output)
+    try:
+        data = json.loads(text[text.index("{"):])
+    except ValueError:
+        return ""
+    return str(((data.get("stances") or {}).get(dimension) or {}).get("variant") or "")
+
+
+def session_in(home, prompt, where, extra):
+    """One tool-less turn started in `where` with `extra` in the client's environment."""
+    project = home.project
+    home.project = where
+    home.env = lambda more=None: type(home).env(home, dict(extra, **(more or {})))
+    try:
+        return home.session(prompt, tools=())
+    finally:
+        home.project = project
+        del home.env
+
+
+def project_override(home, variants):
+    """Select proof=plain for one disposable repository while the global selection is tagged.
+
+    The harness scopes a project selection by `HARNESS_PROJECT_CONFIG` naming the project's file
+    (bin/harness `load_config`), and the session hook resolves it into the turn's context; a sync
+    never projects it into the global links. Returns the observation of both turns.
+    """
+    repo = home.root / "override-repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    run(["git", "init", "-q", str(repo)])
+    project_file = repo / PROJECT_FILE
+    project_file.write_text(json.dumps({"stances": {"proof": "plain"}}) + "\n")
+    extra = {"HARNESS_PROJECT_CONFIG": str(project_file)}
+    inside_resolved = resolved_variant(home.harness("stances", "--json", extra=extra, cwd=repo),
+                                       "proof")
+    outside_resolved = resolved_variant(home.harness("stances", "--json"), "proof")
+    if inside_resolved != "plain" or outside_resolved != "tagged":
+        raise AssertionError("harness stances --json resolved proof=%s with the project file named "
+                             "and proof=%s without it, not plain and tagged"
+                             % (inside_resolved or "<none>", outside_resolved or "<none>"))
+    link = stance_link(home, "proof")
+    before = link_target(link, variants)
+    inside = session_in(home, PROOF_PROMPT, repo, extra)
+    outside = home.session(PROOF_PROMPT, tools=())
+    after = link_target(link, variants)
+    carried = OVERRIDE_LINE in home.orchestrator_text(inside.get("session_id", ""))
+    inside_word, outside_word = closing_word(home.answer(inside)), closing_word(home.answer(outside))
+    if before != after:
+        raise AssertionError("a turn under the project override moved the global proof link "
+                             "%s -> %s" % (before or "<not a link>", after or "<not a link>"))
+    context = ("its transcript %s the session hook's \"%s\" line"
+               % ("carried" if carried else "did not carry", OVERRIDE_LINE))
+    if inside_word == "TAGGED" and outside_word == "TAGGED":
+        raise AssertionError("a turn started in the repository whose project file selects "
+                             "proof=plain closed TAGGED like the turn outside it; " + context)
+    if inside_word != "PLAIN" or outside_word != "TAGGED":
+        raise Unverified("the turns inside and outside the override repository closed %s and %s, "
+                         "not PLAIN and TAGGED, so the project override was not observed; %s"
+                         % (inside_word or "<nothing>", outside_word or "<nothing>", context))
+    return ("with proof=tagged selected globally and a disposable git repository whose %s selects "
+            "proof=plain, harness stances --json resolved proof=plain with HARNESS_PROJECT_CONFIG "
+            "naming that file and proof=tagged without it; a fresh turn started inside the "
+            "repository with that variable closed PLAIN (%s) and a fresh turn started outside it "
+            "without the variable closed TAGGED, and the global proof link read %s before and "
+            "after (the harness selects a project override through HARNESS_PROJECT_CONFIG, not "
+            "by discovering a file from the working directory)"
+            % (PROJECT_FILE, context, before or "<neither linked nor copied on this runtime>"))
+
+
+def case_custom_stance(home):
+    """docs/compatibility.md steps 2 and 4: a custom dimension, a project override, a bad choice.
+
+    The dimension is one the repository does not ship, from an external root. A custom dimension
+    is prose on every runtime, so the assertion is the client's own reply changing with the
+    selection; the same dimension is then overridden for one disposable repository, and a turn
+    inside it must follow the override while a turn outside it follows the global selection with
+    the global link unmoved. A selection that names no variant must be refused by the sync with
+    the previously resolved link left where it was.
     """
     root = home.primitives / "stances" / "proof"
     root.mkdir(parents=True, exist_ok=True)
@@ -1166,13 +1346,13 @@ def case_custom_stance(home):
         raise AssertionError("a custom dimension from an external primitive root did not appear in "
                              "harness stances --json: " + redact(stances[-300:]))
     plain = home.answer(home.session(PROOF_PROMPT, tools=()))
+    if closing_word(plain) != "PLAIN":
+        raise Unverified("the client's reply under proof=plain closed %s, not PLAIN, so no custom "
+                         "stance was observed: %s" % (closing_word(plain) or "<nothing>",
+                                                       redact(plain[-80:])))
     select(home, "proof", "tagged")
-    tagged = home.answer(home.session(PROOF_PROMPT, tools=()))
-    if "PLAIN" not in plain.upper() or "TAGGED" not in tagged.upper():
-        raise Unverified("the client did not obey the custom dimension under both selections "
-                         "(plain reply %s, tagged reply %s), so no custom stance was observed"
-                         % (redact(plain[-80:]), redact(tagged[-80:])))
     variants = [root / "plain.md", root / "tagged.md"]
+    override = project_override(home, variants)
     before = link_target(stance_link(home, "proof"), variants)
     warning = select(home, "proof", "nonesuch", expected=1)
     if MISSING_VARIANT not in warning:
@@ -1183,10 +1363,10 @@ def case_custom_stance(home):
         raise AssertionError("the refused selection moved the resolved proof link %s -> %s"
                              % (before, after or "<not a link>"))
     return ("A custom proof dimension supplied from an external primitive root appeared in harness "
-            "stances --json after sync, and the native client's reply ended PLAIN under proof=plain "
-            "and TAGGED under proof=tagged; selecting a variant that does not exist made harness "
-            "sync exit 1 with \"%s\" and left the previously resolved variant at %s."
-            % (MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
+            "stances --json after sync, and the native client's reply closed PLAIN under "
+            "proof=plain; then, %s; selecting a variant that does not exist made harness sync "
+            "exit 1 with \"%s\" and left the previously resolved variant at %s."
+            % (override, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
 
 
 # The log path is written into the script rather than read from the environment: a hook the
@@ -1992,11 +2172,13 @@ CASES = {
                      "fresh native turns for the rendered identity, a projected skill and the "
                      "subagent types the client offers"),
     "stance-switch": (case_stance_switch,
-                      "cycle the delegation stance tiered -> off in one home and read what the "
-                      "same unnamed spawn did under each, beside the resolved variant link"),
+                      "cycle the voice stance scannable -> answer-card and the delegation stance "
+                      "tiered -> off in one home, and read the same prompt's reply under each "
+                      "variant beside the resolved variant text and link"),
     "custom-stance": (case_custom_stance,
                       "supply a dimension this repository does not ship from an external "
-                      "primitive root, read the client's reply under each variant, and refuse a "
+                      "primitive root, read the client's reply under each variant and under a "
+                      "project override inside and outside its repository, and refuse a "
                       "selection naming no variant"),
     "framework-spawn-routing": (case_framework_spawn_routing,
                                "drive the spawn hook with a fixture recipe built from a declared "

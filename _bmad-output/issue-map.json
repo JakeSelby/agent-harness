@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 227,
     "task": 27,
-    "bug": 81,
+    "bug": 84,
     "chore": 66,
     "spike": 10,
     "decision": 12
@@ -5403,6 +5403,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B080.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B083",
+      "github_number": 731,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/731",
+      "title": "stance-switch and custom-stance switch only delegation and never try a project override",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B083.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
