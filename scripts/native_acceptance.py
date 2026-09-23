@@ -30,6 +30,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from harness_core import frameworks  # noqa: E402  (ROOT has to be on the path first)
+
 VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
 TURN_TIMEOUT = 300
@@ -493,6 +496,16 @@ def descriptor_recipe(descriptor):
             + " Return what you find as text in your final message.")
 
 
+def offered_roots(reason):
+    """The read roots a refusal offers, as a set.
+
+    Parsed rather than searched: one declared root is often a prefix of another, so a refusal
+    that offered only the longer one would still satisfy a containment check for the shorter.
+    """
+    return set(item.strip() for group in re.findall(r"read roots: (.*?)(?:\. |$)", reason)
+               for item in group.split(",") if item.strip())
+
+
 def hook_answer(home, prompt, subagent_type=None, session="framework-routing"):
     """One real PreToolUse spawn event through the client's registered hook. No model turn."""
     payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": session,
@@ -512,11 +525,18 @@ def hook_answer(home, prompt, subagent_type=None, session="framework-routing"):
 
 
 def case_framework_spawn_routing(home):
-    descriptors = [json.loads(path.read_text())
-                   for path in sorted((ROOT / "policy" / "integrations").glob("*.json"))]
-    usable = [d for d in descriptors if d.get("spawns")]
+    # Validated first, and invalid ones skipped, because the spawn hook ignores a descriptor that
+    # does not validate: a case built on one would assert against a rule that is not in force.
+    usable = []
+    for path in sorted((ROOT / "policy" / "integrations").glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if data.get("spawns") and not frameworks.problems(data):
+            usable.append(data)
     if not usable:
-        raise Unverified("no integration descriptor declares a spawn to build a recipe from")
+        raise Unverified("no valid integration descriptor declares a spawn to build a recipe from")
     descriptor = usable[0]
     layer, role, roots, recipe = descriptor_recipe(descriptor)
     home.seed(stances={"cost": "balanced", "delegation": "tiered"})
@@ -529,16 +549,11 @@ def case_framework_spawn_routing(home):
         if ("harness role run " + role) not in why:
             raise AssertionError("the refusal did not route %s to the constrained role: %s"
                                  % (redact(named_as), redact(why)))
-        named = [root for root in roots if root in why]
-        if named != roots:
-            raise AssertionError("the refusal named %s of the declared input roots"
-                                 % len(named))
-        offered = [item.strip() for group in re.findall(r"read roots: (.*?)(?:\. |$)", why)
-                   for item in group.split(",")]
-        outside = [item for item in offered if item and item not in roots]
-        if outside:
-            raise AssertionError("the refusal offered read roots outside the declared input "
-                                 "roots: " + redact(", ".join(outside)))
+        offered = offered_roots(why)
+        if offered != set(roots):
+            raise AssertionError("the refusal offered %s as read roots, not the descriptor's "
+                                 "declared input roots %s"
+                                 % (redact(sorted(offered)), redact(sorted(roots))))
     posture = case_cost_posture(home)
     return ("A fixture recipe built from the %s %s `%s` descriptor was refused at the spawn hook "
             "whether it was spawned unnamed, as a generic subagent or as a band worker, each "

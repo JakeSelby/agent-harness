@@ -111,11 +111,13 @@ For every target listed in the catalog, verify every `required_cases` entry nati
 6. Drive the spawn hook in a disposable home against a fixture recipe built from a descriptor
    in `policy/integrations/`: confirm a brief carrying a constrained role's work is denied with
    the isolated-worker instruction whether it is spawned unnamed, under a generic subagent type
-   or under a band worker's name; that the refusal names that descriptor's input roots as the
-   read roots the worker is limited to; that the recipe's unnamed spawn routes to the cost
-   variant's default band worker at that row's class and effort with the budget sentence in its
-   brief; and that a null variant rewrites nothing. No third-party framework's own workflow is
-   run in a qualification round; that is the optional suite in [BMad](bmad.md).
+   or under a band worker's name; and that the refusal offers exactly that descriptor's declared
+   input roots, and no others, as the read roots the worker is limited to. The recipe spawn is
+   denied, so routing is observed on a separate plain spawn that carries none of the recipe's text:
+   confirm it runs as the cost variant's default band worker at that row's class and effort with
+   the budget sentence in its brief, and that a null variant rewrites nothing. No third-party
+   framework's own workflow is run in a qualification round; that is the optional suite in
+   [BMad](bmad.md).
 7. Continue the same task Claude→Codex and Codex→Claude, including changed-tree and stale-writer
    cases; establish permissions anew. Verify migration, drift and uninstall preserve user data.
 8. Select a non-default cost variant and sync; confirm that only the roles it changes are

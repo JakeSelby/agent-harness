@@ -12,8 +12,10 @@ All notable changes to this project are documented here. The format follows
   It reads the template directory, the install destination, the presence probe and the skill
   surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
   session-start drift notice probes that descriptor's `detect` path instead of a directory
-  literal in the hook. `harness bmad check|apply` is kept as an alias, and installed override
-  files are unaffected either way (#349).
+  literal in the hook. Its `detect`, `templates`, `destination` and `skill_roots` must be
+  relative paths with no `..` segment, because `apply` writes under one of them.
+  `harness bmad check|apply` is kept as an alias, and installed override files are
+  unaffected either way (#349).
 
 - A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
   release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
