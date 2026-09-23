@@ -436,8 +436,29 @@ def compatibility_capability_table(root, data):
     for name in names:
         rows.append("| `" + name + "` | "
                     + " | ".join(states[client][name]["state"] for client in columns) + " |")
+    restrictions = {row["id"]: compatibility.tier_restriction(root, row) for row in data["clients"]}
+    rows.append("| tier restriction | "
+                + " | ".join(restrictions[client]["state"] for client in columns) + " |")
+    carried = {}
+    for client in columns:
+        if restrictions[client]["mechanism"]:
+            carried.setdefault(restrictions[client]["state"], set()).add(restrictions[client]["mechanism"])
+    mechanisms = [state + " by " + ", ".join("`" + name + "`" for name in sorted(carried[state]))
+                  for state in sorted(carried)]
+    note = ("The last row is not a qualification state. It says whether the delegation stance's "
+            "model-tier ceiling is **enforced** (a hook rewrites or refuses the spawn), "
+            "**advisory** (prompt text only) or **none**"
+            + (", carried " + "; ".join(mechanisms) if mechanisms else "")
+            + ". `enforced` is narrower than it sounds. It never reaches the session's own model: "
+            "the `model` settings key is one this harness never writes "
+            "(`docs/settings-ownership.md`). Within a session it rewrites a spawn only while the "
+            "selected `delegation` variant is `tiered` — `off` stops the spawn instead, and any "
+            "other variant leaves it alone — and only while the adapter's class table maps at "
+            "least two models, since one class is no ladder to move a spawn down. Under every "
+            "other condition the ceiling is prose, exactly as `advisory` is everywhere.")
     return ["A client's status is not a capability's status. Each cell is derived from that "
-            "runtime's `adapters/<runtime>/capabilities.json` at generation time:", "\n".join(rows)]
+            "runtime's `adapters/<runtime>/capabilities.json` at generation time:", "\n".join(rows),
+            note]
 
 
 def projection_drift(root):

@@ -138,7 +138,9 @@ class CommandTests(unittest.TestCase):
             mock.patch.object(harness.shutil, "which", return_value="/opt/tools/claude"),
             mock.patch.object(harness, "launchctl", side_effect=self.launchctl),
             # `status` asks the API which sessions are stranded; the suite never leaves the Mac.
-            mock.patch.object(harness, "lost_sessions", lambda folders: []),
+            mock.patch.object(harness, "lost_sessions",
+                              lambda folders: remote_control.SessionPage(
+                                  remote_control.SessionPage.OK)),
         ]
         for p in patches:
             p.start()
@@ -562,19 +564,27 @@ class SupervisorStateTests(unittest.TestCase):
 
 
 class LostSessionTests(unittest.TestCase):
-    # The shape of one page of `GET /v1/code/sessions?limit=50`, observed 2026-09-22.
+    # One page of `GET /v1/code/sessions?limit=50` in the shape and row order observed
+    # 2026-09-22. The page is newest-first by `last_event_at`; `updated_at` goes backwards
+    # within it, twice here as on the live account, which is why the order check reads the
+    # former. `next_cursor` is null, so a count over this page may speak for the account.
     PAGE = {"data": [
         {"id": "cse_01LOST", "status": "active", "connection_status": "disconnected",
          "environment_id": "env_01LIVE", "title": "0.12 release checklist",
-         "updated_at": "2026-09-22T17:49:06.555477Z"},
+         "updated_at": "2026-09-22T17:49:06.555477Z",
+         "last_event_at": "2026-09-22T17:49:06.555477Z"},
         {"id": "cse_01HERE", "status": "active", "connection_status": "connected",
          "environment_id": "env_01LIVE", "title": "still served",
-         "updated_at": "2026-09-22T17:50:26Z"},
+         "updated_at": "2026-09-22T17:50:26Z",
+         "last_event_at": "2026-09-22T17:30:12.001000Z"},
         {"id": "cse_01OLD", "status": "archived", "connection_status": "disconnected",
-         "environment_id": "env_01LIVE", "title": "archived", "updated_at": "2026-09-21T00:00:00Z"},
+         "environment_id": "env_01LIVE", "title": "archived",
+         "updated_at": "2026-09-21T00:00:00Z",
+         "last_event_at": "2026-09-21T23:11:00.000000Z"},
         {"id": "cse_01THEIRS", "status": "active", "connection_status": "disconnected",
          "environment_id": "env_01OTHERMAC", "title": "another device",
-         "updated_at": "2026-09-22T17:00:00Z"}], "next_cursor": None}
+         "updated_at": "2026-09-22T17:00:00Z",
+         "last_event_at": "2026-09-21T18:00:00.000000Z"}], "next_cursor": None}
 
     def test_the_token_comes_out_of_the_keychain_payload(self):
         self.assertEqual(remote_control.oauth_token(
@@ -593,10 +603,12 @@ class LostSessionTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in rows], ["cse_01LOST"])
         self.assertEqual(remote_control.disconnected_sessions(self.PAGE["data"], []), [])
 
-    def test_a_failed_call_is_none_and_not_an_exception(self):
+    def test_a_failed_call_is_a_failed_page_and_not_an_exception(self):
         def boom(request, timeout=None):
             raise OSError("no route to host")
-        self.assertIsNone(remote_control.fetch_sessions("sk-live", opener=boom))
+        page = remote_control.fetch_sessions("sk-live", opener=boom)
+        self.assertEqual(page.status, remote_control.SessionPage.FAILED)
+        self.assertEqual(page.rows, [])
 
     def test_status_prints_the_manual_command_with_its_warning(self):
         payload = json.dumps(self.PAGE).encode()
