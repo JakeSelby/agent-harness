@@ -316,6 +316,28 @@ def _number(value, low, high, integer=False):
     return low <= value <= high
 
 
+def _sizes(value):
+    """None when `value` is a usable list of context sizes, else the rule it breaks.
+
+    Specific, where every other switch reports "an unusable value", because this one is a list:
+    an author told eight numbers are unusable has to find which, against a rule written nowhere.
+    """
+    if not isinstance(value, list):
+        return "is a list of whole positive token counts, smallest first"
+    if len(value) > MAX_NUDGES:
+        return "has " + str(len(value)) + " entries and at most " + str(MAX_NUDGES) + " are read"
+    previous = None
+    for item in value:
+        shown = json.dumps(item, default=str)
+        if not (_number(item, 0, MAX_BUDGET, integer=True) and item > 0):
+            return "entry " + shown + " is not a whole positive token count"
+        if previous is not None and item <= previous:
+            return ("entry " + shown + " does not follow " + json.dumps(previous) +
+                    "; the sizes ascend and none repeats")
+        previous = item
+    return None
+
+
 def validate_sidecar(data, roles=None):
     """`(usable copy, findings)` for one sidecar object; every finding drops the value it names.
 
@@ -361,6 +383,14 @@ def validate_sidecar(data, roles=None):
         elif key == "nudge_at":
             ok = (isinstance(value, list) and len(value) <= MAX_NUDGES
                   and all(_number(v, 0, MAX_MULTIPLIER) and v > 0 for v in value))
+        elif key == "session_nudge_at":
+            # Context sizes, not multiples: whole tokens, because that is what a transcript
+            # counts in and a fractional token is a number nobody measured.
+            problem = _sizes(value)
+            if problem:
+                findings.append("switch 'session_nudge_at' " + problem)
+                continue
+            ok = True
         else:
             findings.append("unknown switch '" + key + "'")
             continue
