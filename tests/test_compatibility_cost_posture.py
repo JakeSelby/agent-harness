@@ -55,7 +55,7 @@ class EvidenceScopeTests(unittest.TestCase):
         """Explicit, so adding a required case is a deliberate edit here rather than a surprise."""
         required = compatibility.catalog(REPO)["required_cases"]
         self.assertEqual(set(required) - set(self.record["cases"]),
-                         {"cost-posture", "spawn-confinement"})
+                         {"cost-posture", "spawn-confinement", "framework-spawn-routing"})
 
     def test_a_release_evidence_record_still_validates_under_its_own_catalog(self):
         before = HISTORICAL.read_bytes()

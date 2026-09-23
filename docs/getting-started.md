@@ -60,7 +60,7 @@ that invocation; syncing does not persist them into everyone else's global files
 
 Shared workflows compose roles and skills. Claude exposes command projections; Codex exposes
 `harness-<workflow>` skill projections. Both use the same source. The handoff workflow writes
-shared task data; [task continuation](bmad.md) explains revision checks and verification.
+shared task data; [task continuation](task-continuation.md) explains revision checks and verification.
 
 Run `harness diff` for drift, `harness usage` for recorded measurements, and
 `harness compatibility` for qualification. [Installation ownership](runtime-installation.md)

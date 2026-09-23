@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from test_harness import REPO, harness
-from harness_core import lifecycle, workers
+from harness_core import lifecycle, workers, frameworks
 
 # Work a constrained role would be spawned for, written so no shipped integration descriptor
 # classifies it: what the guards under test do must not depend on a framework recognising it.
@@ -148,13 +148,24 @@ class SpawnGuardTests(unittest.TestCase):
             with self.subTest(line=line):
                 self.assertNotEqual(decision(self.spawn(line + "\n" + OTHER, session="m")), "deny")
 
-    def test_the_shipped_review_layers_carry_the_marker_their_launch_sentence_protects(self):
-        text = (REPO / "templates/bmad/custom/bmad-code-review.user.toml").read_text(encoding="utf-8")
-        self.assertEqual(text.count("keep the brief's first line unchanged"), 4)
-        self.assertEqual(text.count("\nharness-role: reviewer\n"), 3)
-        self.assertEqual(text.count("\nharness-role: spec-reviewer\n"), 1)
-        for name in lifecycle.ROLE_MARKER.findall(text):
-            self.assertIsNotNone(lifecycle.constrained_role(name))
+    def test_every_shipped_override_template_carries_markers_the_guard_constrains(self):
+        """The guard is generic, so its test reads whatever integrations declare templates rather
+        than one framework's file; the per-template counts are pinned by that integration's own
+        offline tests."""
+        seen = 0
+        for data in frameworks.descriptors():
+            install = data.get("install")
+            if not install:
+                continue
+            for path in sorted((REPO / install["templates"]).glob("*" + install["suffix"])):
+                text = path.read_text(encoding="utf-8")
+                names = lifecycle.ROLE_MARKER.findall(text)
+                with self.subTest(template=path.name):
+                    self.assertEqual(text.count("keep the brief's first line unchanged"), len(names))
+                    for name in names:
+                        self.assertIsNotNone(lifecycle.constrained_role(name))
+                seen += len(names)
+        self.assertTrue(seen)
 
     def test_a_worker_run_accepts_a_brief_that_carries_its_marker(self):
         prompt_file = self.base / "brief.md"

@@ -1,6 +1,6 @@
 ---
 name: upstream-contribution
-description: Contribute to a repository you do not own — an open-source project, another team's codebase, a vendor's SDK — from a fork, without burning maintainer trust. Use when the working repo has an `upstream` remote, when the user says "open a PR against <someone else's repo>", or before the first commit in any repo the user is a guest in.
+description: Contribute from a fork to a repository you do not own without burning maintainer trust. Use when the working repo has an `upstream` remote, when the user says "open a PR against <someone else's repo>", or before the first commit in any repo the user is a guest in.
 ---
 
 # Upstream contribution

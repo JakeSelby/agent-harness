@@ -100,8 +100,8 @@ configuration homes and rollback. Keep the shared checkout stable and change it 
 artifacts against their recorded state. Personal data stays outside the repository. Keep a personal
 writing-voice profile in your preserved personal instructions; see [identity](preferences.md#identity).
 
-[BMad integration and handoffs](bmad.md) keep framework state and task continuation independent of
-runtime transcripts. [Usage](usage.md) records measurements with explicit gaps. [Preferences](preferences.md)
+[Task continuation](task-continuation.md) and the [BMad integration](bmad.md) keep task state and
+framework state independent of runtime transcripts. [Usage](usage.md) records measurements with explicit gaps. [Preferences](preferences.md)
 explains preset choices; [the stance demonstration](stance-demo.md) shows one switch reaching both
 runtimes and a custom extension.
 
