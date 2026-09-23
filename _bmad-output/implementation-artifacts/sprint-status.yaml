@@ -50,6 +50,7 @@ development_status:
   ah-c046-reserve-bmad-ids-for-the-orchestration-conflict: done
   ah-d002-decide-how-project-and-session-stance-selections: ready-for-dev
   ah-d007-hold-semantic-retrieval-over-the-session-archive: ready-for-dev
+  ah-d009-decide-whether-the-session-archive-may-store-the: ready-for-dev
   ah-s034-make-existing-stance-selections-effective-across: ready-for-dev
   ah-s035-separate-verification-policy-from-test-writing: ready-for-dev
   ah-s036-make-external-action-approval-configurable: ready-for-dev
@@ -69,9 +70,12 @@ development_status:
   ah-s190-write-intent-ledger-builders-claim-paths-and-a: ready-for-dev
   ah-s191-harness-sessions-a-durable-cross-runtime-session: ready-for-dev
   ah-s192-session-recall-a-pull-based-tool-over-the: ready-for-dev
+  ah-s219-architecture-viewer-the-mailbox-adapter-behind: ready-for-dev
+  ah-s221-log-every-session-archive-search-with-a: ready-for-dev
   ah-sp008-choose-the-neutral-session-turn-row-nirsession: ready-for-dev
 
   ah-e003-close-the-loop-jev-as-the-controller-between: in-progress
+  ah-c058-restate-545-s-confined-role-route-a-workflow: ready-for-dev
   ah-s049-jev-add-a-shared-decision-provider-interface-and: done
   ah-s050-jev-add-opt-in-jev-configuration-and-outbound: done
   ah-s051-jev-add-versioned-jev-question-packs-and-a: done
@@ -95,6 +99,7 @@ development_status:
   ah-s176-measure-prompt-cache-leverage-a-cache-axis-in: ready-for-dev
   ah-s193-run-review-and-research-as-workflow-scripts-in-a: ready-for-dev
   ah-s213-harness-usage-rules-list-every-rule-as-measured: ready-for-dev
+  ah-s220-report-stance-drift-and-propose-promotions-or: ready-for-dev
   ah-sp001-jev-verify-stop-claims-against-gate-evidence: ready-for-dev
   ah-sp002-jev-evaluate-advisory-action-risk-and-tool: done
   ah-sp003-jev-evaluate-short-source-to-output-fidelity: done
@@ -114,6 +119,7 @@ development_status:
   ah-s142-refuse-delivery-work-on-an-issue-that-has-no: done
 
   ah-e005-ship-a-defensible-v1-0-0-stable-release: in-progress
+  ah-c059-repin-the-v1-lifecycle-baseline-and-update-the: ready-for-dev
   ah-s048-add-bounded-provider-backed-end-to-end-tests: ready-for-dev
   ah-s090-freeze-the-v1-stable-support-contract-and: ready-for-dev
   ah-s091-publish-the-v1-semver-deprecation-and-migration: done
@@ -181,9 +187,10 @@ development_status:
 
   ah-e012-re-baseline-the-bmad-corpus-and-make-story-files: in-progress
   ah-b071-the-real-corpus-upgrade-test-fails-once-the-last: done
+  ah-c057-reserve-ids-and-write-story-files-for-the-re: ready-for-dev
   ah-s206-rich-story-files-typed-templates-managed-issue: done
   ah-s207-repo-rule-route-every-operation-through-bmad-and: done
-  ah-s208-implementation-readiness-and-a-derived-sprint: ready-for-dev
+  ah-s208-implementation-readiness-and-a-derived-sprint: done
   ah-t009-promote-existing-research-into-bmad-research: done
   ah-t010-re-baseline-the-product-brief-and-prd: done
   ah-t011-re-baseline-the-ux-specification-and: done
@@ -207,10 +214,13 @@ development_status:
   ah-s215-tighten-the-two-detectors-the-corpus-records: ready-for-dev
 
   ah-e014-qualify-a-release-in-one-round-and-let-its: in-progress
+  ah-b073-a-resumed-qualification-round-reruns-completed: ready-for-dev
   ah-c043-qualify-the-required-cli-targets-and-restore-the: ready-for-dev
   ah-c052-open-the-0-13-0-candidate: done
   ah-c053-ci-check-the-python-3-9-floor-on-every-pull: ready-for-dev
   ah-d008-decide-whether-qualification-evidence-is: ready-for-dev
+  ah-d010-decide-whether-a-release-may-require-codex-cli: ready-for-dev
+  ah-d011-decide-whether-a-red-smoke-tier-blocks-the: ready-for-dev
   ah-s209-compatibility-catalog-an-explicit-waiver-for-a: ready-for-dev
   ah-s214-acceptance-runner-use-the-codex-session-login-in: ready-for-dev
   ah-t013-amend-the-0-12-0-release-notes-with-the-work: ready-for-dev
@@ -225,6 +235,8 @@ development_status:
   ah-b067-stop-gate-interleaved-sessions-in-one-checkout: done
   ah-b068-hide-an-installed-codex-client-from-the-reviewer: ready-for-dev
   ah-b070-sync-dry-run-words-its-summary-lines-as-if-it: ready-for-dev
+  ah-b072-delegation-off-the-spawn-hook-emits-ask-while: ready-for-dev
+  ah-c060-docs-the-standalone-measurement-page-still-calls: ready-for-dev
   ah-s216-harness-usage-separate-workflow-rows-and-stop: ready-for-dev
   ah-s217-guard-the-workflow-tool-launch-log-it-honour: ready-for-dev
 
@@ -235,8 +247,12 @@ development_status:
   ah-b044-the-issue-number-is-keyed-github-number-in-the: ready-for-dev
   ah-b065-bmad-issue-sync-apply-verify-artifact: ready-for-dev
   ah-b069-reserve-a-bmad-id-in-the-same-invocation-that: ready-for-dev
+  ah-c061-close-duplicate-and-superseded-open-issues-392: ready-for-dev
+  ah-c062-track-or-waive-the-undelivered-acceptance-items: ready-for-dev
+  ah-c063-give-the-decision-and-epic-story-templates-a: ready-for-dev
   ah-d005-decide-how-map-lifecycle-stays-current-without-a: ready-for-dev
   ah-d006-grade-bash-refuses-a-sub-issue-delete-that-bmad: ready-for-dev
+  ah-s222-carry-github-s-statereason-into-the-issue-map-so: ready-for-dev
 
   ah-e017-bring-the-code-into-line-with-the-2026-09-23: in-progress
   ah-c054-one-kernel-helper-for-atomic-whole-file-rewrites: ready-for-dev
@@ -322,6 +338,7 @@ development_status:
   ah-c044-publish-0-12-0-with-a-narrowed-support-contract: done
   ah-c047-reserve-bmad-ids-for-the-three-unmapped-v0-13-0: done
   ah-c051-docs-changelog-restore-five-unreleased-entries: done
+  ah-c064-0-13-0-requires-only-the-two-claude-code-cli: ready-for-dev
   ah-d001-docs-bmad-decide-the-builder-routing-follow-up: done
   ah-d003-decide-whether-the-credential-probe-names-the: done
   ah-d004-decide-whether-repeated-agent-pairs-get-an: done
