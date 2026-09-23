@@ -1,0 +1,1 @@
+{"cwd": "<probe project>", "entrypoint": "sdk-cli", "message": {"content": "Do not use any tool. Reply with one short sentence explaining that you did not create any file.", "role": "user"}, "permissionMode": "bypassPermissions", "promptSource": "sdk", "sessionId": "bypass-declined-session", "turnOrigin": "sdk", "type": "user", "version": "2.1.280"}
