@@ -2202,18 +2202,34 @@ def progress_lines(path, header=None):
     return items
 
 
+NO_OBSERVATION = "no observation was recorded for this case"
+
+
+def named(case, observation):
+    """`observation` prefixed with the case it belongs to, once."""
+    text = str(observation) if observation else NO_OBSERVATION
+    prefix = case + ": "
+    return text if text.startswith(prefix) else prefix + text
+
+
 def build_record(items):
-    """Union per-case lines into one evidence record; the latest line for a case wins."""
+    """Union per-case lines into one evidence record; the latest line for a case wins.
+
+    Each case observation names its case as a `<case>: ` prefix, and the list follows the
+    written record's sorted case order with one entry per case, so pairing an observation with
+    its case never depends on position. The record is written with sorted keys, which reorders
+    `cases` and leaves a list alone; a bare list in run order paired most observations with the
+    wrong case. A round-level note appended later carries no case prefix.
+    """
     if not items:
         raise SystemExit("no finished acceptance case to build a record from")
     data = {key: items[-1].get(key) for key in HEADER_KEYS}
-    cases, observations = {}, {}
+    results, observations = {}, {}
     for item in items:
-        cases[item["case"]] = item.get("result")
-        if item.get("observation"):
-            observations[item["case"]] = item["observation"]
-    data["cases"] = cases
-    data["observations"] = [observations[case] for case in cases if case in observations]
+        results[item["case"]] = item.get("result")
+        observations[item["case"]] = item.get("observation")
+    data["cases"] = dict((case, results[case]) for case in sorted(results))
+    data["observations"] = [named(case, observations[case]) for case in data["cases"]]
     return data
 
 

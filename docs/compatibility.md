@@ -148,7 +148,9 @@ For every target listed in the catalog, verify every `required_cases` entry nati
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
 `source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, `cases` and
 `invalidation_scope`, with the case values `passed`, `failed`, or
-`unverified`. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
+`unverified`. Each case observation opens with its case name and a colon, one per case in
+the record's sorted case order, so pairing never depends on position; a round-level note the
+round runner appends carries no case prefix. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
 client or harness version. Its full source commit must be an ancestor of the release with no
 subsequent change under the paths that invalidate this target. Set exact runtime/client versions before changing status to qualified.
 Each linked record must match the catalog's exact runtime version, client version and platform.
