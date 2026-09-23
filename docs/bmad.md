@@ -48,10 +48,11 @@ A clean reinstall and customization resolution must leave tracked files unchange
 
 ## GitHub traceability
 
-GitHub owns scope, discussion, delivery state and acceptance evidence. BMad supplies immutable typed
-IDs and public artifacts. `_bmad-output/issue-map.json` records each mapping, primary parent and next
-ID; `_bmad-output/implementation-artifacts/AH-*.md` links back to the issue. A generated Planning
-block in the issue links to the artifact on `main`.
+GitHub owns delivery state, discussion, the summary and acceptance evidence. BMad supplies immutable
+typed IDs and the story files that carry the design. `_bmad-output/issue-map.json` records each
+mapping, primary parent and next ID; `_bmad-output/implementation-artifacts/AH-*.md` is the story
+file and links back to the issue. A generated Planning block in the issue links to the artifact on
+`main`.
 
 ```sh
 python3 scripts/bmad_issue_sync.py audit
@@ -76,6 +77,47 @@ python3 scripts/bmad_issue_sync.py reserve --issue N --kind story --parent PAREN
 Both write the map and a new artifact in the current checkout; commit them in the pull request that
 delivers the issue. The required `issue-ownership` check refuses a pull request whose delivery
 issue is absent from the map, and `apply` adds the Planning block once the artifact is on `main`.
+
+### Story files
+
+`new`, `reserve` and `bootstrap` write each story file from the template for its kind in
+`scripts/bmad_story_templates/`: story, bug, spike, decision, epic, and one shared by task and
+chore. The file opens with the nine linkage fields and `updated` as frontmatter, then the H1, then a
+managed block between `<!-- bmad-sync:begin -->` and `<!-- bmad-sync:end -->` holding the issue
+link, the parent, the state and the line that splits authority: the issue carries the summary,
+discussion and acceptance evidence, and the file carries the design. Those three parts belong to the
+tool. Everything after the end marker belongs to the people and agents who write the story, and the
+tool never rewrites it.
+
+Each template section holds a placeholder, `<!-- fill: what goes here -->`. A section counts as
+filled when text remains once HTML comments and `###` sub-headings are taken out. These sections
+must be filled:
+
+- **story:** Story, Acceptance criteria, Design, Tasks, Dev notes
+- **bug:** Reproduction, Root cause, Acceptance criteria, Design, Dev notes
+- **spike:** Question, Experiment, Exit criterion, Result
+- **decision:** Context, Options, Decision, Consequences
+- **epic:** Goal, Scope and requirement coverage, Exit criteria
+- **task and chore:** Goal, Acceptance criteria, Tasks
+
+```sh
+python3 scripts/bmad_issue_sync.py audit --delivery N
+python3 scripts/bmad_issue_sync.py upgrade --check
+python3 scripts/bmad_issue_sync.py upgrade --id AH-S123
+```
+
+`audit --delivery N` checks only issue N's story, and fails while any section its kind requires is
+missing or unfilled. The required `issue-ownership` check runs it for the pull request's own
+delivery issue on pull request and merge queue runs alike, so an unenriched story elsewhere in the
+corpus never blocks an unrelated pull request.
+
+A file without the managed markers is a legacy stub from before typed templates. The depth check
+passes it with a notice, and `refresh` keeps rendering it the old way. `upgrade` converts stubs to
+their kind's skeleton, carrying every byte after the old stub, such as `## Amendment` sections,
+over verbatim at the end of the file. It refuses a stub that differs from the one the tool
+rendered, converts all the selected files or none, leaves a file already in the typed format alone,
+and with `--check` reports without writing. It is applied batch by batch, together with the
+enrichment, so a skeleton full of placeholders never lands on `main` on its own.
 
 Because `next_ids` lives in the map, it knows only what this checkout has seen. Before allocating,
 both commands survey every issue map this clone can reach — the working copy of each linked
@@ -103,11 +145,13 @@ apply a parent GitHub already records: it reports a mapped parent the manifest l
 refresh`, an unmapped one as `run reserve for it first`, and a parent that differs on both sides as
 a conflict for you to settle.
 
-`refresh` copies GitHub's title and state into the manifest and its generated artifacts, and adopts
-a mapped parent the manifest records as none. It checks
-every drifted artifact before writing any of them and refuses the whole run when one carries
-amendments; it never touches GitHub, and it leaves an issue GitHub no longer returns for the audit
-to report as missing.
+`refresh` copies GitHub's title and state into the manifest and its story files, and adopts
+a mapped parent the manifest records as none. In a typed story file it rewrites only the
+frontmatter, the H1 and the managed block, and keeps the rest byte for byte. It checks every
+drifted artifact before writing any of them, and refuses the whole run when a typed file's markers
+are missing or duplicated, or when a legacy stub carries amendments; run `upgrade` on such a stub
+first. It never touches GitHub, and it leaves an issue GitHub no longer returns for the audit to
+report as missing.
 
 Run the full live audit before a release and after any triage pass. The `bmad traceability`
 workflow runs it daily, on issue events and when the map changes, with `--ignore-lifecycle` and

@@ -524,12 +524,35 @@ class RefreshTests(unittest.TestCase):
         self.assertIn("# AH-S001 — feat: renamed", text)
         self.assertIn("- **State:** completed", text)
 
-    def test_refresh_refuses_an_amended_artifact_before_writing_anything(self):
+    def test_refresh_preserves_a_typed_story_body_byte_for_byte(self):
+        live = [issue(1, "feat: first")]
+        manifest = sync.build_manifest(live, "owner/repo")
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(sync, "ROOT", Path(temp)):
+            sync.write_manifest(manifest)
+            path = Path(temp) / manifest["items"][0]["artifact_path"]
+            text = path.read_text(encoding="utf-8")
+            head, body = text.split(sync.SYNC_END, 1)
+            body = body.replace("<!-- fill: As a <role>", "As a maintainer, I want \u00e9 \r\n kept.\n<!-- fill:")
+            body += "\n## Amendment \u2014 kept\n\nTrailing text without a newline"
+            path.write_bytes((head + sync.SYNC_END + body).encode("utf-8"))
+            live[0].update(state="closed", title="feat: renamed")
+            self.assertEqual(sync.refresh(manifest, live), ["AH-S001"])
+            after = path.read_bytes().decode("utf-8")
+            self.assertEqual(sync.audit_manifest(manifest), [])
+        new_head, new_body = after.split(sync.SYNC_END, 1)
+        self.assertEqual(new_body, body)
+        self.assertIn("# AH-S001 \u2014 feat: renamed", new_head)
+        self.assertIn("- **State:** completed", new_head)
+        self.assertIn('title: "feat: renamed"', new_head)
+
+    def test_refresh_still_refuses_an_amended_legacy_stub_before_writing_anything(self):
         live = [issue(1, "feat: first"), issue(2, "feat: second")]
         manifest = sync.build_manifest(live, "owner/repo")
         with tempfile.TemporaryDirectory() as temp, mock.patch.object(sync, "ROOT", Path(temp)):
             sync.write_manifest(manifest)
             first, second = (Path(temp) / item["artifact_path"] for item in manifest["items"])
+            for path, item in zip((first, second), manifest["items"]):
+                path.write_text(sync.render_legacy_stub(item), encoding="utf-8")
             second.write_text(second.read_text(encoding="utf-8") + "\n## Amendment\n\nContext.\n", encoding="utf-8")
             before = first.read_text(encoding="utf-8")
             for entry in live:
@@ -539,6 +562,19 @@ class RefreshTests(unittest.TestCase):
             self.assertEqual(first.read_text(encoding="utf-8"), before)
             self.assertEqual(sync.audit_manifest(manifest), [])
         self.assertEqual([item["lifecycle"] for item in manifest["items"]], ["active", "active"])
+
+    def test_refresh_renders_an_unamended_legacy_stub_the_old_way(self):
+        live = [issue(1, "feat: first")]
+        manifest = sync.build_manifest(live, "owner/repo")
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(sync, "ROOT", Path(temp)):
+            sync.write_manifest(manifest)
+            path = Path(temp) / manifest["items"][0]["artifact_path"]
+            path.write_text(sync.render_legacy_stub(manifest["items"][0]), encoding="utf-8")
+            live[0]["state"] = "closed"
+            self.assertEqual(sync.refresh(manifest, live), ["AH-S001"])
+            text = path.read_text(encoding="utf-8")
+        self.assertEqual(text, sync.render_legacy_stub(manifest["items"][0]))
+        self.assertNotIn(sync.SYNC_BEGIN, text)
 
     def test_refresh_without_drift_writes_nothing(self):
         live = [issue(1, "feat: first")]

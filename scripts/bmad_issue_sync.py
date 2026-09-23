@@ -3,15 +3,19 @@
 
 GitHub owns delivery state. This tool owns only the idempotent planning block,
 exact BMad type label, primary parent relationship, and native issue type when
-the repository supports that organization-managed field.
+the repository supports that organization-managed field. In each story file it
+owns the frontmatter, the H1 and the managed block; the rest is the design, and
+the tool never rewrites it. The format is described in docs/bmad.md.
 """
 
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -22,6 +26,29 @@ MAP_PATH = ROOT / MAP_RELATIVE_PATH
 ARTIFACT_DIR = ROOT / "_bmad-output" / "implementation-artifacts"
 BEGIN = "<!-- bmad-traceability:start -->"
 END = "<!-- bmad-traceability:end -->"
+TEMPLATE_DIR = Path(__file__).resolve().parent / "bmad_story_templates"
+SYNC_BEGIN = "<!-- bmad-sync:begin -->"
+SYNC_END = "<!-- bmad-sync:end -->"
+AUTHORITY = "The issue carries the summary, discussion and acceptance evidence; this file carries the design."
+TEMPLATE = {
+    "story": "story",
+    "bug": "bug",
+    "spike": "spike",
+    "decision": "decision",
+    "epic": "epic",
+    "task": "task",
+    "chore": "task",
+}
+# The sections `audit --delivery` requires to hold content once placeholder comments are stripped.
+REQUIRED = {
+    "story": ("Story", "Acceptance criteria", "Design", "Tasks", "Dev notes"),
+    "bug": ("Reproduction", "Root cause", "Acceptance criteria", "Design", "Dev notes"),
+    "spike": ("Question", "Experiment", "Exit criterion", "Result"),
+    "decision": ("Context", "Options", "Decision", "Consequences"),
+    "epic": ("Goal", "Scope and requirement coverage", "Exit criteria"),
+    "task": ("Goal", "Acceptance criteria", "Tasks"),
+    "chore": ("Goal", "Acceptance criteria", "Tasks"),
+}
 GH_TIMEOUT_SECONDS = 30
 GIT_TIMEOUT_SECONDS = 30
 MISSING = object()
@@ -189,19 +216,25 @@ def yaml_value(value):
     return "null" if value is None else json.dumps(value, ensure_ascii=False)
 
 
-def render_artifact(item):
-    history = (
+def history_line(item):
+    return (
         "This file reconstructs planning metadata from the existing GitHub record. It does not imply "
         "that a BMad artifact existed when the original work was performed."
         if item["provenance"] == "reconstructed"
         else "This work item was authored as part of the repository's committed BMad planning system."
     )
-    parent = "None"
-    if item["parent_github_number"]:
-        repository_url = item["github_url"].rsplit("/issues/", 1)[0]
-        parent = "[{}]({}/issues/{})".format(
-            item["parent_bmad_id"], repository_url, item["parent_github_number"]
-        )
+
+
+def parent_link(item):
+    if not item["parent_github_number"]:
+        return "None"
+    repository_url = item["github_url"].rsplit("/issues/", 1)[0]
+    return "[{}]({}/issues/{})".format(
+        item["parent_bmad_id"], repository_url, item["parent_github_number"]
+    )
+
+
+def render_frontmatter(item):
     fields = [
         ("bmad_id", item["bmad_id"]),
         ("type", item["type"]),
@@ -214,7 +247,11 @@ def render_artifact(item):
         ("parent_github_issue", item["parent_github_number"]),
         ("updated", dt.date.today().isoformat()),
     ]
-    frontmatter = "\n".join("{}: {}".format(key, yaml_value(value)) for key, value in fields)
+    return "\n".join("{}: {}".format(key, yaml_value(value)) for key, value in fields)
+
+
+def render_legacy_stub(item):
+    """The pre-typed stub: kept so refresh can maintain files not yet upgraded, and upgrade can read them."""
     return """---
 {}
 ---
@@ -233,15 +270,88 @@ The GitHub issue owns scope, discussion, delivery state and acceptance evidence.
 file owns the planning identity and reverse link; amendments belong here only when they add durable
 planning context rather than duplicate the issue.
 """.format(
-        frontmatter,
+        render_frontmatter(item),
         item["bmad_id"],
         item["title"],
-        history,
+        history_line(item),
         item["github_number"],
         item["github_url"],
-        parent,
+        parent_link(item),
         item["lifecycle"],
     )
+
+
+def render_head(item):
+    """The tool-owned part of a typed story file: frontmatter, H1 and the managed block."""
+    return """---
+{}
+---
+
+# {} — {}
+
+{}
+- **GitHub issue:** [#{}]({})
+- **Primary parent:** {}
+- **State:** {}
+
+{}
+
+{}
+{}""".format(
+        render_frontmatter(item),
+        item["bmad_id"],
+        item["title"],
+        SYNC_BEGIN,
+        item["github_number"],
+        item["github_url"],
+        parent_link(item),
+        item["lifecycle"],
+        AUTHORITY,
+        history_line(item),
+        SYNC_END,
+    )
+
+
+def story_template(kind):
+    return (TEMPLATE_DIR / "{}.md".format(TEMPLATE[kind])).read_text(encoding="utf-8")
+
+
+def render_artifact(item):
+    """A new typed story file: the tool-owned head, then the kind's skeleton for people and agents to fill."""
+    return render_head(item) + "\n\n" + story_template(item["type"])
+
+
+def sync_layout(text):
+    """Where the tool-owned head ends: None for a legacy stub, else the offset just past the end marker.
+
+    Raises when the markers are missing, duplicated or out of order, because rewriting the head of
+    such a file could swallow text its owner wrote.
+    """
+    begins, ends = text.count(SYNC_BEGIN), text.count(SYNC_END)
+    if begins == 0 and ends == 0:
+        return None
+    if begins != 1 or ends != 1 or text.index(SYNC_BEGIN) > text.index(SYNC_END):
+        raise RuntimeError("bmad-sync markers are missing or duplicated")
+    return text.index(SYNC_END) + len(SYNC_END)
+
+
+def read_exact(path):
+    """Read without newline translation, so a body is preserved byte for byte."""
+    return Path(path).read_bytes().decode("utf-8")
+
+
+def write_text_atomic(path, text):
+    """Replace a file in one step, so an interrupted run never leaves half of one behind."""
+    path = Path(path)
+    handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=".{}.".format(path.name))
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="") as stream:
+            stream.write(text)
+        os.replace(temporary, str(path))
+    except BaseException:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+        raise
 
 
 def write_manifest(manifest):
@@ -259,8 +369,8 @@ def write_manifest(manifest):
     for item in manifest["items"]:
         path = ROOT / item["artifact_path"]
         if not path.exists():
-            path.write_text(render_artifact(item), encoding="utf-8")
-    map_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            write_text_atomic(path, render_artifact(item))
+    write_text_atomic(map_path, json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 
 
 def load_manifest():
@@ -333,6 +443,10 @@ def audit_manifest(manifest=None):
             errors.append("{}: missing artifact {}".format(bmad_id, item["artifact_path"]))
             continue
         text = path.read_text(encoding="utf-8")
+        try:
+            sync_layout(text)
+        except RuntimeError as error:
+            errors.append("{}: {}".format(bmad_id, error))
         expected = {
             "bmad_id": bmad_id,
             "type": item["type"],
@@ -564,13 +678,21 @@ def live_findings(manifest, live_issues, check_lifecycle=True, grace_days=0, now
     return findings, notices
 
 
+def strip_updated(value):
+    return re.sub(r"(?m)^updated: .*$", "updated:", value)
+
+
 def refresh(manifest, live_issues):
-    """Copy GitHub's title and open/closed state into the manifest and its generated artifacts."""
+    """Copy GitHub's title and open/closed state into the manifest and its artifacts.
+
+    A typed story file keeps its body byte for byte: only the frontmatter, the H1 and the managed
+    block are rewritten. A legacy stub is re-rendered whole, so one that carries amendments is refused.
+    """
     live = {issue["number"]: issue for issue in live_issues}
     by_number = {item["github_number"]: item for item in manifest["items"]}
-    strip = lambda value: re.sub(r"(?m)^updated: .*$", "updated:", value)
     drifted = []
     amended = []
+    malformed = []
     for item in manifest["items"]:
         issue = live.get(item["github_number"])
         if not issue:
@@ -581,26 +703,152 @@ def refresh(manifest, live_issues):
             and not adoptable_parent(item, issue, by_number)
         ):
             continue
-        text = (ROOT / item["artifact_path"]).read_text(encoding="utf-8")
-        if strip(text) != strip(render_artifact(item)):
+        text = read_exact(ROOT / item["artifact_path"])
+        try:
+            head_end = sync_layout(text)
+        except RuntimeError:
+            malformed.append(item["bmad_id"])
+            continue
+        if head_end is None and strip_updated(text) != strip_updated(render_legacy_stub(item)):
             amended.append(item["bmad_id"])
-        drifted.append((item, issue))
+        drifted.append((item, issue, None if head_end is None else text[head_end:]))
     # Refuse before the first write: a half-applied refresh fails the audit that refresh requires.
+    if malformed:
+        raise RuntimeError(
+            "bmad-sync markers are missing or duplicated; repair them by hand: {}".format(", ".join(malformed))
+        )
     if amended:
         raise RuntimeError(
-            "artifact carries amendments; update its title and lifecycle by hand: {}".format(", ".join(amended))
+            "artifact carries amendments; update its title and lifecycle by hand, or run upgrade: {}".format(
+                ", ".join(amended)
+            )
         )
-    for item, issue in drifted:
+    for item, issue, body in drifted:
         item["title"] = issue["title"]
         item["lifecycle"] = live_lifecycle(issue)
         parent = by_number[live_parent(issue)] if adoptable_parent(item, issue, by_number) else None
         if parent:
             item["parent_github_number"] = parent["github_number"]
             item["parent_bmad_id"] = parent["bmad_id"]
-        (ROOT / item["artifact_path"]).write_text(render_artifact(item), encoding="utf-8")
+        text = render_legacy_stub(item) if body is None else render_head(item) + body
+        write_text_atomic(ROOT / item["artifact_path"], text)
     if drifted:
         write_manifest(manifest)
-    return [item["bmad_id"] for item, _ in drifted]
+    return [item["bmad_id"] for item, _, _ in drifted]
+
+
+def upgrade_text(item, text):
+    """Convert one artifact to its typed skeleton; returns (status, new text or None, reason).
+
+    The status is "current" for a file already in the typed format, "convert" for a legacy stub
+    whose every byte outside the tool-rendered stub is carried into the new file verbatim, and
+    "refuse" for anything whose conversion could lose text.
+    """
+    try:
+        if sync_layout(text) is not None:
+            return "current", None, "already in the typed format"
+    except RuntimeError as error:
+        return "refuse", None, str(error)
+    stub = render_legacy_stub(item)
+    tail = stub[stub.rindex("\n", 0, len(stub) - 1) + 1:]
+    cut = text.find(tail)
+    if cut < 0 or strip_updated(text[:cut + len(tail)]) != strip_updated(stub):
+        return "refuse", None, "the stub differs from the rendered legacy stub; convert it by hand"
+    # Everything after the rendered stub is someone's writing, typically `## Amendment` sections.
+    carried = text[cut + len(tail):]
+    converted = render_artifact(item) + ("" if not carried or carried.startswith("\n") else "\n") + carried
+    if sync_layout(converted) is None:
+        return "refuse", None, "conversion did not produce the managed block"
+    for key in ("bmad_id", "type", "title", "lifecycle", "provenance", "github_issue",
+                "github_issue_url", "parent_bmad_id", "parent_github_issue"):
+        if frontmatter_value(converted, key) != frontmatter_value(text, key):
+            return "refuse", None, "conversion would change the frontmatter field {}".format(key)
+    return "convert", converted, "converts without loss" + (
+        ", carrying {} line(s) verbatim".format(len(carried.strip("\n").splitlines())) if carried.strip() else ""
+    )
+
+
+def upgrade(manifest, ids=None, check=False):
+    """Convert legacy stubs to typed skeletons, all or none; returns [(bmad_id, status, reason)]."""
+    items = manifest["items"]
+    if ids:
+        known = {item["bmad_id"] for item in items}
+        unknown = sorted(set(ids) - known)
+        if unknown:
+            raise RuntimeError("not in the issue map: {}".format(", ".join(unknown)))
+        items = [item for item in items if item["bmad_id"] in set(ids)]
+    report = []
+    writes = []
+    for item in items:
+        path = ROOT / item["artifact_path"]
+        status, converted, reason = upgrade_text(item, read_exact(path))
+        report.append((item["bmad_id"], status, reason))
+        if status == "convert":
+            writes.append((path, converted))
+    if check or any(status == "refuse" for _, status, _ in report):
+        return report
+    for path, converted in writes:
+        write_text_atomic(path, converted)
+    return report
+
+
+def markdown_sections(body):
+    """Map each H2 heading in `body` to its text, ignoring headings inside fenced code."""
+    sections = defaultdict(list)
+    current = None
+    fence = None
+    for line in body.splitlines():
+        marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if marker:
+            if fence is None:
+                fence = marker.group(1)
+            elif marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
+                fence = None
+        heading = None if fence else re.match(r"^## +(.+?)\s*#*\s*$", line)
+        if heading:
+            current = heading.group(1).strip().casefold()
+            sections[current]
+            continue
+        if current is not None:
+            sections[current].append(line)
+    return {name: "\n".join(lines) for name, lines in sections.items()}
+
+
+def section_filled(text):
+    """Content remains once HTML comments and sub-headings are taken out."""
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^\s{0,3}#{3,6}(\s.*)?$", "", text)
+    return bool(text.strip())
+
+
+def depth_findings(manifest, issue_number):
+    """Check the story of one delivery issue; returns (findings, notices)."""
+    item = next((entry for entry in manifest["items"] if entry["github_number"] == issue_number), None)
+    if item is None:
+        return ["#{}: no BMad ID; run reserve".format(issue_number)], []
+    label = "{} #{}".format(item["bmad_id"], issue_number)
+    path = ROOT / item["artifact_path"]
+    if not path.is_file():
+        return ["{}: missing artifact {}".format(label, item["artifact_path"])], []
+    text = path.read_text(encoding="utf-8")
+    try:
+        head_end = sync_layout(text)
+    except RuntimeError as error:
+        return ["{}: {}".format(label, error)], []
+    if head_end is None:
+        return [], [
+            "{}: legacy stub, not depth-checked until upgraded "
+            "(python3 scripts/bmad_issue_sync.py upgrade --id {})".format(label, item["bmad_id"])
+        ]
+    sections = markdown_sections(text[head_end:])
+    findings = []
+    for name in REQUIRED[item["type"]]:
+        content = sections.get(name.casefold())
+        if content is None:
+            findings.append("{}: required {} section '{}' is missing".format(label, item["type"], name))
+        elif not section_filled(content):
+            findings.append("{}: required {} section '{}' is unfilled".format(label, item["type"], name))
+    return findings, []
 
 
 def verify_remote_artifacts(manifest):
@@ -950,6 +1198,12 @@ def main(argv=None):
     audit_parser.add_argument(
         "--grace-days", type=int, default=0, help="with --live, days an accepted issue may wait for its ID"
     )
+    audit_parser.add_argument(
+        "--delivery", type=int, metavar="N", help="only check that issue N's story fills its kind's required sections"
+    )
+    upgrade_parser = subparsers.add_parser("upgrade", help="convert legacy stubs to their typed skeletons")
+    upgrade_parser.add_argument("--id", action="append", dest="ids", metavar="BMAD_ID", help="repeatable; default all")
+    upgrade_parser.add_argument("--check", action="store_true", help="report what would convert, writing nothing")
     subparsers.add_parser("refresh")
     subparsers.add_parser("plan")
     subparsers.add_parser("apply")
@@ -976,6 +1230,33 @@ def main(argv=None):
         print("bootstrapped {} issues".format(len(manifest["items"])))
         return 0
     manifest = load_manifest()
+    if args.command == "audit" and args.delivery is not None:
+        if args.live:
+            raise RuntimeError("--delivery is a local check; run --live separately")
+        errors, notices = depth_findings(manifest, args.delivery)
+        for notice in notices:
+            print("notice: {}".format(notice))
+        for error in errors:
+            print(error)
+        print("depth: issue #{}, {} finding(s)".format(args.delivery, len(errors)))
+        return 1 if errors else 0
+    if args.command == "upgrade":
+        errors = audit_manifest(manifest)
+        if errors:
+            raise RuntimeError("\n".join(errors))
+        report = upgrade(manifest, args.ids, args.check)
+        counts = defaultdict(int)
+        for bmad_id, status, reason in report:
+            counts[status] += 1
+            if status != "current":
+                print("{}: {}".format(bmad_id, reason))
+        refused = counts["refuse"]
+        verb = "convertible" if args.check or refused else "converted"
+        print("upgrade{}: {} {}, {} already current, {} refused{}".format(
+            " --check" if args.check else "", counts["convert"], verb, counts["current"], refused,
+            "; nothing written" if refused and not args.check else "",
+        ))
+        return 1 if refused else 0
     if args.command == "audit":
         errors = audit_manifest(manifest)
         notices = []
@@ -1031,6 +1312,8 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, RuntimeError, ValueError) as error:
-        print("bmad issue sync: {}".format(error), file=sys.stderr)
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
+        # A malformed manifest surfaces as KeyError or TypeError; report it rather than a traceback.
+        print("bmad issue sync: {!r}".format(error) if isinstance(error, (KeyError, TypeError))
+              else "bmad issue sync: {}".format(error), file=sys.stderr)
         sys.exit(1)
