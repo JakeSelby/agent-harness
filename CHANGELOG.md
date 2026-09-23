@@ -258,6 +258,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Remote Control hosts managed by `harness remote-control` now reuse their environment across a
+  restart. Claude Code 2.1.280 reads the folder's bridge pointer only when `createSessionInDir`
+  is on, and every host was launched with `--no-create-session-in-dir`, so each restart
+  registered a fresh environment and each `SIGTERM` archived the host's sessions. The flag is
+  gone; heal's pointer rewrite keeps 2.1.280's two `parkedProjectThreadSessionIds` keys; `install`
+  on a changed agent adopts the running host's environment, writing the pointer and stopping the
+  host with `SIGKILL` so its archive path never runs; `heal` re-queues this Mac's disconnected
+  sessions through `bridge/reconnect`, at most once per session every ten minutes; and a
+  `remote_control.folders` entry may be an object with its own `spawn` and `env`, so each
+  workspace root gets a host that loads its own `CLAUDE.md`, skills and hooks (#603).
+
+- The `delegation` stance, the shared role descriptions and the refusal a native `gatherer` or
+  `reviewer` spawn receives now carry one sentence word for word: a read-only role runs through
+  `harness role run <role>`, because confinement is read roots and return shape rather than the
+  absence of write tools, which is also why `builder` is exempt and spawns natively. A session
+  that followed the stance used to spend a refused call discovering a rule none of the three
+  texts stated, and the refusal's reason for exempting the write-capable role was nowhere. A test
+  holds the three copies together, so the sentence cannot drift in one of them (#304).
+
 - The credential probe answers for a variable holding something that is not a path, where asking
   the filesystem about it used to raise and carry the value into the error's own message — a
   service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
