@@ -151,26 +151,28 @@ Three commitments make this credible:
     3. The run stops on one conflicting file that Riley owns.
   - **Climax:** the preview names every link, rendered file and setting, and refuses to adopt the conflict
     by default.
-  - **Resolution:** Riley applies. `harness doctor` reports local activation separately from published
-    qualification. `harness uninstall` would restore what sync replaced.
+  - **Resolution:** Riley applies. `harness doctor` reports local activation and drift, and `harness
+    compatibility` reports published qualification. `harness uninstall` would restore what sync replaced.
   - **Edge case:** Riley has hand-edited a managed setting since the last sync. Uninstall leaves that edit
     and reports it, instead of restoring the older value.
 - **UJ-2. Morgan changes one preference across both runtimes.**
   - **Persona and context:** Morgan wants subagents to run on right-sized models.
   - **Path:**
-    1. Morgan switches the `delegation` stance for one repository.
-    2. Morgan inspects `harness stances`, which shows the effective selection, its source and each
-       adapter's coverage.
+    1. Morgan switches the `delegation` stance in the user configuration.
+    2. Morgan inspects `harness stances`, which shows the effective selection and its source.
+       `harness stances --json` also shows each adapter's coverage.
     3. Morgan syncs.
-  - **Climax:** one authored choice reaches both native formats. The compatibility output says where a hook
-    enforces it and where it is only advisory.
+  - **Climax:** one authored choice reaches both native formats, and the coverage shows where a hook backs
+    it and where it is an instruction only.
+  - **Edge case:** a project-level selection changes what the hooks resolve. The linked stance text stays
+    user-level until #276 is decided.
 - **UJ-3. Sam finds out which of their rules actually fire.**
   - **Persona and context:** Sam keeps a 300-line instruction file and suspects most of it is dead weight.
   - **Path:**
     1. Sam runs the standalone instrument, `ruleprobe`, over their own recent transcripts. Nothing is
        installed into the runtime.
-    2. Sam sees a hit rate for each rule that a generic or declarative detector covers, the share of rules
-       measured, and the rules left unmeasured.
+    2. With `--rules` pointed at their rule directory, Sam sees each rule's state (measured, dark or
+       unmeasured) and the hit rate of every measured rule.
     3. Sam writes a declarative detector for two important rules that are unmeasured.
   - **Climax:** Sam deletes the rules measured as never firing, and watches the standing prefix shrink.
 - **UJ-4. Dana runs a parallel build under a cost posture.**
@@ -214,8 +216,8 @@ Three commitments make this credible:
   - **Path:** the machine sleeps, the network drops, and another agent restarts a host.
   - **Climax:** `harness remote-control heal` keeps each host on its environment and reconnects dropped
     sessions. Kai never sees a detached workspace for a session the harness can still reach.
-  - **Edge case:** a session the server has already archived cannot be restored. `status` lists it with the
-    manual command.
+  - **Edge case:** a session the server has already archived is past recovery. `status` leaves it out, and
+    heal never reports it as healed.
 - **UJ-9. Ari tries a decision provider without risking a decision (planned 0.15).**
   - **Persona and context:** Ari wants a second opinion on stop claims, but will not let a model relax a
     guardrail.
@@ -989,8 +991,10 @@ compatibility status says so. **Status:** partial:
 - an explicit waiver field in the compatibility catalog is planned (unscheduled).
 
 **Consequences (testable):**
-- `scripts/release_preflight.py` fails when the tag, compatibility catalog, changelog or About disagree
-  about version or status.
+- `scripts/release_preflight.py` fails when the compatibility catalog, its evidence and `VERSION`
+  disagree, when the checkout is dirty, or when projections have drifted. It also fails when GitHub About
+  differs from `product.json` (if `gh` is authenticated), or when a reference deployment's pin differs
+  from the tag (with `--reference-repo`).
 - A minor release marks at least `claude-code-cli-macos` as required for release.
 - Codex targets stay non-required until one scripted round passes with `--home-confirmed` and agrees with
   a hand-driven round on every case outcome.
@@ -1136,7 +1140,8 @@ are unreleased (#603).
 - A relaunched host logs that it is reusing its prior environment, and keeps its environment id.
 - `harness remote-control heal` runs every 60 seconds and reconnects a disconnected session on an
   environment the machine owns.
-- A server-archived session is listed with its manual command, and never reported as healed.
+- A server-archived session is past recovery. It is left out of `status`, and it is never reported as
+  healed.
 
 #### FR-61: Workspaces
 A developer must be able to define a multi-root workspace whose session history and memory follow the
@@ -1432,7 +1437,7 @@ makes stale, in the same pull request:
   - At least four of five tester-cohort members (#214) see which of their rules fired within a minute of
     invoking `ruleprobe`, timed by observation in the cohort session.
   - They run it with `--rules` on their own rule directory and on up to 30 days of their own transcripts.
-  - The report states what share of their rules is measured.
+  - The report states how many of their rules are measured, dark and unmeasured.
   - Validates FR-19, FR-20, FR-21 and FR-67.
 - **SM-2 Measured cost claim:**
   - **Target:** on the release task set, a same-day ratio of 0.85 or less, with the pass rate at least
