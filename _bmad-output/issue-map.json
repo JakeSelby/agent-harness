@@ -4573,7 +4573,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S208.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5217,7 +5217,7 @@
       "bmad_id": "AH-C063",
       "github_number": 699,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/699",
-      "title": "Give the decision and spike story templates a Change log section",
+      "title": "Give the decision and epic story templates a Change log section",
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C063.md",
