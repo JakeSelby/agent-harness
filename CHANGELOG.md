@@ -34,6 +34,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The Remote Control sessions read checks that its capped page arrived newest-first. The endpoint
+  takes no sort parameter, and its page is ordered by `last_event_at` rather than `updated_at`, so
+  the order is asserted on arrival and a page that is not descending is refused: under the
+  fifty-row cap the rows such a page dropped are unknown rather than merely old, and the session a
+  host lost minutes ago is exactly the one another order would hide. `harness remote-control
+  status` prints `not checked (page order unknown)` for a refusal, which no longer reads like an
+  account with nothing lost, and both it and `doctor` now say `in the newest 50` when the account
+  has more sessions than one page (#526).
 - The repository's own copy states the figures its code holds. The landing copy said nineteen
   detectors where the registry holds seventeen, six from the vendored engine and eleven written
   for these rules, and a new test derives that count from the rule pack and fails when `README.md`
