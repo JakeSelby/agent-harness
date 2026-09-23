@@ -1,0 +1,2 @@
+{"type":"system","subtype":"usage_feed","sessionId":"00000000-0000-7000-8000-000000000001","content":"usage-feed: session at 7,880 output tokens and 14 tool calls"}
+{"type":"assistant","sessionId":"00000000-0000-7000-8000-000000000001","message":{"role":"assistant","content":[{"type":"text","text":"RESUMED"}]}}
