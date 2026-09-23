@@ -5,6 +5,10 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pull_number import pull_number  # noqa: E402
 
 CAPABILITY_ROOTS = ('bin/', 'lib/', 'adapters/', 'primitives/', 'policy/')
 PRODUCT = 'product.json'
@@ -43,7 +47,7 @@ def validate(files, body):
 
 def pull_request(runner=None):
     runner = runner or subprocess.run
-    repository, number = os.environ['GITHUB_REPOSITORY'], os.environ['PR_NUMBER']
+    repository, number = os.environ['GITHUB_REPOSITORY'], pull_number()
     files = runner([
         'gh', 'api', '--paginate', '-H', 'Accept: application/vnd.github+json',
         'repos/{}/pulls/{}/files'.format(repository, number), '--jq', '.[].filename'],

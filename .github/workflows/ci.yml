@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A queued pull request is tested again on the queue's merge commit; without this trigger the
+  # required checks never report there and the queue waits for them forever.
+  merge_group:
 
 permissions:
   contents: read

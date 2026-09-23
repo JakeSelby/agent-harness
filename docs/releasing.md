@@ -47,8 +47,13 @@ change. What the release must carry before it can be tagged is the next section.
    overwriting other contributors' history. Preserve personal configuration and the live checkout.
 4. Set `VERSION`, `compatibility/catalog.json` and `compatibility/migration.json` to the same
    release. Record exact migration actions and recovery even when the only action is reviewing a
-   dry run. Regenerate projections and release notes. Run the CI commands and the Python floor suite
-   on committed HEAD; then run:
+   dry run. Regenerate projections and release notes. Fold the changelog into the version section:
+   for 0.13.0, by hand from `## [Unreleased]` as before, and that release pull request is the
+   cut-over that ends the lint's Unreleased exemption; from the next release on, with
+   `python3 scripts/release_notes.py --changelog <version>`, which assembles the `changelog.d/`
+   fragments in a stable order and deletes them (see
+   [`changelog.d/README.md`](../changelog.d/README.md)). Run the CI commands and the Python floor
+   suite on committed HEAD; then run:
 
    ```sh
    python3 scripts/release_preflight.py
@@ -126,7 +131,8 @@ python3 scripts/smoke_tier.py            # --list names each check, running none
 ```
 
 It runs the acceptance runner's self-tests against recorded transcripts, the documentation-link
-check, the credential-reachability probe for the host that will run the round, and the
+check, the precondition probe for each target's client, login and Docker daemon on the host that
+will run the round (the [runbook](qualification-runbook.md#target-hosts) establishes them), and the
 disposable-home sync, projection-drift and lifecycle checks. Each defect it catches is one that
 would otherwise be found part-way through a round and cost the whole round again. A green tier is
 **not** qualification: it observes no client, writes nothing under `compatibility/evidence/` and
