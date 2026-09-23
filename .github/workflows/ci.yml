@@ -34,6 +34,19 @@ jobs:
       - name: Deterministic pre-qualification checks
         run: python3 scripts/smoke_tier.py --skip credentials
 
+  corpus:
+    name: corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Beside `test` rather than inside it: the floor is a claim about the detectors, and a
+      # red row here should read as "a detector got worse", not as a unit test failing.
+      # Whether it blocks a merge is the branch ruleset's call, not this file's.
+      - name: Detector precision and recall over both labelled corpora
+        run: python3 scripts/detector_corpus.py --floor 0.9
+
   test:
     name: test
     runs-on: ubuntu-latest
