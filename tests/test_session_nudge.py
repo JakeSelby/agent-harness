@@ -13,7 +13,7 @@ import json
 import unittest
 from pathlib import Path
 
-from test_usage_feed import Fixture, append, assistant, load_feed
+from test_usage_feed import Fixture, append, assistant, load_feed, prompt, write
 
 REPO = Path(__file__).resolve().parent.parent
 NUDGE = "fresh-session threshold"
@@ -155,18 +155,62 @@ class SessionNudgeTests(Fixture):
         self.assertEqual(self.submit(), [])
         self.assertFalse(self.feed_dir().exists())
 
-    def test_a_threshold_already_said_survives_a_state_file_reread(self):
-        # A resume reads the marks back out of the state file rather than starting the session's
-        # accounting over, which is the only reason the line stays said across one.
+    def test_a_threshold_already_said_survives_a_transcript_reset(self):
+        # The reader starts over when the transcript's identity changes — a new inode, a new
+        # first record, a file that shrank — and everything it had read is gone with it. What
+        # was said to the orchestrator is not a fact about the transcript, so it stays: a
+        # resumed session that rebuilt its reader used to feed the same line a second time.
         self.nudged()
         append(self.transcript, [response("m1", 400, 120000)])
         self.assertEqual(len(self.nudges(self.submit())), 1)
         path = self.feed_dir() / (self.SESSION + ".json")
-        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["said_nudge"], [100000])
+        before = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(before["said_nudge"], [100000])
+
+        write(self.transcript, [prompt("resumed"), response("m2", 500, 130000)])
         module = load_feed()
-        state = module.load_state(path)
+        state = module.advance(module.load_state(path), self.transcript)
+        self.assertNotEqual(state["inode"] and state["head"], before["head"])
         self.assertEqual(state["said_nudge"], [100000])
         self.assertIsNone(module.session_line(state, [100000]))
+        self.assertEqual(self.nudges(self.submit()), [])
+
+    def test_a_threshold_the_context_fell_back_under_is_said_again(self):
+        # An in-place compact halves the session, and an hour of work fills it again. The
+        # orchestrator was told about the first crossing, not about this one.
+        self.nudged()
+        append(self.transcript, [response("m1", 400, 120000)])
+        self.assertEqual(len(self.nudges(self.submit())), 1)
+        append(self.transcript, [response("m2", 500, 40000)])
+        self.assertEqual(self.nudges(self.submit()), [])
+        self.assertEqual(self.state()["said_nudge"], [])
+        append(self.transcript, [response("m3", 600, 130000)])
+        said = self.nudges(self.submit())
+        self.assertEqual(len(said), 1)
+        self.assertIn("session context 130,000 tokens", said[0])
+
+    def test_the_line_names_the_highest_threshold_newly_crossed(self):
+        # Not the highest passed: a variant that gains a smaller size mid-session has one new
+        # crossing, and naming the larger one already fed would read as the line repeating.
+        module = load_feed()
+        state = dict(module.new_state(), context=250000, said_nudge=[200000])
+        line = module.session_line(state, [100000, 200000])
+        self.assertIn("threshold of 100,000", line)
+        self.assertEqual(state["said_nudge"], [200000, 100000])
+
+    def test_a_token_figure_no_integer_can_hold_does_not_silence_the_feed(self):
+        # JSON admits 1e400, Python reads it as an infinity and int() raises OverflowError on
+        # it. The offset past that record is saved either way, so an uncaught raise here would
+        # cost the session every line it had left.
+        self.nudged()
+        entry = assistant("m1", 400)
+        entry["message"]["usage"].update({"input_tokens": 120000})
+        raw = json.dumps(entry).replace('"output_tokens": 400', '"output_tokens": 1e400')
+        with self.transcript.open("a", encoding="utf-8") as handle:
+            handle.write(raw + "\n")
+        said = self.nudges(self.submit())
+        self.assertEqual(len(said), 1)
+        self.assertIn("session context 120,000 tokens", said[0])
 
 
 class ThresholdResolutionTests(unittest.TestCase):
@@ -204,6 +248,29 @@ class ThresholdResolutionTests(unittest.TestCase):
             {"schema_version": 1, "switches": {"session_nudge_at": [100000, 250000]}})
         self.assertEqual(findings, [])
         self.assertEqual(clean["switches"]["session_nudge_at"], [100000, 250000])
+
+    def test_lint_rejects_an_unsorted_or_repeating_list(self):
+        # The hook sorts what it reads, so either would run; both are an author who meant
+        # something else, and the smallest size is what the first crossing is measured against.
+        posture = load_posture()
+        for bad in ([200000, 100000], [100000, 100000]):
+            clean, findings = posture.validate_sidecar(
+                {"schema_version": 1, "switches": {"session_nudge_at": bad}})
+            self.assertEqual(len(findings), 1, bad)
+            self.assertIn("the sizes ascend and none repeats", findings[0])
+            self.assertNotIn("session_nudge_at", clean.get("switches", {}))
+
+    def test_a_finding_names_the_entry_and_the_rule_it_breaks(self):
+        # A list reported as "an unusable value" leaves the author comparing eight numbers
+        # against a rule written down nowhere.
+        posture = load_posture()
+        for bad, expected in (([1.5], "entry 1.5 is not a whole positive token count"),
+                              ([1] * (posture.MAX_NUDGES + 1),
+                               "entries and at most " + str(posture.MAX_NUDGES) + " are read"),
+                              ("100000", "is a list of whole positive token counts")):
+            findings = posture.validate_sidecar(
+                {"schema_version": 1, "switches": {"session_nudge_at": bad}})[1]
+            self.assertIn(expected, findings[0])
 
 
 if __name__ == "__main__":

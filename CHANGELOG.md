@@ -15,8 +15,10 @@ All notable changes to this project are documented here. The format follows
   over `extends` like every other switch; on `UserPromptSubmit` the feed reads the newest
   response's input tokens plus its cached prefix and, at a crossing, adds one line naming the size,
   the threshold and the advice to finish the task, write the handoff and start fresh. It is said
-  once per threshold rather than once per turn, and the thresholds already said are kept in the
-  session's state file so a resume does not repeat them. Nothing is blocked. `frugal` ships
+  once per threshold rather than once per turn: the thresholds already said are kept in the
+  session's state file, and survive the reader starting over on a transcript whose identity
+  changed, so a resume does not repeat them. A context that falls back under a threshold, which
+  is what an in-place compaction does, arms that threshold again. Nothing is blocked. `frugal` ships
   80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` nothing at all; those are
   starting points chosen against a 200,000-token window rather than measured figures, and the
   follow-up to this issue replaces them with sizes read out of the ledger. Codex raises no

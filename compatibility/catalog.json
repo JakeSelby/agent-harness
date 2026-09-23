@@ -123,7 +123,7 @@
     "Direct native Codex role defaults can inherit parent permissions; constrained harness roles use isolated CLI workers instead.",
     "Planner publication is mediated by the harness after constrained workers return result data.",
     "The architecture-viewer integration is a preview for a separately installed implementation. A local protocol 1 candidate passed process-level harness acceptance; no viewer is bundled, and native viewer interaction and distribution/license clearance remain unverified.",
-    "The usage feed is a Claude Code capability: Codex raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, in-flight width and finished-subagent spend are not fed back there and no such event is registered.",
+    "The usage feed is a Claude Code capability: Codex raises none of UserPromptSubmit, SubagentStart or SubagentStop, so turn spend, the fresh-session nudge, in-flight width and finished-subagent spend are not fed back there and no such event is registered.",
     "Cursor and Grok integration, hosted agents and native memory merging are planned or deferred.",
     "BMad review confinement is requested in the routed layer text rather than enforced at the spawn hook: a client can run a review layer as an unnamed native subagent, unconfined, and still report a result. Observed on Claude Code; a confined run writes isolated-worker state. Tracked in #291.",
     "On Codex, output-filter rewrites are never applied: a rewrite travels only with an allow, and the filtered commands are not auto-allowed. Tracked in #292.",
