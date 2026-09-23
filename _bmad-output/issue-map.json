@@ -2,14 +2,14 @@
   "schema_version": 2,
   "repository": "JakeSelby/agent-harness",
   "native_type_projection": "labels-only",
-  "generated_at": "2026-09-19",
+  "generated_at": "2026-09-22",
   "next_ids": {
-    "epic": 12,
-    "story": 202,
+    "epic": 11,
+    "story": 197,
     "task": 7,
     "bug": 55,
-    "chore": 50,
-    "spike": 10,
+    "chore": 48,
+    "spike": 9,
     "decision": 8
   },
   "items": [
@@ -3277,6 +3277,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S194",
+      "github_number": 430,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/430",
+      "title": "Trim the harness's 12,607-token standing context",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S194.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-T006",
       "github_number": 431,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/431",
@@ -3286,7 +3299,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T006.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3326,6 +3339,19 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S195",
+      "github_number": 439,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/439",
+      "title": "Let plan mode own the plan review surface, so the native pane and the native approval replace the typed build gate",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S195.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3693,6 +3719,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S196",
+      "github_number": 497,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/497",
+      "title": "Record the cache-prefix figure per replay run beside normalised_cost",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S196.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B052",
       "github_number": 498,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/498",
@@ -3767,7 +3806,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S173.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3897,7 +3936,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C041.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3910,14 +3949,14 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C042.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
       "bmad_id": "AH-C043",
       "github_number": 533,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/533",
-      "title": "Qualify the two macOS CLI targets for 0.12.0",
+      "title": "Qualify the required CLI targets and restore the release floor",
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C043.md",
@@ -3936,7 +3975,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C044.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4053,175 +4092,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C046.md",
       "parent_bmad_id": "AH-E002",
       "parent_github_number": 116,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-E011",
-      "github_number": 552,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/552",
-      "title": "A configurable layer under your skill library: one selection model, modes, superpowers, measured",
-      "type": "epic",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-E011.md",
-      "parent_bmad_id": "AH-E006",
-      "parent_github_number": 212,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-SP009",
-      "github_number": 553,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/553",
-      "title": "Does a headless superpowers session finish a task beside the harness?",
-      "type": "spike",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-SP009.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S194",
-      "github_number": 554,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/554",
-      "title": "One selection document and one resolver",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S194.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S195",
-      "github_number": 555,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/555",
-      "title": "Hook ids and the hooks switch kind",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S195.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S196",
-      "github_number": 556,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/556",
-      "title": "Rules, skills, workflows and roles as switch kinds, with per-file links",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S196.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S197",
-      "github_number": 557,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/557",
-      "title": "Modes: named selection bundles",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S197.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S198",
-      "github_number": 558,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/558",
-      "title": "delegated stance variants, the superpowers mode, and detection",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S198.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S199",
-      "github_number": 559,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/559",
-      "title": "Replay arms as built profiles, with pair parity",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S199.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S200",
-      "github_number": 560,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/560",
-      "title": "The first four-arm live set",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S200.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-S201",
-      "github_number": 561,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/561",
-      "title": "Copy: the layer under your agents' skills",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S201.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
       "bmad_id": "AH-C047",
-      "github_number": 562,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/562",
-      "title": "Docs for the selection model, modes and the four arms",
+      "github_number": 550,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/550",
+      "title": "Reserve BMad IDs for the three unmapped v0.13.0 issues",
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C047.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C048",
-      "github_number": 563,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/563",
-      "title": "Qualify and tag the release",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C048.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-C049",
-      "github_number": 569,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/569",
-      "title": "Reserve BMad IDs for the v0.14.0 release issues",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C049.md",
-      "parent_bmad_id": "AH-E011",
-      "parent_github_number": 552,
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     }
