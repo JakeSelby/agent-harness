@@ -14,11 +14,13 @@ All notable changes to this project are documented here. The format follows
   totals are corrected once per message id at that id's largest figure, and the raw sum used to
   be discarded, so a session whose transcript repeated every response and one that repeated none
   reported the same figure with no way to tell them apart. `harness usage` prints the
-  token-weighted ratio for the window as a footer figure beside `unpriced`, and the OTLP export
-  carries the row's own as a `raw_vs_deduped` attribute. A row that measured no raw figure — a
-  Codex row, whose runtime reports cumulative snapshots rather than a figure per record, a
-  worker row, or a row written before this release — reads `unknown` rather than `1.0`, which
-  would claim a measurement nobody made (#518).
+  ratio for the window as a footer figure beside `unpriced` — each row's ratio weighted by the
+  deduplicated tokens it contributed to the columns above, so the figure is the window's raw sum
+  over its counted sum — and the OTLP export carries the row's own as a `raw_vs_deduped`
+  attribute. A Codex session row, whose runtime reports cumulative snapshots rather than a figure
+  per record, reads `unknown` rather than `1.0`, which would claim a measurement nobody made; a
+  subagent row, a worker row and a row written before this release carry no such key, which the
+  report reads as unknown and counts in the footer (#518).
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
   the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
   behind each state. It is derived from a `tier_restriction` entry in
@@ -45,6 +47,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An assistant transcript record whose `message` is not an object is skipped rather than read as
+  one. Such a record holds no usage, no model and no content blocks, and reading it aborted the
+  scan of the whole transcript, so one malformed line cost the session its entire row; the
+  subagent reader beside it has always skipped the same shape (#518).
 - An assistant transcript record that carries no message id is deduplicated by its `requestId`
   rather than counted once per line. Every such record used to open a slot of its own, so a
   runtime or version that writes one id-less response several times — as the streaming lines of

@@ -74,9 +74,15 @@ class Fixture(unittest.TestCase):
             json.dumps({"agentType": "gatherer", "spawnDepth": 1, "model": "model-a"}),
             encoding="utf-8")
 
-    def record(self, entries):
-        """The SessionEnd worker, run the way the hook runs it: a subprocess over a temp HOME."""
+    def record(self, entries, tail=""):
+        """The SessionEnd worker, run the way the hook runs it: a subprocess over a temp HOME.
+
+        `tail` is appended to the transcript verbatim, for a line no JSON writer would produce.
+        """
         write(self.transcript, entries)
+        if tail:
+            with self.transcript.open("a", encoding="utf-8") as handle:
+                handle.write(tail)
         out = subprocess.run([sys.executable, str(usage_log.__file__), "--worker",
                               str(self.transcript), "s-1", ""],
                              capture_output=True, text=True,
@@ -85,8 +91,8 @@ class Fixture(unittest.TestCase):
         state = self.home / ".local/state/agent-harness/usage.jsonl"
         return [json.loads(line) for line in state.read_text().splitlines()]
 
-    def session(self, entries):
-        rows = [r for r in self.record(entries) if r["kind"] == "session"]
+    def session(self, entries, tail=""):
+        rows = [r for r in self.record(entries, tail) if r["kind"] == "session"]
         self.assertEqual(len(rows), 1)
         return rows[0]
 
@@ -129,6 +135,40 @@ class TheRatioIsMeasured(Fixture):
         # Raw: three records, 500 + 80 + 800 output; counted: two slots, 500 + 800.
         self.assertEqual(session["raw_vs_deduped"], ratio(3 + 1380, 2 + 1300))
 
+    def test_a_request_id_slot_merged_into_a_message_id_slot_still_measures_the_raw_sum(self):
+        """The id-less line is folded away in the totals and stays in the raw sum."""
+        row = self.session([{"type": "user", "sessionId": "s-1", "cwd": "", "timestamp": STAMPS[0]},
+                            assistant(STAMPS[1], 120, request_id="req-1"),
+                            assistant(STAMPS[1], 4000, mid="m1", request_id="req-1")])
+        self.assertEqual((row["input"], row["output"], row["turns"]), (1, 4000, 1))
+        self.assertEqual(row["raw_vs_deduped"], ratio(2 + 4120, 1 + 4000))
+
+    def test_a_line_the_scan_drops_never_enters_the_raw_sum(self):
+        """Whatever is not counted is not measured against the count either."""
+        clean = self.session([{"type": "user", "sessionId": "s-1", "cwd": "", "timestamp": STAMPS[0]},
+                              assistant(STAMPS[1], 500, mid="m1")])
+        noise = dict(assistant(STAMPS[2], 700, mid="m2"), type="progress")
+        broken = {"type": "assistant", "sessionId": "s-1", "cwd": "", "timestamp": STAMPS[3],
+                  "message": ["not a dict"], "requestId": "req-9"}
+        row = self.session([{"type": "user", "sessionId": "s-1", "cwd": "", "timestamp": STAMPS[0]},
+                            assistant(STAMPS[1], 500, mid="m1"), noise, broken],
+                           tail="{not json at all\n")
+        self.assertEqual((row["input"], row["output"]), (clean["input"], clean["output"]))
+        self.assertEqual(row["raw_vs_deduped"], clean["raw_vs_deduped"])
+        self.assertEqual(row["raw_vs_deduped"], 1.0)
+
+    def test_no_row_but_a_session_row_carries_the_key(self):
+        """A subagent and a worker measure no raw figure, so they say nothing rather than 1.0."""
+        self.agent([assistant(STAMPS[3], 80, mid="a1"), assistant(STAMPS[3], 800, mid="a1")])
+        rows = self.record([{"type": "user", "sessionId": "s-1", "cwd": "", "timestamp": STAMPS[0]},
+                            assistant(STAMPS[1], 500, mid="m1")])
+        for row in rows:
+            with self.subTest(kind=row["kind"]):
+                if row["kind"] == "session":
+                    self.assertIsInstance(row["raw_vs_deduped"], float)
+                else:
+                    self.assertNotIn("raw_vs_deduped", row)
+
     def test_a_codex_session_says_unknown_rather_than_one(self):
         """Codex reports cumulative snapshots, so there is no per-line sum to measure against."""
         row = usage_log.scan(CODEX_FIXTURES / "session-vscode.jsonl")
@@ -145,8 +185,9 @@ class TheHelperRefusesToGuess(unittest.TestCase):
     def test_a_row_that_counted_no_tokens_is_unknown(self):
         self.assertEqual(usage_log.inflation({"input": 5}, {"input": 0}), usage_log.RAW_UNKNOWN)
 
-    def test_the_default_is_never_one(self):
-        self.assertNotEqual(usage_log.RAW_UNKNOWN, 1.0)
+    def test_an_unmeasured_row_gets_no_number_at_all(self):
+        """Not merely "not 1.0": a caller must be able to tell a figure from an absence."""
+        self.assertNotIsInstance(usage_log.inflation({}, {"input": 5}), float)
 
 
 class TheReportSaysIt(unittest.TestCase):
@@ -163,7 +204,9 @@ class TheReportSaysIt(unittest.TestCase):
         self.path.parent.mkdir(parents=True)
 
     def _restore(self):
-        if self._old_home is not None:
+        if self._old_home is None:
+            os.environ.pop("HOME", None)
+        else:
             os.environ["HOME"] = self._old_home
 
     def row(self, **extra):
@@ -174,9 +217,10 @@ class TheReportSaysIt(unittest.TestCase):
         base.update(extra)
         return base
 
-    def report(self, *rows):
+    def report(self, *rows, **kwargs):
         self.path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
-        args = argparse.Namespace(days=30, by="day", rules=False, rescan=False, stance=None)
+        args = argparse.Namespace(days=kwargs.pop("days", 30), by="day", rules=False,
+                                  rescan=False, stance=None)
         prior = os.environ.pop("HARNESS_QUIET", None)
         buf = io.StringIO()
         try:
@@ -187,10 +231,10 @@ class TheReportSaysIt(unittest.TestCase):
                 os.environ["HARNESS_QUIET"] = prior
         return buf.getvalue()
 
-    def test_the_footer_carries_the_measured_ratio(self):
+    def test_the_footer_carries_the_measured_ratio_and_names_its_weight(self):
         text = self.report(self.row())
-        self.assertIn("raw_vs_deduped: raw totals were 1.50x the counted totals over 1 run(s)",
-                      text)
+        self.assertIn("raw_vs_deduped: raw totals were 1.50x the counted totals over 1 run(s), "
+                      "weighted by counted tokens", text)
 
     def test_two_runs_are_weighted_by_the_tokens_each_counted(self):
         """A long session moves the window's figure more than a short one."""
@@ -205,7 +249,28 @@ class TheReportSaysIt(unittest.TestCase):
         row = self.row(session_id="s-2")
         row.pop("raw_vs_deduped")
         text = self.report(self.row(), row)
-        self.assertIn("over 1 run(s), 1 run(s) unknown", text)
+        self.assertIn("over 1 run(s), weighted by counted tokens; 1 run(s) unknown", text)
+
+    def test_a_long_session_is_weighted_by_its_in_window_slices_only(self):
+        """`--by day` counts a row's in-window slices, and the footer is over exactly those.
+
+        The row ended before the cutoff, so TOTAL counts no run for it and only the day inside
+        the window; a footer weighted by the whole row would be the 4.0 of a session nobody in
+        this window can see.
+        """
+        today = time.strftime("%Y-%m-%d", time.gmtime())
+        old = time.strftime("%Y-%m-%d", time.gmtime(time.time() - 10 * 86400))
+        stale = self.row(session_id="s-old", raw_vs_deduped=4.0,
+                         ended=old + "T00:00:00Z", input=0, output=9000,
+                         days={old: {"output": 8000, "turns": 1},
+                               today: {"output": 1000, "turns": 1}})
+        text = self.report(self.row(raw_vs_deduped=2.0), stale, days=5)
+        self.assertRegex(text, r"TOTAL\s+1\s")
+        # (2.0 * 1000 from the one run in the window + 4.0 * 1000 from the stale row's
+        # in-window slice) / 2000, and the stale row is the unknown-free window's second
+        # contributor without being one of its runs.
+        self.assertIn("raw_vs_deduped: raw totals were 3.00x the counted totals over 1 run(s), "
+                      "weighted by counted tokens", text)
 
     def test_a_window_that_measured_nothing_says_unknown_rather_than_one(self):
         row = self.row()
@@ -222,6 +287,13 @@ class TheExportCarriesIt(unittest.TestCase):
                "ended": "2026-09-01T11:00:00.000Z", "output": 200, "raw_vs_deduped": 1.25}
         values = dict((a["key"], a["value"]) for a in telemetry.attributes(row))
         self.assertEqual(values["raw_vs_deduped"], {"doubleValue": 1.25})
+
+    def test_a_row_without_the_key_exports_no_such_attribute(self):
+        """A subagent or worker row measured nothing, so the export says nothing about it."""
+        row = {"kind": "subagent", "runtime": "claude-code", "session_id": "s-1",
+               "agent_id": "a-9", "ended": "2026-09-01T10:30:00.000Z", "output": 70}
+        keys = [a["key"] for a in telemetry.attributes(row)]
+        self.assertNotIn("raw_vs_deduped", keys)
 
     def test_an_unmeasured_row_exports_unknown_and_not_a_number(self):
         row = {"kind": "session", "runtime": "codex", "session_id": "c-1",

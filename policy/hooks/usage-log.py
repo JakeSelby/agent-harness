@@ -740,6 +740,11 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 continue
             if kind != "assistant":
                 continue
+            # A record whose `message` is not a dict holds no usage, no model and no blocks,
+            # and reading one as a mapping used to abort the scan of the whole transcript;
+            # `_agent_row` has always skipped it.
+            if not isinstance(message, dict):
+                continue
             model = message.get("model")
             for index, block in enumerate(content or []):
                 # One API response is written as several lines that repeat the same message id,
@@ -781,8 +786,9 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 # silently deduplicated against a record it may have nothing to do with.
                 idless += 1
                 key = ("line", "session", idless)
-            record_usage(per_message, key, message.get("usage") or {}, stamp[:10], model or "")
-            add_raw(raw, message.get("usage") or {})
+            usage = message.get("usage") or {}
+            record_usage(per_message, key, usage, stamp[:10], model or "")
+            add_raw(raw, usage)
             # Claude Code writes the effort in force on every assistant record, as `effort` and
             # again as `perTurnEffort`; a sidechain line carries the subagent's, not this
             # session's, so only the session's own records are weighed.
