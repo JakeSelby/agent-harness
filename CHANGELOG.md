@@ -23,6 +23,18 @@ All notable changes to this project are documented here. The format follows
   now links to the row instead of restating it (#520).
 ### Changed
 
+- The standing context every session loads is 1,005 estimated tokens smaller, 7,524 to 6,519 on
+  `scripts/cost_bench.py static`. The `scannable` output style keeps all nine of its rules and
+  loses the worked examples and the register table, 1,528 tokens to 862; the fifteen skill and
+  eleven agent descriptions lose their capability restatements and keep every condition and
+  literal user phrasing a session selects on, 2,326 tokens of listings to 1,980. Because a
+  description is the trigger mechanism, those phrases are now frozen in
+  `tests/test_description_trigger_phrases.py`, which fails when one is dropped rather than
+  reworded, and a new skill or role must declare its own. Before-and-after rows are in
+  `docs/benchmarks.md`; the third change the issue names, deferring action-gated rule text behind
+  the hooks that fire on the act, is framed as an unrun spike in
+  `docs/spikes/2026-09-22-deferred-rule-text.md` and nothing about it is implemented (#430).
+
 - The delegation rule now states that subagents never message a peer, and the builder role says
   what a blocked builder does instead: stop, finish what does not depend on the answer, and return
   the question under **Deviations** for the caller. A delivered message bills as a typed prompt on
