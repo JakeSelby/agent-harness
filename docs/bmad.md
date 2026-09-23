@@ -77,6 +77,14 @@ Both write the map and a new artifact in the current checkout; commit them in th
 delivers the issue. The required `issue-ownership` check refuses a pull request whose delivery
 issue is absent from the map, and `apply` adds the Planning block once the artifact is on `main`.
 
+Because `next_ids` lives in the map, it knows only what this checkout has seen. Before allocating,
+both commands survey every issue map this clone can reach — the working copy of each linked
+worktree, so an uncommitted reservation counts, and every local and remote-tracking branch — and
+refuse when the counter is not past every ID of that kind already in use, naming each one and where
+it was found. Rebasing onto the branch that took them is the usual answer; `--advance` skips them
+instead and says which IDs it leaves permanently unused. Heads `git ls-remote` advertises that this
+clone holds no object for are reported, so an incomplete survey is never read as a clean one.
+
 ### Live verification
 
 ```sh

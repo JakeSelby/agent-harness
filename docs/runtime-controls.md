@@ -138,10 +138,10 @@ answer can be compared against the decision it did not change. Labels only: neve
 switch: while that file exists every mode reads `off`, with no configuration change and no
 restart, because the sentinel is read per decision rather than at construction.
 `governance.jev.sentinel` moves it, absolute or resolved against the state directory, never
-against the working directory. The kill switch is read per decision rather than at
-construction, so a session that was running when the file appeared stops calling, and starts
-again when it is removed, without a restart. A live request also needs a key in the environment; without
-one the call fails open to the deterministic answer like any other failure.
+against the working directory. A session that was running when the file appeared stops calling,
+and starts again when it is removed, with no restart and no edit. A live request also needs a
+key in the environment; without one the call fails open to the deterministic answer like any
+other failure.
 
 **What may leave.** `governance.jev.state_fields` is an allowlist, empty by default, over
 exactly two fields: `command` and `summary`. Everything else in a caller's context — a file
@@ -158,8 +158,18 @@ session rather than a process: a hook is a new process per event, so the counter
 `~/.local/state/agent-harness/jev-spend.json` keyed by session id, under the lock, read before
 each check and added to as each request is charged. A spend file that cannot be read or written
 leaves the in-process count standing rather than failing a decision. `harness doctor`
-prints the mode per point, the allowlist, where the kill switch lives and whether a credential
-variable is set — by name, never its value.
+prints the mode per point, the allowlist, where the kill switch lives, the model every request
+pins, what the last call returned, and whether a credential variable is set — by name, never its
+value.
+
+**What each call cost.** Every call also writes one `kind: "decision"` row to the usage ledger:
+the point, the mode, the status, the model ids, the pack and request hashes, the judgment and
+severity labels, the deterministic outcome and the one an `act` mode would have reached, the
+tokens, the latency and the session that asked — and none of the state it sent. `harness usage
+--by provider` prices those rows from `policy/prices.json` like any other. A mode of `shadow` is
+measurable for exactly this reason: the row exists, priced and labelled, before anything the
+provider says can change an answer. Both rows stop when `telemetry.decisions` is `false`; see
+[usage telemetry](usage.md).
 
 ## Measuring a provider before trusting it
 

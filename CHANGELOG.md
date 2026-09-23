@@ -8,6 +8,46 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Every decision-provider call now leaves a `kind: "decision"` row in the usage ledger beside the
+  session rows, carrying the decision point, the mode, the status, the requested and the returned
+  model id, the pack and request hashes, the judgment and severity labels, the deterministic
+  outcome and the one an `act` mode would have reached, the token counts, the latency and the
+  session that asked — and none of the state it sent, no prompt, no file path and no environment
+  value, because the row is built key by key from that list and reads nothing else. The
+  counterparty is part of what goes out in the request and could be a path, so a row keeps it only
+  when it matches the `repo:<name>/<branch>` slug the ledger already derives, within a bounded
+  length, and keeps a short digest of anything else. Exported over OTLP the row travels under
+  `harness.decision.*`, its price included, because its `input` and `usd` in the columns a
+  session's land in would have a backend counting the harness's question as session spend. A
+  judgment costs tokens and holds up a turn, and until now neither figure was anywhere: `harness
+  usage --by provider` prices the calls from `policy/prices.json` like any other row and reports
+  the latency distribution beside the statuses, which are separate columns rather than a success
+  rate — an answer the provider abstained from is not the same event as no answer at all. A call
+  whose usage nobody reported is `partial`, so it is named in the unpriced footer rather than read
+  as free, and the rows are counted on that report alone: their tokens were spent asking a
+  question, not by the session, so adding them to a day or a repo would charge a session for a
+  bill it did not run up. The write is an append under the ledger lock rather than the rewrite a
+  session record does, so a call inside a hook's budget does not re-read and rewrite the whole
+  file. `harness doctor` now also names the model every request pins and what the last call
+  returned, since a provider may answer on a model the harness did not ask for and a report priced
+  at the requested one would then be priced at the wrong rate. `telemetry.decisions` is one switch
+  over both ledgers: off, neither row is written (#139).
+- A labelled corpus for the eleven detectors this repository writes itself, and a `corpus` job
+  beside `test` that scores it. `tests/fixtures/detector-corpus/` holds thirteen synthetic
+  transcripts and the labels over them, five positives and five near-misses per detector bar the one whose positive costs two hundred
+  searches, written
+  by `build_sessions.py` beside them; `scripts/detector_corpus.py --floor 0.9` runs both that
+  corpus and the one inside the vendored `ruleprobe` wheel through the whole registry and exits
+  non-zero when a detector's precision or recall falls under the floor, or when a detector has no
+  labelled example at all. Every row `harness usage --rules` prints now has a measured precision
+  and recall rather than a hit count of unknown quality. Two detectors measure 0.83
+  precision: any basename holding `id_rsa` is a hit for `secrets/git-add-secret-file`, so a runbook
+  named after a key is one, and `autonomy/denied-by-grade` matches the grade hook's signature
+  anywhere in a Bash result, so a grep that prints it is one. The floor stays where it is and each
+  miss is recorded in the corpus with the score and the floor it was measured against, so an
+  improvement or a regression both fail the job until the record is updated, while a run at a
+  lower floor leaves the record dormant rather than stale (#522).
+
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill
   surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
@@ -90,6 +130,7 @@ All notable changes to this project are documented here. The format follows
   still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
   the allowlist, where the kill switch lives and whether a credential variable is set — by name,
   never its value (#137).
+
 - One Bash command in twenty that the harness allows is now kept in the decision log as a
   sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
   the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
@@ -172,6 +213,14 @@ All notable changes to this project are documented here. The format follows
   block a freeze (#334).
 
 ### Fixed
+
+- The `delegation` stance, the shared role descriptions and the refusal a native `gatherer` or
+  `reviewer` spawn receives now carry one sentence word for word: a read-only role runs through
+  `harness role run <role>`, because confinement is read roots and return shape rather than the
+  absence of write tools, which is also why `builder` is exempt and spawns natively. A session
+  that followed the stance used to spend a refused call discovering a rule none of the three
+  texts stated, and the refusal's reason for exempting the write-capable role was nowhere. A test
+  holds the three copies together, so the sentence cannot drift in one of them (#304).
 
 - The credential probe answers for a variable holding something that is not a path, where asking
   the filesystem about it used to raise and carry the value into the error's own message — a

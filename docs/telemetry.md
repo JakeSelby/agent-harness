@@ -143,6 +143,11 @@ that carries its own timestamps.
   row, one `harness.<dimension>` per recorded stance, and any configured labels. A stance is
   exported **once**. A nested map (`days`, `by_model`, `rules`, `counts`) stays in the body:
   attribute sets are flat, and a hundred per-day slices would be a hundred columns.
+- A **`kind: "decision"` row** — one decision-provider call, see [usage](usage.md) — carries its
+  own fields under `harness.decision.*`, its price included as `harness.decision.usd`. It
+  measures what the harness spent asking a question rather than what a session spent, and
+  exported bare its `input`, `output` and `usd` would land in the same columns a session's do,
+  where anything summing them would count the question as session spend.
 - Resource attributes are `service.name=agent-harness` and the harness version.
 
 `harness.row_key` is the row's identity — session id, runtime, kind, agent id — and is stable
