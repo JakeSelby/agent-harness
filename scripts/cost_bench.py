@@ -415,15 +415,20 @@ HARNESS_FILES = ("CLAUDE.md", "CLAUDE.personal.md", "rules/harness-stances", "sk
 # harness's whatever it leads to; one that leads outside the profile would have the sync write
 # through it, outside anything the undo can see.
 HARNESS_NAMES = ("CLAUDE.md", "CLAUDE.personal.md", "agents", "commands", "hooks", "output-styles",
-                 "plans", "rules", "settings.json", "skills", "stances")
+                 "plans", "rules", "settings.json", "skills")
 # The one file a sync rewrites in place when the profile already holds it. Everything else it
 # writes is new, or is at a path `harness_residue` refuses beforehand.
 SYNC_MERGES = ("settings.json",)
 # What the CLI keeps a sign-in in. Never copied, written, or deleted here, whatever wrote it and
 # whenever it appeared: a profile that loses one is signed out.
 CREDENTIAL_NAMES = (".credentials.json", ".claude.json")
-# Where a sync records what it wrote, under the HOME it ran with.
+# Where a sync records what it wrote, under the HOME it ran with. This is where the harness at
+# HEAD writes; an older tag's sync may record elsewhere, and `undo_sync` checks the profile
+# afterwards rather than trusting the record.
 SYNC_STATE = Path(".local") / "state" / "agent-harness"
+# What the CLI and the owner's other sessions write into a profile during a run, left alone by
+# the undo and not counted as the sync's when the profile is checked afterwards.
+RUN_WRITES = ("projects", "todos", "plans", "history.jsonl")
 
 
 def is_credential(rel):
@@ -530,23 +535,45 @@ def _digest(path):
 
 
 def profile_listing(root):
-    """`{relative path: (kind, detail)}`: a regular file's size and sha256, a link's target,
-    nothing for a directory or anything else. Only a regular file that can be read is ever
-    opened, so a FIFO cannot hang this and an unreadable file is listed as `("file", None)`
-    rather than stopping the walk."""
+    """`{relative path: (kind, detail)}`: a link's target, a regular file's size and mtime, the
+    sha256 as well for the files a sync merges in place, nothing for a directory or anything
+    else. Only a SYNC_MERGES file is ever opened, so a FIFO cannot hang this, nothing else in the
+    profile is read, and an unreadable entry is listed as `(kind, None)` rather than stopping
+    the walk."""
     root, out = Path(root), {}
     for rel, kind in profile_entries(root).items():
         path = root / rel
         try:
             if kind == "link":
                 out[rel] = (kind, os.readlink(str(path)))
-            elif kind == "file":
+            elif kind == "file" and rel in SYNC_MERGES:
                 out[rel] = (kind, (path.stat().st_size, _digest(path)))
+            elif kind == "file":
+                info = path.stat()
+                out[rel] = (kind, (info.st_size, info.st_mtime_ns))
             else:
                 out[rel] = (kind, None)
         except OSError:
             out[rel] = (kind, None)
     return out
+
+
+def _run_write(rel):
+    return is_credential(rel) or rel in RUN_WRITES or rel.startswith(tuple(n + "/" for n in RUN_WRITES))
+
+
+def sync_leftovers(config, before):
+    """Relative paths in `config` the sync could have written that are not as they were before
+    it: an entry under a HARNESS_NAMES name that is new or changed, or a new link anywhere.
+    Credentials and what a run writes for itself (RUN_WRITES) are never counted."""
+    after = profile_listing(config)
+    out = []
+    for rel, entry in after.items():
+        if _run_write(rel) or before.get(rel) == entry:
+            continue
+        if rel.split("/", 1)[0] in HARNESS_NAMES or entry[0] == "link":
+            out.append(rel)
+    return sorted(out)
 
 
 def atomic_write(path, data):
@@ -620,7 +647,9 @@ def sync_wrote(config, state):
         if isinstance(link, dict) and link.get("path"):
             add(link["path"])
     for path, record in (read("ownership.json").get("files", {}) or {}).items():
-        if isinstance(record, dict) and (record.get("kind") == "generated" or record.get("created")):
+        # A merged file is the sync's too: it is never deleted (it was there before), but it
+        # counts as recorded, so a merge-only sync does not read as one that recorded nothing.
+        if isinstance(record, dict) and (record.get("kind") in ("generated", "json") or record.get("created")):
             add(path)
     for pattern in HARNESS_FILES:
         for path in config.glob(pattern):
@@ -653,10 +682,13 @@ def undo_sync(config, before, saved, copied, state):
                 path.unlink()
         except OSError:
             continue
-    made = {r for r, (kind, _) in profile_listing(config).items() if kind == "dir"} - set(before)
-    for rel in sorted(made | {r for r in wrote if (config / rel).is_dir()}, key=lambda r: -r.count("/")):
-        if rel in before:
-            continue
+    # Only a directory the sync's records lead through, or one of its own top-level write sites
+    # (`plans` it makes and records nowhere), and only when it was not there before and holds
+    # nothing now: a directory that merely appeared during the run is not the sync's.
+    made = {name for name in HARNESS_NAMES if (config / name).is_dir() and not (config / name).is_symlink()}
+    for rel in wrote:
+        made.update(p.as_posix() for p in [Path(rel)] + list(Path(rel).parents) if p.as_posix() != ".")
+    for rel in sorted(made - set(before), key=lambda r: -r.count("/")):
         try:
             (config / rel).rmdir()  # refuses anything still holding a file: never rmtree
         except OSError:
@@ -672,6 +704,16 @@ def undo_sync(config, before, saved, copied, state):
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(target, data)
+    # The records are read from where the harness at HEAD writes them; an older tag's sync may
+    # record elsewhere, and then nothing above removed anything. The profile itself is the check:
+    # what the sync could have written must be as it was, or the run stops here, before another
+    # tag launches into a profile that would refuse it or, worse, run links into a deleted checkout.
+    leftovers = sync_leftovers(config, before)
+    if leftovers or not wrote:
+        raise SystemExit("cost-bench: the sync could not be taken back out of %s: %s; the sync's "
+                         "records %s"
+                         % (config, ", ".join(leftovers[:8]) or "nothing left, but nothing recorded",
+                            "were empty" if not wrote else "did not cover it"))
 
 
 def sync_tag(repo, ref, parent, config_dir=None, python=sys.executable):

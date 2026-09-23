@@ -27,8 +27,10 @@ All notable changes to this project are documented here. The format follows
   it, and it cannot serve `candidate` in the same run; after each tag the sync is taken back out
   of it — exactly what its own manifest records is removed and `settings.json` is put back
   atomically from a copy — while anything else written during the run stays and credential files
-  are never copied, rewritten or deleted; the pinned checkout is readable, never writable, from
-  the arm, and every refusal about the target is decided before the first launch (#599).
+  are never copied, rewritten or deleted, and the profile is checked afterwards so a tag whose
+  sync recorded elsewhere stops the run with the leftovers named rather than stranding the next
+  one; the pinned checkout is readable, never writable, from the arm, and every refusal about the
+  target is decided before the first launch (#599).
 
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill

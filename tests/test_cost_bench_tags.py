@@ -10,6 +10,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -17,6 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from test_cost_bench import BENCH
+from test_harness import REPO
 
 STUB = """#!/usr/bin/env python3
 import json, os, pathlib, sys
@@ -52,13 +54,16 @@ def git(repo, *args):
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def harness_repo(root, exit_code=0):
+def harness_repo(root, exit_code=0, records=True):
     """A checkout shaped like this one: a VERSION, a `bin/harness` that projects into whatever
-    CLAUDE_CONFIG_DIR names, and a tag `v1` one version behind the branch."""
+    CLAUDE_CONFIG_DIR names, and a tag `v1` one version behind the branch. `records=False` is a
+    sync that writes its links but records nothing, as a tag with its state elsewhere would."""
     root = Path(root)
     (root / "bin").mkdir(parents=True)
-    (root / "bin" / "harness").write_text(STUB.replace('or 0) or (0', 'or %d) or (0' % exit_code),
-                                          encoding="utf-8")
+    stub = STUB.replace('or 0) or (0', 'or %d) or (0' % exit_code)
+    if not records:
+        stub = stub[:stub.index("state = pathlib")] + stub[stub.index("sys.exit("):]
+    (root / "bin" / "harness").write_text(stub, encoding="utf-8")
     (root / "VERSION").write_text("1.0.0\n", encoding="utf-8")
     git(root, "init", "-q")
     git(root, "add", "-A")
@@ -500,7 +505,11 @@ class UndoSyncTests(unittest.TestCase):
             self.assertFalse((Path(tmp) / "saved").is_dir() and any(
                 p.name.endswith(".partial") for p in Path(tmp).iterdir()))
             untouched = (profile / "settings.json").stat().st_ino
-            state = Path(tmp) / "no-state"
+            state = Path(tmp) / "state"  # a sync that merged settings.json and linked nothing
+            state.mkdir()
+            (state / "manifest.json").write_text(json.dumps({"links": []}), encoding="utf-8")
+            (state / "ownership.json").write_text(json.dumps({"files": {
+                str(profile / "settings.json"): {"kind": "json", "created": False}}}), encoding="utf-8")
             BENCH.undo_sync(profile, before, Path(tmp) / "saved", copied, state)
             self.assertEqual((profile / "settings.json").stat().st_ino, untouched)  # not rewritten
             (profile / "settings.json").write_text("changed", encoding="utf-8")
@@ -564,7 +573,7 @@ class UndoSyncTests(unittest.TestCase):
             try:
                 before = BENCH.profile_listing(profile)
                 self.assertEqual(before["ipc.sock"], ("other", None))
-                self.assertEqual(before["locked.json"], ("file", None))
+                self.assertEqual(before["locked.json"][0], "file")  # listed by stat, never opened
                 with BENCH.synced_tag(repo, "v1", config_dir=str(profile)) as synced:
                     self.assertTrue((profile / "CLAUDE.md").is_file())
                 self.assertFalse((profile / "CLAUDE.md").exists())
@@ -580,14 +589,74 @@ class UndoSyncTests(unittest.TestCase):
             (profile / ".credentials.json").unlink()
             with BENCH.synced_tag(repo, "v1", config_dir=str(profile)):
                 (profile / ".credentials.json").write_text('{"token": "first"}', encoding="utf-8")
-                (profile / "rules" / "mine.md").write_text("the owner's own rule", encoding="utf-8")
+                (profile / "todos" / "mine.json").parent.mkdir()
+                (profile / "todos" / "mine.json").write_text("the owner's own", encoding="utf-8")
                 (profile / "history.jsonl").write_text("{}", encoding="utf-8")
             self.assertEqual((profile / ".credentials.json").read_text(encoding="utf-8"), '{"token": "first"}')
-            self.assertEqual((profile / "rules" / "mine.md").read_text(encoding="utf-8"), "the owner's own rule")
+            self.assertEqual((profile / "todos" / "mine.json").read_text(encoding="utf-8"), "the owner's own")
             self.assertTrue((profile / "history.jsonl").is_file())
-            self.assertEqual(sorted(p.name for p in (profile / "rules").iterdir()), ["mine.md"])
+            self.assertFalse((profile / "rules").exists())
             self.assertFalse((profile / "CLAUDE.md").exists())
             self.assertFalse((profile / "env.json").exists())
+
+    def test_a_sync_that_records_nothing_stops_the_run_after_its_tag_with_the_leftovers_named(self):
+        """The records are read from where HEAD's harness writes them; a tag that recorded
+        elsewhere leaves the undo blind, and the profile itself is the check."""
+        seen = []
+
+        def fake_replay(tasks, opts, launch=None, out=None):
+            seen.append(opts["tag"])
+            Path(out).write_text("", encoding="utf-8")
+            return [], False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo", records=False)
+            self.prices(repo)
+            profile = signed_in_profile(Path(tmp) / "bench-harness")
+            args = replay_args(tmp, repo, tag=["v1", "v2"], harness_config=str(profile))
+            tests = NamedProfileTests()
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as caught:
+                tests.run_replay(args, tests.patched(repo, fake_replay))
+            self.assertIn("rules/stub-1.0.0.md", str(caught.exception))
+            kept = re.search(r"kept at (\S+)", err.getvalue())
+            self.assertIsNotNone(kept, err.getvalue())
+            self.assertTrue((Path(kept.group(1)) / "settings.json").is_file())
+            self.assertEqual(seen, ["v1"])  # v2 never launched
+            self.assertEqual((profile / "settings.json").read_text(encoding="utf-8"), '{"theme": "dark"}')
+            shutil.rmtree(kept.group(1).rsplit("/saved-profile", 1)[0], ignore_errors=True)
+
+    def test_only_directories_the_records_lead_through_are_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            profile = signed_in_profile(Path(tmp) / "bench-harness")
+            with BENCH.synced_tag(repo, "v1", config_dir=str(profile)):
+                (profile / "empty-during-run").mkdir()  # appeared during the run, not the sync's
+            self.assertTrue((profile / "empty-during-run").is_dir())
+            self.assertFalse((profile / "rules").exists())  # the sync's, and empty once undone
+
+    def test_the_real_sync_at_head_is_taken_back_out_of_a_seeded_profile(self):
+        """The one test here that runs `bin/harness sync` itself rather than the stub, with HOME
+        and CLAUDE_CONFIG_DIR both under the test's own directory."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            home, profile = tmp / "home", signed_in_profile(tmp / "profile")
+            home.mkdir()
+            before = BENCH.profile_listing(profile)
+            copied = BENCH.copy_aside(profile, tmp / "saved", before)
+            env = BENCH.scrubbed_env({"HOME": str(home), "CLAUDE_CONFIG_DIR": str(profile)})
+            done = subprocess.run([sys.executable, "bin/harness", "sync"], cwd=str(REPO), env=env,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True,
+                                  timeout=BENCH.SYNC_TIMEOUT)
+            if done.returncode:
+                self.skipTest("bin/harness sync at HEAD cannot run here (exit %d; it needs git and this "
+                              "checkout's projections): %s" % (done.returncode, done.stdout.strip()[-400:]))
+            during = BENCH.profile_listing(profile)
+            self.assertTrue(any(kind == "link" for kind, _ in during.values()))
+            self.assertIn("hooks", (profile / "settings.json").read_text(encoding="utf-8"))
+            BENCH.undo_sync(profile, before, tmp / "saved", copied, home / BENCH.SYNC_STATE)
+            self.assertEqual(BENCH.profile_listing(profile), before)
+            self.assertEqual((profile / ".credentials.json").read_text(encoding="utf-8"), '{"token": "before"}')
 
 
 if __name__ == "__main__":

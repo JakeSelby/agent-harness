@@ -89,8 +89,12 @@ python3 scripts/cost_bench.py replay --model <id> \
   atomic write. Nothing else is touched: a transcript another session wrote during the run stays,
   and credential files are never copied, rewritten or deleted, whether they existed before or
   the CLI created them mid-run, so a refreshed token stays refreshed and a fresh sign-in stays
-  signed in. A FIFO or an unreadable file in the profile is listed and never opened. If taking
-  the sync back fails, the copy is kept and its path printed. The refusals above are all decided
+  signed in. Nothing in the profile is read but `settings.json`; a FIFO or an unreadable file
+  is listed by its stat and never opened. The records are read from where the harness at HEAD
+  writes them, so the profile itself is checked afterwards: if anything the sync could have
+  written is still there, or the records were empty, the run stops at that tag with the leftover
+  paths named, before another tag launches into a profile that would refuse it. If taking the
+  sync back fails, the copy is kept and its path printed. The refusals above are all decided
   before the first launch of any tag; the copy-aside, checkout and sync run as each tag's turn
   comes. The pinned checkout is admitted to the harness arm's fence for reading only, and a
   pinned tag's results go in a folder named for it.
