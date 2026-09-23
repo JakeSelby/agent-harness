@@ -27,7 +27,7 @@ Note to carry over: {{arguments}}
 
 2. **Save the shared task contract.** Read `harness task show` first. Write a JSON input with
    `objective`, `next_steps`, `decisions`, and `artifacts`; add the framework checkout and
-   baseline when using BMad. Save with `harness task save --input <file> --runtime <runtime>
+   baseline when a planning framework owns the artifacts. Save with `harness task save --input <file> --runtime <runtime>
    --revision <current-revision>`. The next runtime reads the same data, rechecks the tree,
    and establishes its own permissions. A handoff never transfers an approval.
 

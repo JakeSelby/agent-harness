@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness integration check|apply <name>` is the surface for a declared framework integration.
+  It reads the template directory, the install destination, the presence probe and the skill
+  surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
+  session-start drift notice probes that descriptor's `detect` path instead of a directory
+  literal in the hook. Its `detect`, `templates`, `destination` and `skill_roots` must be
+  relative paths with no `..` segment, because `apply` writes under one of them.
+  `harness bmad check|apply` is kept as an alias, and installed override files are
+  unaffected either way (#349).
+
 - Every session row carries `raw_vs_deduped`, the measured size of the usage deduplication: the
   per-line sum of the four token fields over the deduplicated total the row reports, taken over
   the same records — the session's own and those of the subagent files folded into it. The
@@ -104,6 +113,7 @@ All notable changes to this project are documented here. The format follows
   by naming it in `agentType`; the usage ledger does record every workflow agent, but those rows
   carry no tool use id, so the reroute join is empty for all of them. The record names the two
   changes the code needs. `docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md` (#540).
+
 - A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
   release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
   and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
@@ -238,6 +248,22 @@ All notable changes to this project are documented here. The format follows
   prefix (#497).
 
 ### Changed
+
+- A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
+  `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
+  fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
+  it: a recipe layer is refused whether it is spawned unnamed, as a generic subagent or as a band
+  worker, the refusal offers exactly the descriptor's declared input roots as the isolated
+  worker's read roots, and one cheap turn confirms that an unnamed spawn still routes to the cost
+  variant's default band worker at that row's class and effort with the budget sentence, and that
+  a null variant rewrites nothing. The BMad run becomes an optional, non-gating suite run once per
+  minor release on one target, documented in `docs/bmad.md` and `docs/releasing.md`; the offline
+  template and surface tests stay in CI, because they are what catches an upstream rename. The
+  catalog now carries two limitations in place of one: that no framework's workflow is exercised
+  natively in a qualification round, and what descriptor-driven confinement still cannot
+  recognise. Generic task continuation moves off the framework page to
+  `docs/task-continuation.md`, and the framework-named asides in the design-loop skill, the
+  handoff workflow, the delegation-tiering skill and a spawn-hook test are gone (#349).
 
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
   single-coordinator for some time — a sync registers one command per lifecycle event and
