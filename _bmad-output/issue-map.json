@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 18,
-    "story": 226,
+    "story": 227,
     "task": 26,
     "bug": 80,
     "chore": 66,
@@ -5299,6 +5299,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B076.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S226",
+      "github_number": 710,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/710",
+      "title": "docs(field-scan): credit claude-md-doctor and RuleReceipt and narrow the measured-rules claim",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S226.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
