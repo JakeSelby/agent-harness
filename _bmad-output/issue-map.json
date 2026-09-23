@@ -5277,6 +5277,19 @@
       "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B074",
+      "github_number": 704,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/704",
+      "title": "gate-invalidation reads the stop-gate state at an unresolved path, so a run under a symlinked home is never observed",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B074.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
     }
   ]
 }
