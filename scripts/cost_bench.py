@@ -27,6 +27,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from harness_core import cache_prefix  # noqa: E402  the ledger's miss ratio, one definition
+
 CHARS_PER_TOKEN = 4.0
 GROWTH_LIMIT = 0.05
 # What each counted group covers, carried in the written figure so a reader of the file alone
@@ -81,7 +84,8 @@ CONFIG_GLOBS = ("CLAUDE.md", "CLAUDE.personal.md", "rules/**/*.md", "skills/*/SK
                 "agents/*.md", "output-styles/*.md")
 SPAWN_TOOLS = ("Task", "Agent")
 # Diagnostic fields `parse_result` reads out of the stream; `backfill` derives the same ones.
-STREAM_FIELDS = ("first_call_cache_write", "tool_counts", "spawns", "hook_blocks")
+STREAM_FIELDS = ("first_call_cache_write", "tool_counts", "spawns", "hook_blocks",
+                 "cache_miss_ratio")
 RESULTS = "results.jsonl"
 ENRICHED = "results.enriched.jsonl"
 
@@ -380,6 +384,7 @@ def parse_result(stdout):
     else:
         tokens = {kind: int((result.get("usage") or {}).get(kind) or 0) for kind in TOKEN_KINDS}
     first_turns, seen, first_write, tools = [], set(), None, {}
+    cache = {"cache_read": 0, "cache_write": 0, "turns": 0, "known": True}
     for message in messages:
         if not isinstance(message, dict) or message.get("type") != "assistant":
             continue
@@ -393,6 +398,12 @@ def parse_result(stdout):
             continue
         if first_write is None:
             first_write = int(body["usage"].get("cache_creation_input_tokens") or 0)
+        for field, key in (("cache_read", "cache_read_input_tokens"),
+                           ("cache_write", "cache_creation_input_tokens")):
+            if key not in body["usage"]:
+                cache["known"] = False  # one silent turn and the run's total is not its spend
+            cache[field] += int(body["usage"].get(key) or 0)
+        cache["turns"] += 1
         if thread in seen:
             continue
         seen.add(thread)
@@ -402,7 +413,26 @@ def parse_result(stdout):
             "turns": int(result.get("num_turns") or 0), "is_error": bool(result.get("is_error")),
             "subtype": str(result.get("subtype") or ""), "first_turns": first_turns,
             "first_call_cache_write": first_write, "tool_counts": tools,
-            "spawns": sum(tools.get(name, 0) for name in SPAWN_TOOLS), "hook_blocks": None}
+            "spawns": sum(tools.get(name, 0) for name in SPAWN_TOOLS), "hook_blocks": None,
+            "cache_miss_ratio": run_miss_ratio(cache)}
+
+
+def run_miss_ratio(cache):
+    """The share of a run's prefix the provider re-wrote: `write / (read + write)`, or None.
+
+    The ledger's figure, taken from `harness_core.cache_prefix` so the replay and
+    `harness usage --by prefix` cannot drift apart. Unlike the ledger's, this one counts every
+    thread the run opened, subagents included: a fan-out writes a fresh prefix, and here that is
+    part of what the run cost rather than something to subtract.
+
+    None when the CLI output carried no per-turn usage at all, when a turn's usage block omits
+    either cache field, and when the turns it did carry report neither reads nor writes. Zero is
+    a run that served its whole prefix from cache, and a run that cannot say must never be read
+    as that one: a silent turn counted as two zeroes would be averaged in as a held prefix."""
+    if not cache["turns"] or not cache["known"]:
+        return None
+    ratio = cache_prefix.miss_ratio(cache, "")
+    return None if ratio is None else round(ratio, 4)
 
 
 def _rates(prices, model):
@@ -512,6 +542,7 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
     row = dict(opts["stamp"], task=task["id"], arm=arm, tag=opts["tag"], rep=rep, passed=None, error=False,
                error_kind="", cost_usd=None, cost_normalised_usd=None, turns=None, wall_seconds=None,
                first_call_cache_write=None, tool_counts={}, spawns=None, hook_blocks=None,
+               cache_miss_ratio=None,
                change_note=opts.get("change_note", ""), preflight=opts.get("preflight", "skipped"),
                arm_config_dir=config_label(config, opts.get("home")),
                arm_fingerprint=config_fingerprint(config, opts.get("home")),
@@ -544,7 +575,10 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
                    cost_normalised_usd=normalised_cost(parsed["cost_usd"], parsed["first_turns"], opts["prices"]),
                    **{field: parsed[field] for field in STREAM_FIELDS})
         if parsed["is_error"] or done.returncode:
-            return dict(row, error=True, error_kind=parsed["subtype"] or "exit %s" % done.returncode)
+            # The other stream fields diagnose an errored run; a miss ratio only describes one
+            # that finished, and an aborted run's turns are not the spend it would have had.
+            return dict(row, error=True, cache_miss_ratio=None,
+                        error_kind=parsed["subtype"] or "exit %s" % done.returncode)
         try:
             row["passed"] = bool(opts.get("scorer", score)(task, workdir, opts["repo"])[0])
         except Exception as exc:  # a check that cannot run says nothing about the agent's work
@@ -706,6 +740,21 @@ def per_task(rows, field="cost_usd"):
     return out
 
 
+def cache_miss(rows):
+    """Per arm: the mean of the per-run miss ratios, over the runs that reported one.
+
+    None rather than zero when no scored run in the arm reported a figure, matching the per-run
+    rule. It sits beside the cache-normalised ratio because the two answer different halves of
+    one question: the normalised cost says what the run would have cost with a cold prefix, and
+    this says how much of its prefix it actually re-bought."""
+    out = {}
+    for arm in ARMS:
+        known = [r["cache_miss_ratio"] for r in rows if r["arm"] == arm and not r["error"]
+                 and r.get("cache_miss_ratio") is not None]
+        out[arm] = round(_mean(known), 4) if known else None
+    return out
+
+
 def verdict(summary):
     """The publishable threshold, fixed before the run: at most 85% of bare per passed task, passing
     no fewer than bare minus one."""
@@ -734,7 +783,8 @@ def history_row(rows, series):
             "cli_version": first["cli_version"], "reps": max(r["rep"] for r in rows), "runs": len(rows),
             "change_note": first.get("change_note", ""), "per_task": per_task(rows),
             "bare": reported["bare"], "harness": reported["harness"], "ratio": ratio,
-            "ratio_cache_normalised": verdict(normalised)[0], "threshold": THRESHOLD, "status": status}
+            "ratio_cache_normalised": verdict(normalised)[0], "cache_miss": cache_miss(rows),
+            "threshold": THRESHOLD, "status": status}
 
 
 def upsert_history(path, row):
@@ -762,14 +812,18 @@ def render_history(rows):
              "Dollars are list-price equivalents reported by the CLI, not money charged. Compare ratios"
              " across days, never dollars. A new series means the task set or the model changed.", "",
              "| Date | Series | Bucket | Harness | Model | Bare USD per pass | Harness USD per pass |"
-             " Ratio | Predicted | Cache-normalised ratio | Passed, bare | Passed, harness | Errors |"
-             " Threshold %.2f |" % THRESHOLD,
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+             " Ratio | Predicted | Cache-normalised ratio | Cache miss, bare | Cache miss, harness |"
+             " Passed, bare | Passed, harness | Errors | Threshold %.2f |" % THRESHOLD,
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+             " --- | --- |"]
     for r in rows:
-        lines.append("| %s | %s | %s | %s @ %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %s |" % (
+        miss = r.get("cache_miss") or {}
+        lines.append("| %s | %s | %s | %s @ %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+                     " %d | %s |" % (
             r["date"], r["series"], r.get("bucket") or "n/a", r["harness_version"], r["harness_sha"][:7],
             r["model"], usd(r["bare"]["cost_per_passed"]), usd(r["harness"]["cost_per_passed"]),
             usd(r["ratio"]), usd(r.get("predicted_ratio")), usd(r["ratio_cache_normalised"]),
+            usd(miss.get("bare")), usd(miss.get("harness")),
             usd(r["bare"]["passed"]), usd(r["harness"]["passed"]),
             r["bare"]["errors"] + r["harness"]["errors"], r["status"]))
         if r.get("change_note"):
@@ -816,10 +870,12 @@ def backfill_rows(rows, raw_dir, config_dir=None, home=None):
         except (OSError, ValueError):
             missing.append(path.name)
             for field in STREAM_FIELDS:
-                new.setdefault(field, {} if field == "tool_counts" else None)
+                new[field] = {} if field == "tool_counts" else None
             out.append(new)
             continue
         new.update({field: parsed[field] for field in STREAM_FIELDS})
+        if new.get("error"):
+            new["cache_miss_ratio"] = None  # the same rule `run_one` applies to an errored run
         out.append(new)
     return out, missing
 

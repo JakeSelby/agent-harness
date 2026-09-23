@@ -44,12 +44,13 @@ because code that never knew those roles cannot miss them. `harness uninstall` b
 downgrade is the remedy; it removes what the newer release wrote.
 
 Routing is session-scoped for the same reason that effort is sync-scoped: what a native agent is
-comes from files read at a moment, not from a live lookup. Claude Code loads its agent registry
-when the session process starts and never reloads it, so session start records which definitions
-that registry held, and an unnamed spawn is routed only to a worker named in its own session's
-record. A `startup` writes the record, a `resume` may only narrow an existing one, and `clear` and
-`compact` leave it alone. A session with no record keeps the previous behaviour and is told once
-to start a new one, so start a new session after a sync that installs or changes the band workers.
+comes from files read at a moment, not from a live lookup. Session start records which definitions
+the session's registry held, and an unnamed spawn is routed only to a worker that session can
+resolve. A `startup` writes the record, a `resume` may only narrow an existing one, and `clear` and
+`compact` leave it alone. A session that reloads a definition installed after it started is told
+so by the runtime, on its own transcript, and routes to that worker from the turn it hears it;
+a session that is told nothing — a headless one never reloads — keeps the previous behaviour and
+is asked once to start a new session, which is still the certain remedy after a sync.
 Any failure to answer the routing question leaves the spawn unrouted and silent, never refused.
 
 Usage records identify the runtime and available runtime version. Codex cumulative token snapshots
@@ -92,6 +93,29 @@ raise. Level 3 allows every grade, level 2 asks at grade 2 and up, level 1 asks 
 and an unknown grade is judged as 1. A policy file that cannot be honoured as written is an error
 naming the file, never a silent "no policy". Both providers write to the existing
 `decisions.jsonl` ledger and neither reaches the network.
+
+A third provider, `jev`, lives in `lib/harness_core/decisions/jev.py` and answers over the
+network. It asks a validated question pack — a `choice` judgment and a `score` severity — about
+the action class, the counterparty, the command grade and at most a command string and a summary,
+and it carries the deterministic `local` provider underneath. The service has no abstention
+outcome, so every `choice` question must offer an explicit `unknown` option and a pack without one
+is refused before anything is sent; `unknown` and an answer below the confidence threshold both
+mean "use the deterministic answer". A judgment may turn an `allow` into an `ask` and may never
+widen a decision or produce a `deny`. Every other outcome fails open to the deterministic
+decision: no key, a timeout, an exhausted budget, a malformed response, an unexpected exception.
+Each call writes one `event` row carrying the status, the requested and returned model ids, the
+pack and request hashes, the usage and the latency, and never the state; `harness decide`
+suppresses that row, because a reporting command changes nothing. The endpoint must be `https`
+and the opener can reach no other scheme, since a bearer key goes with every request, and a
+request is charged to its budget as it is sent rather than when it succeeds, so a failing
+endpoint cannot be retried without limit. The token ceilings, the endpoint, the response shape
+and the status mapping come from the vendor's documentation and have not been checked against
+the live service from this repository. Answers are not
+deterministic across identical requests, so nothing promises a repeated request answers the same
+way — only that the same request hashes the same. Credentials come from `TYPESAFE_API_KEY` or
+`JEV_API_KEY` in the environment; no key file is ever read. The client is not live unless it is
+constructed with `live=True`, so selecting this provider today calls nothing: the opt-in
+configuration, the per-decision-point modes and the sentinel that disables every call are #137.
 
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.

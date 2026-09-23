@@ -28,9 +28,10 @@ with no `subagent_type`, or `general-purpose`, is rewritten to `worker-a`, `work
 `worker-c` — the variant's `default_band` — and the orchestrator that wanted a different band
 spawns that worker by name. A machine whose worker definitions are not installed is not routed
 at all: a `subagent_type` the tool cannot resolve would fail the spawn. Neither is a session
-that started before they were installed, because the tool loads its agent registry once, at
-process start — so the reroute asks the session registry `posture.sessions_dir` describes, not
-the disk, and a reroute never turns a spawn that would have worked into one that fails.
+that started before they were installed and has not been told about them since — so the reroute
+asks the session registry `posture.sessions_dir` describes and the reload the transcript
+announces, not the disk, and a reroute never turns a spawn that would have worked into one
+that fails.
 
 The ladder is the adapter's `bindings.json` class table, strongest class first, matched as
 substrings of the model ids a transcript records; no model name is written here.
@@ -211,7 +212,33 @@ def is_bare(tool_input):
     return not tool_input.get("model") and is_unnamed(tool_input)
 
 
-def routable(kind, cwd, session=None, announce=False):
+def announced(module, session, transcript, kind):
+    """Whether this session was told, after it started, that it resolves `kind`.
+
+    The runtime's own statement outranks the record written at session start, because it is
+    later and it is about this session: a session that reloaded nothing announces nothing, so
+    this can only ever widen what routes. The transcript is the discovery path and the record
+    is the memory — the tail read is bounded, so what it found is kept where the next spawn can
+    read it without the delta still being in the tail. An older `posture.py` beside this hook
+    answers no, which is the conservative gate.
+    """
+    if module is None:
+        return False
+    reader = getattr(module, "transcript_agents", None)
+    keeper = getattr(module, "remember_agents", None)
+    remembered = getattr(module, "session_announced", None)
+    try:
+        names = reader(transcript) if reader else None
+        if names is None:
+            names = remembered(session) if remembered else None
+        elif keeper:
+            keeper(session, names)
+        return kind in (names or ())
+    except Exception:
+        return False
+
+
+def routable(kind, cwd, session=None, announce=False, transcript=None):
     """`(the user's definition, notice)` for a worker a reroute would name; one of them is None.
 
     A reroute must land on the definition the harness synced and on no other. A project-level
@@ -220,12 +247,12 @@ def routable(kind, cwd, session=None, announce=False):
     to route nothing, named out loud. A machine that has not synced the workers is the same
     answer for the plainer reason that the tool could not resolve the type at all.
 
-    A file on disk is not enough: the tool loads its agent registry when the session process
-    starts and never reloads it, so this session must also have recorded the worker at its own
-    start (`posture.sessions_dir`). Without that record the spawn is left as it was, because a
-    `subagent_type` this session cannot resolve fails the call outright. `announce` is the
-    caller that speaks — the spawn hook, not the pricing one — and only it spends the
-    once-per-session memory on that notice.
+    A file on disk is not enough: a session resolves the registry it loaded, so this session
+    must also have recorded the worker at its own start (`posture.sessions_dir`) or have been
+    told about it since (`posture.transcript_agents`). With neither the spawn is left as it
+    was, because a `subagent_type` this session cannot resolve fails the call outright.
+    `announce` is the caller that speaks — the spawn hook, not the pricing one — and only it
+    spends the once-per-session memory on that notice.
     """
     if not isinstance(kind, str) or not AGENT_NAME.fullmatch(kind):
         return None, None
@@ -246,6 +273,8 @@ def routable(kind, cwd, session=None, announce=False):
         # out of another session's sweep.
         module.refresh_session_record(session)
     if known is None or kind not in known:
+        if announced(module, session, transcript, kind):
+            return definition(kind, cwd) or {}, None
         notice = (kind + " is installed but this session started before it was; start a new "
                   "session to route unnamed spawns")
         if not (announce and notice_once(session, UNRESOLVABLE_NOTICE)):
@@ -254,7 +283,7 @@ def routable(kind, cwd, session=None, announce=False):
     return definition(kind, cwd) or {}, None
 
 
-def band_route(posture, models, cwd, table=None, session=None, announce=False):
+def band_route(posture, models, cwd, table=None, session=None, announce=False, transcript=None):
     """`(route, notice)` for a spawn that named nothing; a route is None when nothing routes it.
 
     The cost table is read here and nowhere else in this hook, so a spawn that named a role
@@ -277,7 +306,7 @@ def band_route(posture, models, cwd, table=None, session=None, announce=False):
     if band not in getattr(posture, "BANDS", ()):
         return None, None
     worker = posture.BAND_ROLES[band]
-    fields, notice = routable(worker, cwd, session, announce)
+    fields, notice = routable(worker, cwd, session, announce, transcript)
     if fields is None:
         return None, notice
     row = posture.row_for(table, worker) or {}
@@ -364,7 +393,8 @@ def main():
     if posture and is_unnamed(tool_input) and hasattr(posture, "row_for"):
         try:
             route, notice = band_route(posture, models, payload.get("cwd"), None,
-                                       payload.get("session_id"), True)
+                                       payload.get("session_id"), True,
+                                       payload.get("transcript_path"))
         except Exception:
             # An older `posture.py` beside a newer hook answers none of this. The whole routing
             # decision is one all-or-nothing question, and the safe answer is the behaviour
