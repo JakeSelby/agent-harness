@@ -131,9 +131,12 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    spawn a subagent that names no role, and confirm from the subagent's own transcript that it
    ran as the variant's default band worker at that row's model and effort, that its brief ends
    with the budget sentence, that the usage feed reported its spend against that budget, and that
-   `harness usage --rescan --by role` records the routed row. Confirm that a session already
-   running before the workers were installed is not rerouted and that its spawn still succeeds.
-   Then select a variant with the feed off, no default band and no budgets, and confirm that none
+   `harness usage --rescan --by role` records the routed row. Confirm that a session started
+   before the workers were installed keeps them out of its session record and that its spawn
+   still succeeds. A headless client runs each turn as its own process, so such a session is
+   continued by resuming it, and the resumed process loads the workers from disk and announces
+   them; its spawn may then route to the announced band worker, but never to one that neither its
+   record nor that announcement named. Then select a variant with the feed off, no default band and no budgets, and confirm that none
    of this occurs. On a runtime that does not route native spawns, verify the posture through an
    isolated role worker's model and effort and the budget sentence in a named role's brief, and
    record the feed as not applicable with that reason.
