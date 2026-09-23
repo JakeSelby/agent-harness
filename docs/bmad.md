@@ -89,11 +89,14 @@ discussion and acceptance evidence, and the file carries the design. Those three
 tool. Everything after the end marker belongs to the people and agents who write the story, and the
 tool never rewrites it. The block counts only where it opens, on the first non-blank line after
 the H1, and it closes at the first end marker after that. The markers quoted anywhere else, in prose
-or in a code fence, are ordinary text.
+or in a code fence, are ordinary text. Blank lines and whole-line HTML comments between the
+frontmatter and the H1 are kept as they are; anything else there makes the file malformed. A
+leading byte-order mark and CRLF line endings are kept on every rewrite.
 
 Each template section holds a placeholder, `<!-- fill: what goes here -->`. A section counts as
 filled when text remains once HTML comments, an unclosed one included, and `###` to `######`
-sub-headings are taken out; any `#` or `##` heading outside a comment or fence ends a section, and
+sub-headings are taken out; any level 1 or 2 heading, ATX or setext, outside a comment or fence
+ends a section, and
 a required heading that appears twice is a finding. These sections must be filled:
 
 - **story:** Story, Acceptance criteria, Design, Tasks, Dev notes
@@ -114,8 +117,11 @@ missing or unfilled. The required `issue-ownership` check runs it for the pull r
 delivery issue on pull request and merge queue runs alike, so an unenriched story elsewhere in the
 corpus never blocks an unrelated pull request.
 
-A file without the managed markers is a legacy stub from before typed templates. The depth check
-passes it with a notice, and `refresh` keeps rendering it the old way. `upgrade` converts stubs to
+A legacy stub is a file from before typed templates that opens with exactly the stub the tool
+rendered for its item, ignoring `updated` and line endings; anything after that stub is carried
+amendment text. Any other file without a well-formed managed block is malformed: `audit` reports
+it, `refresh` refuses it, and `audit --delivery` fails it, so deleting a marker never skips the
+depth check. The depth check passes a legacy stub with a notice, and `refresh` keeps rendering it the old way. `upgrade` converts stubs to
 their kind's skeleton, carrying every byte after the old stub, such as `## Amendment` sections,
 over verbatim at the end of the file, in the file's own line endings. It refuses a stub that
 differs from the one the tool rendered, converts all the selected files or none, restoring any it

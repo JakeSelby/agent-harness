@@ -151,9 +151,25 @@ class RenderingTests(unittest.TestCase):
 
 
 class MarkerTests(TempRoot):
-    def test_missing_or_duplicated_markers_are_refused_everywhere(self):
-        item = item_for("story")
-        good = sync.render_artifact(item)
+    def setUp(self):
+        super().setUp()
+        self.item = item_for("story")
+        self.manifest = manifest_for([self.item])
+        self.live = [{"number": 1, "title": "renamed", "state": "open", "parent_issue_url": None}]
+
+    def assert_refused_everywhere(self, text):
+        path = self.write(self.item, text)
+        with self.assertRaisesRegex(RuntimeError, "managed block missing or malformed"):
+            sync.artifact_layout(self.item, text)
+        with self.assertRaisesRegex(RuntimeError, "managed block missing or malformed; repair it by hand: AH-S001"):
+            sync.refresh(self.manifest, self.live)
+        self.assertEqual(path.read_bytes().decode("utf-8"), text)
+        self.assertIn("AH-S001: managed block missing or malformed", sync.audit_manifest(self.manifest))
+        self.assertEqual(sync.depth_findings(self.manifest, 1), (["AH-S001 #1: managed block missing or malformed"], []))
+        self.assertEqual(sync.upgrade(self.manifest, check=True)[0][1:], ("refuse", "managed block missing or malformed"))
+
+    def test_broken_markers_are_refused_everywhere(self):
+        good = sync.render_artifact(self.item)
         broken = {
             "missing end": good.replace(sync.SYNC_END, ""),
             "begin in the head region twice": good.replace(sync.SYNC_BEGIN, sync.SYNC_BEGIN + "\n" + sync.SYNC_BEGIN),
@@ -162,31 +178,79 @@ class MarkerTests(TempRoot):
             "reversed": good.replace(sync.SYNC_BEGIN, "@@").replace(sync.SYNC_END, sync.SYNC_BEGIN).replace(
                 "@@", sync.SYNC_END
             ),
+            "second begin after the block": good.replace(sync.SYNC_END, sync.SYNC_END + "\n\n" + sync.SYNC_BEGIN),
         }
-        manifest = manifest_for([item])
-        live = [{"number": 1, "title": "renamed", "state": "open", "parent_issue_url": None}]
         for label, text in broken.items():
             with self.subTest(label):
-                path = self.write(item, text)
-                with self.assertRaisesRegex(RuntimeError, "missing or duplicated"):
-                    sync.sync_layout(text)
-                with self.assertRaisesRegex(RuntimeError, "markers are missing or duplicated.*AH-S001"):
-                    sync.refresh(manifest, live)
-                self.assertEqual(path.read_bytes().decode("utf-8"), text)
-                self.assertIn("AH-S001: bmad-sync markers are missing or duplicated", sync.audit_manifest(manifest))
-                self.assertEqual(sync.depth_findings(manifest, 1)[0], ["AH-S001 #1: bmad-sync markers are missing or duplicated"])
-                self.assertEqual(sync.upgrade(manifest, check=True)[0][1], "refuse")
+                self.assert_refused_everywhere(text)
 
-    def test_a_file_with_no_markers_is_a_legacy_stub(self):
-        self.assertIsNone(sync.sync_layout(sync.render_legacy_stub(item_for("story"))))
+    def test_a_stripped_begin_marker_is_refused_and_fails_the_depth_check(self):
+        self.assert_refused_everywhere(sync.render_artifact(self.item).replace(sync.SYNC_BEGIN, ""))
 
-    def test_an_end_marker_alone_in_the_head_leaves_the_file_legacy(self):
-        text = sync.render_artifact(item_for("story")).replace(sync.SYNC_BEGIN, "")
-        self.assertIsNone(sync.sync_layout(text))
+    def test_a_stripped_end_marker_is_refused_and_fails_the_depth_check(self):
+        self.assert_refused_everywhere(sync.render_artifact(self.item).replace(sync.SYNC_END, ""))
+
+    def test_a_typed_body_with_no_markers_is_refused_and_fails_the_depth_check(self):
+        text = sync.render_artifact(self.item).replace(sync.SYNC_BEGIN + "\n", "").replace(sync.SYNC_END + "\n", "")
+        self.assertNotIn("bmad-sync", text)
+        self.assert_refused_everywhere(text)
+
+    def test_content_before_the_h1_other_than_comments_is_refused(self):
+        good = sync.render_artifact(self.item)
+        self.assert_refused_everywhere(good.replace("\n# AH-S001", "\nStray prose.\n\n# AH-S001", 1))
+
+    def test_a_file_with_no_markers_is_a_legacy_stub_only_when_it_opens_with_the_legacy_render(self):
+        stub = sync.render_legacy_stub(self.item)
+        self.assertIsNone(sync.artifact_layout(self.item, stub))
+        self.assertIsNone(sync.artifact_layout(self.item, stub + AMENDMENT))
+        self.assertIsNone(sync.artifact_layout(self.item, "\ufeff" + stub.replace("\n", "\r\n")))
+        with self.assertRaisesRegex(RuntimeError, "managed block missing or malformed"):
+            sync.artifact_layout(self.item, stub.replace("owns scope", "owns the scope"))
 
     def test_the_block_ends_at_the_first_end_marker(self):
-        text = sync.render_artifact(item_for("story"))
+        text = sync.render_artifact(self.item)
         self.assertEqual(sync.sync_layout(text), text.index(sync.SYNC_END) + len(sync.SYNC_END))
+
+    def test_a_begin_marker_fenced_before_the_first_section_is_body_text(self):
+        text = sync.render_artifact(self.item)
+        head_end = sync.sync_layout(text)
+        fenced = text[:head_end] + "\n\n```text\n" + sync.SYNC_BEGIN + "\n```\n" + text[head_end:]
+        self.assertEqual(sync.sync_layout(fenced), head_end)
+        path = self.write(self.item, fenced)
+        self.assertEqual(sync.audit_manifest(self.manifest), [])
+        with mock.patch.object(sync, "write_manifest"):
+            self.assertEqual(sync.refresh(self.manifest, self.live), ["AH-S001"])
+        after = path.read_text(encoding="utf-8")
+        self.assertEqual(after[sync.sync_layout(after):], fenced[head_end:])
+
+    def test_comments_before_the_h1_are_kept_byte_for_byte(self):
+        text = sync.render_artifact(self.item).replace(
+            "---\n\n# AH-S001", "---\n\n<!-- markdownlint-disable MD041 -->\n\n# AH-S001", 1
+        )
+        path = self.write(self.item, text)
+        self.assertEqual(sync.audit_manifest(self.manifest), [])
+        with mock.patch.object(sync, "write_manifest"):
+            self.assertEqual(sync.refresh(self.manifest, self.live), ["AH-S001"])
+        after = path.read_text(encoding="utf-8")
+        self.assertIn("---\n\n<!-- markdownlint-disable MD041 -->\n\n# AH-S001 \u2014 renamed\n", after)
+        self.assertEqual(after[sync.sync_layout(after):], text[sync.sync_layout(text):])
+
+    def test_a_byte_order_mark_is_parsed_past_and_written_back(self):
+        text = "\ufeff" + sync.render_artifact(self.item)
+        self.assertEqual(sync.sync_layout(text), text.index(sync.SYNC_END) + len(sync.SYNC_END))
+        path = self.write(self.item, text)
+        self.assertEqual(sync.audit_manifest(self.manifest), [])
+        self.assertEqual(sync.depth_findings(self.manifest, 1)[0][0], "AH-S001 #1: required story section 'Story' is unfilled")
+        with mock.patch.object(sync, "write_manifest"):
+            self.assertEqual(sync.refresh(self.manifest, self.live), ["AH-S001"])
+        raw = path.read_bytes()
+        self.assertTrue(raw.startswith(b"\xef\xbb\xbf---\n"))
+        self.assertEqual(raw.count(b"\xef\xbb\xbf"), 1)
+
+    def test_a_legacy_stub_with_a_byte_order_mark_upgrades_and_keeps_it(self):
+        path = self.write(self.item, "\ufeff" + sync.render_legacy_stub(self.item) + AMENDMENT)
+        self.assertEqual(sync.upgrade(self.manifest)[0][1], "convert")
+        self.assertEqual(path.read_bytes().decode("utf-8"), "\ufeff" + sync.render_artifact(self.item) + AMENDMENT)
 
 
 class UpgradeTests(TempRoot):
@@ -271,6 +335,12 @@ class UpgradeTests(TempRoot):
 
 
 class RealCorpusTests(unittest.TestCase):
+    def test_every_real_stub_reads_as_legacy(self):
+        for item in sync.load_manifest()["items"]:
+            text = (REPO / item["artifact_path"]).read_text(encoding="utf-8")
+            with self.subTest(item["bmad_id"]):
+                self.assertIsNone(sync.artifact_layout(item, text))
+
     def test_every_existing_artifact_converts_without_loss(self):
         manifest = sync.load_manifest()
         with mock.patch.object(sync, "write_text_atomic") as write:
@@ -281,7 +351,7 @@ class RealCorpusTests(unittest.TestCase):
         self.assertEqual(len(report), len(manifest["items"]))
 
     def test_each_conversion_carries_the_original_tail_byte_for_byte(self):
-        last_line = "planning context rather than duplicate the issue.\n"
+        last_line = re.compile(r"planning context rather than duplicate the issue\.\r?\n")
         carried_any = 0
         for item in sync.load_manifest()["items"]:
             original = (REPO / item["artifact_path"]).read_bytes().decode("utf-8")
@@ -290,7 +360,7 @@ class RealCorpusTests(unittest.TestCase):
                 continue
             with self.subTest(item["bmad_id"]):
                 self.assertEqual(status, "convert")
-                tail = original[original.index(last_line) + len(last_line):]
+                tail = original[last_line.search(original).end():]
                 skeleton = sync.render_artifact(item)
                 if tail and not tail.startswith("\n"):
                     skeleton += "\n"
@@ -584,7 +654,35 @@ class UpgradeRollbackTests(TempRoot):
                 sync.upgrade(manifest)
         for path, original in originals.items():
             self.assertEqual(path.read_bytes().decode("utf-8"), original)
-        self.assertEqual(calls[2], calls[0])
+        # The failing file is restored too, then the one written before it.
+        self.assertEqual(calls[2:], [calls[1], calls[0]])
+
+    def test_a_failed_restore_does_not_stop_the_others_and_is_named(self):
+        items = [item_for("story", 1), item_for("story", 2), item_for("story", 3)]
+        manifest = manifest_for(items)
+        paths = [self.write(item, sync.render_legacy_stub(item)) for item in items]
+        originals = {path: path.read_bytes() for path in paths}
+        real = sync.write_text_atomic
+        calls = []
+
+        def flaky(path, text):
+            calls.append(path)
+            if len(calls) == 3:
+                raise OSError("disk full")
+            if len(calls) == 4:
+                raise OSError("still full")
+            real(path, text)
+
+        with mock.patch.object(sync, "write_text_atomic", side_effect=flaky):
+            with self.assertRaises(RuntimeError) as caught:
+                sync.upgrade(manifest)
+        message = str(caught.exception)
+        self.assertIn("disk full", message)
+        self.assertIn("could not be restored: {} (still full)".format(paths[2]), message)
+        self.assertIsInstance(caught.exception.__cause__, OSError)
+        self.assertEqual(calls[3:], [paths[2], paths[1], paths[0]])
+        self.assertEqual(paths[0].read_bytes(), originals[paths[0]])
+        self.assertEqual(paths[1].read_bytes(), originals[paths[1]])
 
 
 class AtomicWriteTests(unittest.TestCase):
@@ -637,6 +735,19 @@ class SectionParsingTests(TempRoot):
         self.assertEqual(self.body_findings("task", body), [
             "AH-T001 #1: required task section 'Acceptance criteria' is missing",
         ])
+
+    def test_setext_headings_are_section_boundaries(self):
+        body = (
+            "\n\nGoal\n----\nDone.\n\nAppendix\n========\nText.\n\n"
+            "## Acceptance criteria\n\nPreamble\n---\n## Tasks\nDone.\n"
+        )
+        self.assertEqual(self.body_findings("task", body), [
+            "AH-T001 #1: required task section 'Acceptance criteria' is unfilled",
+        ])
+
+    def test_a_rule_after_a_blank_line_is_not_a_heading(self):
+        body = "\n\n## Goal\nDone.\n\n---\n## Acceptance criteria\nDone.\n## Tasks\nDone.\n"
+        self.assertEqual(self.body_findings("task", body), [])
 
     def test_a_backtick_info_string_with_a_backtick_is_not_a_fence(self):
         body = "\n\n## Goal\n``` not`a fence\n## Acceptance criteria\nDone.\n## Tasks\nDone.\n"

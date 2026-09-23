@@ -283,11 +283,15 @@ planning context rather than duplicate the issue.
 
 def render_head(item):
     """The tool-owned part of a typed story file: frontmatter, H1 and the managed block."""
-    return """---
-{}
----
+    return render_frontmatter_block(item) + "\n" + render_title_block(item)
 
-# {} — {}
+
+def render_frontmatter_block(item):
+    return "---\n{}\n---\n".format(render_frontmatter(item))
+
+
+def render_title_block(item):
+    return """# {} — {}
 
 {}
 - **GitHub issue:** [#{}]({})
@@ -298,7 +302,6 @@ def render_head(item):
 
 {}
 {}""".format(
-        render_frontmatter(item),
         item["bmad_id"],
         item["title"],
         SYNC_BEGIN,
@@ -321,39 +324,116 @@ def render_artifact(item):
     return render_head(item) + "\n\n" + story_template(item["type"])
 
 
-def sync_layout(text):
-    """Where the tool-owned head ends: None for a legacy stub, else the offset just past the end marker.
+MALFORMED = "managed block missing or malformed"
+BOM = "﻿"
+FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
 
-    A file is typed only when the first non-blank line after its H1 is the begin marker; the block
-    ends at the first end marker after it. Markers elsewhere in the body are ordinary text. The head
-    region runs from the H1 to the first `## ` line: a begin there with no end before that line, or
-    two begins there, is refused, because rewriting such a head could swallow its owner's text.
-    """
-    lines = text.splitlines(True)
-    index = 0
-    if lines and lines[0].rstrip("\r\n") == "---":
-        index = next((i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---"), len(lines)) + 1
-    while index < len(lines) and not lines[index].strip():
-        index += 1
-    if index >= len(lines) or not lines[index].startswith("# "):
+
+def fence_opening(line):
+    """The fence a line opens, or None; a backtick fence's info string may not hold a backtick."""
+    match = FENCE_OPEN.match(line)
+    if not match or (match.group(1)[0] == "`" and "`" in match.group(2)):
         return None
-    offset = sum(len(line) for line in lines[:index + 1])
-    head = []
-    for line in lines[index + 1:]:
+    return match.group(1)
+
+
+def fence_closes(line, fence):
+    match = FENCE_CLOSE.match(line)
+    return bool(match) and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence)
+
+
+def parse_layout(text):
+    """Locate the tool-owned parts of a typed story file.
+
+    Returns None when no managed block opens on the first non-blank line after the H1, else a dict
+    of offsets into `text`: `bom` (0 or 1), `frontmatter_end` (just past the closing `---` line),
+    `title_start` (the H1) and `head_end` (just past the end marker). Between the frontmatter and
+    the H1 only blank lines and whole-line HTML comments may stand; they belong to the author and
+    are kept. Raises when that area holds anything else, when the begin marker has no end before
+    the first `## `, or when a second begin marker stands outside a code fence before that line.
+    Markers anywhere else in the body are ordinary text.
+    """
+    bom = 1 if text.startswith(BOM) else 0
+    lines = text[bom:].splitlines(True)
+    offsets = []
+    offset = bom
+    for line in lines:
+        offsets.append(offset)
+        offset += len(line)
+    offsets.append(offset)
+    bare = [line.rstrip("\r\n") for line in lines]
+    index = 0
+    if bare and bare[0] == "---":
+        index = next((i for i in range(1, len(bare)) if bare[i] == "---"), len(bare)) + 1
+    frontmatter_end = offsets[min(index, len(lines))]
+    while index < len(bare) and not bare[index].startswith("# "):
+        if bare[index].strip() and not re.match(r"^\s*<!--.*-->\s*$", bare[index]):
+            return None  # neither typed nor a legacy render, so artifact_layout refuses it
+        index += 1
+    if index >= len(bare):
+        return None
+    title = index
+    index += 1
+    while index < len(bare) and not bare[index].strip():
+        index += 1
+    if index >= len(bare) or bare[index] != SYNC_BEGIN:
+        return None
+    end = None
+    fence = None
+    for position in range(index + 1, len(bare)):
+        line = bare[position]
+        if fence is not None:
+            if fence_closes(line, fence):
+                fence = None
+            continue
         if line.startswith("## "):
             break
-        head.append((offset, line.rstrip("\r\n")))
-        offset += len(line)
-    begins = [position for position, (_, line) in enumerate(head) if line == SYNC_BEGIN]
-    if not begins:
-        return None
-    first = next(position for position, (_, line) in enumerate(head) if line.strip())
-    if len(begins) > 1 or begins[0] != first:
-        raise RuntimeError("bmad-sync markers are missing or duplicated")
-    for start, line in head[first + 1:]:
-        if line == SYNC_END:
-            return start + len(SYNC_END)
-    raise RuntimeError("bmad-sync markers are missing or duplicated")
+        if end is None:
+            if line == SYNC_END:
+                end = position
+            elif line == SYNC_BEGIN:
+                _malformed()
+            continue
+        if line == SYNC_BEGIN:
+            _malformed()
+        fence = fence_opening(line)
+    if end is None:
+        _malformed()
+    return {
+        "bom": bom,
+        "frontmatter_end": frontmatter_end,
+        "title_start": offsets[title],
+        "head_end": offsets[end] + len(SYNC_END),
+    }
+
+
+def _malformed():
+    raise RuntimeError(MALFORMED)
+
+
+def sync_layout(text):
+    """The offset just past the end marker of a well-formed managed block, or None when there is none."""
+    layout = parse_layout(text)
+    return None if layout is None else layout["head_end"]
+
+
+def legacy_text(text):
+    """LF-normalised and without a BOM, for comparing with the LF legacy render."""
+    return (text[1:] if text.startswith(BOM) else text).replace("\r\n", "\n")
+
+
+def is_legacy_stub(item, text):
+    """A legacy stub is recognised positively: it opens with the tool's legacy render for its item."""
+    return strip_updated(legacy_text(text)).startswith(strip_updated(render_legacy_stub(item)))
+
+
+def artifact_layout(item, text):
+    """The parse_layout dict for a typed file, None for a legacy stub; raises for anything else."""
+    layout = parse_layout(text)
+    if layout is None and not is_legacy_stub(item, text):
+        _malformed()
+    return layout
 
 
 def newline_of(text):
@@ -391,6 +471,23 @@ def write_text_atomic(path, text):
         if os.path.exists(temporary):
             os.unlink(temporary)
         raise
+    fsync_directory(path.parent)
+
+
+def fsync_directory(directory):
+    """Make the rename durable where the platform allows it; best effort."""
+    if os.name != "posix":
+        return
+    try:
+        handle = os.open(str(directory), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(handle)
+    except OSError:
+        pass
+    finally:
+        os.close(handle)
 
 
 def write_manifest(manifest):
@@ -423,7 +520,7 @@ def load_manifest():
     manifest = json.loads((ROOT / "_bmad-output" / "issue-map.json").read_text(encoding="utf-8"))
     try:
         manifest["repository"]
-        for index, item in enumerate(manifest["items"]):
+        for item in manifest["items"]:
             for key in MANIFEST_ITEM_KEYS:
                 item[key]
     except (KeyError, TypeError, IndexError) as error:
@@ -432,7 +529,7 @@ def load_manifest():
 
 
 def frontmatter_value(text, key):
-    lines = text.splitlines()
+    lines = (text[1:] if text.startswith(BOM) else text).splitlines()
     if not lines or lines[0] != "---":
         return MISSING
     try:
@@ -498,7 +595,7 @@ def audit_manifest(manifest=None):
             continue
         text = path.read_text(encoding="utf-8")
         try:
-            sync_layout(text)
+            artifact_layout(item, text)
         except RuntimeError as error:
             errors.append("{}: {}".format(bmad_id, error))
         expected = {
@@ -738,7 +835,7 @@ def strip_updated(value):
 
 def is_unamended_legacy_stub(item, text):
     """Compare in LF, so a checkout with core.autocrlf behaves like any other."""
-    return strip_updated(text.replace("\r\n", "\n")) == strip_updated(render_legacy_stub(item))
+    return strip_updated(legacy_text(text)) == strip_updated(render_legacy_stub(item))
 
 
 def refresh(manifest, live_issues):
@@ -764,33 +861,43 @@ def refresh(manifest, live_issues):
             continue
         text = read_exact(ROOT / item["artifact_path"])
         try:
-            head_end = sync_layout(text)
+            layout = artifact_layout(item, text)
         except RuntimeError:
             malformed.append(item["bmad_id"])
             continue
-        if head_end is None and not is_unamended_legacy_stub(item, text):
+        if layout is None and not is_unamended_legacy_stub(item, text):
             amended.append(item["bmad_id"])
-        drifted.append((item, issue, newline_of(text), None if head_end is None else text[head_end:]))
+        drifted.append((item, issue, text, layout))
     # Refuse before the first write: a half-applied refresh fails the audit that refresh requires.
     if malformed:
-        raise RuntimeError(
-            "bmad-sync markers are missing or duplicated; repair them by hand: {}".format(", ".join(malformed))
-        )
+        raise RuntimeError("{}; repair it by hand: {}".format(MALFORMED, ", ".join(malformed)))
     if amended:
         raise RuntimeError(
             "artifact carries amendments; update its title and lifecycle by hand, or run upgrade: {}".format(
                 ", ".join(amended)
             )
         )
-    for item, issue, newline, body in drifted:
+    for item, issue, text, layout in drifted:
         item["title"] = issue["title"]
         item["lifecycle"] = live_lifecycle(issue)
         parent = by_number[live_parent(issue)] if adoptable_parent(item, issue, by_number) else None
         if parent:
             item["parent_github_number"] = parent["github_number"]
             item["parent_bmad_id"] = parent["bmad_id"]
-        rendered = render_legacy_stub(item) if body is None else render_head(item)
-        write_text_atomic(ROOT / item["artifact_path"], with_newlines(rendered, newline) + (body or ""))
+        newline = newline_of(text)
+        bom = BOM if text.startswith(BOM) else ""
+        if layout is None:
+            rendered = bom + with_newlines(render_legacy_stub(item), newline)
+        else:
+            # Lines the author keeps between the frontmatter and the H1 survive byte for byte.
+            rendered = (
+                bom
+                + with_newlines(render_frontmatter_block(item), newline)
+                + text[layout["frontmatter_end"]:layout["title_start"]]
+                + with_newlines(render_title_block(item), newline)
+                + text[layout["head_end"]:]
+            )
+        write_text_atomic(ROOT / item["artifact_path"], rendered)
     if drifted:
         write_manifest(manifest)
     return [item["bmad_id"] for item, _, _, _ in drifted]
@@ -804,10 +911,12 @@ def upgrade_text(item, text):
     "refuse" for anything whose conversion could lose text.
     """
     try:
-        if sync_layout(text) is not None:
+        if artifact_layout(item, text) is not None:
             return "current", None, "already in the typed format"
     except RuntimeError as error:
         return "refuse", None, str(error)
+    bom = BOM if text.startswith(BOM) else ""
+    text = text[len(bom):]
     newline = newline_of(text)
     stub = render_legacy_stub(item)
     tail = with_newlines(stub[stub.rindex("\n", 0, len(stub) - 1) + 1:], newline)
@@ -819,12 +928,12 @@ def upgrade_text(item, text):
     skeleton = with_newlines(render_artifact(item), newline)
     if carried and not carried.startswith(("\n", "\r\n")):
         skeleton += newline
-    converted = skeleton + carried
+    converted = bom + skeleton + carried
     if sync_layout(converted) is None:
         return "refuse", None, "conversion did not produce the managed block"
     for key in ("bmad_id", "type", "title", "lifecycle", "provenance", "github_issue",
                 "github_issue_url", "parent_bmad_id", "parent_github_issue"):
-        if frontmatter_value(converted, key) != frontmatter_value(text, key):
+        if frontmatter_value(converted[len(bom):], key) != frontmatter_value(text, key):
             return "refuse", None, "conversion would change the frontmatter field {}".format(key)
     return "convert", converted, "converts without loss" + (
         ", carrying {} line(s) verbatim".format(len(carried.strip("\r\n").splitlines())) if carried.strip() else ""
@@ -858,11 +967,22 @@ def upgrade(manifest, ids=None, check=False):
     written = []
     try:
         for path, converted, original in writes:
-            write_text_atomic(path, converted)
+            # Recorded first: an interrupt inside the write still restores it, harmlessly if unreplaced.
             written.append((path, original))
-    except BaseException:
+            write_text_atomic(path, converted)
+    except BaseException as error:
+        unrestored = []
         for path, original in reversed(written):
-            write_text_atomic(path, original)
+            try:
+                write_text_atomic(path, original)
+            except Exception as restore_error:
+                unrestored.append("{} ({})".format(path, restore_error))
+        if unrestored:
+            raise RuntimeError(
+                "upgrade failed ({!r}) and these files could not be restored: {}".format(
+                    error, "; ".join(unrestored)
+                )
+            ) from error
         raise
     return report
 
@@ -886,31 +1006,50 @@ def comment_state(line, in_comment):
 def markdown_sections(body):
     """Map each H2 heading in `body` to the list of its sections' text.
 
-    Headings inside fenced code or an HTML comment are text. Any H1 or H2 ends a section.
+    ATX and setext headings of level 1 or 2 end a section; headings inside fenced code or an HTML
+    comment are text.
     """
     sections = defaultdict(list)
     current = None
     fence = None
     in_comment = False
+    paragraph = []
     for line in body.splitlines():
         if fence is not None:
-            closing = re.match(r"^ {0,3}(`{3,}|~{3,})[ \t]*$", line)
-            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence):
+            if fence_closes(line, fence):
                 fence = None
             if current is not None:
                 current.append(line)
             continue
         if not in_comment:
-            opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-            if opening and not (opening.group(1)[0] == "`" and "`" in opening.group(2)):
-                fence = opening.group(1)
+            setext = re.match(r"^ {0,3}(=+|-+)[ \t]*$", line)
+            if setext and paragraph:
+                # The paragraph above was the heading's text, not the previous section's content.
+                if current is not None:
+                    del current[len(current) - len(paragraph):]
+                name = " ".join(text.strip() for text in paragraph)
+                paragraph = []
+                current = None
+                if setext.group(1)[0] == "-":
+                    current = []
+                    sections[name.casefold()].append(current)
+                continue
+            fence = fence_opening(line)
             heading = None if fence else re.match(r"^ {0,3}(#{1,2})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$", line)
             if heading:
+                paragraph = []
                 current = None
                 if len(heading.group(1)) == 2:
                     current = []
                     sections[(heading.group(2) or "").strip().casefold()].append(current)
                 continue
+            starts_comment = line.lstrip().startswith("<!--")
+            if fence or not line.strip() or starts_comment or re.match(r"^ {0,3}(#{3,6}([ \t]|$)|[-*+][ \t]|\d+[.)][ \t]|>)", line):
+                paragraph = []
+            else:
+                paragraph.append(line)
+        else:
+            paragraph = []
         in_comment = comment_state(line, in_comment)
         if current is not None:
             current.append(line)
@@ -935,15 +1074,15 @@ def depth_findings(manifest, issue_number):
         return ["{}: missing artifact {}".format(label, item["artifact_path"])], []
     text = path.read_text(encoding="utf-8")
     try:
-        head_end = sync_layout(text)
+        layout = artifact_layout(item, text)
     except RuntimeError as error:
         return ["{}: {}".format(label, error)], []
-    if head_end is None:
+    if layout is None:
         return [], [
             "{}: legacy stub, not depth-checked until upgraded "
             "(python3 scripts/bmad_issue_sync.py upgrade --id {})".format(label, item["bmad_id"])
         ]
-    sections = markdown_sections(text[head_end:])
+    sections = markdown_sections(text[layout["head_end"]:])
     findings = []
     for name in REQUIRED[item["type"]]:
         found = sections.get(name.casefold())
