@@ -4,7 +4,7 @@ from pathlib import Path
 
 # The module count at the task's `parent_sha` in `benchmarks/tasks.json`, not at HEAD: every arm
 # runs against that snapshot, so a hook module added since is not one the agent is asked to edit.
-# `tests/test_s516_stale_claims.py` derives this number from the glob at that sha.
+# `tests/test_doc_figures_derive_from_code.py` derives this number from the glob at that sha.
 EXPECTED_MODULES = 18
 
 

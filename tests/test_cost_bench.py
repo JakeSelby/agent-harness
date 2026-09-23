@@ -782,7 +782,7 @@ class ManifestTests(unittest.TestCase):
 
 class OracleTests(unittest.TestCase):
     # The fixture builds exactly as many modules as the oracle expects, which is the count at the
-    # task's pinned `parent_sha`; `tests/test_s516_stale_claims.py` holds that constant to the glob
+    # task's pinned `parent_sha`; `tests/test_doc_figures_derive_from_code.py` holds that constant to the glob
     # at that sha. A repin moves both without a hand-typed number here.
     MODULES = BENCH._oracle(REPO, "hook_ids").EXPECTED_MODULES
 

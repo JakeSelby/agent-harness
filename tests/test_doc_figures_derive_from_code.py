@@ -33,8 +33,8 @@ def load(path, name):
     return module
 
 
-RD = load(REPO / "claude" / "hooks" / "rule-detectors.py", "s516_rule_pack")
-BENCH = load(REPO / "scripts" / "cost_bench.py", "s516_cost_bench")
+RD = load(REPO / "claude" / "hooks" / "rule-detectors.py", "doc_figures_rule_pack")
+BENCH = load(REPO / "scripts" / "cost_bench.py", "doc_figures_cost_bench")
 
 
 def spelled(n):
