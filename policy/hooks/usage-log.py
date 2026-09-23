@@ -1129,19 +1129,10 @@ def upsert(record, path=None, drop=()):
         return Path(path) if path else usage_path()
     path = Path(path) if path else usage_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock = path.with_name(path.name + ".lock")
-    held = False
-    for _ in range(20):
-        try:
-            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            held = True
-            break
-        except FileExistsError:
-            time.sleep(0.05)
-        except OSError:
-            break
-    if not held:
+    lock = acquire(path)
+    if lock is None:
         raise RuntimeError("usage lock unavailable; no record was overwritten")
+    held = True
     try:
         rows = []
         replaced = {row_key(r) for r in records} | drop
@@ -1161,11 +1152,51 @@ def upsert(record, path=None, drop=()):
         tmp.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
         os.replace(str(tmp), str(path))
     finally:
-        if held:
-            try:
-                lock.unlink()
-            except OSError:
-                pass
+        release(lock, held)
+    return path
+
+
+def acquire(path):
+    """The lock file beside the ledger, held, or None when another writer would not let go."""
+    lock = path.with_name(path.name + ".lock")
+    for _ in range(20):
+        try:
+            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return lock
+        except FileExistsError:
+            time.sleep(0.05)
+        except OSError:
+            return None
+    return None
+
+
+def release(lock, held=True):
+    if held and lock is not None:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def append_row(record, path=None):
+    """Append one row to the ledger without rewriting it, and return its path.
+
+    For a row nothing ever replaces. `upsert` reads and rewrites the whole file, which is right
+    for a session record refreshed while the session runs and wrong for a row written once
+    inside a hook's budget: a ledger of tens of thousands of lines would be re-read and
+    rewritten on every provider call. The append is one write of one line, under the same lock,
+    so a concurrent rewrite can neither interleave with it nor drop it.
+    """
+    path = Path(path) if path else usage_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = acquire(path)
+    if lock is None:
+        raise RuntimeError("usage lock unavailable; the record was not appended")
+    try:
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record) + "\n")
+    finally:
+        release(lock)
     return path
 
 

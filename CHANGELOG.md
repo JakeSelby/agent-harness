@@ -8,6 +8,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Every decision-provider call now leaves a `kind: "decision"` row in the usage ledger beside
+  the session rows, carrying the decision point, the mode, the status, the requested and the
+  returned model id, the pack and request hashes, the judgment and severity labels, the
+  deterministic outcome and the one an `act` mode would have reached, the token counts, the
+  latency and the session that asked — and none of the state it sent, no prompt, no file path and no environment value,
+  because the row is built key by key from that list and reads nothing else. A judgment costs
+  tokens and holds up a turn, and until now neither figure was anywhere: `harness usage --by
+  provider` prices the calls from `policy/prices.json` like any other row and reports the
+  latency distribution beside the statuses, which are separate columns rather than a success
+  rate — an answer the provider abstained from is not the same event as no answer at all. A call
+  whose usage nobody reported is `partial`, so it is named in the unpriced footer rather than
+  read as free, and the rows are counted on that report alone: their tokens were spent asking a
+  question, not by the session, so adding them to a day or a repo would charge a session for a
+  bill it did not run up. The write is an append under the ledger lock rather than the rewrite a
+  session record does, so a call inside a hook's budget does not re-read and rewrite the whole
+  file. `harness doctor` now also names the model every request pins and what the last call
+  returned, since a provider may answer on a model the harness did not ask for and a report
+  priced at the requested one would then be priced at the wrong rate. `telemetry.decisions` is
+  one switch over both ledgers: off, neither row is written (#139).
 - The `jev` decision provider is opt-in per decision point, and sends only what a configuration
   lists. `governance.jev.mode` sets a default and `governance.jev.modes.<point>` overrides it for
   one of the points the decision ledger already names: `off` calls nothing, `shadow` calls and

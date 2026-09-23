@@ -157,8 +157,18 @@ session rather than a process: a hook is a new process per event, so the counter
 `~/.local/state/agent-harness/jev-spend.json` keyed by session id, under the lock, read before
 each check and added to as each request is charged. A spend file that cannot be read or written
 leaves the in-process count standing rather than failing a decision. `harness doctor`
-prints the mode per point, the allowlist, where the kill switch lives and whether a credential
-variable is set — by name, never its value.
+prints the mode per point, the allowlist, where the kill switch lives, the model every request
+pins, what the last call returned, and whether a credential variable is set — by name, never its
+value.
+
+**What each call cost.** Every call also writes one `kind: "decision"` row to the usage ledger:
+the point, the mode, the status, the model ids, the pack and request hashes, the judgment and
+severity labels, the deterministic outcome and the one an `act` mode would have reached, the
+tokens, the latency and the session that asked — and none of the state it sent. `harness usage
+--by provider` prices those rows from `policy/prices.json` like any other. A mode of `shadow` is
+measurable for exactly this reason: the row exists, priced and labelled, before anything the
+provider says can change an answer. Both rows stop when `telemetry.decisions` is `false`; see
+[usage telemetry](usage.md).
 
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.

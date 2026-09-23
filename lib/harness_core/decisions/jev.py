@@ -39,6 +39,7 @@ from typing import Any, Dict, Optional
 
 from .. import decision
 from . import controls
+from . import ledger
 from .controls import Controls, SessionSpend
 
 # Everything in this block — the endpoint, the default model id, the token ceilings, the
@@ -548,6 +549,17 @@ STATE_FIELDS = controls.STATE_FIELDS
 MAX_STATE_FIELD = 4096
 
 
+def _session_id(context: Optional[Dict[str, Any]]) -> str:
+    """The parent session named in a context, for the usage row alone.
+
+    Read by name here and nowhere else: `decision_state` builds a request from the base fields
+    and the allowlist, and `session_id` is in neither, so the session a row is attributed to has
+    no way to the wire.
+    """
+    value = (context or {}).get("session_id") if isinstance(context, dict) else None
+    return value if isinstance(value, str) else ""
+
+
 def require_decision_questions(pack: Dict[str, Any]) -> Dict[str, Any]:
     """`pack`, or a `PackError` naming a question `JevProvider.decide` would have read blind."""
     validate_pack(pack)
@@ -598,11 +610,13 @@ class JevProvider(decision.DecisionProvider):
     provider built from a configuration is `off` everywhere until one says otherwise, and the
     sentinel file is read on every decision, so the kill switch needs no restart.
 
-    Each call writes one `event` row to the decision ledger carrying the status, the error code
-    where there is one, the requested and returned model ids, the pack and request hashes, the
-    usage and the latency — never the state and never an answer's prose. A caller that is only
-    reporting suppresses the row with `decision.events_suppressed`, which `harness decide`
-    does.
+    Each call writes two rows and no third: an `event` row to the decision ledger, beside the
+    hook decisions it sits among, and a `kind: "decision"` row to the usage ledger, where
+    `harness usage --by provider` prices its tokens and reports its latency. Both carry the
+    decision point, the mode, the status, the error code where there is one, the requested and
+    returned model ids, the pack and request hashes, the usage and the latency — never the
+    state and never an answer's prose. A caller that is only reporting suppresses both with
+    `decision.events_suppressed`, which `harness decide` does.
     """
 
     name = "jev"
@@ -613,7 +627,8 @@ class JevProvider(decision.DecisionProvider):
                  model: str = DEFAULT_MODEL, budget: Optional[Budget] = None,
                  threshold: float = DEFAULT_THRESHOLD, pack: Optional[Dict[str, Any]] = None,
                  config: Optional[Dict[str, Any]] = None,
-                 controls: Optional[Controls] = None, session: Optional[str] = None):
+                 controls: Optional[Controls] = None, session: Optional[str] = None,
+                 usage_target: Optional[str] = None):
         self.base = base if base is not None else decision.LocalProvider(
             root=root, policy_path=policy_path, variant=variant, target=target)
         self.controls = (controls if controls is not None
@@ -631,6 +646,9 @@ class JevProvider(decision.DecisionProvider):
         self.pack = require_decision_questions(
             pack if pack is not None else DECISION_PACK)
         self.target = target
+        # The two ledgers are separate files with separate writers; a test points each one at a
+        # temporary path of its own.
+        self.usage_target = usage_target
 
     def decide(self, action, counterparty, context=None):
         base = self.base.decide(action, counterparty, context)
@@ -641,15 +659,15 @@ class JevProvider(decision.DecisionProvider):
             if mode == "off":
                 return self._unchanged(base, "off", "no mode selects "
                                        + (point or "this decision point"))
-            return self._advised(action, counterparty, context, base, mode)
+            return self._advised(action, counterparty, context, base, mode, point)
         except Exception:
             return self._unchanged(base, "unavailable", "provider_error")
 
-    def _advised(self, action, counterparty, context, base, mode="act"):
+    def _advised(self, action, counterparty, context, base, mode="act", point=None):
         result = ask(self.pack,
                      decision_state(action, counterparty, context, self.controls), self.client,
                      model=self.model, budget=self.budget, threshold=self.threshold)
-        self._log(action, counterparty, result, base, mode)
+        self._log(action, counterparty, result, base, mode, point, context)
         if mode == "shadow":
             # Called, logged, and nothing more: a shadow answer reaches the ledger and neither
             # the model nor the user, which is what makes it measurable before it is trusted.
@@ -703,13 +721,16 @@ class JevProvider(decision.DecisionProvider):
     def learn(self, approval_stream):
         return self.base.learn(approval_stream)
 
-    def _log(self, action, counterparty, result, base=None, mode=None):
-        """One ledger row per call: what was asked, what came back, what it would have changed.
+    def _log(self, action, counterparty, result, base=None, mode=None, point=None,
+             context=None):
+        """Two ledgers, one result: what was asked and what it would have changed, and what it
+        cost.
 
-        The judgment label, the severity level, the deterministic outcome and the outcome an
-        `act` mode would have reached are all on the row, because a `shadow` answer nobody can
-        compare against the decision it did not change measures nothing. Labels only: never the
-        state, never an answer's prose.
+        The decision log keeps the judgment label, the severity level, the deterministic outcome
+        and the outcome an `act` mode would have reached, because a `shadow` answer nobody can
+        compare against the decision it did not change measures nothing. The usage ledger keeps
+        the tokens and the latency beside the session spend, where `harness usage --by provider`
+        prices them. Labels and counts on both: never the state, never an answer's prose.
         """
         judgment = severity = advised = None
         if result["status"] == "ok":
@@ -720,10 +741,16 @@ class JevProvider(decision.DecisionProvider):
                 advised = "ask"
         decision.append_event("jev", {
             "action_class": action.action_class, "counterparty": counterparty,
-            "status": result["status"], "error": result["error"], "mode": mode,
+            "status": result["status"], "error": result["error"], "mode": mode, "point": point,
             "requested_model": result["requested_model"], "model": result["model"],
             "pack_hash": result["pack_hash"], "request_hash": result["request_hash"],
             "usage": result["usage"], "latency_ms": result["latency_ms"],
             "judgment": judgment, "severity": severity,
             "base_outcome": base.outcome if base is not None else None,
             "advised_outcome": advised}, self.target)
+        ledger.append(ledger.row(point, mode, result, action.action_class, counterparty,
+                                 session_id=_session_id(context), judgment=judgment,
+                                 severity=severity,
+                                 base_outcome=base.outcome if base is not None else None,
+                                 advised_outcome=advised),
+                      self.usage_target)

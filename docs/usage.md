@@ -417,6 +417,41 @@ bin/harness usage --by decision        # counts, outcome rates and the unlabelle
 The **unlabelled share** is the column to read first: an outcome rate over the two decisions
 that happened to be labelled is not evidence about the point.
 
+## What a decision provider cost
+
+A provider that leaves the machine spends tokens and wall-clock time, so each call it makes
+writes one `kind: "decision"` row into the usage ledger beside the session rows, and the report
+prices it from the same table:
+
+```sh
+bin/harness usage --by provider        # calls, statuses, tokens, dollars and latency per point
+```
+
+The row names the decision point, the mode it ran under, the status, the requested and returned
+model ids, the pack and request hashes, the token counts, the latency in `ms` and the session
+that asked. It never carries the outbound state, an answer's prose, a prompt, a file path or an
+environment value: `lib/harness_core/decisions/ledger.py` builds it key by key from that list and
+reads nothing else. What may leave the machine at all is a separate question, answered in
+[runtime controls](runtime-controls.md).
+
+Four things are worth reading off it:
+
+- **The statuses are separate columns, not a success rate.** `unknown` is an answer the provider
+  gave and abstained from; `unavailable` is no answer at all. A rate that mixed them would say
+  the provider was working when it was unreachable.
+- **A call whose usage nobody reported is `partial`,** counted in the `unpriced` footer and
+  contributing nothing to the dollar column. It was not free; nothing knows what it cost.
+- **A model the price table does not name is unpriced too.** No price for the Jev models has been
+  read from a vendor pricing page, so the dollar column is empty until one is added to
+  `policy/prices.json` or overridden under `prices` in `config.json`.
+- **The returned model id may differ from the requested one,** which is why both are on the row:
+  a report priced at the model the harness asked for would be priced at the wrong rate.
+  `harness doctor` prints the pinned model and what answered last.
+
+These rows are counted on this report alone. Their tokens were spent by the harness asking a
+question rather than by the session, so adding them to a day, a repo or a model grouping would
+charge a session for a bill it did not run up.
+
 ## Reading it
 
 ```sh
@@ -426,6 +461,7 @@ bin/harness usage --by model           # a session using two models groups under
 bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output, p50/p75 usd
 bin/harness usage --by stance --stance cost   # tokens per variant of one stance dimension
 bin/harness usage --by decision        # hook decisions and their outcomes, above
+bin/harness usage --by provider        # decision-provider calls, priced, above
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
 

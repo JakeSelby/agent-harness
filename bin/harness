@@ -14,7 +14,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness doctor
     harness uninstall
     harness lint    [PATH]
-    harness usage   [--days N] [--by day|repo|model|role|stance|decision|prefix] [--stance NAME] [--rescan]
+    harness usage   [--days N] [--by day|repo|model|role|stance|decision|provider|prefix] [--stance NAME] [--rescan]
     harness usage   --rules [--by rule|repo|stance] [--days N] [--rescan]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
@@ -56,6 +56,7 @@ from harness_core import decision as decisions_provider
 # The opt-in block for a provider that leaves the machine. Importing the controls does not
 # import the provider: nothing that reaches the network is loaded unless a config names it.
 from harness_core.decisions import controls as decision_controls
+from harness_core.decisions import ledger as decision_ledger
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1719,6 +1720,41 @@ def hook_health(settings: Dict[str, Any]) -> Tuple[int, List[str]]:
     return len(commands), problems
 
 
+def pinned_jev_model() -> Optional[str]:
+    """The model id a Jev request names, read from the provider module without building one.
+
+    Importing the module reaches nothing: the client is inert until a caller constructs it, so
+    `doctor` can name the pinned model on a machine that has never made a call.
+    """
+    try:
+        import importlib
+
+        return importlib.import_module("harness_core.decisions.jev").DEFAULT_MODEL
+    except Exception:
+        return None
+
+
+def jev_call_lines() -> List[str]:
+    """What the usage ledger says about calls already made: how many, and what answered last.
+
+    A returned model id that is not the requested one is the thing this exists to surface — a
+    provider may serve a request on a model the harness did not ask for, and a report priced at
+    the pinned model would then be priced at the wrong rate. The last row says which.
+    """
+    try:
+        rows = decision_ledger.rows()
+    except Exception:
+        return ["    jev calls: the usage ledger is unreadable"]
+    if not rows:
+        return ["    jev calls: none recorded; `harness usage --by provider` reports them once "
+                "a point is not off"]
+    last = max(rows, key=lambda row: str(row.get("ended") or ""))
+    returned = last.get("model") or "(none returned)"
+    return [f"    jev calls: {len(rows)} recorded; last {last.get('status') or 'unknown'} at "
+            f"{last.get('ended') or 'an unknown time'} returned {returned}",
+            "    jev call detail: `harness usage --by provider` prices them per point and mode"]
+
+
 def governance_lines(cfg: Dict[str, Any]) -> List[str]:
     """What `doctor` reports about the decision provider and what it may send.
 
@@ -1745,11 +1781,15 @@ def governance_lines(cfg: Dict[str, Any]) -> List[str]:
     lines.append("    jev kill switch: {} ({})".format(
         status["sentinel"], "present, every call is off" if status["sentinel_present"]
         else f"absent; create it to stop every call without editing {config_path()}"))
+    pinned = pinned_jev_model()
+    lines.append("    jev model: " + (f"{pinned} requested on every call" if pinned
+                                      else "the provider module is not loadable from this "
+                                           "checkout"))
     lines.append("    jev credential: " + (
         f"{status['credential']} is set (the value is never printed)" if status["credential"]
         else "none of " + ", ".join(decision_controls.credential_variables())
         + " is set; every call fails open to the deterministic answer"))
-    return lines
+    return lines + jev_call_lines()
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -3890,6 +3930,56 @@ def decision_report(days: int) -> int:
     return 0
 
 
+PROVIDER_STATUSES = ("ok", "unknown", "unavailable", "error")
+
+
+def provider_report(rows: List[Dict[str, Any]], days: int,
+                    table: Optional[Dict[str, Dict[str, Any]]] = None) -> int:
+    """`usage --by provider`: what each decision point spent asking a provider, per mode.
+
+    A judgment that costs dollars and is never priced reads as free, and one that adds a second
+    to every hook reads as a slow machine, so the two figures are reported together: tokens and
+    dollars from the same price table every other row is priced with, and the latency
+    distribution beside them. Latency is a distribution for `role_report`'s reason — a mean
+    hides the timeout that held a turn — and the tail is the figure a timeout is set from.
+
+    Statuses are counted separately rather than summed into a success rate. `unknown` is an
+    answer the provider gave and abstained from, `unavailable` is no answer at all, and a rate
+    that mixed them would say the provider was working when it was unreachable.
+    """
+    table = {} if table is None else table
+    if not rows:
+        say(f"no decision-provider calls recorded in the last {days} day(s); "
+            "`harness doctor` says whether any point is configured to make one")
+        return 0
+    groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault((str(row.get("point") or "(unset)"), str(row.get("mode") or "?")),
+                          []).append(row)
+    head = (f"{'point':<20}{'mode':<8}{'calls':>7}" + "".join(f"{name:>12}" for name in PROVIDER_STATUSES)
+            + f"{'input':>10}{'usd':>9}{'ms p50':>9}{'ms p90':>9}")
+    say(head)
+    say("-" * len(head))
+    unpriced = 0
+    for key in sorted(groups):
+        group = groups[key]
+        costs = [row_cost(r, table) for r in group]
+        unpriced += sum(1 for c in costs if c is None)
+        usd = sum(c for c in costs if c is not None)
+        latency = sorted(float(r["ms"]) for r in group if isinstance(r.get("ms"), (int, float)))
+        tokens = sum(int(r["input"]) for r in group if isinstance(r.get("input"), int))
+        counts = [sum(1 for r in group if r.get("status") == name) for name in PROVIDER_STATUSES]
+        cells = "".join(f"{n:>12,}" for n in counts)
+        tail = "".join(f"{percentile(latency, share):>9.0f}" if latency else f"{'-':>9}"
+                       for share in (0.5, 0.9))
+        say(f"{key[0][:20]:<20}{key[1][:8]:<8}{len(group):>7}{cells}{tokens:>10,}{usd:>9.4f}{tail}")
+    say(f"unpriced: {unpriced} call(s), unknown model or no reported usage" if unpriced
+        else "unpriced: none")
+    if not table:
+        say(f"no price table: {PRICES_PATH} is missing or unreadable")
+    return 0
+
+
 ROLE_MIN_RUNS = 30
 
 
@@ -3998,6 +4088,11 @@ def cmd_usage(args: argparse.Namespace) -> int:
         print(f"usage --rules groups by rule, repo or stance; --by {by} is not one of them",
               file=sys.stderr)
         return 2
+    if by == "provider" and (rules_mode or stance):
+        # A provider call is not a session: it ran under no stance and no detector measured it.
+        print("usage --by provider reports decision-provider calls; --rules and --stance do "
+              "not apply", file=sys.stderr)
+        return 2
     if by == "prefix" and (rules_mode or stance):
         # A detector hit belongs to a session's conduct and a stance groups its tokens; a
         # cache prefix is a property of the session's context, and neither of those reports
@@ -4032,6 +4127,11 @@ def cmd_usage(args: argparse.Namespace) -> int:
         # fields these rows already carry and names where it stepped. Nothing is priced.
         return cache_prefix.report(ledger, cutoff, args.days, say)
     table = load_prices(load_config())
+    if by == "provider":
+        return provider_report([row for row in ledger
+                                if row.get("kind") == decision_ledger.KIND
+                                and (row.get("ended") or "") >= cutoff],
+                               args.days, table)
     # A session is priced with its subagent rows in hand, so the whole ledger is indexed before
     # anything is summed; a child outside the window still belongs to its parent's bill.
     children = session_children(ledger)
@@ -4045,6 +4145,11 @@ def cmd_usage(args: argparse.Namespace) -> int:
             continue
         # A row written before `kind` existed is a session, which is all there was to record.
         kind = row.get("kind") or "session"
+        if kind == decision_ledger.KIND:
+            # A provider call is priced on its own report. Its tokens were spent by the harness
+            # asking a question, not by the session, and adding them to a day's totals would
+            # charge a session for a bill it did not run up.
+            continue
         if kind != "session" and ended >= cutoff:
             delegated.append(row)
         # A Claude Code subagent's tokens are already in its session's row; a Codex subagent's
@@ -4489,7 +4594,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="with export, count what would be sent and open no connection")
     p.add_argument("--days", type=int, default=30)
     p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance", "decision",
-                                    "prefix"],
+                                    "provider", "prefix"],
                    default="day")
     p.add_argument("--stance", choices=STANCE_NAMES,
                    help="with --by stance, the dimension whose variants group the tokens")
