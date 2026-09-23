@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `scripts/cost_bench.py replay --tag` runs a pinned git ref of this repository, and is repeatable,
+  so `--tag v0.12.0 --tag v0.13.0 --model <id>` measures two harness versions against bare in one
+  invocation and writes a history row for each, labelled with the version and commit of the ref it
+  actually ran rather than of whatever harness happens to be installed. Each ref is checked out
+  with its history intact and projected by its own `bin/harness sync` into a config directory of
+  its own, run with a temporary HOME as well as an explicit `CLAUDE_CONFIG_DIR`: the profile the
+  owner runs under is neither read nor written, and the owner's identity and stance selection —
+  which a sync renders out of `~/.config/agent-harness/config.json` — stay out of the measurement,
+  so two tags are asked the same question. Every ref is resolved before the first launch, a ref
+  that does not resolve is a named error rather than a quietly missing row, and both temporary
+  directories go even when a run in the middle of a tag's schedule raises. The harness arm's fence
+  admits the pinned checkout its profile links into, and `--dry-run` prints the schedule per tag
+  and syncs nothing. `--spend-cap` applies to each tag's schedule on its own. A profile's
+  credential is keyed on its absolute path, so a temporary one is not signed in: name a signed-in
+  `--harness-config` for the tag to be synced into when the run is meant to spend (#599).
+
 - A spike record measures what the Claude Code Workflow tool does to the delegation guards. A
   script's `agent()` calls produce no `Agent` tool call, so band routing, the brief guard and the
   constrained-role refusal never see them, and a script can run a read-only harness role in session
