@@ -8,7 +8,7 @@
     "story": 219,
     "task": 26,
     "bug": 72,
-    "chore": 57,
+    "chore": 65,
     "spike": 10,
     "decision": 9
   },
@@ -5016,6 +5016,19 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C064",
+      "github_number": 700,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/700",
+      "title": "0.13.0 requires only the two Claude Code CLI targets; Codex CLI defers to 0.14.0 per FR-12",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C064.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     }
   ]
