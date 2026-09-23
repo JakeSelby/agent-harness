@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 225,
     "task": 26,
-    "bug": 76,
+    "bug": 77,
     "chore": 65,
     "spike": 10,
     "decision": 12
@@ -5286,6 +5286,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B074.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B076",
+      "github_number": 708,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/708",
+      "title": "The runner stamps a Linux record from the target spec without checking the host, so a round on the Mac produces a fake Linux record",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B076.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

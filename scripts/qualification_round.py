@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from harness_core import qualification  # noqa: E402
 from native_acceptance import (CLIENTS, catalog, confirmed_targets,  # noqa: E402
-                               unobserved_note)
+                               host_mismatch, unobserved_note)
 
 SMOKE = "smoke_tier.py"
 RUNNER = "native_acceptance.py"
@@ -111,6 +111,15 @@ def routing(targets, execution, assessment):
                     for client in targets)
     except ValueError as error:
         raise SystemExit(str(error))
+
+
+def where(client):
+    """Where a target's cases run, read from the same comparison the runner refuses on."""
+    if not host_mismatch(client):
+        return "runs on this host"
+    if CLIENTS[client]["platform"] == "linux":
+        return "runs inside the Linux image"
+    return "runs on a macOS host, not this one"
 
 
 def summarise(records):
@@ -208,6 +217,12 @@ def main(argv=None):
     if unknown:
         raise SystemExit("unknown qualification target: " + ", ".join(unknown))
     tier_routing = routing(targets, args.execution_class, args.assessment_class)
+    # A target whose platform is not this host's is reported and left out, never run: the runner
+    # would refuse it, and a round driven here would otherwise write one platform's outcome under
+    # another's name.
+    elsewhere = dict((client, reason) for client, reason in
+                     ((client, host_mismatch(client)) for client in targets) if reason)
+    here = [client for client in targets if client not in elsewhere]
     if args.plan:
         print("round: %s, targets %s, smoke tier %s"
               % (args.round, ", ".join(targets), "skipped" if args.skip_smoke else "first"))
@@ -215,13 +230,21 @@ def main(argv=None):
             print("  %-24s %s" % (client, unobserved_note(client, args.home_confirmed)
                                   or "driven by this runner"))
             print("  %-24s %s" % ("", qualification.describe(tier_routing[client])))
+            print("  %-24s %s" % ("", where(client)))
         return 0
-    result = write_round(args.round, run_round(args.round, targets, args.model,
-                                               args.home_confirmed, args.skip_smoke,
-                                               tier_routing))
+    for client in sorted(elsewhere):
+        print("%-24s not run here: %s" % (client, elsewhere[client]))
+    if not here:
+        print("no named target runs on this host, so the round ran nothing")
+        return 1
+    result = run_round(args.round, here, args.model, args.home_confirmed, args.skip_smoke,
+                       dict((client, tier_routing[client]) for client in here))
+    if elsewhere:
+        result["not_run_here"] = elsewhere
+    result = write_round(args.round, result)
     print("smoke tier: " + result["smoke"])
     print(summarise(result["targets"]))
-    for client in targets:
+    for client in here:
         print("%-24s %s" % (client, qualification.describe(tier_routing[client])))
     clean = result["smoke"] != "failed" and all(
         value == PASSED

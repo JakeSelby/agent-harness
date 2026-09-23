@@ -1879,6 +1879,25 @@ def confirmed_targets(value):
     return names
 
 
+HOST_PLATFORMS = {"Darwin": "macos", "Linux": "linux"}
+TARGET_HOST = {"macos": "on a macOS host", "linux": "inside the target image"}
+
+
+def host_mismatch(client, host=None):
+    """Why this host cannot produce `client`'s record, or ``""`` when it can.
+
+    A record's `platform` is the target's, so a round driven on the wrong host would stamp one
+    platform's name on another's outcome. See docs/qualification-runbook.md, Target hosts.
+    """
+    host = host or platform.system()
+    wanted = CLIENTS[client]["platform"]
+    if HOST_PLATFORMS.get(host) == wanted:
+        return ""
+    return ("%s is a %s target and this host is %s; run it %s "
+            "(docs/qualification-runbook.md, Target hosts)"
+            % (client, wanted, host, TARGET_HOST.get(wanted, "on a %s host" % wanted)))
+
+
 def unobserved_note(client, confirmed):
     """Why a verdict from this client surface is not yet trusted, or ``""``."""
     spec = CLIENTS[client]
@@ -2133,6 +2152,9 @@ def main(argv=None):
         data = scoped(args.client, build_record(under_routing(progress_lines(progress),
                                                              tier_routing)))
     else:
+        mismatch = host_mismatch(args.client)
+        if mismatch:
+            raise SystemExit(mismatch)
         data = record(args.client, names, args.model, args.keep_home, progress=progress,
                       confirmed=args.home_confirmed, tier_routing=tier_routing)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
