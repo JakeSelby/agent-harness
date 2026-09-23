@@ -28,11 +28,15 @@ All notable changes to this project are documented here. The format follows
   and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
   native approval is the gate. The typed `build` reply was a convention no tooling could observe,
   and a plan written straight to disk reached no plan view at all. Because the runtime fixes the
-  filename before any content exists and plan mode permits no other write, `/build` takes the
-  newest file in the plans directory, renames it to a topic slug, says that path in its first
-  message and commits it. `/plan` asks before entering plan mode, since entering it is the user's
-  call, and a runtime with no plan mode keeps the previous behaviour as an explicit branch: write
-  the file named for the topic, open it for the reviewer, close on the build line (#439).
+  filename before any content exists and plan mode permits no other write, the naming waits for
+  approval: `/plan` then renames the file to a topic slug — refusing to overwrite an existing
+  name — and invokes `/build` with that path, which the builder commits into its worktree so the
+  plan reaches the pull request. `/build` works from the path or the
+  issue number it is given and never searches for a plan, because a plan found by modification
+  date is as likely to be a stale one a checkout touched. `/plan` asks before entering plan mode,
+  since entering it is the user's call, and a runtime with no plan mode — or a user who declines
+  it — keeps the previous behaviour as an explicit branch: write the file named for the topic,
+  open it for the reviewer, close on the build line (#439).
 
 - The delegation rule now states that subagents never message a peer, and the builder role says
   what a blocked builder does instead: stop, finish what does not depend on the answer, and return

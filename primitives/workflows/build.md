@@ -12,11 +12,11 @@ push to, and `gh` logged in. No repository: say so and offer to make the change 
 tests, and no worktree or pull request. A repository but no remote or no `gh`: run steps 1 to 4,
 stop at the local commit, and report the branch as ready to push.
 
-1. **Adopt the approved plan before anything else**, unless you were handed a topic-named path
-   already. Plan mode leaves it in `.agent-harness/plans/` under a name the runtime chose: take
-   the newest file there, read its `# <title>`, rename it to a topic slug in the same directory,
-   and say that path in your first message. Two plausible candidates means ask, never guess. It
-   is committed with the build's first commit wherever the repository tracks that directory.
+1. **Work from the plan path or the issue number you were given**, and say which in your first
+   message. Never search for a plan: `/plan` renames the approved file and hands over its path,
+   and a plan found by date is as likely to be last week's. With neither a path nor an issue,
+   ask for one. Give the builder the absolute plan path and tell it to copy the file into its
+   worktree and commit it — a worktree carries no untracked file, and the plan belongs in the PR.
 2. **Spawn the `builder` agent** with the plan or issue text, the repository path, the base
    branch, and the attribution trailer your tool supplies. Its definition already carries the
    standing brief — a worktree off the base branch per `worktree-per-agent`, the repository's own

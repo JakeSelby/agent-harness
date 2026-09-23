@@ -167,10 +167,11 @@ risks, the addendum. Those are what the file is for. Do not summarize them eithe
 
 **Under plan mode the file is already the review surface.** Plan mode designates the plan file
 and names it itself — a slug of your opening words plus two random words, fixed before any
-content exists — so you neither choose the name nor rename it while planning; `/build` renames
-it to a topic slug once writes are allowed again. Write the card there, post the message, and
-call `ExitPlanMode`: the native approval is the gate, and asking for a typed *build* on top of
-it is a second gate nothing downstream can read.
+content exists — so you neither choose the name nor rename it while planning. Write the card
+there, post the message, and call `ExitPlanMode`: the native approval is the gate, and asking
+for a typed *build* on top of it is a second gate nothing downstream can read. Once it is
+approved, rename the file to a topic slug — never over a name already taken; take `-2` and say
+so — and hand `/build` that path rather than leaving it to be searched for.
 
 **Without plan mode, put the file on screen before you post the message.** A link in chat is a
 path, not a rendering: in some clients it is clickable, in others it is dead text, and a plan

@@ -227,8 +227,10 @@ under `ask`; [`grade-bash.py`](../claude/hooks/grade-bash.py) documents the grad
 
 **Plan ceremony.** `review-card` makes plan mode the review surface: `/plan` asks to enter it,
 writes the card into the file plan mode designates, posts the approach in chat and finishes at
-`ExitPlanMode`, so the pane renders the plan and the native approval is the gate. `/build` then
-renames the runtime-generated file to a topic slug and commits it. Where there is no plan mode —
+`ExitPlanMode`, so the pane renders the plan and the native approval is the gate. Approval is
+also when the naming happens: `/plan` renames the runtime-generated file to a topic slug and hands
+`/build` that path — which is why `/build` never searches for a plan, and why the builder is what
+commits the file, into the worktree the pull request comes from. Where there is no plan mode —
 Codex, and any plan written outside `/plan` — the file is named for the topic, opened for the
 reviewer and closed with the typed build line instead. Either way, autonomous implementation
 follows approval. The card is a review document before it is an execution document — length
