@@ -189,7 +189,9 @@ qualification round agrees with a hand-driven one; `0.11.1` remains the last rel
 on the Codex CLI for macOS and Linux, so if you need a qualified Codex floor, install that tag.
 
 <!-- harness:compatibility:start -->
-**Unqualified:** `claude-code-cli-macos`, `claude-code-vscode-macos`, `claude-code-cli-linux`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
+**Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`.
+
+**Unqualified:** `claude-code-vscode-macos`, `claude-code-plugin-marketplace`, `codex-cli-macos`, `codex-vscode-macos`, `codex-desktop-macos`, `codex-cli-linux`.
 
 **Planned:** `cursor`, `grok`.
 

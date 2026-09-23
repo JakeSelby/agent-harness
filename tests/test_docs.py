@@ -45,7 +45,7 @@ class ReadmeTests(unittest.TestCase):
         self.assertIn("two required Claude Code CLI targets", prose)
         # The page must name the last qualified release rather than leave a reader to infer one.
         self.assertIn("`0.11.1` remains the last release qualified", prose)
-        self.assertNotIn("**Qualified:**", prose)
+        self.assertIn("**Qualified:**", prose)
         self.assertIn("**Unqualified:**", prose)
         self.assertIn("Projection generation and unit tests are not proof", prose)
 

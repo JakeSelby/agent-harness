@@ -6,8 +6,8 @@
   "next_ids": {
     "epic": 18,
     "story": 227,
-    "task": 27,
-    "bug": 86,
+    "task": 29,
+    "bug": 87,
     "chore": 67,
     "spike": 10,
     "decision": 12
@@ -5370,6 +5370,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-C066",
+      "github_number": 723,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/723",
+      "title": "Release 0.13.0: fold the changelog, record the qualification, set the catalog released",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C066.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B079",
       "github_number": 725,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/725",
@@ -5383,19 +5396,6 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-T026",
-      "github_number": 733,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/733",
-      "title": "Compatibility step 8 says a resumed session is not rerouted, but a headless resume legitimately is",
-      "type": "task",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-T026.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
       "bmad_id": "AH-B080",
       "github_number": 728,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/728",
@@ -5403,19 +5403,6 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B080.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
-      "bmad_id": "AH-B083",
-      "github_number": 731,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/731",
-      "title": "stance-switch and custom-stance switch only delegation and never try a project override",
-      "type": "bug",
-      "native_type": "Bug",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-B083.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
@@ -5448,6 +5435,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B083",
+      "github_number": 731,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/731",
+      "title": "stance-switch and custom-stance switch only delegation and never try a project override",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B083.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B084",
       "github_number": 732,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/732",
@@ -5455,6 +5455,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B084.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T026",
+      "github_number": 733,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/733",
+      "title": "Compatibility step 8 says a resumed session is not rerouted, but a headless resume legitimately is",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T026.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
@@ -5474,13 +5487,39 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-C066",
-      "github_number": 723,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/723",
-      "title": "Release 0.13.0: fold the changelog, record the qualification, set the catalog released",
-      "type": "chore",
+      "bmad_id": "AH-T027",
+      "github_number": 741,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/741",
+      "title": "Hand-compare the eleven scripted native cases that ran live without one in 0.13.0",
+      "type": "task",
       "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C066.md",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T027.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T028",
+      "github_number": 742,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/742",
+      "title": "Close the round-5 assessment's should-fix gaps in the native case drivers",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T028.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B086",
+      "github_number": 743,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/743",
+      "title": "The 100 KB grade-bash timing test fails under Python 3.9 on a loaded Mac",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B086.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

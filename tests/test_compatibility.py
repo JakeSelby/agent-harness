@@ -19,7 +19,9 @@ class CompatibilityTests(unittest.TestCase):
         # it only once a scripted round agrees with a hand-driven one, and the runner cannot drive
         # Codex until #612 (#700). codex-cli-linux ships as a stated limitation for the same reason.
         self.assertEqual(required, ["claude-code-cli-macos", "claude-code-cli-linux"])
-        self.assertFalse(any(row["status"] == "qualified" for row in data["clients"]))
+        # Released: exactly the required clients are qualified. Candidate: none is yet.
+        qualified = [row["id"] for row in data["clients"] if row["status"] == "qualified"]
+        self.assertEqual(qualified, required if data.get("release_state") == "released" else [])
         self.assertTrue(all(row["status"] in compatibility.STATES for row in data["clients"]))
         # The expectation follows the catalog's state so it survives a release without an edit.
         # Released: changed runtime source must block publication and nothing else, leaving the
