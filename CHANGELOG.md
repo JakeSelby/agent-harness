@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
+  the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
+  behind each state. It is derived from a `tier_restriction` entry in
+  `adapters/<runtime>/capabilities.json` rather than written into the rendered docs: the Claude
+  Code CLI and VS Code surfaces read `enforced`, because `claude/hooks/tier-agent-spawns.py`
+  rewrites a spawn asking for the strongest class by name. Every Codex surface reads `advisory`:
+  the coordinator runs there and a Codex `Agent` call still passes the role, marker, evasion and
+  brief checks, but the tier rewrite sits behind a `runtime == "claude-code"` gate in
+  `lib/harness_core/lifecycle.py`. The plugin-marketplace install reads `advisory` because it
+  installs no hooks at all. The generated note states what `enforced` does not cover — the
+  session's own model, which the harness never writes; a `delegation` variant other than
+  `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
+  now links to the row instead of restating it (#520).
+### Changed
+
+- The delegation rule now states that subagents never message a peer, and the builder role says
+  what a blocked builder does instead: stop, finish what does not depend on the answer, and return
+  the question under **Deviations** for the caller. A delivered message bills as a typed prompt on
+  the receiver and again on the sender when the reply lands, and turn count is what the delegation
+  arithmetic is sensitive to, while the measured coordination wins in the literature all come from
+  mediating writes at write time rather than from agents conversing; `delegation-tiering` carries
+  that reasoning with the three papers cited. Session-to-session `SendMessage` between
+  human-facing sessions is unchanged (#539).
+
 ### Fixed
 
 - The Remote Control sessions read checks that its capped page arrived newest-first. The endpoint
