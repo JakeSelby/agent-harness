@@ -1,0 +1,18 @@
+{
+  "client": "claude-code-cli-macos",
+  "client_version": "2.1.280",
+  "model": "claude-haiku-4-5",
+  "recorded_on": "2026-09-22",
+  "sentinel": "permission-probe.txt",
+  "turns": {
+    "bypass-completed": {
+      "sentinel_present": true
+    },
+    "bypass-declined": {
+      "sentinel_present": false
+    },
+    "manual-denied": {
+      "sentinel_present": false
+    }
+  }
+}

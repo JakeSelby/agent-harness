@@ -68,6 +68,115 @@ All notable changes to this project are documented here. The format follows
   still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
   the allowlist, where the kill switch lives and whether a credential variable is set — by name,
   never its value (#137).
+- One Bash command in twenty that the harness allows is now kept in the decision log as a
+  sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
+  the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
+  tighten an allow into an ask had nothing to measure its false alarms against. Only an allow
+  the harness itself gave is sampled — a command it left to the runtime may still be prompted on
+  or refused, and on Codex an approval is dropped from the hook output — and a confirmed command
+  belongs to the prompt it answered. Which commands are kept is each command's own hash rather
+  than a random draw, so the same corpus samples the same commands on every machine and a
+  measurement over these rows is reproducible; the sample is therefore of distinct commands, not
+  of invocations, and the row count cannot be weighted by the rate to estimate how many commands
+  ran. The rows carry no outcome and no match key, are passed by at SessionEnd rather than closed
+  as `not_run`, and `harness usage --by decision` counts them on a `grade-bash (sampled)` line of
+  their own, so a point's outcome rates and unlabelled share are unchanged. The text is redacted
+  before it is capped — assignment values, credential flags, every secret shape the rule
+  detectors match and the home directory as `~` — and the row's hash is over the redacted text,
+  so a short secret cannot be recovered from the hash beside it. `telemetry.allow_sample_rate`
+  sets the rate and `0` turns it off, as does `telemetry.decisions: false` (#386).
+- A spike record measures what the Claude Code Workflow tool does to the delegation guards. A
+  script's `agent()` calls produce no `Agent` tool call, so band routing, the brief guard and the
+  constrained-role refusal never see them, and a script can run a read-only harness role in session
+  by naming it in `agentType`; the usage ledger does record every workflow agent, but those rows
+  carry no tool use id, so the reroute join is empty for all of them. The record names the two
+  changes the code needs. `docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md` (#540).
+- A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
+  release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
+  and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
+  hook now classifies a native spawn against those descriptors instead of trusting the
+  `subagent_type` the model wrote, so a review layer re-issued as an unnamed subagent is refused
+  with the same isolated-worker instruction a named `reviewer` spawn gets, and the refusal names
+  the read roots that worker needs. The `harness-role:` line in a routed brief goes back to being
+  an optimisation rather than the thing confinement depends on. Recognition is corroborated: one
+  of the framework's own layer names as the spawn type is enough, a path out of its routed text
+  counts only with one of its sentences beside it, and two of those sentences are enough on their
+  own, so the fix-up brief after a review, a brief that edits the override templates and a brief
+  that quotes a single line of them all still run. A classified refusal is deliberately not
+  remembered for the session, because that memory matches by prefix and similarity and one wrong
+  classification would go on refusing the corrected brief. A descriptor that will not parse or
+  will not validate is announced once per session and logged rather than skipped in silence.
+  `spawn-confinement` joins the required qualification cases, with a false-positive check, and the
+  catalog records what a descriptor still cannot recognise (#291).
+
+- `scripts/native_acceptance.py` drives the `permission-controls` case, which was qualified by
+  hand every round: it syncs the manual, unacknowledged bypass, acknowledged bypass and auto
+  postures, reads the permission mode each one wrote into the client's own settings, and asks for
+  the same one-command file write under each, pre-approving no tool so that the posture is what
+  decides the call. The acknowledged bypass is judged by `bypass_verdict`, landed uncalled in
+  0.12.0, against the mode the client reported for that turn, so the three outcomes stay apart: a
+  turn the policy blocked, a turn the model declined on its own judgement, and a turn that
+  completed. A decline is `unverified` rather than a failure, which was the defect the driver had
+  to be written around, and each posture's reading is kept as it is made, so a later posture that
+  cannot be observed reports the earlier ones rather than erasing them. Three real client turns
+  recorded under those modes — result, transcript record and the sentinel state each left — are
+  the tests' fixtures, so the suite still launches no client, and `docs/releasing.md` records the
+  comparison against a hand run that the first live round owes before this verdict is trusted
+  (#404).
+- A session that was already running when `harness sync` installed the band workers starts
+  routing unnamed spawns as soon as it can resolve them, instead of waiting for a new session.
+  Claude Code announces a reload to the session it happened in, as an `agent_listing_delta`
+  attachment on the transcript, so the spawn hook reads that over a bounded tail, keeps what it
+  found in the session record so routing survives the delta scrolling out of that read, and routes
+  to a worker the session's start-time record predates when a later delta names it. The record
+  stays the floor: an absent or unreadable transcript, a listing never seen in either place, and a
+  session that reloaded nothing all route exactly as they did before, so a reroute still never
+  turns a spawn that would have worked into one that fails. The pricing hook reads the same
+  answer, and `docs/spikes/2026-09-22-registry-reload.md` records the eight sessions this was
+  measured in, including the headless ones that never reload (#263).
+- `scripts/smoke_tier.py` runs the repository's deterministic pre-qualification checks as one
+  command that spends no model turn: the acceptance runner's self-tests against recorded
+  transcripts under `tests/fixtures/transcripts/`, the documentation-link check, the
+  credential-reachability probe, and the disposable-home sync, projection-drift and lifecycle
+  checks. Three of the four defects the 0.11.0 qualification round recorded were deterministic
+  plumbing faults of exactly this kind, each found part-way through a paid round that then had to
+  be run again. Every check is bounded by a timeout, so an unauthenticatable environment is
+  reported as an error rather than as a three-hundred-second hang, and a check that could not run
+  is `unverified` and never a pass. The tier is additive and never qualification: it observes no
+  client, and the run fails if anything it ran wrote under `compatibility/evidence/` or into the
+  catalog. CI runs it as a `smoke` job that the branch ruleset does not require, and
+  `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
+  block a freeze (#334).
+
+### Fixed
+
+- The credential probe answers for a variable holding something that is not a path, where asking
+  the filesystem about it used to raise and carry the value into the error's own message — a
+  service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
+  An unusable value is now treated as a file that is not there, and the reason names the variable
+  and never the value (#334).
+
+- The usage feed tells the orchestrator when its own session has grown past the posture's
+  fresh-session threshold. A long session's cost is mostly the context every further turn
+  re-reads, and the turn line, which reports output tokens, showed none of it. A new
+  `session_nudge_at` switch in the cost sidecar lists context sizes in whole tokens, resolved
+  over `extends` like every other switch; on `UserPromptSubmit` the feed reads the newest
+  response's input tokens plus its cached prefix and, at a crossing, adds one line naming the size,
+  the threshold and the advice to finish the task, write the handoff and start fresh. It is said
+  once per threshold rather than once per turn: the thresholds already said are kept in the
+  session's state file, and survive the reader starting over on a transcript whose identity
+  changed, so a resume does not repeat them. A context that falls back under a threshold, which
+  is what an in-place compaction does, arms that threshold again. Nothing is blocked. `frugal` ships
+  80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` nothing at all; those are
+  starting points chosen against a 200,000-token window rather than measured figures, and the
+  follow-up to this issue replaces them with sizes read out of the ledger. Codex raises no
+  `UserPromptSubmit` event and declares the nudge uncovered (#321).
+- `docs/spikes/` records the measurements a decision was taken on, starting with the in-run budget
+  nudge: whether a running subagent should be told mid-run how its spend compares with its soft
+  budget. Measured on one machine's ledger, 2 of 89 budgeted subagent runs overran, the excess was
+  4.5% of subagent output, and in the larger sample of runs whose brief carried no budget the
+  median overrun was discovered with one tool call left — too late to act on — so nothing is built
+  and the record says which numbers would change the answer (#322).
 - A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
   the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
   this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
@@ -168,7 +277,35 @@ All notable changes to this project are documented here. The format follows
   session's own model, which the harness never writes; a `delegation` variant other than
   `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
   now links to the row instead of restating it (#520).
+
 ### Changed
+
+- `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
+  and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
+  native approval is the gate. The typed `build` reply was a convention no tooling could observe,
+  and a plan written straight to disk reached no plan view at all. Because the runtime fixes the
+  filename before any content exists and plan mode permits no other write, the naming waits for
+  approval: `/plan` then renames the file to a topic slug — refusing to overwrite an existing
+  name — and invokes `/build` with that path, which the builder commits into its worktree so the
+  plan reaches the pull request. `/build` works from the path or the
+  issue number it is given and never searches for a plan, because a plan found by modification
+  date is as likely to be a stale one a checkout touched. `/plan` asks before entering plan mode,
+  since entering it is the user's call, and a runtime with no plan mode — or a user who declines
+  it — keeps the previous behaviour as an explicit branch: write the file named for the topic,
+  open it for the reviewer, close on the build line (#439).
+- Native qualification evidence is now invalidated per target rather than per repository. Each
+  client's evidence is checked against the shared runtime source plus its own runtime's adapter
+  directory, so a fix confined to `adapters/codex` no longer costs the Claude Code targets of a
+  qualification round, and the reverse holds; a shared-source change, an unmapped runtime or a
+  record that states no scope still invalidates everything, so the narrowing fails closed. The
+  catalog declares the per-runtime directories and each evidence record states the path set it
+  was validated under. The narrowing stops at the files shared code reads whatever the runtime —
+  `bindings.json`, `capabilities.json` and `worker.py`, which `harness tiers`, stance coverage and
+  `harness role run --runtime` reach for either adapter — so those are declared in the catalog and
+  still invalidate every target; only `hook.py` is private to its runtime. A new test parses the
+  runtime source and fails when a loader reaches an adapter file the declaration does not cover.
+  Per-case scoping is not included: it changes a v1 stable interface and waits on an owner
+  decision (#333).
 
 - The delegation rule now states that subagents never message a peer, and the builder role says
   what a blocked builder does instead: stop, finish what does not depend on the answer, and return
@@ -228,6 +365,22 @@ All notable changes to this project are documented here. The format follows
 ## [0.12.0] — 2026-09-22
 
 ### Added
+
+- Subagent rows in the usage ledger now record whether the return carried a path a reader can
+  open and whether it stayed inside the word cap its brief stated. `return_path` is
+  `"resolvable"`, `"unresolvable"` or `"none"` — a return that named no path carries none, which
+  is a fact about the return and not a failure — over paths written in a fence, in backticks, or
+  bare in prose with a path's own shape, so `pass/fail` and `2026/09/22` stay prose and a URL
+  names nobody's file here. `return_over_budget` compares the return's words against the cap
+  `rule-detectors` reads from the brief, or the default `brief-guard` appends to a brief that
+  states none; an empty brief and a spawn whose requested type carries its cap in its own
+  definition are left unmeasured, and a result the scan kept only the head of records
+  `return_measured: "truncated"` rather than a figure taken over part of it. Both are a string
+  match and an `os.path.exists` taken when the row is written, never a model judgment, so the
+  ledger holds labelled input rather than an opinion. `harness usage --by role` reports the share
+  of returns that named a path whose path resolved, and the share measured against a cap that
+  ran past it, printing `-` where neither applies. Codex joins no return to a subagent row, so
+  its rows record `null` and its capabilities file names the gap. (#416)
 
 - `harness remote-control` supervises each host through Claude Code's ten-minute give-up: `heal`
   keeps the bridge pointer naming the live environment, stops a host with one `SIGTERM` at nine
