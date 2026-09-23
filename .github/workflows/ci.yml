@@ -19,6 +19,20 @@ jobs:
       - name: Personal strings and secret patterns
         run: python3 bin/harness lint
 
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Advisory: this job is deliberately absent from the branch ruleset's required checks
+      # while it is decided whether a red tier may block a freeze. The credential probe is left
+      # out because this runner holds no client credential; it belongs on the host that will run
+      # a qualification round.
+      - name: Deterministic pre-qualification checks
+        run: python3 scripts/smoke_tier.py --skip credentials
+
   test:
     name: test
     runs-on: ubuntu-latest
