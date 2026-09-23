@@ -21,8 +21,32 @@ All notable changes to this project are documented here. The format follows
   session's own model, which the harness never writes; a `delegation` variant other than
   `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
   now links to the row instead of restating it (#520).
+### Changed
+
+- The delegation rule now states that subagents never message a peer, and the builder role says
+  what a blocked builder does instead: stop, finish what does not depend on the answer, and return
+  the question under **Deviations** for the caller. A delivered message bills as a typed prompt on
+  the receiver and again on the sender when the reply lands, and turn count is what the delegation
+  arithmetic is sensitive to, while the measured coordination wins in the literature all come from
+  mediating writes at write time rather than from agents conversing; `delegation-tiering` carries
+  that reasoning with the three papers cited. Session-to-session `SendMessage` between
+  human-facing sessions is unchanged (#539).
 
 ### Fixed
+
+- The repository's own copy states the figures its code holds. The landing copy said nineteen
+  detectors where the registry holds seventeen, six from the vendored engine and eleven written
+  for these rules, and a new test derives that count from the rule pack and fails when `README.md`
+  or `product.json` drifts from it. `docs/field-scan.md` and `docs/caught-in-the-act.md` no longer
+  say the conflict engine is empty (four constraints ship and lint fails on them), that the
+  always-loaded cap cites no source (it quotes the memory documentation and the measured standing
+  context) or that there is no labelled corpus: the vendored wheel ships one, it scores six of the
+  seventeen detectors, and the remaining eleven and the precision floor in CI are #522.
+  `benchmarks/static.json` and the `harness lint` context line each name the set they count, which
+  differ, and `benchmarks/oracles/hook_ids.py` says its module count is the count at the task's
+  pinned `parent_sha` rather than at HEAD. The always-loaded line ratchet is now the line cap
+  itself: the binding cap is tokens, the line cap is the secondary guard, and a third budget four
+  lines below it only obscured which one binds (#516).
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed
   family used to inherit that family's rate. Inheritance under-bills a premium variant by a

@@ -35,7 +35,7 @@ Every project in this field writes instructions and hopes. Here a rule nobody ca
 - [Detector or reason](primitives/rules): Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.
 - [Hit rate per rule](docs/usage.md): harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.
 - [Cache prefix held](docs/usage.md): harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.
-- [What is detected](claude/hooks/rule-detectors.py): Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
+- [What is detected](claude/hooks/rule-detectors.py): Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
 - [Caught in the act](docs/field-scan.md): The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.
 - [Exports where you already look](docs/telemetry.md): The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.
 
