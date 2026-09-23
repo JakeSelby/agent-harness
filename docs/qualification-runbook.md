@@ -53,7 +53,10 @@ evidence file is added to the tree deliberately, after review.
 runner per target from the frozen clone, one record each. It decides nothing and stops for
 nothing — a round collects every target's defects before any of them is fixed, which is the rule
 in [releasing](releasing.md#freeze-the-qualification-branch) — and it exits non-zero unless every
-case of every target passed.
+case of every target passed. A target's earlier record is moved aside before its runner is
+launched, so a runner that exits before writing one reports every case `unverified` rather than
+the previous round's passes, and a target that runs past the round deadline is recorded and
+carried rather than raised — the targets after it still run.
 
 ## Client surfaces
 

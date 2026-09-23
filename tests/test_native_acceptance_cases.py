@@ -12,10 +12,13 @@ They are derived from those readers and from docs/usage.md, **not** recorded fro
 no Codex round has been driven through this runner, which is why every Codex verdict is
 `unverified` until an operator confirms the home against a hand run.
 """
+import io
 import json
 import os
+import shlex
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -73,9 +76,16 @@ class ClientSurfaceTests(unittest.TestCase):
         self.assertNotIn("CLAUDE_CONFIG_DIR", env)
 
     def test_an_unobserved_surface_says_so_and_an_observed_one_does_not(self):
-        self.assertIn("CODEX_HOME", MODULE.unobserved_note(CODEX_CLIENT, False))
-        self.assertEqual(MODULE.unobserved_note(CODEX_CLIENT, True), "")
-        self.assertEqual(MODULE.unobserved_note(CLAUDE, False), "")
+        self.assertIn("CODEX_HOME", MODULE.unobserved_note(CODEX_CLIENT, []))
+        self.assertEqual(MODULE.unobserved_note(CODEX_CLIENT, [CODEX_CLIENT]), "")
+        self.assertEqual(MODULE.unobserved_note(CLAUDE, []), "")
+
+    def test_confirming_one_target_confirms_no_other(self):
+        self.assertIn("CODEX_HOME", MODULE.unobserved_note(CODEX_CLIENT, ["codex-cli-linux"]))
+        self.assertEqual(MODULE.confirmed_targets([CODEX_CLIENT]), frozenset([CODEX_CLIENT]))
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.confirmed_targets(["no-such-client"])
+        self.assertIn("no-such-client", str(caught.exception))
 
     def test_an_unobserved_surface_cannot_report_a_pass(self):
         def case(home):
@@ -85,7 +95,8 @@ class ClientSurfaceTests(unittest.TestCase):
                 patch.object(MODULE.CodexHome, "__init__", stub_init), \
                 patch.object(MODULE.CodexHome, "discard", lambda self: None, create=True):
             outcome = MODULE.probe(CODEX_CLIENT, "installation", "cheapest", False)
-            confirmed = MODULE.probe(CODEX_CLIENT, "installation", "cheapest", False, True)
+            confirmed = MODULE.probe(CODEX_CLIENT, "installation", "cheapest", False,
+                                     [CODEX_CLIENT])
         self.assertEqual(outcome["result"], "unverified")
         self.assertIn("the assertion held", outcome["observation"])
         self.assertIn("not been confirmed", outcome["observation"])
@@ -219,9 +230,113 @@ class BmadLayerTests(unittest.TestCase):
         self.layer("bmad-build.user.toml", 'a = "no declaration here"\n')
         self.assertEqual(MODULE.layer_declarations(self.repo), {})
 
-    def test_the_case_is_unverified_rather_than_skipped_without_a_checkout(self):
+    def test_the_case_itself_is_unverified_rather_than_skipped_without_a_checkout(self):
+        home = home_in(self.tmp.name)
+        home.harness = lambda *args, **kwargs: ""
+        home.seed = lambda *args, **kwargs: None
         with patch.dict(MODULE.os.environ, {MODULE.BMAD_ENV: ""}):
             self.assertIsNone(MODULE.bmad_checkout())
+            with self.assertRaises(MODULE.Unverified) as caught:
+                MODULE.case_bmad_workflow(home)
+        self.assertIn(MODULE.BMAD_ENV, str(caught.exception))
+
+    def test_an_apply_that_wrote_nothing_is_visible_in_the_layer_contents(self):
+        self.layer("bmad-code-review.user.toml", 'a = "harness-role: reviewer"\n')
+        before = MODULE.layer_contents(self.repo)
+        self.assertEqual(MODULE.layer_contents(self.repo), before)
+        self.layer("bmad-code-review.user.toml", 'a = "harness-role: reviewer"\nb = 1\n')
+        self.assertNotEqual(MODULE.layer_contents(self.repo), before)
+
+
+class HandoffRevisionTests(unittest.TestCase):
+    """The revision sequence the handoff case sends, against the rule that decides it.
+
+    `tasks.save` requires `--revision` to be the record's current revision and writes the next,
+    so a save repeated against a revision that has been spent is the refusal, and the same save
+    against the current one is the next revision. The case sent the same revision twice and
+    expected a refusal second, which no record can ever produce.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name) / "repo"
+        self.repo.mkdir()
+        (self.repo / "progress.txt").write_text("start" + chr(10))
+        for args in (("init", "-q"), ("add", "-A"),
+                     ("-c", "user.email=" + MODULE.PROBE_EMAIL, "-c", "user.name=probe",
+                      "commit", "-qm", "probe")):
+            MODULE.run(["git", "-C", str(self.repo)] + list(args))
+
+    def save(self, runtime, revision):
+        from harness_core import tasks
+        return tasks.save(self.repo, json.loads(MODULE.task_contract()), runtime, revision)
+
+    def test_the_first_save_writes_revision_one_and_the_next_writes_two(self):
+        self.assertEqual(self.save("claude-code", 0)["revision"], 1)
+        self.assertEqual(MODULE.task_revision(self.repo), 1)
+        self.assertEqual(self.save("codex", 1)["revision"], 2)
+        self.assertEqual(MODULE.task_revision(self.repo), 2)
+
+    def test_a_save_against_a_spent_revision_is_the_one_that_is_refused(self):
+        self.save("claude-code", 0)
+        self.save("codex", 1)
+        with self.assertRaises(ValueError) as caught:
+            self.save("codex", 1)
+        self.assertIn(MODULE.STALE_SAVE, str(caught.exception))
+
+    def test_repeating_the_current_revision_is_not_a_refusal(self):
+        # What the case used to assert: this is the save that succeeds, so it could never pass.
+        self.save("claude-code", 0)
+        self.assertEqual(self.save("claude-code", 1)["revision"], 2)
+
+    def test_an_absent_record_reads_as_no_revision_rather_than_zero(self):
+        self.assertIsNone(MODULE.task_revision(self.repo))
+
+
+class GradeDenyTests(unittest.TestCase):
+    """The hook-composition case must read a hook's decision, not the stance name in prose."""
+
+    def test_the_marker_is_text_only_the_grade_bash_hook_writes(self):
+        hook = (REPO / "policy" / "hooks" / "grade-bash.py").read_text()
+        self.assertIn('HOOK = "grade-bash hook"', hook)
+        self.assertIn("autonomy=%s", hook)
+        self.assertIn("grade-bash hook, autonomy=", MODULE.GRADE_DENY)
+
+    def test_the_stance_name_alone_is_not_the_marker(self):
+        self.assertNotIn("autonomy=ask", "a reply that merely mentions the selected variant")
+        self.assertNotIn(MODULE.GRADE_DENY, "I cannot do that because autonomy=ask is selected.")
+
+    def test_a_real_deny_reason_carries_the_marker(self):
+        reason = ("grade 1, local write: touch ./compose.txt writes to the working tree — this "
+                  "changes files on this machine (grade-bash hook, autonomy=ask)")
+        self.assertIn(MODULE.GRADE_DENY, reason)
+
+
+class CodexDenialTests(unittest.TestCase):
+    """A Codex turn's refused calls, read from its event stream rather than assumed absent."""
+
+    def test_a_rejected_approval_is_read_as_a_denial(self):
+        denials = MODULE.codex_denials([
+            {"msg": {"type": "exec_approval_request", "decision": "rejected",
+                     "command": "touch ./probe.txt"}}])
+        self.assertEqual(len(denials), 1)
+        self.assertEqual(denials[0]["tool_name"], "touch ./probe.txt")
+
+    def test_a_clean_stream_records_no_denial(self):
+        self.assertEqual(MODULE.codex_denials(
+            [{"msg": {"type": "agent_message", "message": "DONE"}}]), [])
+
+    def test_a_turn_the_client_failed_is_unobserved_rather_than_answered(self):
+        home = codex_home()
+        home.project = CODEX
+        home.env = lambda extra=None: {}
+        stream = (CODEX / "exec-stream.jsonl").read_text()
+        finished = type("R", (), {"stdout": stream, "stderr": "boom", "returncode": 1})()
+        with patch.object(MODULE, "run", return_value=finished):
+            with self.assertRaises(MODULE.Unverified) as caught:
+                home.session("anything", tools=())
+        self.assertIn("exited 1", str(caught.exception))
 
 
 class ProvisionedRoundTests(unittest.TestCase):
@@ -236,17 +351,72 @@ class ProvisionedRoundTests(unittest.TestCase):
                          {MODULE.BMAD_ENV: "/round/bmad"})
         self.assertEqual(self.provision.environment({"bmad": None}), {})
 
-    def test_a_round_directory_inside_this_checkout_is_refused(self):
-        with self.assertRaises(SystemExit):
+    def test_a_round_directory_inside_any_checkout_of_this_repository_is_refused(self):
+        with self.assertRaises(SystemExit) as caught:
             self.provision.main(["--out", str(REPO / "inside")])
+        self.assertIn("outside every checkout of this repository", str(caught.exception))
+        self.assertTrue(self.provision.inside_this_repository(REPO / "deep" / "inside"))
+
+    def test_a_directory_in_no_checkout_of_this_repository_is_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertFalse(self.provision.inside_this_repository(Path(directory) / "round"))
+
+    def test_the_clone_flag_git_accepts_is_the_one_used(self):
+        # `--shared=false` is rejected by git: the option takes no value, so every clone exited.
+        source = (REPO / "scripts" / "qualification_provision.py").read_text()
+        self.assertIn("--no-shared", source)
+        self.assertNotIn("--shared=false", source)
+
+    def test_a_clone_is_taken_at_the_commit_asked_for(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "round"
+            out.mkdir()
+            commit = self.provision.head()
+            target = self.provision.clone(out, commit)
+            self.assertEqual(self.provision.git("rev-parse", "HEAD",
+                                                repo=target).stdout.strip(), commit)
+            self.assertTrue((target / self.provision.CLONE_MARKER).is_file())
+
+    def test_a_clone_directory_this_script_did_not_create_is_never_removed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "round"
+            (out / self.provision.CLONE).mkdir(parents=True)
+            (out / self.provision.CLONE / "somebody-elses-work.txt").write_text("keep me\n")
+            with self.assertRaises(SystemExit) as caught:
+                self.provision.clone(out, self.provision.head())
+            self.assertIn("move it aside", str(caught.exception))
+            self.assertTrue((out / self.provision.CLONE / "somebody-elses-work.txt").exists())
+
+    def test_every_exported_value_is_quoted_for_a_shell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "round"
+            out.mkdir()
+            (out / "provision.json").write_text(json.dumps(
+                {"bmad": "/tmp/a round/bmad; echo pwned"}))
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                self.provision.main(["--out", str(out), "--print-env"])
+        self.assertIn(shlex.quote("/tmp/a round/bmad; echo pwned"), buffer.getvalue())
+        self.assertNotIn("; echo pwned\n", buffer.getvalue())
 
     def test_the_bmad_installer_is_pinned_rather_than_floating(self):
         self.assertRegex(self.provision.BMAD_INSTALLER, r"@\d+\.\d+\.\d+$")
 
     def test_a_target_argv_names_the_frozen_clones_own_runner(self):
-        argv = self.driver.target_argv("/round/clone", CLAUDE, "cheapest", "/round/out.json", True)
+        argv = self.driver.target_argv("/round/clone", CLAUDE, "cheapest", "/round/out.json",
+                                       [CLAUDE])
         self.assertIn("/round/clone/scripts/native_acceptance.py", argv)
-        self.assertIn("--home-confirmed", argv)
+        self.assertEqual(argv[argv.index("--home-confirmed") + 1], CLAUDE)
+
+    def test_confirmation_is_not_passed_through_for_a_target_nobody_confirmed(self):
+        argv = self.driver.target_argv("/round/clone", CODEX_CLIENT, None, "/round/out.json",
+                                       [CLAUDE])
+        self.assertNotIn("--home-confirmed", argv)
+
+    def test_confirming_every_surface_at_once_is_refused(self):
+        with self.assertRaises(SystemExit) as caught:
+            MODULE.confirmed_targets(True)
+        self.assertIn("every surface at once", str(caught.exception))
 
     def test_a_target_with_no_record_is_reported_rather_than_assumed_green(self):
         summary = self.driver.summarise({CLAUDE: {"cases": {}},
@@ -254,9 +424,56 @@ class ProvisionedRoundTests(unittest.TestCase):
         self.assertIn("no record", summary)
         self.assertIn("not installation", summary)
 
-    def test_an_unknown_target_is_refused(self):
-        with self.assertRaises(SystemExit):
+    def test_an_unknown_target_is_refused_by_name(self):
+        with self.assertRaises(SystemExit) as caught:
             self.driver.main(["--round", "/round", "--targets", "no-such-client"])
+        self.assertIn("no-such-client", str(caught.exception))
+
+    def test_a_runner_that_wrote_no_record_reports_every_case_unobserved(self):
+        nothing = self.driver.nothing_observed("the runner wrote no record for this target")
+        self.assertEqual(sorted(nothing["cases"]), sorted(MODULE.catalog()["required_cases"]))
+        self.assertTrue(all(value == "unverified" for value in nothing["cases"].values()))
+
+    def test_a_stale_record_is_moved_aside_rather_than_reported_as_this_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            round_dir, clone, records = self.provisioned(directory)
+            stale = records / (CLAUDE + ".json")
+            stale.write_text(json.dumps({"cases": {"installation": "passed"},
+                                         "observations": ["from an older round"]}))
+            with patch.object(self.driver.subprocess, "run", return_value=None):
+                result = self.driver.run_round(round_dir, [CLAUDE], None, [], skip_smoke=True)
+        cases = result["targets"][CLAUDE]["cases"]
+        self.assertTrue(all(value == "unverified" for value in cases.values()))
+        self.assertNotIn("from an older round",
+                         json.dumps(result["targets"][CLAUDE]["observations"]))
+
+    def test_a_target_that_ran_past_the_deadline_is_carried_rather_than_raised(self):
+        timeout = self.driver.subprocess.TimeoutExpired(cmd="runner", timeout=1)
+        with tempfile.TemporaryDirectory() as directory:
+            round_dir, clone, records = self.provisioned(directory)
+            with patch.object(self.driver.subprocess, "run", side_effect=timeout):
+                result = self.driver.run_round(round_dir, [CLAUDE, CODEX_CLIENT], None, [],
+                                               skip_smoke=True)
+        self.assertEqual(sorted(result["targets"]), sorted([CLAUDE, CODEX_CLIENT]))
+        self.assertIn("past the round deadline",
+                      json.dumps(result["targets"][CLAUDE]["observations"]))
+
+    def test_a_smoke_tier_that_ran_past_the_deadline_is_not_a_pass(self):
+        timeout = self.driver.subprocess.TimeoutExpired(cmd="smoke", timeout=1)
+        with patch.object(self.driver.subprocess, "run", side_effect=timeout):
+            self.assertIsNone(self.driver.smoke("/round/clone", {}))
+
+    def provisioned(self, directory):
+        """A round directory whose provision record points at empty places, launching nothing."""
+        round_dir = Path(directory)
+        clone = round_dir / "clone"
+        records = round_dir / "records"
+        for path in (clone, records):
+            path.mkdir(parents=True)
+        (round_dir / "provision.json").write_text(json.dumps(
+            {"clone": str(clone), "records": str(records), "bmad": None,
+             "source_commit": "a" * 40}))
+        return round_dir, clone, records
 
 
 def MODULE_FOR(name):

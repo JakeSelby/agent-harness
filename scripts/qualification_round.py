@@ -21,7 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from native_acceptance import CLIENTS, unobserved_note  # noqa: E402
+from native_acceptance import (CLIENTS, catalog, confirmed_targets,  # noqa: E402
+                               unobserved_note)
 
 SMOKE = "smoke_tier.py"
 RUNNER = "native_acceptance.py"
@@ -51,17 +52,33 @@ def environment(report):
 
 
 def smoke(clone, env):
-    return subprocess.run([sys.executable, str(Path(clone) / "scripts" / SMOKE)],
-                          cwd=str(clone), env=env, check=False, timeout=ROUND_TIMEOUT)
+    """The deterministic tier, or `None` when it ran past the round's own deadline."""
+    try:
+        return subprocess.run([sys.executable, str(Path(clone) / "scripts" / SMOKE)],
+                              cwd=str(clone), env=env, check=False, timeout=ROUND_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def nothing_observed(reason):
+    """A target's record when the runner wrote none: every required case, unobserved.
+
+    An absent `--out` is the one shape that must never be read as the previous run's: a runner
+    that died before writing left no reading at all, and reporting the stale file would publish
+    an old pass as this round's.
+    """
+    cases = dict((name, "unverified") for name in catalog()["required_cases"])
+    return {"cases": cases, "observations": [reason]}
 
 
 def target_argv(clone, client, model, out, confirmed):
+    """The runner's own argv for one target; confirmation is passed through per target only."""
     argv = [sys.executable, str(Path(clone) / "scripts" / RUNNER), "--client", client,
             "--out", str(out)]
     if model:
         argv += ["--model", model]
-    if confirmed:
-        argv.append("--home-confirmed")
+    if client in confirmed_targets(confirmed):
+        argv += ["--home-confirmed", client]
     return argv
 
 
@@ -89,16 +106,31 @@ def run_round(round_dir, targets, model, confirmed, skip_smoke=False):
     env = environment(report)
     result = {"source_commit": report.get("source_commit"), "smoke": "skipped", "targets": {}}
     if not skip_smoke:
-        result["smoke"] = PASSED if smoke(clone, env).returncode == 0 else "failed"
+        finished = smoke(clone, env)
+        result["smoke"] = ("timed out" if finished is None
+                           else PASSED if finished.returncode == 0 else "failed")
     for client in targets:
         out = records_dir / (client + ".json")
         note = unobserved_note(client, confirmed)
-        subprocess.run(target_argv(clone, client, model, out, confirmed),
-                       cwd=str(clone), env=env, check=False, timeout=ROUND_TIMEOUT)
+        # Move any earlier record aside before the runner is launched. A runner that exits
+        # before writing `--out` would otherwise leave the previous round's file in place and
+        # this round would report its passes as its own.
+        if out.exists():
+            out.replace(out.with_suffix(".json.previous"))
+        failure = ""
+        try:
+            subprocess.run(target_argv(clone, client, model, out, confirmed),
+                           cwd=str(clone), env=env, check=False, timeout=ROUND_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # Reported and carried, not raised: a round collects every target's defects, and a
+            # target that ran past the deadline must not cost the targets after it.
+            failure = "the target ran past the round deadline of %ss" % ROUND_TIMEOUT
         try:
             data = json.loads(out.read_text())
         except (OSError, ValueError):
-            data = {"cases": {}, "observations": []}
+            data = nothing_observed(failure or "the runner wrote no record for this target")
+        if failure and failure not in data.get("observations", []):
+            data.setdefault("observations", []).append(failure)
         if note:
             data.setdefault("observations", []).append(note)
         result["targets"][client] = data
@@ -110,8 +142,9 @@ def main(argv=None):
     parser.add_argument("--round", type=Path, required=True, help="the provisioned round directory")
     parser.add_argument("--targets", default=",".join(sorted(CLIENTS)))
     parser.add_argument("--model", help="the cheapest model each client offers")
-    parser.add_argument("--home-confirmed", action="store_true",
-                        help="a surface whose configuration home was compared against a hand run")
+    parser.add_argument("--home-confirmed", action="append", default=[], metavar="CLIENT",
+                        help="a client whose configuration home was compared against a hand run; "
+                             "repeat for each, and never for a surface nobody compared")
     parser.add_argument("--skip-smoke", action="store_true",
                         help="the smoke tier was already run at this commit")
     parser.add_argument("--plan", action="store_true",

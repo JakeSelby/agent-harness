@@ -25,7 +25,10 @@ All notable changes to this project are documented here. The format follows
   `adapters/codex/worker.py`, `policy/hooks/usage-log.py` and the documentation. No Codex round
   has been driven through it, so every Codex verdict is reported `unverified` with its
   observation kept until an operator compares one against a hand run and passes
-  `--home-confirmed`, which is the discipline `permission-controls` already owes (#336).
+  `--home-confirmed`, which is the discipline `permission-controls` already owes. Confirmation is
+  per target, because one surface agreeing with a hand run says nothing about another, and on an
+  unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
+  what is in question there is the reading, not the harness (#336).
 - A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
   the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
   this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
@@ -131,6 +134,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Four faults in the qualification scripts, each of which would have cost a paid round to find.
+  The round's clone passed `--shared=false` to `git clone`, an option that takes no value, so
+  every provision exited; `bidirectional-handoff` sent the same `--revision` twice expecting a
+  refusal second, where `lib/harness_core/tasks.py` refuses only a revision that has been spent,
+  and it sent the writing runtime as a contract field the same module rejects, so the case could
+  never have passed; `bmad-workflow` applied into the checkout every target shares and passed on
+  any declaration it found there, so a second target or a rerun passed having written nothing —
+  it now applies into its own copy and asserts this apply wrote one; and the round driver left a
+  previous target record in place, so a runner that exited before writing `--out` reported the
+  older round's passes as this round's. A previous record is now moved aside first and an absent
+  one is every case `unverified`, a target or smoke tier that runs past the deadline is recorded
+  and carried rather than raised, `--print-env` quotes every value it prints, a round directory
+  inside any checkout or worktree of this repository is refused, and a `clone` directory this
+  script did not create is refused rather than deleted. `hook-composition` now matches text only
+  the `grade-bash` hook writes rather than the stance name, which a model can echo without any
+  hook having decided, and `custom-stance` names the resolved variant by its bytes where a
+  surface copies it instead of linking it (#336).
 - The credential probe answers for a variable holding something that is not a path, where asking
   the filesystem about it used to raise and carry the value into the error's own message — a
   service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
