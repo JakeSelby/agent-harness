@@ -22,6 +22,14 @@ All notable changes to this project are documented here. The format follows
   `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
   block a freeze (#334).
 
+### Fixed
+
+- The credential probe answers for a variable holding something that is not a path, where asking
+  the filesystem about it used to raise and carry the value into the error's own message — a
+  service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
+  An unusable value is now treated as a file that is not there, and the reason names the variable
+  and never the value (#334).
+
 ### Changed
 
 - The delegation rule now states that subagents never message a peer, and the builder role says

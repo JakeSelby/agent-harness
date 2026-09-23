@@ -29,7 +29,8 @@ jobs:
       # Advisory: this job is deliberately absent from the branch ruleset's required checks
       # while it is decided whether a red tier may block a freeze. The credential probe is left
       # out because this runner holds no client credential; it belongs on the host that will run
-      # a qualification round.
+      # a qualification round. No job in this workflow pins an interpreter, so this one runs the
+      # same Python as `test`; the 3.9 floor is proved by running the suite locally under it.
       - name: Deterministic pre-qualification checks
         run: python3 scripts/smoke_tier.py --skip credentials
 

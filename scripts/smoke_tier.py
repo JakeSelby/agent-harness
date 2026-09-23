@@ -18,6 +18,7 @@ contain, is in docs/compatibility.md.
 import argparse
 import hashlib
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -34,6 +35,7 @@ NOT_QUALIFICATION = ("smoke tier: deterministic pre-qualification checks, no mod
 # observes none.
 GUARDED = (Path("compatibility") / "evidence", Path("compatibility") / "catalog.json")
 TAIL = 600
+GIT_TIMEOUT = 30
 
 
 def unittest_argv(pattern):
@@ -66,8 +68,19 @@ def steps(work):
 
 
 def dirty(root=ROOT):
-    result = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
-                            capture_output=True, text=True, check=False)
+    """What the working tree has changed, or `None` when its state could not be read at all.
+
+    Outside a git checkout `git status` exits 128 and prints nothing, which is indistinguishable
+    from a clean tree if only standard output is read; a check that needs a clean tree is
+    `unverified` there rather than run against an unknown one.
+    """
+    try:
+        result = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                                capture_output=True, text=True, check=False, timeout=GIT_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode:
+        return None
     return result.stdout.strip()
 
 
@@ -83,28 +96,63 @@ def digest(root=ROOT):
     return sha.hexdigest()
 
 
+def outcome(step, result, seconds, detail):
+    return {"name": step["name"], "result": result, "seconds": seconds, "detail": detail}
+
+
+def kill_group(process):
+    """Kill the check and everything it started; a surviving grandchild holds the run open."""
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except OSError:
+        process.kill()
+
+
+def tail(output, code):
+    """The end of a failing check's output, redacted whole before it is cut.
+
+    Cutting first can leave the second half of a home path or a token standing on its own, so
+    the redaction runs over everything the check printed and the cut is taken from the result.
+    """
+    return redact(output)[-TAIL:] or "exit %s with no output" % code
+
+
 def run_step(step, root=ROOT):
     """Run one check under a bounded timeout and classify it, never inferring a pass."""
     started = time.time()
-    if step.get("clean_tree") and dirty(root):
-        return {"name": step["name"], "result": "unverified", "seconds": 0.0,
-                "detail": "the checkout is dirty and this check requires a clean one"}
+    if step.get("clean_tree"):
+        state = dirty(root)
+        if state is None:
+            return outcome(step, "unverified", 0.0,
+                           "the tree state could not be read, so this check was not run")
+        if state:
+            return outcome(step, "unverified", 0.0,
+                           "the checkout is dirty and this check requires a clean one")
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     env.update(step.get("env") or {})
     try:
-        completed = subprocess.run([str(item) for item in step["argv"]], cwd=str(root), env=env,
-                                   stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                                   timeout=step["timeout"], check=False)
+        process = subprocess.Popen([str(item) for item in step["argv"]], cwd=str(root), env=env,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True, start_new_session=True)
+    except OSError as error:
+        return outcome(step, "unverified", 0.0, "the check could not be started: " + redact(error))
+    try:
+        out, err = process.communicate(timeout=step["timeout"])
     except subprocess.TimeoutExpired:
-        # The failure this tier exists to replace: a check that hangs reports nothing at all.
-        return {"name": step["name"], "result": "failed", "seconds": step["timeout"],
-                "detail": "no answer within %ss" % step["timeout"]}
+        # A check that never answered observed nothing, so it is unverified rather than failed —
+        # and it is killed with its children, which is the hang this tier exists to replace.
+        kill_group(process)
+        process.communicate()
+        return outcome(step, "unverified", float(step["timeout"]),
+                       "no answer within %ss" % step["timeout"])
+    except OSError as error:
+        kill_group(process)
+        return outcome(step, "unverified", round(time.time() - started, 1),
+                       "the check could not be read: " + redact(error))
     seconds = round(time.time() - started, 1)
-    if completed.returncode == 0:
-        return {"name": step["name"], "result": "passed", "seconds": seconds, "detail": ""}
-    output = (completed.stderr or "") + (completed.stdout or "")
-    return {"name": step["name"], "result": "failed", "seconds": seconds,
-            "detail": redact(output[-TAIL:]) or "exit %s with no output" % completed.returncode}
+    if process.returncode == 0:
+        return outcome(step, "passed", seconds, "")
+    return outcome(step, "failed", seconds, tail((err or "") + (out or ""), process.returncode))
 
 
 def names_in(names, plan):
@@ -153,6 +201,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="harness-smoke-") as work:
         plan = selected(args.only, args.skip, steps(Path(work)))
+        if not plan:
+            raise SystemExit("no smoke check selected; --list names them")
         if args.listing:
             print("\n".join([NOT_QUALIFICATION]
                             + ["  %-26s %s" % (step["name"], step["how"]) for step in plan]))
