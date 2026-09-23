@@ -25,7 +25,7 @@ It does not decide what screens exist, what the flows are, or how anything behav
 
 | If the ask is | Use |
 | --- | --- |
-| What screens exist, what the flows are, how it behaves | `bmad-ux` / `gds-ux` — UX specification |
+| What screens exist, what the flows are, how it behaves | your planning framework's UX specification workflow |
 | A mockup, wireframe or screen design from scratch | `design` — canvas, no running artifact needed |
 | Styling a published Artifact page | `artifact-design` |
 | Make the thing that exists look far better | **this skill** |

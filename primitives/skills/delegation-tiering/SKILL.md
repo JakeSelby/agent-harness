@@ -393,7 +393,7 @@ options in workflow scripts.
 the cost variant's default band worker under this stance, and left one tier below the session
 where nothing routes it. A default band is right for gathering and wrong for judgment, so a
 framework skill whose spawn is a reviewer names `reviewer` in its override instead of leaving the
-spawn bare; `docs/bmad.md` shows the pattern. Whether that ceiling is a refusal or only a
+spawn bare; a declared integration's override templates show the pattern. Whether that ceiling is a refusal or only a
 sentence depends on the client surface, and this skill does not repeat the answer: the
 `tier restriction` row in `docs/compatibility.md` is generated per runtime and names the
 mechanism behind each state.

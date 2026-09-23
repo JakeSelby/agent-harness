@@ -54,7 +54,48 @@ All notable changes to this project are documented here. The format follows
   dollars. A run whose CLI output carries no per-turn cache figures, or any one of whose turns
   reports its usage without them, is `null`, never zero, since zero is a run that held its whole
   prefix (#497).
+- `harness integration check|apply <name>` is the surface for a declared framework integration.
+  It reads the template directory, the install destination, the presence probe and the skill
+  surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
+  session-start drift notice probes that descriptor's `detect` path instead of a directory
+  literal in the hook. `harness bmad check|apply` is kept as an alias, and installed override
+  files are unaffected either way (#349).
+
+- A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
+  release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
+  and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
+  hook now classifies a native spawn against those descriptors instead of trusting the
+  `subagent_type` the model wrote, so a review layer re-issued as an unnamed subagent is refused
+  with the same isolated-worker instruction a named `reviewer` spawn gets, and the refusal names
+  the read roots that worker needs. The `harness-role:` line in a routed brief goes back to being
+  an optimisation rather than the thing confinement depends on. Recognition is corroborated: one
+  of the framework's own layer names as the spawn type is enough, a path out of its routed text
+  counts only with one of its sentences beside it, and two of those sentences are enough on their
+  own, so the fix-up brief after a review, a brief that edits the override templates and a brief
+  that quotes a single line of them all still run. A classified refusal is deliberately not
+  remembered for the session, because that memory matches by prefix and similarity and one wrong
+  classification would go on refusing the corrected brief. A descriptor that will not parse or
+  will not validate is announced once per session and logged rather than skipped in silence.
+  `spawn-confinement` joins the required qualification cases, with a false-positive check, and the
+  catalog records what a descriptor still cannot recognise (#291).
+
 ### Changed
+
+- A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
+  `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
+  fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
+  it: a recipe layer is refused whether it is spawned unnamed, as a generic subagent or as a band
+  worker, the refusal offers exactly the descriptor's declared input roots as the isolated
+  worker's read roots, and one cheap turn confirms that an unnamed spawn still routes to the cost
+  variant's default band worker at that row's class and effort with the budget sentence, and that
+  a null variant rewrites nothing. The BMad run becomes an optional, non-gating suite run once per
+  minor release on one target, documented in `docs/bmad.md` and `docs/releasing.md`; the offline
+  template and surface tests stay in CI, because they are what catches an upstream rename. The
+  catalog now carries two limitations in place of one: that no framework's workflow is exercised
+  natively in a qualification round, and what descriptor-driven confinement still cannot
+  recognise. Generic task continuation moves off the framework page to
+  `docs/task-continuation.md`, and the framework-named asides in the design-loop skill, the
+  handoff workflow, the delegation-tiering skill and a spawn-hook test are gone (#349).
 
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
   single-coordinator for some time — a sync registers one command per lifecycle event and

@@ -18,7 +18,7 @@ npx --yes bmad-method@"$BMAD_VERSION" install --directory . --modules bmm \
   --document-output-language English --output-folder _bmad-output --shims --yes
 ```
 
-Then run `python3 bin/harness bmad check .`. Planning workflows run from the shared checkout;
+Then run `python3 bin/harness integration check bmad .`. Planning workflows run from the shared checkout;
 implementation still happens in managed worktrees.
 
 The version-control boundary is intentional:
@@ -139,6 +139,47 @@ existed during the original delivery.
   paths to ordinary issues and PRs. Public documentation and planning artifacts may identify BMad
   deliberately, and issues may link to their public story artifacts.
 
+## Spawn confinement is enforced, not requested
+
+The override templates ask each review layer to run itself through `harness role run`. That is a
+request in a prompt: a client that paraphrases the brief and names no role used to walk past a
+spawn guard that only read the name the model wrote (#291).
+
+So the framework declares itself, in `policy/integrations/bmad.json`, and the spawn hook
+classifies against that descriptor instead. A descriptor names the framework, the release it was
+read from, the layer-to-role mapping, the input roots a confined worker needs, and how a spawn is
+recognised:
+
+- **agents** — the spawn's `subagent_type` is one of the framework's own layer names. Nothing else
+  puts that name there, so it is enough on its own.
+- **identifiers** — a literal only the framework's routed text carries, such as the path of one of
+  its prompt files. Never enough alone, because a brief that edits the override templates quotes
+  the same path; an identifier counts only with a phrase beside it.
+- **phrases** — whole sentences of the framework's own prompt text. One is a coincidence;
+  `corroboration` of them, two by default, is not.
+
+Generic nouns are not phrases. "unified diff" and "list of findings" are what the ordinary fix-up
+brief after a review says, and a descriptor that declared them would refuse the work the review
+asked for. The loader enforces that: a signal below the minimum length and word count, an
+identifier that is an input root or a bare directory under one, a spawn with no phrases at all, or
+a role the spawn guard would not constrain, and the descriptor is refused as a whole. A descriptor
+that will not parse or will not validate is announced once per session and recorded in the
+decision log, never dropped in silence.
+
+A recognised spawn is refused with the same isolated-worker instruction a named role's spawn gets,
+and the refusal names the framework, the layer and the input roots the worker has to be given as
+read roots. Unlike a refusal the spawn declared by role name or `harness-role:` line, it is not
+written into the session's memory of refused work: that memory matches later briefs by prefix and
+similarity, so one wrong classification would go on refusing the corrected brief for the rest of
+the session. Each spawn is answered on its own evidence.
+
+The `harness-role:` line the templates carry is an optimisation on top: it is read by the marker
+guard, which requires it on a line of its own, and a descriptor must not restate it as loose text.
+
+Another framework becomes a tenant by adding its own descriptor file; nothing in the hook is
+BMad-specific. Keep `version.pinned` equal to the release the repository installs — a mapping read
+from another release names layers that are not there.
+
 ## Shared roles and explicit installation
 
 `templates/bmad/custom/` names harness roles: `builder`, `reviewer`, and `spec-reviewer`.
@@ -156,7 +197,10 @@ complete keyed review-layer records so BMad's replacement merge does not discard
 The assigned implementation worktree, framework checkout, artifact root, baseline commit and
 review diff must be separate explicit inputs; run framework scripts from the framework checkout.
 
-Run `harness bmad check <framework-root>` before `harness bmad apply <framework-root>`.
+Run `harness integration check bmad <framework-root>` before
+`harness integration apply bmad <framework-root>`; `harness bmad check|apply` is kept as an alias
+for both. The command reads `policy/integrations/bmad.json` for the template directory, the
+install destination and the skill surface, so the CLI names no framework of its own.
 Check resolves either `.agents/skills` or `.claude/skills`, refuses conflicting mirrors, and
 parses customization TOML structurally. It also compares mirrored Markdown/TOML sources and
 checks literal `Invoke via the … skill` dependencies in installed workflows; other forms of dynamic
@@ -176,43 +220,36 @@ supported shim installation or an upstream fix before that workflow is qualified
 
 BMad 6.12.0 provides `--shims` on its installer. GDS v0.7.2 still invokes the legacy
 `bmad-review-adversarial-general` and `bmad-review-edge-case-hunter` names; installations
-without their compatibility shims fail `harness bmad check`. Re-run your recorded, version-pinned
+without their compatibility shims fail `harness integration check bmad`. Re-run your recorded, version-pinned
 installation command with `--shims`, retaining the same modules, tools and module pins. Back up
 the installation first, restore any documented runtime patches and artifact-routing YAMLs,
 then check both skill projections and verify that existing customizations are unchanged.
 Keep `--shims` in the recorded reinstall command while these workflows require the legacy names.
 This repairs dependency discovery; a passing check still does not qualify workflow execution.
 
-## Continue a task in either runtime
+## The optional integration suite
 
-The shared human-readable snapshot is `.agent-harness/progress.md`; session start reads the old
-`.claude/progress.md` only when the shared file is absent. Plans live in `.agent-harness/plans/`.
-Native transcripts and memory stay in their own runtime stores.
+This framework's own workflow is not run in a release qualification round. `required_cases` carries
+the generic `framework-spawn-routing` case instead, which drives the spawn hook against a fixture
+recipe and costs one cheap turn; what it proves and what it does not is in
+[compatibility](compatibility.md).
 
-For a structured handoff, prepare a JSON file:
+What stays in CI is cheap and offline: `tests/test_bmad_templates.py` and
+`tests/test_bmad_repository.py` pin the upstream surface against a fixture repository with no
+framework installed, and they are what actually catches a renamed key or layer id.
 
-```json
-{
-  "objective": "Complete the selected change",
-  "next_steps": ["Inspect the current diff", "Run the repository gate"],
-  "decisions": ["Keep the public API stable"],
-  "artifacts": ["docs/design.md"],
-  "framework_root": "/path/to/shared-checkout",
-  "baseline": "the-reviewed-base-commit"
-}
-```
+The native run is an optional suite, non-gating, run once per minor release on one target before
+the tag:
 
 ```sh
-harness task show
-harness task save --input task-input.json --runtime claude-code --revision 0
-# In Codex, from the same worktree:
-harness task show
-harness task save --input task-input.json --runtime codex --revision 1
+BMAD_VERSION=6.12.0
+npx --yes bmad-method@"$BMAD_VERSION" install --directory <framework-root> --modules bmm \
+  --tools claude-code,codex --output-folder _bmad-output --shims --yes
+python3 bin/harness integration apply bmad <framework-root>
+# then run the four-layer code review from the shared checkout against an assigned worktree,
+# and confirm each layer ran as an isolated worker rather than a native subagent.
 ```
 
-The revision rejects concurrent stale writers. Repository identity and a content fingerprint
-prevent a changed tree from inheriting a verification claim. Shared plans and progress count as
-inputs even when ignored by Git; only task bookkeeping is excluded. Reported verification is retained
-as unverified evidence; the receiving session runs the gate itself. Next steps are data, never
-executed by the loader, and approvals never transfer. Storage rejects symlinks. Keep personal
-handoff data out of commits with a project ignore entry when needed.
+Record the result in the release's pull request with the harness version, the framework version and
+the client it ran on. It gates nothing: a red result is an issue, not a blocked release, and the
+release claim says only that the pinned version is the one that was observed.
