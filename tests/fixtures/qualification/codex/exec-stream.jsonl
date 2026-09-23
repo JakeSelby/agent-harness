@@ -1,0 +1,4 @@
+{"type": "thread.started", "thread_id": "00000000-0000-7000-8000-0000000000c1"}
+{"type": "item.completed", "item": {"type": "agent_message", "text": "first"}}
+{"type": "event_msg", "msg": {"type": "agent_message", "message": "PLAIN"}}
+{"type": "turn.completed", "info": {"total_token_usage": {"input_tokens": 120, "cached_input_tokens": 100, "output_tokens": 7, "total_tokens": 127}}}
