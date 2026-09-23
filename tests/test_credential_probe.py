@@ -134,8 +134,8 @@ class EntryPointTests(unittest.TestCase):
 
     def test_only_a_known_variable_name_is_ever_printed(self):
         for name in credentials.REPORTABLE_VARS:
-            self.assertIn(name, ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY",
-                                 "AWS_PROFILE", "GOOGLE_APPLICATION_CREDENTIALS"))
+            self.assertIn(name, ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+                                 "OPENAI_API_KEY", "AWS_PROFILE", "GOOGLE_APPLICATION_CREDENTIALS"))
         with patch.object(credentials, "reachable", return_value="SOME_OTHER_VALUE"):
             code, out, err = self.run_main({"ANTHROPIC_API_KEY": PRESENT})
         self.assertEqual(code, 1)

@@ -144,7 +144,7 @@ class RunbookTests(unittest.TestCase):
 
     def test_the_runbook_names_the_session_variables_the_runner_passes_through(self):
         runbook = (REPO / "docs" / "qualification-runbook.md").read_text()
-        for name in ("AWS_ACCESS_KEY_ID", "AWS_SESSION_TOKEN", "AUTH_PASSTHROUGH"):
+        for name in ("AWS_ACCESS_KEY_ID", "AWS_SESSION_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "AUTH_PASSTHROUGH"):
             self.assertIn(name, runbook)
 
 
@@ -162,6 +162,11 @@ class PassthroughTests(unittest.TestCase):
         for name, value in CONTAINER_CREDENTIALS.items():
             self.assertIn(name, MODULE.AUTH_PASSTHROUGH)
             self.assertEqual(env[name], value)
+
+    def test_the_subscription_token_reaches_the_client(self):
+        """`claude setup-token` mints a long-lived token the client reads from this name."""
+        env = self.environment({"CLAUDE_CODE_OAUTH_TOKEN": "minted", "PATH": "/usr/bin"})
+        self.assertEqual(env["CLAUDE_CODE_OAUTH_TOKEN"], "minted")
 
     def test_nothing_outside_the_list_travels(self):
         env = self.environment(dict(CONTAINER_CREDENTIALS, UNRELATED_VARIABLE="x"))
