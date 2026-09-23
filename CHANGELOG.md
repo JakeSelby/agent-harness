@@ -73,6 +73,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The `delegation` stance, the shared role descriptions and the refusal a native `gatherer` or
+  `reviewer` spawn receives now carry one sentence word for word: a read-only role runs through
+  `harness role run <role>`, because confinement is read roots and return shape rather than the
+  absence of write tools, which is also why `builder` is exempt and spawns natively. A session
+  that followed the stance used to spend a refused call discovering a rule none of the three
+  texts stated, and the refusal's reason for exempting the write-capable role was nowhere. A test
+  holds the three copies together, so the sentence cannot drift in one of them (#304).
+
 - The credential probe answers for a variable holding something that is not a path, where asking
   the filesystem about it used to raise and carry the value into the error's own message — a
   service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
