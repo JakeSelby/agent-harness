@@ -77,6 +77,14 @@ Both write the map and a new artifact in the current checkout; commit them in th
 delivers the issue. The required `issue-ownership` check refuses a pull request whose delivery
 issue is absent from the map, and `apply` adds the Planning block once the artifact is on `main`.
 
+Because `next_ids` lives in the map, it knows only what this checkout has seen. Before allocating,
+both commands survey every issue map this clone can reach — the working copy of each linked
+worktree, so an uncommitted reservation counts, and every local and remote-tracking branch — and
+refuse when the counter is not past every ID of that kind already in use, naming each one and where
+it was found. Rebasing onto the branch that took them is the usual answer; `--advance` skips them
+instead and says which IDs it leaves permanently unused. Heads `git ls-remote` advertises that this
+clone holds no object for are reported, so an incomplete survey is never read as a clean one.
+
 ### Live verification
 
 ```sh
@@ -192,7 +200,11 @@ which no override template reaches — is routed to the variant's default band w
 from that band's row instead, so its class, effort and soft budget come from the posture rather
 than from the recipe. Nothing in the framework's own templates changes. Constrained review roles use
 `harness role run` with explicit input roots; builders retain their normal
-workflow. See [isolated role workers](role-workers.md). Recipes retain
+workflow. See [isolated role workers](role-workers.md). Each review layer is asked to launch only
+once the previous layer's worker has exited, because a worker still running reports no token count
+and a round whose spend is invisible cannot be held under its cap. Running four layers one after
+another is affordable because each is now mounted about 30,800 estimated tokens rather than the
+whole checkout; that figure is what is mounted, not what a layer reads. Recipes retain
 complete keyed review-layer records so BMad's replacement merge does not discard required fields.
 The assigned implementation worktree, framework checkout, artifact root, baseline commit and
 review diff must be separate explicit inputs; run framework scripts from the framework checkout.

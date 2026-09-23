@@ -5,6 +5,7 @@ tier: frontier
 authority: workspace-write
 context: fresh
 delegation: none
+skills: design-loop, licensing-review
 ---
 
 # Designer

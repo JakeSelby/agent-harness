@@ -107,6 +107,16 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(MARKER.findall(text), SPAWN.findall(text))
         self.assertEqual(text.count("keep the brief's first line unchanged"), len(SPAWN.findall(text)))
 
+    def test_every_review_layer_asks_to_run_after_the_previous_one(self):
+        # A running role worker publishes no token figure until it finishes, so concurrent layers
+        # cannot be held under a round's cap. The handoff launches one worker and says nothing.
+        for skill, path in TEMPLATES.items():
+            text = path.read_text(encoding="utf-8")
+            layers = text.count("[[workflow.review_layers]]") + text.count("[[workflow.oneshot_review_layers]]")
+            with self.subTest(skill=skill):
+                self.assertEqual(text.count("Run the review layers one at a time"), layers)
+                self.assertEqual(text.count("never hold two role workers in flight"), layers)
+
     def test_the_handoff_names_the_shared_builder_role(self):
         for skill in ("bmad-build", "bmad-build-auto"):
             text = TEMPLATES[skill].read_text()
