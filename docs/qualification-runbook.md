@@ -40,8 +40,8 @@ for.
    `~/.codex/auth.json`. A Codex round spends that ChatGPT plan's usage rather than API credit,
    so confirm the plan has headroom for the round, or budget a usage purchase, before starting
    rather than finding the limit mid-case.
-3. **Claude Code credential.** Export an Anthropic API key or a cloud profile the runner passes by
-   name; see [credentials](#credentials).
+3. **Claude Code credential.** Export an Anthropic API key, a cloud profile, or a subscription
+   token from `claude setup-token`; the runner passes each by name — see [credentials](#credentials).
 4. **Docker daemon**, for either Linux target. Start Docker Desktop and confirm `docker info`
    answers, then build the target image once per pinned client version:
 
@@ -212,12 +212,17 @@ agree. Record that comparison with the round's observations.
 
 The runner copies no credential and prints none. Each case runs in a disposable `HOME` that
 inherits, **by name only**, the authentication variables this machine already uses — the
-`ANTHROPIC_*` variables, the Bedrock and Vertex switches, `AWS_PROFILE` and the AWS region,
+`ANTHROPIC_*` variables, `CLAUDE_CODE_OAUTH_TOKEN`, the Bedrock and Vertex switches, `AWS_PROFILE` and the AWS region,
 credentials-file and session variables (`AWS_ACCESS_KEY_ID`, `AWS_SESSION_TOKEN` and the
 secret-key variable beside them), `GOOGLE_APPLICATION_CREDENTIALS` and `OPENAI_API_KEY`. `AUTH_PASSTHROUGH`
 in the runner is the full list. A container that holds its credentials as environment variables
 and has no profile to fall back on is qualified by exporting them to the wrapper that invokes the
 runner; nothing else reaches the client.
+
+An interactive `claude login` never reaches the disposable home. On a Claude subscription with no
+API key, run `claude setup-token` once — it mints a long-lived token for that subscription — and
+export it as `CLAUDE_CODE_OAUTH_TOKEN` in the shell that invokes the runner, so the round spends
+the subscription rather than on-demand credit. Export it for the round only; never write it to a file.
 
 The AWS file pointers are re-anchored at the operator's real home, because the probe's `HOME` is
 disposable and an unset pointer hangs the provider lookup. On macOS each disposable home gets its

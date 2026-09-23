@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 18,
-    "story": 218,
+    "story": 219,
     "task": 26,
     "bug": 72,
     "chore": 57,
@@ -5015,6 +5015,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B071.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S218",
+      "github_number": 672,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/672",
+      "title": "Pass CLAUDE_CODE_OAUTH_TOKEN into the disposable home so a subscription can run a Claude Code round",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S218.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     }
