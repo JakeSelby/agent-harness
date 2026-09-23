@@ -1,8 +1,11 @@
 ---
 title: Agent Harness decision ledger
-status: active
+status: superseded
 created: 2026-09-19
 updated: 2026-09-19
+superseded_by:
+  - architecture-spines/architecture-agent-harness-2026-09-23/ARCHITECTURE-SPINE.md
+  - prds/prd-agent-harness-2026-09-23/addendum.md
 ---
 
 # Decision ledger
