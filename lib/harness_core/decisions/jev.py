@@ -548,6 +548,19 @@ STATE_FIELDS = controls.STATE_FIELDS
 MAX_STATE_FIELD = 4096
 
 
+def _default_pack():
+    """`DECISION_PACK` as its registered version, or the bare dict if that module is absent.
+
+    Imported here rather than at the top because `packs` is built on this module; the fallback
+    keeps a provider working in a checkout where only this file was vendored.
+    """
+    try:
+        from . import packs
+        return packs.get(packs.DECISION_ID)
+    except Exception:
+        return DECISION_PACK
+
+
 def require_decision_questions(pack: Dict[str, Any]) -> Dict[str, Any]:
     """`pack`, or a `PackError` naming a question `JevProvider.decide` would have read blind."""
     validate_pack(pack)
@@ -628,8 +641,12 @@ class JevProvider(decision.DecisionProvider):
             self.controls.max_requests, self.controls.max_tokens,
             spend=SessionSpend(session))
         self.threshold = threshold
+        # A `packs.Pack` or a bare dict. The Pack carries a name and a version the ledger row
+        # can be read back through; a dict is the older shape and names only its hash.
+        supplied = pack if pack is not None else _default_pack()
+        self.pack_identity = supplied.identity() if hasattr(supplied, "identity") else {}
         self.pack = require_decision_questions(
-            pack if pack is not None else DECISION_PACK)
+            supplied.questions if hasattr(supplied, "questions") else supplied)
         self.target = target
 
     def decide(self, action, counterparty, context=None):
@@ -706,10 +723,10 @@ class JevProvider(decision.DecisionProvider):
     def _log(self, action, counterparty, result, base=None, mode=None):
         """One ledger row per call: what was asked, what came back, what it would have changed.
 
-        The judgment label, the severity level, the deterministic outcome and the outcome an
-        `act` mode would have reached are all on the row, because a `shadow` answer nobody can
-        compare against the decision it did not change measures nothing. Labels only: never the
-        state, never an answer's prose.
+        The pack's id and version, the judgment label, the severity level, the deterministic
+        outcome and the outcome an `act` mode would have reached are all on the row, because a
+        `shadow` answer nobody can compare against the decision it did not change measures
+        nothing. Labels only: never the state, never an answer's prose.
         """
         judgment = severity = advised = None
         if result["status"] == "ok":
@@ -718,7 +735,7 @@ class JevProvider(decision.DecisionProvider):
             advised = base.outcome if base is not None else None
             if judgment == "confirm" and advised == "allow":
                 advised = "ask"
-        decision.append_event("jev", {
+        row = {
             "action_class": action.action_class, "counterparty": counterparty,
             "status": result["status"], "error": result["error"], "mode": mode,
             "requested_model": result["requested_model"], "model": result["model"],
@@ -726,4 +743,9 @@ class JevProvider(decision.DecisionProvider):
             "usage": result["usage"], "latency_ms": result["latency_ms"],
             "judgment": judgment, "severity": severity,
             "base_outcome": base.outcome if base is not None else None,
-            "advised_outcome": advised}, self.target)
+            "advised_outcome": advised}
+        # The pack's name and version where it has them, so a row resolves to the words that
+        # were asked and not only to a hash. Absent for a caller that supplied a bare dict.
+        row.update(dict((name, value) for name, value in self.pack_identity.items()
+                        if name != "pack_hash"))
+        decision.append_event("jev", row, self.target)

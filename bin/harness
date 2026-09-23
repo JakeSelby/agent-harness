@@ -4433,6 +4433,93 @@ def cmd_role(args):
         return 1
 
 
+DEFAULT_EVAL_REPORT = "jev-eval.json"
+
+
+def _eval_client(args, jev, evaluation, cfg):
+    """`(client, allowlist, budget, source)` for this run. Only `--live` may reach the network.
+
+    A live run is refused without a request ceiling, and it sends under the user's own
+    `governance.jev.state_fields`: an evaluation that could send a field no hook is allowed to
+    send would be a way round the allowlist rather than a measurement of the provider.
+    """
+    if args.live and args.replay:
+        raise SystemExit("--replay and --live are two sources for one run; name one")
+    if not args.live:
+        if not args.replay:
+            raise SystemExit("decisions eval needs --replay FILE, or --live with a budget")
+        # `shadow_controls` and not the user's: a replay makes no request, so the kill switch
+        # and the outbound allowlist have nothing to gate. What the state may carry is still
+        # the provider's own builder, and the recorded request hashes are keyed to it.
+        return (jev.ReplayClient.from_file(args.replay),
+                evaluation.shadow_controls(),
+                jev.Budget(),
+                {"client": "replay", "replay": str(args.replay)})
+    if not args.max_requests:
+        raise SystemExit("decisions eval --live needs --max-requests N; a live run without a "
+                         "ceiling is an unbounded bill against a service this repository has "
+                         "never called")
+    if args.budget_usd is not None and args.usd_per_mtok is None:
+        raise SystemExit("--budget-usd needs --usd-per-mtok: no price for this provider is "
+                         "published in this repository, so dollars cannot be turned into a "
+                         "token ceiling without one")
+    tokens = args.max_tokens
+    if args.budget_usd is not None:
+        tokens = int(args.budget_usd / args.usd_per_mtok * 1e6)
+    configured = decision_controls.Controls.from_config(cfg)
+    if not configured.state_fields:
+        raise SystemExit("governance.jev.state_fields is empty, so every request this run made "
+                         "would carry the same four base fields and differ in nothing; set the "
+                         "allowlist a hook would send under before measuring one")
+    if configured.disabled():
+        raise SystemExit("the jev kill switch is in place at " + str(configured.sentinel_path())
+                         + "; remove it before making live requests")
+    allowlist = evaluation.shadow_controls(state_fields=configured.state_fields, configured=True,
+                                           timeout=configured.timeout,
+                                           max_requests=args.max_requests, max_tokens=tokens)
+    return (jev.JevClient(live=True, timeout=configured.timeout),
+            allowlist,
+            jev.Budget(args.max_requests, tokens),
+            {"client": "live", "max_requests": args.max_requests, "max_tokens": tokens,
+             "state_fields": list(configured.state_fields)})
+
+
+def cmd_decisions(args: argparse.Namespace) -> int:
+    """`decisions eval`: replay the decision log through a versioned pack and report the fit.
+
+    The provider is only imported here. Reading the report of an opt-in network provider must
+    not be the thing that loads it, and `--replay` never opens a socket at all.
+    """
+    from harness_core.decisions import evaluation, jev, packs
+    module = load_hook_module("decisions")
+    if module is None:
+        raise SystemExit("this checkout has no claude/hooks/decisions.py; reinstall or re-clone it")
+    if args.bins < 1:
+        raise SystemExit("--bins is the number of confidence bins and is at least 1")
+    if not 0 < args.dev_share < 1:
+        raise SystemExit("--dev-share is a fraction strictly between 0 and 1")
+    log = Path(args.log) if args.log else state_dir() / "decisions.jsonl"
+    rows = module.joined(module.read_rows(log))
+    out = Path(args.out) if args.out else state_dir() / DEFAULT_EVAL_REPORT
+    cfg = load_config()
+    try:
+        pack = packs.resolve(args.pack)
+        client, allowlist, budget, source = _eval_client(args, jev, evaluation, cfg)
+        data = evaluation.report(rows, client, pack, point=args.point, dev_share=args.dev_share,
+                                 bins=args.bins, repeats=args.repeat, allowlist=allowlist,
+                                 budget=budget, usd_per_mtok=args.usd_per_mtok,
+                                 source=dict(source, log=str(log)))
+    except (evaluation.EvalError, jev.PackError, decisions_provider.PolicyError, OSError) as exc:
+        print("decisions eval: " + str(exc), file=sys.stderr)
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    evaluation.write(data, out)
+    for line in evaluation.render(data, args.split):
+        say(line)
+    say("report: " + str(out))
+    return 0
+
+
 def cmd_tiers(args: argparse.Namespace) -> int:
     """Check each adapter's class table against the model catalog its provider publishes."""
     cfg = load_config()
@@ -4665,6 +4752,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--artifact", help="artifact-write roles only: new Markdown filename under .agent-harness/plans/")
     p.add_argument("--timeout", type=int, default=300, help="worker deadline in seconds (1–3600)")
     p.set_defaults(func=cmd_role)
+
+    p = sub.add_parser("decisions", help="evaluate a decision provider against the recorded decision log")
+    decisions_sub = p.add_subparsers(dest="action", required=True)
+    ev = decisions_sub.add_parser("eval", help="replay labelled decision-log rows through a versioned question pack")
+    ev.add_argument("--point", choices=list(decision_controls.POINTS), help="one decision point (default: every point in the log)")
+    ev.add_argument("--split", choices=["dev", "heldout"], default="heldout", help="which split the printed rates come from; only held-out is evidence, and the file carries both")
+    ev.add_argument("--replay", help="a recorded fixture of responses keyed by request hash; no socket is opened")
+    ev.add_argument("--live", action="store_true", help="call the service instead of replaying; needs --max-requests")
+    ev.add_argument("--max-requests", type=int, help="ceiling on live requests")
+    ev.add_argument("--max-tokens", type=int, help="ceiling on live tokens")
+    ev.add_argument("--budget-usd", type=float, help="ceiling in dollars; needs --usd-per-mtok")
+    ev.add_argument("--usd-per-mtok", type=float, help="the price this run is costed at, per million tokens")
+    ev.add_argument("--log", help="the decision log to read (default: the recorded one)")
+    ev.add_argument("--pack", help="pack id or id:version (default: the newest decision pack)")
+    ev.add_argument("--out", help="where the report is written")
+    ev.add_argument("--dev-share", type=float, default=0.5, help="fraction of cases in the dev split, strictly between 0 and 1")
+    ev.add_argument("--bins", type=int, default=10, help="confidence bins in the calibration table")
+    ev.add_argument("--repeat", type=int, default=1, help="replay passes, for the flip rate")
+    ev.set_defaults(func=cmd_decisions)
 
     p = sub.add_parser("tiers", help="check the adapters' class-to-model tables against their providers' model catalogs")
     p.add_argument("action", choices=["check"])

@@ -8,6 +8,40 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness decisions eval` replays the labelled rows of the decision log through a question
+  pack and reports how closely the judgment tracked them, so a provider can be measured before
+  it is trusted. The evaluated set is the real log — the input a hook judged, the deterministic
+  answer it gave and the outcome the session later showed — replayed in `shadow` mode against a
+  recorded fixture, so an ordinary run opens no socket, writes no ledger row and needs no
+  credential. Question packs are versioned: a pack carries an id, a `major.minor.patch` version
+  and the hash of its content, is frozen at construction so nothing holding one can rewrite a
+  criterion between the hash being taken and the request being built, and the provider puts the
+  id and version on every ledger row beside the request hash. The dev and held-out split is
+  seeded by the hash of the decision point and the capped input a request actually carries,
+  rather than by `random` or by the row's hash of the uncapped text, so a re-run reproduces it,
+  new rows do not reshuffle the old ones, and one identical request cannot sit on both sides —
+  which is refused outright rather than reported. Thresholds are fitted per decision point on
+  the dev split and only the held-out block is evidence; there is no global default, because a
+  cutoff optimal on one workload does not transfer, and a point with no labelled dev case is
+  reported unfitted rather than given the shipped 0.8 as though it had been measured. The fit is
+  scored under the provider's own semantics — below the threshold the deterministic answer is
+  what is compared against the label, since that is what the harness would have done, and
+  scoring an abstention as a miss would drive every fit to the lowest confidence in the set. The
+  report names accuracy, the deterministic answer's own accuracy as the baseline to beat, how
+  many cases the provider could have changed at all, the confusion by label, agreement with the
+  deterministic answer, a calibration table over the confidence with its expected calibration
+  error and a bootstrap interval drawn from hashed indices, the flip rate over repeated passes,
+  tokens, cost per 1,000 decisions where a price was given, the returned model ids, and an
+  `unusable` block in which an unavailable call, an error and an abstention are each counted and
+  none is ever a pass. It carries no clock, no absolute path and no input text, so two runs over
+  one log are byte-identical and the file can be sent on. What the labels do not prove is in the report itself: `grade-bash`
+  records a row only where the harness asked or denied, `ran` is a user approving something they
+  were asked about rather than proof the prompt was unneeded, and `not_run` does not tell a
+  refusal from an interrupted turn. `--live` is the opt-in path and needs an explicit request
+  ceiling; `--budget-usd` needs a price beside it, because none is published here and a dollar
+  ceiling nobody can convert is not a ceiling; `--replay` and `--live` together are refused
+  rather than silently ordered; and a live run under an empty `governance.jev.state_fields` is
+  refused as pointless, since every request would then differ in nothing (#138).
 - The `jev` decision provider is opt-in per decision point, and sends only what a configuration
   lists. `governance.jev.mode` sets a default and `governance.jev.modes.<point>` overrides it for
   one of the points the decision ledger already names: `off` calls nothing, `shadow` calls and
@@ -190,6 +224,7 @@ All notable changes to this project are documented here. The format follows
   dollars. A run whose CLI output carries no per-turn cache figures, or any one of whose turns
   reports its usage without them, is `null`, never zero, since zero is a run that held its whole
   prefix (#497).
+
 ### Changed
 
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
@@ -205,6 +240,30 @@ All notable changes to this project are documented here. The format follows
   name when a policy acts, never whether it is registered. No installed settings file changes,
   because what sync wrote was already the coordinator registration (#521).
 ### Added
+
+- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
+  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
+  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
+  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
+  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
+  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
+  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
+  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
+  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
+  may never widen a decision, and every path with no usable answer — no key, a timeout, an
+  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
+  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
+  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
+  to the decision ledger, and never the state. Answers are not deterministic across identical
+  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
+  no handler for any other scheme, because a bearer key goes out with every request; a request is
+  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
+  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
+  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
+  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
+  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
+  from the vendor's documentation and have not been verified against the live service from this
+  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
 
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
   the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
