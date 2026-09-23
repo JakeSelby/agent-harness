@@ -65,8 +65,8 @@ class ProgressTests(unittest.TestCase):
             self.run_round(self.killed_after(1))
         data = MODULE.build_record(MODULE.progress_lines(self.progress))
         self.assertEqual(sorted(data), ["cases", "client", "client_version", "harness_version",
-                                        "kind", "observations", "platform", "runtime_version",
-                                        "source_commit", "tier_routing"])
+                                        "kind", "model_run", "observations", "platform",
+                                        "runtime_version", "source_commit", "tier_routing"])
         self.assertEqual(data["cases"], {CASES[0]: "passed"})
         self.assertEqual(data["observations"], ["A native session did " + CASES[0] + "."])
 
@@ -109,7 +109,9 @@ class ProgressTests(unittest.TestCase):
                 patch.object(MODULE, "client_version",
                              side_effect=AssertionError("a client ran")), \
                 redirect_stdout(io.StringIO()):
+            # The rebuild names the model the log ran on, as it names the classes.
             self.assertEqual(MODULE.main(["--client", CLIENT, "--from-progress",
+                                          "--model", "cheapest",
                                           "--progress", str(self.progress),
                                           "--out", str(out)]), 0)
         self.assertEqual(json.loads(out.read_text())["cases"], {CASES[0]: "passed"})
