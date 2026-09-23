@@ -245,6 +245,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness lint` no longer reads untracked files under `.agent-harness/`. That directory stays
+  unignored so a handoff can read its plans, so any session's local note naming a project outside
+  `docs/` turned the lint red, and the stop gate with it, for every other session in the same
+  checkout. Tracked files there are still linted, and staging a note brings it back into the lint
+  before it can be committed (#605).
 - The credential probe answers for a variable holding something that is not a path, where asking
   the filesystem about it used to raise and carry the value into the error's own message — a
   service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
