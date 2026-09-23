@@ -2092,7 +2092,7 @@ def probe(client, name, model, keep, confirmed=()):
 
 
 HEADER_KEYS = ("kind", "client", "harness_version", "runtime_version", "client_version",
-               "platform", "source_commit", "tier_routing")
+               "platform", "source_commit", "tier_routing", "model_run")
 
 
 def progress_path(client, out):
@@ -2226,6 +2226,25 @@ def routing(client, execution=None, assessment=None):
         raise SystemExit(str(error))
 
 
+def executed_by(tier_routing, model=None):
+    """The model a run passes to its client, and its routing restated so the two agree.
+
+    A routing names the adapter's model for the execution class, but the client runs whatever
+    `--model` says, or `DEFAULT_MODEL` when nothing is passed; a record that kept the routed name
+    beside a different run declared a model its cases never ran on. So `execution_model` becomes
+    the model run, `model_source` says where it came from — `routing` when it is the routed
+    model, `operator` for any other `--model`, `runner default` when none was given — and the
+    routed model is kept as `routed_model` whenever the two differ.
+    """
+    routed = tier_routing.get("execution_model")
+    run = model or DEFAULT_MODEL
+    source = ("runner default" if not model else "routing" if model == routed else "operator")
+    stated = dict(tier_routing, execution_model=run, model_source=source)
+    if run != routed:
+        stated["routed_model"] = routed
+    return run, stated
+
+
 def plan(client, names, model, confirmed=(), tier_routing=None):
     spec = CLIENTS[client]
     tier_routing = tier_routing or routing(client)
@@ -2245,7 +2264,7 @@ def plan(client, names, model, confirmed=(), tier_routing=None):
 def record(client, names, model, keep, runner=probe, progress=None, confirmed=(),
            tier_routing=None):
     spec = CLIENTS[client]
-    tier_routing = tier_routing or routing(client)
+    tier_routing = tier_routing or executed_by(routing(client), model)[1]
     if git("status", "--porcelain"):
         raise SystemExit("the checkout must be clean: native evidence names a source commit")
     version = client_version(spec["command"])
@@ -2260,6 +2279,8 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
         # Which class executed these cases and which class must read what they observed. Kept in
         # the per-case header so a resumed round cannot union lines two classes produced.
         "tier_routing": tier_routing,
+        # The model passed to the client, so a record can never declare one and run another.
+        "model_run": model,
     }
     append_routing(progress, header)
     results = []
@@ -2277,8 +2298,9 @@ def main(argv=None):
     parser.add_argument("--client", required=True, choices=sorted(CLIENTS))
     parser.add_argument("--cases", default="all")
     parser.add_argument("--out", type=Path)
-    parser.add_argument("--model", default=DEFAULT_MODEL,
-                        help="the cheapest model the client offers; every probe is one turn")
+    parser.add_argument("--model",
+                        help="the model passed to the client (default %s); every probe is one "
+                             "turn" % DEFAULT_MODEL)
     parser.add_argument("--dry-plan", action="store_true",
                         help="print what would run, without running any client")
     parser.add_argument("--keep-home", action="store_true",
@@ -2296,9 +2318,10 @@ def main(argv=None):
                         help="the capability class of the reader assessing the observations")
     args = parser.parse_args(argv)
     names = selected(args.cases)
-    tier_routing = routing(args.client, args.execution_class, args.assessment_class)
+    model, tier_routing = executed_by(
+        routing(args.client, args.execution_class, args.assessment_class), args.model)
     if args.dry_plan:
-        print(plan(args.client, names, args.model, args.home_confirmed, tier_routing))
+        print(plan(args.client, names, model, args.home_confirmed, tier_routing))
         return 0
     progress = args.progress or progress_path(args.client, args.out)
     if args.from_progress:
@@ -2308,7 +2331,7 @@ def main(argv=None):
         mismatch = host_mismatch(args.client)
         if mismatch:
             raise SystemExit(mismatch)
-        data = record(args.client, names, args.model, args.keep_home, progress=progress,
+        data = record(args.client, names, model, args.keep_home, progress=progress,
                       confirmed=args.home_confirmed, tier_routing=tier_routing)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     if args.out:

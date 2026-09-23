@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from harness_core import qualification  # noqa: E402
 from native_acceptance import (CLIENTS, catalog, confirmed_targets,  # noqa: E402
-                               host_mismatch, unobserved_note)
+                               executed_by, host_mismatch, unobserved_note)
 
 SMOKE = "smoke_tier.py"
 RUNNER = "native_acceptance.py"
@@ -82,10 +82,17 @@ def nothing_observed(reason):
 
 
 def target_argv(clone, client, model, out, confirmed, routing):
-    """The runner's own argv for one target; confirmation is passed through per target only."""
+    """The runner's own argv for one target; confirmation is passed through per target only.
+
+    Without an operator's `--model` the target's routed execution model is passed, so the runner
+    executes on the model the round declares; only a target whose class the adapter leaves
+    unmapped reaches the runner's own default.
+    """
     argv = [sys.executable, str(Path(clone) / "scripts" / RUNNER), "--client", client,
             "--out", str(out), "--execution-class", routing["execution_class"],
             "--assessment-class", routing["assessment_class"]]
+    model = model or (routing.get("execution_model")
+                      if routing.get("model_source") != "runner default" else None)
     if model:
         argv += ["--model", model]
     if client in confirmed_targets(confirmed):
@@ -111,6 +118,16 @@ def routing(targets, execution, assessment):
                     for client in targets)
     except ValueError as error:
         raise SystemExit(str(error))
+
+
+def with_models(tier_routing, model):
+    """Each target's routing restated with the model its runner will be passed.
+
+    The runner restates its own routing by the same rule, `native_acceptance.executed_by`, from
+    the `--model` this round passes it, so the round record and the target's record agree.
+    """
+    return dict((client, executed_by(routes, model or routes.get("execution_model"))[1])
+                for client, routes in tier_routing.items())
 
 
 def where(client):
@@ -150,7 +167,7 @@ def write_round(round_dir, result):
 
 
 def run_round(round_dir, targets, model, confirmed, skip_smoke=False, tier_routing=None):
-    tier_routing = tier_routing or routing(targets, None, None)
+    tier_routing = tier_routing or with_models(routing(targets, None, None), model)
     report = provision_record(round_dir)
     clone = Path(report["clone"])
     records_dir = Path(report["records"])
@@ -197,7 +214,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--round", type=Path, required=True, help="the provisioned round directory")
     parser.add_argument("--targets", default=",".join(sorted(CLIENTS)))
-    parser.add_argument("--model", help="the cheapest model each client offers")
+    parser.add_argument("--model", help="the model every target runs on, overriding each "
+                                        "target's routed execution model")
     parser.add_argument("--home-confirmed", action="append", default=[], metavar="CLIENT",
                         help="a client whose configuration home was compared against a hand run; "
                              "repeat for each, and never for a surface nobody compared")
@@ -216,7 +234,8 @@ def main(argv=None):
     unknown = [name for name in targets if name not in CLIENTS]
     if unknown:
         raise SystemExit("unknown qualification target: " + ", ".join(unknown))
-    tier_routing = routing(targets, args.execution_class, args.assessment_class)
+    tier_routing = with_models(routing(targets, args.execution_class, args.assessment_class),
+                               args.model)
     # A target whose platform is not this host's is reported and left out, never run: the runner
     # would refuse it, and a round driven here would otherwise write one platform's outcome under
     # another's name.

@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 226,
     "task": 26,
-    "bug": 77,
+    "bug": 79,
     "chore": 65,
     "spike": 10,
     "decision": 12
@@ -5312,6 +5312,19 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S225.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B078",
+      "github_number": 721,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/721",
+      "title": "A round without --model runs the runner default while its record declares the routed execution model",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B078.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
