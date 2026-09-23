@@ -8,7 +8,7 @@
     "story": 209,
     "task": 13,
     "bug": 67,
-    "chore": 52,
+    "chore": 53,
     "spike": 10,
     "decision": 8
   },
@@ -4493,6 +4493,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B066.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C052",
+      "github_number": 627,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/627",
+      "title": "Open the 0.13.0 candidate",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C052.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
