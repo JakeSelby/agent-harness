@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 18,
-    "story": 225,
+    "story": 226,
     "task": 26,
     "bug": 77,
     "chore": 65,
@@ -5253,19 +5253,6 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-B075",
-      "github_number": 705,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/705",
-      "title": "cost-posture and framework-spawn-routing cannot tell a headless resume from a restart",
-      "type": "bug",
-      "native_type": "Bug",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-B075.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
       "bmad_id": "AH-S224",
       "github_number": 703,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/703",
@@ -5292,6 +5279,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B075",
+      "github_number": 705,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/705",
+      "title": "cost-posture and framework-spawn-routing cannot tell a headless resume from a restart",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B075.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B076",
       "github_number": 708,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/708",
@@ -5299,6 +5299,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B076.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S225",
+      "github_number": 716,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/716",
+      "title": "Round-2 unverified cases observe what happened: role run's JSON, the handoff's return leg, and whether a spawn was attempted",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S225.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
