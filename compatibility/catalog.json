@@ -80,7 +80,7 @@
       "client": "cli",
       "platform": "macos",
       "status": "unqualified",
-      "required_for_release": true,
+      "required_for_release": false,
       "evidence": []
     },
     {
@@ -147,6 +147,7 @@
     "harness sync links user-level stance selections only; a HARNESS_STANCE_ variable or a project selection changes what harness stances and the hooks resolve, not the linked stance text. Tracked in #276 and #294.",
     "The 0.11.1 spawn guards refuse a constrained role's brief re-issued verbatim under another name, or carrying a `harness-role:` line; a client that paraphrases the brief and names no role is not caught, so BMad review confinement still depends on the client following the routed instructions. Tracked in #291 and #300.",
     "No third-party framework's own workflow is exercised natively in a release qualification round. Framework layering is qualified through a synthetic recipe driven at the spawn hook; that a given framework's workflow completes on a given client is not claimed by a release. The BMad Method integration is exercised by an optional suite whose last result is recorded separately, at the harness version, framework version and client stated there.",
-    "Constrained-role confinement is enforced at the spawn hook only for a framework a declared descriptor covers. From 0.13.0 the hook classifies a spawn against the descriptors in policy/integrations/, so a covered recipe layer is refused whatever the client named it, and the two entries above describe 0.11.1 through 0.12.0 and stop applying at that release. What remains: recognition needs one of the framework's own layer names as the spawn type, or two sentences of its prompt text, or one of those sentences beside a path out of its routed text, so a brief rewritten with none of that, or a framework or a release no descriptor covers, still runs as an unnamed native subagent, unconfined, and can still report a result. Observed on the Claude Code CLI on Linux, where one confined run required five attempts; a confined run writes isolated-worker state. Tracked in #291."
+    "Constrained-role confinement is enforced at the spawn hook only for a framework a declared descriptor covers. From 0.13.0 the hook classifies a spawn against the descriptors in policy/integrations/, so a covered recipe layer is refused whatever the client named it, and the two entries above describe 0.11.1 through 0.12.0 and stop applying at that release. What remains: recognition needs one of the framework's own layer names as the spawn type, or two sentences of its prompt text, or one of those sentences beside a path out of its routed text, so a brief rewritten with none of that, or a framework or a release no descriptor covers, still runs as an unnamed native subagent, unconfined, and can still report a result. Observed on the Claude Code CLI on Linux, where one confined run required five attempts; a confined run writes isolated-worker state. Tracked in #291.",
+    "Codex CLI is not in the 0.13.0 stable contract: FR-12 admits it only once a scripted qualification round agrees with a hand-driven one, and the acceptance runner cannot drive Codex until #612; codex-cli-macos carries hand evidence only (#700)."
   ]
 }
