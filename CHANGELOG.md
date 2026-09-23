@@ -34,6 +34,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An assistant transcript record that carries no message id is deduplicated by its `requestId`
+  rather than counted once per line. Every such record used to open a slot of its own, so a
+  runtime or version that writes one id-less response several times — as the streaming lines of
+  one API call — inflated the session total and its turn count without any bound. A request id
+  names one call, so it deduplicates unscoped by file: the same call written into both a session
+  file and a subagent file is one response, and a call whose other records do carry a message id
+  joins their slot, in whichever order the files are read, instead of being billed twice. A
+  record with neither id is unknown rather than a duplicate and is left undeduplicated; session
+  and subagent rows carry `idless_records` counting how many such records their totals include,
+  the session's own and those of the subagent files folded into them, so a row without the field
+  is known to have been deduplicated whole. Rows from transcripts whose records all carry message
+  ids are unchanged (#519).
 - The Remote Control sessions read checks that its capped page arrived newest-first. The endpoint
   takes no sort parameter, and its page is ordered by `last_event_at` rather than `updated_at`, so
   the order is asserted on arrival and a page that is not descending is refused: under the
