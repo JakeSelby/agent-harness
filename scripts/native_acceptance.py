@@ -1370,18 +1370,35 @@ def case_custom_stance(home):
 
 
 # The log path is written into the script rather than read from the environment: a hook the
-# client launches inherits the client's environment and not this runner's.
+# client launches inherits the client's environment and not this runner's. Each line is what the
+# client handed the hook, so a line names the session, the tool and the file it fired for.
 USER_HOOK = """#!/usr/bin/env python3
-import sys
-open(%r, "a").write("user-hook-fired" + chr(10))
+import json, sys
+try:
+    event = json.load(sys.stdin)
+except ValueError:
+    event = {}
+inputs = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+open(%r, "a").write(json.dumps({"session_id": event.get("session_id"),
+                                "event": event.get("hook_event_name"),
+                                "tool": event.get("tool_name"),
+                                "file": inputs.get("file_path")}) + chr(10))
 sys.exit(0)
 """
+FILE_TOOLS = ("Write", "Edit", "MultiEdit")  # the client's own file-writing tools
+USER_MATCHER = "|".join(FILE_TOOLS)
+PATCH_FILES = ("alpha.txt", "beta.txt")
+PATCH_PROMPT = ("Use your Write tool twice, once per file, to create two new files in the current "
+                "directory: %s containing the single line alpha, and %s containing the single "
+                "line beta. Do not use Bash. Then reply with the single word DONE and nothing "
+                "else." % PATCH_FILES)
 HOOK_SENTINEL = "compose.txt"
 HOOK_PROMPT = ("Run exactly this command with your Bash tool: touch ./%s — then reply with the "
                "single word DONE and nothing else." % HOOK_SENTINEL)
 # Text only the grade-bash hook writes: `autonomy=ask` alone appears in the stance
 # prose the model can see and could be echoed back without any hook having decided.
 GRADE_DENY = "grade-bash hook, autonomy="
+UNTRUSTED = "untrusted"
 
 
 def user_hook_entries(settings, script):
@@ -1391,19 +1408,143 @@ def user_hook_entries(settings, script):
     return ("hook.py" in rendered, str(script) in rendered)
 
 
-def case_hook_composition(home):
-    """docs/compatibility.md step 5: a user-owned hook survives the sync and a deny beats bypass.
+def jsonl_rows(path):
+    """Every JSON object in a JSONL file, skipping lines that are not one; `[]` when absent."""
+    try:
+        lines = Path(path).read_text(errors="replace").splitlines()
+    except OSError:
+        return []
+    rows = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
 
-    Two readings the 0.11.1 round made by hand: the merged table still holds both entries after a
-    sync, and under an acknowledged bypass a `grade-bash` deny still stops a local write — a hook
-    decision and a permission posture are different controls, and the hook wins.
+
+def file_tool_calls(home, session_id):
+    """The file-writing tool calls a session's transcript records: `(calls, readable)`.
+
+    Each call is `{"id", "tool", "file"}`. Read from the model's own `tool_use` blocks, which the
+    transcript keeps whether or not the write then succeeded; `readable` is False when the client
+    wrote no transcript this runner can read.
     """
+    path = home.transcript_path(session_id) if session_id else None
+    if path is None:
+        return [], False
+    calls = []
+    for record in jsonl_rows(path):
+        message = record.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else ():
+            if (isinstance(block, dict) and block.get("type") == "tool_use"
+                    and block.get("name") in FILE_TOOLS):
+                inputs = block.get("input") or {}
+                calls.append({"id": block.get("id"), "tool": block.get("name"),
+                              "file": str(inputs.get("file_path") or "")})
+    return calls, True
+
+
+def patch_verdict(names, written, calls, fired, session_id):
+    """Judge the two-file write turn; returns the names the user hook fired for, sorted.
+
+    `written` maps each name to whether it exists after the turn, `calls` is the transcript's
+    file-tool calls and `fired` the user hook's own log. A file the file tool wrote and the user
+    hook never heard of is a composition failure. A turn that aimed the file tool at fewer than
+    every file observed no multi-file patch, and one that never used it observed nothing.
+    """
+    aimed = set(Path(call["file"]).name for call in calls if call["file"])
+    heard = set(Path(str(row.get("file") or "")).name for row in fired
+                if row.get("session_id") == session_id and row.get("tool") in FILE_TOOLS
+                and row.get("event") == "PostToolUse")
+    if not calls:
+        if any(written.values()):
+            raise Unverified("the turn wrote %s without the client's file-writing tool, so no "
+                             "file-tool write reached the hooks"
+                             % ", ".join(sorted(n for n in names if written.get(n))))
+        raise Unverified("the model never attempted the write: the transcript holds no %s call"
+                         % "/".join(FILE_TOOLS))
+    unheard = sorted(n for n in names if n in aimed and written.get(n) and n not in heard)
+    if unheard:
+        raise AssertionError("the file tool wrote %s and the user-owned PostToolUse hook logged no "
+                             "call for it in session %s" % (", ".join(unheard), session_id))
+    missing = sorted(n for n in names if n not in aimed or not written.get(n))
+    if missing:
+        raise Unverified("the turn did not write %s with its file tool, so a two-file patch was "
+                         "not observed" % ", ".join(missing))
+    return sorted(heard & set(names))
+
+
+def gate_verdicts(home, session_id):
+    """The stop gate's own logged verdicts for one session, as `(answer, outcome)` pairs.
+
+    Read from the decision log the hook writes, joining each `stop-gate` decision row to the
+    outcome row that names its id.
+    """
+    rows = jsonl_rows(home.root / ".local" / "state" / "agent-harness" / "decisions.jsonl")
+    outcomes = dict((row.get("decision_id"), row.get("outcome")) for row in rows
+                    if row.get("kind") == "outcome")
+    return [(row.get("deterministic_answer"), outcomes.get(row.get("decision_id")))
+            for row in rows if row.get("kind") == "decision" and row.get("point") == "stop-gate"
+            and row.get("session_id") == session_id]
+
+
+def await_gate(home, session_id, seconds=20):
+    """The stop gate's verdicts for a session, once the client has let the Stop hook finish."""
+    deadline = time.time() + seconds
+    while True:
+        verdicts = gate_verdicts(home, session_id)
+        if verdicts or time.time() > deadline:
+            return verdicts
+        time.sleep(1)
+
+
+def trust_flag(home):
+    """What the client recorded for the project's folder-trust dialog: True, False or None."""
+    try:
+        projects = json.loads((home.client_dir / ".claude.json").read_text()).get("projects")
+    except (OSError, ValueError, AttributeError):
+        return None
+    projects = projects if isinstance(projects, dict) else {}
+    for key in (str(home.project), str(home.project.resolve())):
+        if isinstance(projects.get(key), dict) and "hasTrustDialogAccepted" in projects[key]:
+            return projects[key]["hasTrustDialogAccepted"]
+    return None
+
+
+def trust_clause(flag):
+    """What the client's own folder-trust record said, claiming no dialog it did not record."""
+    if flag is None:
+        return "the client recorded no hasTrustDialogAccepted flag for the project"
+    return "the client recorded hasTrustDialogAccepted %s for the project" % json.dumps(flag)
+
+
+def grade_denied(home, session_id):
+    """Whether the decision log holds a grade-bash `deny` for this session."""
+    rows = jsonl_rows(home.root / ".local" / "state" / "agent-harness" / "decisions.jsonl")
+    return any(row.get("point") == "grade-bash" and row.get("deterministic_answer") == "deny"
+               and row.get("session_id") == session_id for row in rows)
+
+
+def case_hook_composition(home):
+    """docs/compatibility.md step 4: hook trust, composition, denials and multi-file patches.
+
+    Everything but the merged table is read from two native turns. The project is an untrusted
+    git repository with a `## Gate` block, so the harness's Stop hook has a verdict to log. The
+    first turn writes two files with the client's file tool, and the user-owned hook's own log
+    must name each; the second asks for a Bash write that `grade-bash` must deny under an
+    acknowledged bypass, read from the turn's permission denials.
+    """
+    log = home.root / "user-hook.log"
     script = home.root / "user-hook.py"
-    script.write_text(USER_HOOK % str(home.root / "user-hook.log"))
+    script.write_text(USER_HOOK % str(log))
     script.chmod(0o755)
     home.client_dir.mkdir(parents=True, exist_ok=True)
     (home.client_dir / "settings.json").write_text(json.dumps({
-        "hooks": {"PostToolUse": [{"matcher": "Write",
+        "hooks": {"PostToolUse": [{"matcher": USER_MATCHER,
                                    "hooks": [{"type": "command", "command": str(script)}]}]}}) + "\n")
     home.seed(stances={"autonomy": "ask"}, permissions="bypass",
               **{ACK_KEY: True})
@@ -1415,32 +1556,83 @@ def case_hook_composition(home):
                          "from")
     coordinator, user = user_hook_entries(settings, script)
     if not user:
-        raise AssertionError("harness sync dropped the user's own PostToolUse Write hook")
+        raise AssertionError("harness sync dropped the user's own PostToolUse hook")
     if not coordinator:
         raise AssertionError("the merged table carries the user's hook and no harness coordinator "
                              "entry")
     if home.permission_mode() != BYPASS_MODE:
         raise Unverified("the acknowledged bypass did not sync %s, so a hook deny was never "
                          "measured against it" % BYPASS_MODE)
+    for name, body in GATE_REPO_FILES.items():
+        (home.project / name).write_text(body)
+    probe_repo(home.project, home)
+    if (home.root / ".config" / "agent-harness" / "trusted.txt").exists():
+        raise Unverified("a harness trust list exists in the disposable home, so the workspace "
+                         "was not unauthorised")
+
+    data = home.session(PATCH_PROMPT, tools=("Write",))
+    session = str(data.get("session_id", ""))
+    calls, readable = file_tool_calls(home, session)
+    if not readable:
+        raise Unverified("the client wrote no transcript for the write turn, so which tool wrote "
+                         "was never read")
+    fired = jsonl_rows(log)
+    written = dict((name, (home.project / name).exists()) for name in PATCH_FILES)
+    heard = patch_verdict(PATCH_FILES, written, calls, fired, session)
+    verdicts = await_gate(home, session)
+    flag = trust_flag(home)
+    if not verdicts:
+        raise AssertionError("the harness Stop hook logged no stop-gate verdict for the headless "
+                             "write turn %s" % session)
+    if [outcome for _, outcome in verdicts] != [UNTRUSTED] * len(verdicts):
+        raise AssertionError("the stop gate logged %s for a workspace harness trust never listed "
+                             "(client trust flag %s), not %s" % (verdicts, flag, UNTRUSTED))
+    if gate_runs(home.project):
+        raise AssertionError("the stop gate ran the untrusted workspace's gate %s time(s)"
+                             % gate_runs(home.project))
+
     sentinel = home.project / HOOK_SENTINEL
     if sentinel.exists():
         sentinel.unlink()
-    data = home.session(HOOK_PROMPT, tools=("Bash",))
-    answer = home.answer(data) + home.orchestrator_text(str(data.get("session_id", "")))
-    outcome = turn_outcome(sentinel.exists(), data)
+    denied = home.session(HOOK_PROMPT, tools=("Bash",))
+    denied_id = str(denied.get("session_id", ""))
+    outcome = turn_outcome(sentinel.exists(), denied)
     if outcome == COMPLETED:
         raise AssertionError("under %s with autonomy=ask the grade-bash hook did not stop the "
                              "write: %s exists" % (BYPASS_MODE, HOOK_SENTINEL))
-    if GRADE_DENY not in answer and outcome != BLOCKED:
-        raise Unverified("the model declined the turn on its own judgement and no hook deny was "
-                         "recorded, so a hook decision was never observed against %s" % BYPASS_MODE)
-    return ("A user-owned PostToolUse Write hook added by hand to the client's settings survived "
-            "harness sync: the merged table still held the harness coordinator entry and the user "
-            "entry with matcher Write, though no Write turn was run to fire it. Under %s with "
-            "autonomy=ask the same one-command write was %s with %s permission denial(s) recorded "
-            "and %s absent, so a hook deny wins over the "
-            "bypass posture."
-            % (BYPASS_MODE, outcome, len(permission_denials(data)), HOOK_SENTINEL))
+    if outcome != BLOCKED:
+        raise Unverified("the turn recorded no permission denial and wrote nothing, so the model "
+                         "declined on its own judgement and no hook deny was observed against %s"
+                         % BYPASS_MODE)
+    denials = permission_denials(denied)
+    tools = sorted(set(str(item.get("tool_name")) for item in denials if isinstance(item, dict)))
+    text = home.answer(denied) + home.orchestrator_text(denied_id)
+    logged = grade_denied(home, denied_id)
+    if not logged and GRADE_DENY not in text:
+        raise Unverified("the turn recorded %s permission denial(s) but neither the decision log "
+                         "nor the transcript attributes one to grade-bash" % len(denials))
+    return ("Merged table: after harness sync the client's PostToolUse table held the harness "
+            "coordinator entry and the user-owned hook (matcher %s). Composition and multi-file "
+            "patch, from one headless claude -p turn: its transcript records %s file-tool "
+            "call(s) (%s), %s and %s exist afterwards, and the user hook's own log, written by "
+            "the hook from the payload the client gave it, holds a PostToolUse line for each of "
+            "%s with that turn's session id. The harness's own evidence for the same session is "
+            "the stop gate's decision-log row, written by the harness coordinator on that turn's "
+            "Stop event (its PostToolUse leaves no row for a plain Write). Hook trust: no harness "
+            "trust list existed and no trust step was taken, yet both hooks ran in the headless "
+            "turn, as their log lines show; the stop gate's logged verdict (answer/outcome) for "
+            "that git workspace with a ## Gate block was %s, its gate ran 0 times, and %s. "
+            "Denial: under %s with autonomy=ask a one-command Bash write of %s was %s, the turn's "
+            "own permission_denials held %s entr%s (tool %s), %s absent, and the deny was "
+            "attributed to grade-bash by %s."
+            % (USER_MATCHER, len(calls),
+               ", ".join("%s %s" % (call["tool"], Path(call["file"]).name) for call in calls),
+               PATCH_FILES[0], PATCH_FILES[1], " and ".join(heard),
+               " and ".join("%s/%s" % pair for pair in verdicts), trust_clause(flag), BYPASS_MODE,
+               HOOK_SENTINEL, outcome, len(denials), "y" if len(denials) == 1 else "ies",
+               ", ".join(tools) or "<unnamed>", HOOK_SENTINEL,
+               "its decision-log deny row for that session" if logged
+               else "the deny reason in the transcript"))
 
 
 CONFINEMENT_DENY = "This constrained harness role requires an isolated worker"
@@ -2437,8 +2629,10 @@ CASES = {
                             "postures, and read each one's synced permission mode and what a "
                             "native turn asking for one file write then did"),
     "hook-composition": (case_hook_composition,
-                         "merge a user-owned PostToolUse hook through a sync and read whether a "
-                         "grade-bash deny still stops a write under an acknowledged bypass"),
+                         "merge a user-owned file-tool hook through a sync, run a two-file Write "
+                         "turn in an untrusted gated repository and read the user hook's log and "
+                         "the stop gate's logged verdict, then read the turn permission denials "
+                         "of a grade-bash deny under an acknowledged bypass"),
     "role-confinement": (case_role_confinement,
                          "spawn a constrained role natively and read the refusal, run the same "
                          "work as an isolated worker, tell an isolated read-only role and the "

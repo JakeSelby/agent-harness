@@ -5433,6 +5433,19 @@
       "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B082",
+      "github_number": 730,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/730",
+      "title": "hook-composition proves composition from configuration, never from a turn that fires the hooks",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B082.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
     }
   ]
 }

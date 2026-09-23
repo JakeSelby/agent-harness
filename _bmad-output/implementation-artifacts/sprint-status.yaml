@@ -312,6 +312,7 @@ development_status:
   ah-b079-a-hook-you-add-beside-the-harness-s-hooks-makes: ready-for-dev
   ah-b080-a-native-evidence-record-pairs-its-observations: ready-for-dev
   ah-b081-role-confinement-never-has-a-read-only-role: ready-for-dev
+  ah-b082-hook-composition-proves-composition-from: ready-for-dev
   ah-b083-stance-switch-and-custom-stance-switch-only: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
