@@ -61,9 +61,14 @@ python3 scripts/cost_bench.py replay --model <id> \
   `CLAUDE_CONFIG_DIR`, so it neither reads nor writes the profile you run under, and it renders no
   identity or stance selection out of your `~/.config/agent-harness/config.json`: a tagged arm
   loads that tag's defaults, which is the same question asked of every tag. A sync target that
-  resolves to your live profile is refused. Because a profile's credential is keyed on its
-  absolute path, a directory made for the run is not signed in; name a signed-in
-  `--harness-config` as the directory each tag is synced into when the run is meant to spend.
+  resolves to your live profile, sits inside it, holds it (HOME or any ancestor) or is the bare
+  profile is refused. Because a profile's credential is keyed on its absolute path, a directory
+  made for the run is not signed in; name a signed-in `--harness-config` as the directory each
+  tag is synced into when the run is meant to spend. That profile must hold no harness files
+  already, is copied aside before each tag's sync and put back exactly as it was after the tag's
+  schedule, exception or not, and cannot serve `candidate` in the same run. Every one of these
+  refusals happens before the first launch of any tag. The pinned checkout is admitted to the
+  harness arm's fence for reading only, and a pinned tag's results go in a folder named for it.
 
 - **The arms differ by environment only.** Both get one command line: the same `--model`,
   `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network

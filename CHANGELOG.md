@@ -22,7 +22,10 @@ All notable changes to this project are documented here. The format follows
   admits the pinned checkout its profile links into, and `--dry-run` prints the schedule per tag
   and syncs nothing. `--spend-cap` applies to each tag's schedule on its own. A profile's
   credential is keyed on its absolute path, so a temporary one is not signed in: name a signed-in
-  `--harness-config` for the tag to be synced into when the run is meant to spend (#599).
+  `--harness-config` for the tag to be synced into when the run is meant to spend. That profile
+  must start with no harness files in it, is put back exactly as it was after each tag, and cannot
+  serve `candidate` in the same run; the pinned checkout is readable, never writable, from the
+  arm, and every refusal happens before the first launch (#599).
 
 - A spike record measures what the Claude Code Workflow tool does to the delegation guards. A
   script's `agent()` calls produce no `Agent` tool call, so band routing, the brief guard and the

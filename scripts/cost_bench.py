@@ -311,15 +311,16 @@ def fence(config_dir=None, admit=()):
     therefore gets its own directory, and the shared scratch directory, readable and writable.
     `denyRead` is the same for every arm.
 
-    `admit` names anything else the profile leads to. A profile `harness sync` filled is symlinks
-    into the checkout it was synced from, so an arm on a pinned tag reads nothing at all unless
-    that checkout is admitted as well."""
+    `admit` names anything else the profile leads to, admitted for reading only. A profile
+    `harness sync` filled is symlinks into the checkout it was synced from, so an arm on a pinned
+    tag reads nothing at all unless that checkout is admitted; and an arm that could write it could
+    rewrite its own rules, skills and hooks in the middle of the run being measured."""
     admitted = [str(config_dir) if config_dir else DEFAULT_CONFIG_DIR] + list(SCRATCH_DIRS)
-    admitted += [str(path) for path in admit if path]
+    readable = admitted + [str(path) for path in admit if path]
     return {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
                         "network": {"allowedDomains": [], "strictAllowlist": True},
                         "filesystem": {"denyRead": list(DENY_READ), "allowWrite": list(admitted),
-                                       "allowRead": list(admitted)}}}
+                                       "allowRead": readable}}}
 
 
 def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD, config_dir=None, admit=()):
@@ -381,25 +382,99 @@ def resolve_tag(repo, ref):
     return sha
 
 
-def refuse_live_config(config_dir, base=None):
-    """SystemExit when a sync target is the profile the owner actually runs under.
+def refuse_live_config(config_dir, base=None, bare=None):
+    """SystemExit when a sync target is, holds or sits inside a profile a tag must not write.
 
     The tagged arm's whole point is a profile nobody else wrote, and `harness sync` rewrites
-    whatever `CLAUDE_CONFIG_DIR` names. Both spellings of the live profile are refused: the
-    default under HOME, and an ambient `CLAUDE_CONFIG_DIR` if this process carries one."""
+    whatever `CLAUDE_CONFIG_DIR` names. Refused: the live profile in both spellings (the default
+    under HOME, and an ambient `CLAUDE_CONFIG_DIR` if this process carries one), any directory
+    inside one, any directory holding one (HOME itself, and every ancestor), and the bare arm's
+    profile, which a sync would turn into a second harness arm."""
     base = os.environ if base is None else base
-    target = Path(config_dir).expanduser()
+    target = Path(config_dir).expanduser().resolve()
     live = [Path(base.get("HOME") or Path.home()).expanduser() / ".claude"]
     if base.get("CLAUDE_CONFIG_DIR"):
         live.append(Path(base["CLAUDE_CONFIG_DIR"]).expanduser())
-    for path in live:
-        try:
-            same = path.resolve() == target.resolve()
-        except OSError:  # a path that cannot be resolved is not the live one
-            same = False
-        if same:
+    for path in (p.resolve() for p in live):
+        if target == path or path in target.parents:
             raise SystemExit("cost-bench: refusing to sync a tag into %s: that is the live profile"
                              % config_dir)
+        if target in path.parents:
+            raise SystemExit("cost-bench: refusing to sync a tag into %s: it holds the live profile %s"
+                             % (config_dir, path))
+    if bare and Path(bare).expanduser().resolve() == target:
+        raise SystemExit("cost-bench: refusing to sync a tag into %s: that is the bare profile"
+                         % config_dir)
+
+
+# Paths a harness sync leaves in a profile as regular files, beside the links it makes.
+HARNESS_FILES = ("CLAUDE.md", "CLAUDE.personal.md", "rules/harness-stances", "skills/harness-*")
+
+
+def harness_residue(config_dir):
+    """What in `config_dir` a harness sync put there, as relative paths; empty for a clean profile.
+
+    A pinned tag is synced into a profile holding none of it, for two reasons. The sync runs with a
+    HOME of its own and so with an empty manifest, and a sync that finds links it did not record
+    calls them unmanaged and stops with the profile half rewritten. And a profile already carrying
+    another version's layer would mix it into the arm and label the result with the tag."""
+    root = Path(config_dir).expanduser()
+    found = sorted(rel for rel, kind in profile_entries(root).items() if kind == "link")
+    for pattern in HARNESS_FILES:
+        found += sorted(p.relative_to(root).as_posix() for p in root.glob(pattern))
+    settings = root / "settings.json"
+    if settings.is_file() and "hooks/harness" in settings.read_text(encoding="utf-8", errors="replace"):
+        found.append("settings.json")
+    return sorted(set(found))
+
+
+def check_sync_target(config_dir, bare=None, base=None):
+    """Every refusal a named sync target can meet, run before anything is launched or spent."""
+    refuse_live_config(config_dir, base, bare)
+    residue = harness_residue(config_dir)
+    if residue:
+        raise SystemExit("cost-bench: refusing to sync a tag into %s: it already holds harness files "
+                         "(%s); a pinned tag needs a signed-in profile with none"
+                         % (config_dir, ", ".join(residue[:5])))
+
+
+def profile_entries(root):
+    """`{relative path: "dir" | "file" | "link"}` for everything under `root`, no link followed."""
+    root, out = Path(root), {}
+    for dirpath, dirnames, filenames in os.walk(str(root), followlinks=False):
+        for name in dirnames + filenames:
+            path = Path(dirpath) / name
+            out[path.relative_to(root).as_posix()] = ("link" if path.is_symlink()
+                                                      else "dir" if path.is_dir() else "file")
+    return out
+
+
+def restore_profile(root, saved, before):
+    """Put `root` back as `saved` holds it: what appeared since goes, what was there is rewritten.
+
+    `before` is `profile_entries` of `root` when `saved` was copied. Only paths absent from it are
+    deleted, so nothing the profile held beforehand can be lost here; the run's own writes into
+    the profile — the CLI's state as well as the tag's projection — go with the rest."""
+    root, saved = Path(root), Path(saved)
+    now = profile_entries(root)
+    for rel in sorted(now, key=lambda r: -r.count("/")):  # deepest first
+        path = root / rel
+        if before.get(rel) == now[rel] or not (path.exists() or path.is_symlink()):
+            continue
+        if now[rel] == "dir":
+            shutil.rmtree(str(path))
+        else:
+            path.unlink()
+    for rel in sorted(before, key=lambda r: r.count("/")):  # parents first
+        path, copy = root / rel, saved / rel
+        if before[rel] == "dir":
+            path.mkdir(exist_ok=True)
+        elif before[rel] == "link":
+            if path.is_symlink() or path.exists():
+                path.unlink()
+            os.symlink(os.readlink(str(copy)), str(path))
+        else:
+            shutil.copy2(str(copy), str(path))
 
 
 def sync_tag(repo, ref, parent, config_dir=None, python=sys.executable):
@@ -437,12 +512,30 @@ def sync_tag(repo, ref, parent, config_dir=None, python=sys.executable):
 
 
 @contextlib.contextmanager
-def synced_tag(repo, ref, tmp=None, config_dir=None, python=sys.executable):
-    """`sync_tag` with its temporary directories removed afterwards, exception or not."""
+def synced_tag(repo, ref, tmp=None, config_dir=None, python=sys.executable, bare=None):
+    """`sync_tag`, undone afterwards, exception or not.
+
+    The temporary directories go. A named `config_dir` is a profile the owner keeps, so it is
+    copied aside before the sync and put back exactly as it was once the tag's schedule is over:
+    the next tag, or the next invocation, then finds it as clean as this one did. If putting it
+    back fails, the copy is kept and its path named rather than deleted with the rest."""
     parent = Path(tempfile.mkdtemp(prefix="cost-tag-", dir=tmp))
+    config = saved = before = None
     try:
+        if config_dir:
+            config = Path(config_dir).expanduser()
+            check_sync_target(config, bare)
+            before, saved = profile_entries(config), parent / "saved-profile"
+            shutil.copytree(str(config), str(saved), symlinks=True)
         yield sync_tag(repo, ref, parent, config_dir, python)
     finally:
+        if saved is not None:
+            try:
+                restore_profile(config, saved, before)
+            except Exception:
+                print("cost-bench: could not put %s back as it was; its copy is kept at %s"
+                      % (config, saved), file=sys.stderr)
+                raise
         shutil.rmtree(str(parent), ignore_errors=True)
 
 
@@ -1033,6 +1126,14 @@ def cmd_replay(args):
     if harness_config and not harness_config.is_dir():
         raise SystemExit("cost-bench: the harness profile %s does not exist; sign in to it once, then "
                          "sync the harness into it" % harness_config)
+    if harness_config and any(tag != CANDIDATE for tag in tags):
+        # Every refusal before the first launch of any tag, so no tag's schedule is spent and then
+        # stranded by a refusal the next one meets.
+        check_sync_target(harness_config, bare)
+        if CANDIDATE in tags:
+            raise SystemExit("cost-bench: --harness-config %s cannot serve candidate and a pinned tag "
+                             "in one run: candidate needs the installed harness synced into it and a "
+                             "pinned tag needs it clean; run candidate on its own" % harness_config)
     plan = schedule(tasks, args.reps)
     print("%d run(s) per tag, %d tag(s) (%s): %d task(s) x %s x %d rep(s), model %s, %g USD per run, "
           "stop at %g USD reported per tag"
@@ -1053,7 +1154,7 @@ def cmd_replay(args):
         if tag == CANDIDATE:
             status = max(status, replay_tag(tag, args, common))
             continue
-        with synced_tag(ROOT, tag, args.tmp, args.harness_config) as synced:
+        with synced_tag(ROOT, tag, args.tmp, args.harness_config, bare=bare) as synced:
             status = max(status, replay_tag(tag, args, common, synced))
     return status
 
@@ -1087,7 +1188,9 @@ def replay_tag(tag, args, common, synced=None):
     series = hashlib.sha256(Path(args.tasks).read_bytes() + args.model.encode()
                             + profile).hexdigest()[:8]
     out = Path(args.out) if args.out else ROOT / "benchmarks" / version
-    if common["per_tag_out"]:  # one directory per tag, or each would append to the last one's rows
+    # A pinned tag always gets a directory of its own: it may share a VERSION with the install, and
+    # its rows would then append to the candidate's. So does every tag of a multi-tag run.
+    if synced or common["per_tag_out"]:
         out = out / tag
     opts = {"repo": ROOT, "home": home, "claude": args.claude, "model": args.model, "tag": tag,
             "reps": args.reps, "run_cap": args.run_cap, "spend_cap": args.spend_cap,

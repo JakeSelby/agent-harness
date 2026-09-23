@@ -23,6 +23,10 @@ config = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR")
 config.mkdir(parents=True, exist_ok=True)
 (config / "CLAUDE.md").write_text("synced %s" % (root / "VERSION").read_text().strip(), encoding="utf-8")
 (config / "env.json").write_text(json.dumps(dict(os.environ), sort_keys=True), encoding="utf-8")
+(config / "rules").mkdir(exist_ok=True)
+link = config / "rules" / ("stub-%s.md" % (root / "VERSION").read_text().strip())
+if not link.is_symlink():
+    link.symlink_to(root / "VERSION")
 sys.exit(int(os.environ.get("STUB_EXIT") or 0) or (0 if sys.argv[1:] == ["sync"] else 3))
 """
 
@@ -49,6 +53,7 @@ def harness_repo(root, exit_code=0):
     git(root, "tag", "v1")
     (root / "VERSION").write_text("2.0.0\n", encoding="utf-8")
     git(root, "commit", "-qam", "chore: two")
+    git(root, "tag", "v2")
     return root
 
 
@@ -130,11 +135,16 @@ class LiveProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             base = {"HOME": str(tmp / "home"), "CLAUDE_CONFIG_DIR": str(tmp / "other")}
-            for target in (tmp / "home" / ".claude", tmp / "other"):
-                with self.assertRaises(SystemExit) as caught:
+            for target in (tmp / "home" / ".claude", tmp / "other", tmp / "home" / ".claude" / "inner",
+                           tmp / "home", tmp, Path("/")):
+                with self.assertRaises(SystemExit, msg=str(target)) as caught:
                     BENCH.refuse_live_config(target, base)
                 self.assertIn("live profile", str(caught.exception))
-            self.assertIsNone(BENCH.refuse_live_config(tmp / "bench", base))
+            with self.assertRaises(SystemExit) as caught:
+                BENCH.refuse_live_config(tmp / "bench", base, bare=tmp / "bench")
+            self.assertIn("bare profile", str(caught.exception))
+            self.assertIsNone(BENCH.refuse_live_config(tmp / "bench", base, bare=tmp / "bare"))
+            self.assertIsNone(BENCH.refuse_live_config(tmp / "home" / ".claude-bench", base))
 
     def test_the_harness_arms_fence_admits_the_checkout_its_profile_links_into(self):
         """`harness sync` fills a profile with links into the checkout it synced from, so an arm
@@ -145,8 +155,10 @@ class LiveProfileTests(unittest.TestCase):
         self.assertEqual(BENCH.arm_admits("harness", {}), [])
         fence = BENCH.fence("/profile", ["/pinned/checkout"])["sandbox"]["filesystem"]
         for key in ("allowRead", "allowWrite"):
-            self.assertIn("/pinned/checkout", fence[key])
             self.assertIn("/profile", fence[key])
+        self.assertIn("/pinned/checkout", fence["allowRead"])
+        # Read-only: an arm that could write it could rewrite its own rules mid-run.
+        self.assertNotIn("/pinned/checkout", fence["allowWrite"])
         self.assertNotIn("/pinned/checkout", BENCH.fence("/profile")["sandbox"]["filesystem"]["allowRead"])
 
 
@@ -233,6 +245,146 @@ class TagScheduleTests(unittest.TestCase):
                 with redirect_stdout(io.StringIO()):
                     BENCH.cmd_replay(args)
             self.assertEqual(sorted(Path(args.tmp).iterdir()), [])
+
+
+def signed_in_profile(root):
+    """A profile the owner signed into and keeps: CLI state of its own, no harness in it."""
+    root = Path(root)
+    (root / "statsig").mkdir(parents=True)
+    (root / ".claude.json").write_text('{"signed": "in"}', encoding="utf-8")
+    (root / "statsig" / "cache").write_text("state", encoding="utf-8")
+    return root
+
+
+def contents(root):
+    """Names, kinds and bytes under `root`: equal before and after means nothing was left behind."""
+    root = Path(root)
+    return sorted((rel, kind, (root / rel).read_bytes() if kind == "file" else b"")
+                  for rel, kind in BENCH.profile_entries(root).items())
+
+
+class NamedProfileTests(unittest.TestCase):
+    def patched(self, repo, replay, home=None):
+        stack = [mock.patch.object(BENCH, "ROOT", repo), mock.patch.object(BENCH, "replay", replay),
+                 mock.patch.object(BENCH, "_text", lambda *a, **k: "1.2.3"),
+                 mock.patch.object(BENCH, "installed_harness", lambda home: repo)]
+        if home:
+            stack.append(mock.patch.dict(os.environ, {"HOME": str(home)}))
+            stack.append(mock.patch.object(BENCH.Path, "home", classmethod(lambda cls: Path(home))))
+        return stack
+
+    def run_replay(self, args, stack):
+        for patcher in stack:
+            patcher.start()
+        try:
+            with redirect_stdout(io.StringIO()):
+                return BENCH.cmd_replay(args)
+        finally:
+            for patcher in reversed(stack):
+                patcher.stop()
+
+    def test_two_tags_share_one_profile_and_leave_it_exactly_as_it_was(self):
+        """Each tag finds the profile clean, sees only its own layer, and hands it back unchanged."""
+        seen = []
+
+        def fake_replay(tasks, opts, launch=None, out=None):
+            config = Path(opts["harness_config"])
+            seen.append((opts["tag"], (config / "CLAUDE.md").read_text(encoding="utf-8"),
+                         sorted(p.name for p in (config / "rules").iterdir())))
+            (config / "projects").mkdir()  # what the CLI itself writes during a run
+            (config / "projects" / "run.jsonl").write_text("{}", encoding="utf-8")
+            Path(out).write_text("", encoding="utf-8")
+            return [], False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            profile = signed_in_profile(Path(tmp) / "bench-harness")
+            before = contents(profile)
+            args = replay_args(tmp, repo, tag=["v1", "v2"], harness_config=str(profile))
+            (repo / "policy").mkdir()
+            (repo / "policy" / "prices.json").write_text(json.dumps({"models": {}}), encoding="utf-8")
+            self.assertEqual(self.run_replay(args, self.patched(repo, fake_replay)), 0)
+            self.assertEqual(contents(profile), before)
+        self.assertEqual(seen, [("v1", "synced 1.0.0", ["stub-1.0.0.md"]),
+                                ("v2", "synced 2.0.0", ["stub-2.0.0.md"])])
+
+    def test_the_profile_is_put_back_when_a_tag_raises_in_the_middle(self):
+        def failing(tasks, opts, launch=None, out=None):
+            raise RuntimeError("a run in the middle of the schedule")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            profile = signed_in_profile(Path(tmp) / "bench-harness")
+            before = contents(profile)
+            args = replay_args(tmp, repo, harness_config=str(profile))
+            (repo / "policy").mkdir()
+            (repo / "policy" / "prices.json").write_text(json.dumps({"models": {}}), encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                self.run_replay(args, self.patched(repo, failing))
+            self.assertEqual(contents(profile), before)
+
+    def refused_before_launch(self, tmp, repo, tags, profile, home=None):
+        """Runs the replay with a launcher that must never be called; returns the refusal."""
+        launched = mock.Mock(side_effect=AssertionError("launched after a refusal"))
+        args = replay_args(tmp, repo, tag=tags, harness_config=str(profile))
+        stack = self.patched(repo, launched, home)
+        cli = mock.Mock(side_effect=AssertionError("asked the CLI after a refusal"))
+        stack[2] = mock.patch.object(BENCH, "_text", cli)
+        with self.assertRaises(SystemExit) as caught:
+            self.run_replay(args, stack)
+        launched.assert_not_called()
+        cli.assert_not_called()
+        return str(caught.exception)
+
+    def test_the_live_profile_is_refused_before_any_tag_launches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo = harness_repo(tmp / "repo")
+            home = tmp / "sentinel-home"
+            (home / ".claude").mkdir(parents=True)
+            message = self.refused_before_launch(tmp, repo, ["candidate", "v1"], home / ".claude", home)
+            self.assertIn("live profile", message)
+            self.assertEqual(sorted((home / ".claude").iterdir()), [])
+
+    def test_a_profile_already_holding_a_harness_is_refused_before_any_tag_launches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo = harness_repo(tmp / "repo")
+            profile = signed_in_profile(tmp / "bench-harness")
+            (profile / "rules").mkdir()
+            (profile / "rules" / "one.md").symlink_to(repo / "VERSION")
+            before = contents(profile)
+            message = self.refused_before_launch(tmp, repo, ["v1", "v2"], profile)
+            self.assertIn("rules/one.md", message)
+            self.assertEqual(contents(profile), before)
+
+    def test_candidate_never_shares_a_named_profile_with_a_pinned_tag(self):
+        """Candidate after a pinned tag would load whatever the profile holds and label it with the
+        installed version: a clean profile runs no harness, a synced one runs the wrong one."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo = harness_repo(tmp / "repo")
+            profile = signed_in_profile(tmp / "bench-harness")
+            before = contents(profile)
+            message = self.refused_before_launch(tmp, repo, ["v1", "candidate"], profile)
+            self.assertIn("candidate", message)
+            self.assertEqual(contents(profile), before)
+
+    def test_a_pinned_tag_writes_its_rows_apart_from_the_candidates(self):
+        """v1 here shares nothing with the install but the default results directory would be the
+        same for any tag whose VERSION matches, so a pinned tag always gets a folder of its own."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            args = replay_args(tmp, repo, out=None)
+            (repo / "policy").mkdir()
+            (repo / "policy" / "prices.json").write_text(json.dumps({"models": {}}), encoding="utf-8")
+            outs = []
+
+            def fake_replay(tasks, opts, launch=None, out=None):
+                outs.append(Path(out))
+                return [], False
+            self.run_replay(args, self.patched(repo, fake_replay))
+            self.assertEqual(outs, [repo / "benchmarks" / "1.0.0" / "v1" / BENCH.RESULTS])
 
 
 if __name__ == "__main__":
