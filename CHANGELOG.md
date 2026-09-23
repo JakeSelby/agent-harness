@@ -8,6 +8,30 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `scripts/cost_bench.py replay --tag` runs a pinned git ref of this repository, and is repeatable,
+  so `--tag v0.12.0 --tag v0.13.0 --model <id>` measures two harness versions against bare in one
+  invocation and writes a history row for each, labelled with the version and commit of the ref it
+  actually ran rather than of whatever harness happens to be installed. Each ref is checked out
+  with its history intact and projected by its own `bin/harness sync` into a config directory of
+  its own, run with a temporary HOME as well as an explicit `CLAUDE_CONFIG_DIR`: the profile the
+  owner runs under is neither read nor written, and the owner's identity and stance selection —
+  which a sync renders out of `~/.config/agent-harness/config.json` — stay out of the measurement,
+  so two tags are asked the same question. Every ref is resolved before the first launch, a ref
+  that does not resolve is a named error rather than a quietly missing row, and both temporary
+  directories go even when a run in the middle of a tag's schedule raises. The harness arm's fence
+  admits the pinned checkout its profile links into, and `--dry-run` prints the schedule per tag
+  and syncs nothing. `--spend-cap` applies to each tag's schedule on its own. A profile's
+  credential is keyed on its absolute path, so a temporary one is not signed in: name a signed-in
+  `--harness-config` for the tag to be synced into when the run is meant to spend. That profile
+  must start with no harness files in it, none of the names the sync writes may be a link out of
+  it, and it cannot serve `candidate` in the same run; after each tag the sync is taken back out
+  of it — exactly what its own manifest records is removed and `settings.json` is put back
+  atomically from a copy — while anything else written during the run stays and credential files
+  are never copied, rewritten or deleted, and the profile is checked afterwards so a tag whose
+  sync recorded elsewhere stops the run with the leftovers named rather than stranding the next
+  one; the pinned checkout is readable, never writable, from the arm, and every refusal about the
+  target is decided before the first launch (#599).
+
 - A qualification round names two capability classes per target rather than one: an execution
   class, `standard` by default, for the worker that runs the scripted cases and writes the
   findings, and an assessment class, `strong` by default and a floor rather than a preference,
