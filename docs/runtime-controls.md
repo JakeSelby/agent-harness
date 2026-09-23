@@ -93,7 +93,13 @@ mean "use the deterministic answer". A judgment may turn an `allow` into an `ask
 widen a decision or produce a `deny`. Every other outcome fails open to the deterministic
 decision: no key, a timeout, an exhausted budget, a malformed response, an unexpected exception.
 Each call writes one `event` row carrying the status, the requested and returned model ids, the
-pack and request hashes, the usage and the latency, and never the state. Answers are not
+pack and request hashes, the usage and the latency, and never the state; `harness decide`
+suppresses that row, because a reporting command changes nothing. The endpoint must be `https`
+and the opener can reach no other scheme, since a bearer key goes with every request, and a
+request is charged to its budget as it is sent rather than when it succeeds, so a failing
+endpoint cannot be retried without limit. The token ceilings, the endpoint, the response shape
+and the status mapping come from the vendor's documentation and have not been checked against
+the live service from this repository. Answers are not
 deterministic across identical requests, so nothing promises a repeated request answers the same
 way — only that the same request hashes the same. Credentials come from `TYPESAFE_API_KEY` or
 `JEV_API_KEY` in the environment; no key file is ever read. The client is not live unless it is

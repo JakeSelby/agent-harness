@@ -22,9 +22,15 @@ All notable changes to this project are documented here. The format follows
   provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
   the requested and returned model ids, the pack hash, the request hash, the usage and the latency
   to the decision ledger, and never the state. Answers are not deterministic across identical
-  requests, so nothing here promises otherwise. The client is inert unless a caller constructs it
-  with `live=True`; the opt-in configuration, per-decision-point modes and the sentinel file are
-  #137 (#136).
+  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
+  no handler for any other scheme, because a bearer key goes out with every request; a request is
+  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
+  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
+  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
+  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
+  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
+  from the vendor's documentation and have not been verified against the live service from this
+  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
 
 ### Fixed
 

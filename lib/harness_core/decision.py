@@ -24,6 +24,7 @@ story, and until it lands this seam changes no behaviour at all.
 `deny` exists because a provider that can refuse must have somewhere to say so, and a consumer
 written against the contract should handle it from the first day.
 """
+import contextlib
 import importlib.util
 import json
 import os
@@ -203,6 +204,24 @@ def append_outcome(action_outcome: ActionOutcome, target: Optional[str] = None) 
                          target=str(target) if target else None)
 
 
+_SUPPRESSED = []
+
+
+@contextlib.contextmanager
+def events_suppressed():
+    """Inside this block, `append_event` writes nothing and says so.
+
+    For a reporting command: `harness decide` asks a provider what it would answer, and a
+    provider that reaches a service would otherwise leave a row behind for a question nobody
+    acted on. Re-entrant, so nesting it cannot turn logging back on early.
+    """
+    _SUPPRESSED.append(True)
+    try:
+        yield
+    finally:
+        _SUPPRESSED.pop()
+
+
 def append_event(name: str, detail: Dict[str, Any], target: Optional[str] = None) -> bool:
     """Write one `event` row to the decision ledger. Never raises; says whether it wrote.
 
@@ -210,6 +229,8 @@ def append_event(name: str, detail: Dict[str, Any], target: Optional[str] = None
     `harness usage --by decision` never counts provider bookkeeping as a judgment nobody
     labelled. `read_events` below reads them back.
     """
+    if _SUPPRESSED:
+        return False
     module = _ledger()
     if module is None:
         return False

@@ -13,11 +13,16 @@ No test here reaches the network. The live client is inert unless it is construc
 
 Run: python3 -m unittest discover tests
 """
+import contextlib
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from isolation import isolate_home, without_harness_vars
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
@@ -47,6 +52,30 @@ def response(answers=None, model=jev.DEFAULT_MODEL):
     return {"model": model,
             "answers": {"verdict": answer()} if answers is None else answers,
             "usage": {"input_tokens": 10, "output_tokens": 2}}
+
+
+class _Raising(object):
+    """An opener whose `open` raises what a live transport would have raised."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def open(self, request, timeout=None):
+        raise self.error
+
+
+@contextlib.contextmanager
+def _key_in_environment():
+    saved = dict((name, os.environ.get(name)) for name in jev.KEY_VARIABLES)
+    os.environ[jev.KEY_VARIABLES[0]] = "not-a-real-key"
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 class PackTests(unittest.TestCase):
@@ -159,11 +188,49 @@ class ClientTests(unittest.TestCase):
                      if name in os.environ)
         try:
             with self.assertRaises(jev.Unavailable) as caught:
-                jev.JevClient(live=True, endpoint="http://127.0.0.1:1/never")(
+                jev.JevClient(live=True, endpoint="https://127.0.0.1:1/never")(
                     {"model": jev.DEFAULT_MODEL})
         finally:
             os.environ.update(saved)
         self.assertEqual(caught.exception.code, "missing_key")
+
+    def test_a_key_is_never_put_on_the_wire_in_clear(self):
+        for endpoint in ("http://api.example/v1", "file:///etc/passwd", 7):
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaises(jev.PackError) as caught:
+                    jev.JevClient(live=True, endpoint=endpoint)
+                self.assertIn("https", str(caught.exception))
+        client = jev.JevClient(live=True)
+        client.endpoint = "http://api.example/v1"
+        with self.assertRaises(jev.Unavailable) as caught:
+            client({"model": jev.DEFAULT_MODEL})
+        self.assertEqual(caught.exception.code, "insecure_endpoint")
+
+    def test_the_opener_can_reach_nothing_but_https(self):
+        """`build_opener` would install `file`, `ftp` and `data` handlers beside it."""
+        self.assertEqual(set(jev.JevClient().opener().handle_open), {"https"})
+
+    def test_a_connect_phase_timeout_is_a_timeout_and_not_a_network_error(self):
+        """On Python 3.9 it arrives as `URLError(reason=socket.timeout())`, not raised bare."""
+        import socket
+        import urllib.error
+
+        client = jev.JevClient(live=True)
+        client.opener = lambda: _Raising(urllib.error.URLError(socket.timeout()))
+        with _key_in_environment():
+            with self.assertRaises(jev.Unavailable) as caught:
+                client({"model": jev.DEFAULT_MODEL})
+        self.assertEqual(caught.exception.code, "timeout")
+
+    def test_any_other_url_error_is_still_a_network_error(self):
+        import urllib.error
+
+        client = jev.JevClient(live=True)
+        client.opener = lambda: _Raising(urllib.error.URLError("no route to host"))
+        with _key_in_environment():
+            with self.assertRaises(jev.Unavailable) as caught:
+                client({"model": jev.DEFAULT_MODEL})
+        self.assertEqual(caught.exception.code, "network")
 
     def test_transport_options_are_validated(self):
         for kwargs in ({"live": "yes"}, {"timeout": 0}, {"timeout": 61}, {"timeout": True}):
@@ -276,18 +343,30 @@ class BudgetTests(unittest.TestCase):
     def test_a_ceiling_refuses_the_call_that_would_reach_it(self):
         budget = jev.Budget(max_requests=1)
         budget.check()
-        budget.spend({"input_tokens": 5, "output_tokens": 5})
+        budget.charge(10)
         with self.assertRaises(jev.Unavailable) as caught:
             budget.check()
         self.assertEqual(caught.exception.code, "over_budget")
 
-    def test_tokens_are_charged_from_the_usage_the_response_reported(self):
+    def test_tokens_are_estimated_on_the_way_out_and_settled_on_the_way_back(self):
         budget = jev.Budget(max_tokens=100)
-        budget.spend({"input_tokens": 60, "output_tokens": 40})
+        budget.charge(30)
+        self.assertEqual(budget.as_dict()["tokens"], 30)
+        budget.settle({"input_tokens": 60, "output_tokens": 40}, 30)
         self.assertEqual(budget.as_dict()["tokens"], 100)
         self.assertRaises(jev.Unavailable, budget.check)
 
-    def test_a_response_nobody_could_parse_is_still_charged(self):
+    def test_a_request_that_was_sent_and_then_failed_is_charged_all_the_same(self):
+        """Otherwise a refusing endpoint can be retried without limit on a one-call budget."""
+        budget = jev.Budget(max_requests=1)
+        for code in ("timeout", "network", "http_error", "malformed_json"):
+            client = _Fixed(failure=jev.Unavailable(code))
+            result = jev.ask(pack(), {"a": "b"}, client, budget=budget)
+            self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(budget.requests, 1)
+        self.assertEqual(client.calls, 0)
+
+    def test_a_response_nobody_could_read_is_still_charged(self):
         budget = jev.Budget(max_requests=4)
         client = _Fixed({"model": jev.DEFAULT_MODEL, "answers": {}, "usage": {}})
         result = jev.ask(pack(), {"a": "b"}, client, budget=budget)
@@ -305,6 +384,26 @@ class BudgetTests(unittest.TestCase):
         for kwargs in ({"max_requests": -1}, {"max_tokens": "many"}, {"max_requests": True}):
             with self.subTest(kwargs=kwargs):
                 self.assertRaises(jev.PackError, jev.Budget, **kwargs)
+
+
+def _raise(*args, **kwargs):
+    raise RuntimeError("a provider that broke its own contract")
+
+
+class _Denying(decision.DecisionProvider):
+    """A base provider that refuses, which neither shipped provider does."""
+
+    name = "denying"
+
+    def decide(self, action, counterparty, context=None):
+        return decision.Decision(outcome="deny", autonomy_level=1, provider=self.name,
+                                 reason="denied")
+
+    def record(self, action_outcome):
+        return None
+
+    def learn(self, approval_stream):
+        return None
 
 
 class _Fixed(object):
@@ -382,19 +481,25 @@ class ProviderTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.ledger = self.root / "decisions.jsonl"
         self.client = jev.ReplayClient.from_file(FIXTURE)
+        # Whether a row is written at all is read from the home's config, so a test that does
+        # not isolate the home is reading the developer's own telemetry setting.
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        isolate_home(self.root)
 
-    def provider(self, client=None, variant="execute", **kwargs):
-        base = decision.LocalProvider(root=str(self.root),
-                                      policy_path=str(self.root / "missing.json"),
-                                      variant=variant, target=str(self.ledger))
+    def provider(self, client=None, variant="execute", base=None, **kwargs):
+        base = base if base is not None else decision.LocalProvider(
+            root=str(self.root), policy_path=str(self.root / "missing.json"),
+            variant=variant, target=str(self.ledger))
         return jev.JevProvider(base=base, client=self.client if client is None else client,
                                target=str(self.ledger), **kwargs)
 
-    def decide(self, name, provider=None, **kwargs):
+    def decide(self, name, provider=None, context=None, **kwargs):
         entry = CASES[name]
         action = decision.Action(action_class=entry["action_class"], grade=entry["grade"])
         provider = provider or self.provider(**kwargs)
-        return provider.decide(action, entry["counterparty"], entry["context"])
+        return provider.decide(action, entry["counterparty"],
+                               entry["context"] if context is None else context)
 
     def test_a_judgment_to_confirm_turns_an_allow_into_an_ask(self):
         answer = self.decide("confirm")
@@ -410,8 +515,27 @@ class ProviderTests(unittest.TestCase):
         self.assertIsNone(answer.injected_cognition["agent_message"])
 
     def test_a_judgment_never_widens_a_decision_that_already_asks(self):
-        answer = self.decide("proceed", variant="ask")
-        self.assertEqual(answer.outcome, "ask")
+        for name in ("proceed", "confirm"):
+            with self.subTest(case=name):
+                entry = CASES[name]
+                action = decision.Action(action_class=entry["action_class"],
+                                         grade=entry["grade"])
+                provider = self.provider(variant="ask")
+                deterministic = provider.base.decide(action, entry["counterparty"])
+                self.assertEqual(deterministic.outcome, "ask")
+                answer = provider.decide(action, entry["counterparty"], entry["context"])
+                self.assertEqual((answer.outcome, answer.autonomy_level),
+                                 ("ask", deterministic.autonomy_level))
+
+    def test_a_judgment_never_reopens_a_decision_another_provider_denied(self):
+        for name in ("proceed", "confirm"):
+            with self.subTest(case=name):
+                entry = CASES[name]
+                provider = self.provider(base=_Denying())
+                answer = provider.decide(
+                    decision.Action(action_class=entry["action_class"], grade=entry["grade"]),
+                    entry["counterparty"], entry["context"])
+                self.assertEqual((answer.outcome, answer.autonomy_level), ("deny", 1))
 
     def test_every_status_but_ok_leaves_the_deterministic_decision_unchanged(self):
         for name in ("unknown", "hesitant", "malformed"):
@@ -458,6 +582,31 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(events, ["learn"])
         self.assertRaises(decision.PolicyError, provider.learn, "not a stream")
 
+    def test_a_pack_that_answers_something_else_is_refused_when_it_is_supplied(self):
+        """The two questions `decide` reads are required of a custom pack, not assumed."""
+        for bad in ({"judgment": jev.DECISION_PACK["judgment"]},
+                    {"judgment": jev.DECISION_PACK["judgment"],
+                     "severity": {"type": "choice", "instructions": "How bad?",
+                                  "options": {"low": "a", "high": "b", "unknown": "c"}}}):
+            with self.subTest(pack=sorted(bad)):
+                with self.assertRaises(jev.PackError) as caught:
+                    self.provider(pack=bad)
+                self.assertIn("severity", str(caught.exception))
+
+    def test_a_context_the_caller_mangled_does_not_escape_as_an_exception(self):
+        answer = self.decide("confirm", provider=self.provider(), context=["not", "an", "object"])
+        self.assertEqual(answer.outcome, "allow")
+        self.assertIn("provider_error", " ".join(answer.injected_cognition["rule_matches"]))
+
+    def test_any_exception_inside_the_advisory_half_returns_the_base_decision(self):
+        provider = self.provider()
+        provider._advised = _raise
+        answer = provider.decide(decision.Action("coding.git_push", 3), "repo:a/main")
+        self.assertEqual((answer.outcome, answer.autonomy_level, answer.provider),
+                         ("allow", 3, "jev"))
+        self.assertIn("jev: no judgment (unavailable: provider_error)",
+                      " ".join(answer.injected_cognition["rule_matches"]))
+
     def test_a_malformed_policy_is_still_an_error_and_not_a_judgment(self):
         (self.root / "governance.json").write_text("{not json", encoding="utf-8")
         base = decision.LocalProvider(root=str(self.root),
@@ -480,6 +629,28 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(decision.PolicyError) as caught:
             decision.provider_class("hosted")
         self.assertIn("known providers are jev, local, none", str(caught.exception))
+
+
+class CommandTests(unittest.TestCase):
+    def test_reporting_what_a_provider_would_answer_leaves_no_row_behind(self):
+        """`harness decide` changes nothing, and that includes the ledger."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            config = home / ".config" / "agent-harness"
+            config.mkdir(parents=True)
+            (config / "config.json").write_text(json.dumps({"governance": {"provider": "jev"}}),
+                                                encoding="utf-8")
+            env = without_harness_vars()
+            env.update({"HOME": str(home), "HARNESS_HOME": str(home)})
+            done = subprocess.run([sys.executable, str(REPO / "bin" / "harness"), "decide",
+                                   "--action", "coding.git_push", "--grade", "3",
+                                   "--counterparty", "repo:a/main"],
+                                  capture_output=True, text=True, cwd=str(home), env=env)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("provider jev", done.stdout)
+            self.assertIn("jev: no judgment", done.stdout)
+            ledger = home / ".local" / "state" / "agent-harness" / "decisions.jsonl"
+            self.assertFalse(ledger.exists(), "a reporting command wrote to the ledger")
 
 
 if __name__ == "__main__":
