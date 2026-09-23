@@ -115,8 +115,18 @@ role carries** — the same figures `brief-guard` writes into a brief — so an 
 subtraction on one row rather than a join against whatever the cost table says today. They are
 read from the table at the moment the row is written, not from the brief, which no scan can
 see; a role nothing prices, a table that will not build and a Codex subagent all record `null`,
-because a zero would say the spawn was budgeted nothing. These rows carry the same tokens a
-second time, attributed, which is why no grouping sums both them and their session.
+because a zero would say the spawn was budgeted nothing. `return_path` and
+`return_over_budget` measure the return this row's spawn handed back, joined to the parent's
+`Agent` call on the same `tool_use_id`: whether it named a path that existed under the worktree
+or the scratchpad at the moment the row was written (`"resolvable"`, `"unresolvable"`, or
+`"none"` for a return that named no path at all, which is a fact and not a failure), and
+whether its word count passed the cap its brief stated — the cap `rule-detectors` reads, or the
+400-word default `brief-guard` appends to a brief that states none. Both are `null` when the
+scan could not measure them: no parent call to join on, an empty return, an agent whose own
+definition carries the cap, or a Codex row, whose runtime joins no return at all. The match is a
+string match and the resolution an `os.path.exists`; no model judges the return here. These rows
+carry the same tokens a second time, attributed, which is why no grouping sums both them and
+their session.
 
 **`kind: "worker"`** — one row per completed `harness role run` worker, with the role name as
 `agent_type`. A worker is an isolated CLI session; its runtime reports what the run cost in the
@@ -369,6 +379,11 @@ a mean, so it prints three points on the curve; `unmeasured` counts the runs who
 reported no tool-call figure, which are named there rather than averaged in as a zero. A role
 with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
 second-largest of eight, and a budget re-seeded from it is a guess wearing a number.
+
+`path` and `over` are the returns themselves: the share that handed back a path that resolved,
+and the share that ran past the word cap their brief stated. Both are taken over the runs that
+carry the measurement, so a row written before it existed, a Codex row and a return nothing
+could be joined to lower neither share, and a role with no measured return prints `-`.
 
 `--by day` reads a row's `days` slices when it carries them and falls back to its end date when
 it does not, so a session that ran for a fortnight is spread over the days it spent on. The

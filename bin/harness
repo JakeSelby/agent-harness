@@ -3795,6 +3795,19 @@ def decision_report(days: int) -> int:
 ROLE_MIN_RUNS = 30
 
 
+def measured_share(rows: List[Dict[str, Any]], field: str, value: Any) -> Optional[float]:
+    """The share of `rows` whose `field` is `value`, over the rows that carry a measurement.
+
+    None when none of them does. A row written before the field existed, a runtime that reports
+    no return and a return nothing could be joined to all record `null`, and counting those as
+    the absence of the property would report a measurement the ledger never made.
+    """
+    measured = [row.get(field) for row in rows if row.get(field) is not None]
+    if not measured:
+        return None
+    return sum(1 for seen in measured if seen == value) / len(measured)
+
+
 def role_report(rows: List[Dict[str, Any]], days: int,
                 table: Optional[Dict[str, Dict[str, Any]]] = None) -> int:
     """Output tokens, dollars and tool calls per agent type, over the subagent and worker rows.
@@ -3806,6 +3819,12 @@ def role_report(rows: List[Dict[str, Any]], days: int,
 
     A role with fewer than `ROLE_MIN_RUNS` runs is marked `n<30`, because a p90 over eight runs
     is the second-largest of eight and a budget re-seeded from it is a guess wearing a number.
+
+    `path` and `over` are the two measured facts about the returns themselves: the share that
+    handed back a path that resolved, and the share that ran past the word cap their brief
+    stated. Each is taken over the runs that carry the measurement, so a row from before it
+    existed, a Codex row and a return nothing could be joined to lower neither share; a role
+    with no measured return at all prints `-` rather than a zero.
     """
     table = {} if table is None else table
     groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -3817,7 +3836,8 @@ def role_report(rows: List[Dict[str, Any]], days: int,
         return 0
     head = (f"{'role':<30}{'runs':>6}{'out p50':>10}{'out p75':>10}{'out p90':>10}"
             f"{'usd p50':>9}{'usd p75':>9}"
-            f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}{'unmeasured':>12}{'sample':>8}")
+            f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}"
+            f"{'path':>7}{'over':>7}{'unmeasured':>12}{'sample':>8}")
     say(head)
     say("-" * len(head))
     unpriced = 0
@@ -3836,6 +3856,9 @@ def role_report(rows: List[Dict[str, Any]], days: int,
         cells = [f"{percentile(output, s):>10,}" if output else f"{'-':>10}" for s in (0.5, 0.75, 0.9)]
         cells += [f"{percentile(usd, s):>9.4f}" if usd else f"{'-':>9}" for s in (0.5, 0.75)]
         cells += [f"{percentile(tools, s):>11,}" if tools else f"{'-':>11}" for s in (0.5, 0.75, 0.9)]
+        cells += [f"{share:>7.0%}" if share is not None else f"{'-':>7}"
+                  for share in (measured_share(group, "return_path", "resolvable"),
+                                measured_share(group, "return_over_budget", True))]
         mark = f"n<{ROLE_MIN_RUNS}" if len(group) < ROLE_MIN_RUNS else ""
         say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}{mark:>8}")
     say(f"unpriced: {unpriced} run(s), unknown model or partial tokens" if unpriced

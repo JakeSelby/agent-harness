@@ -22,6 +22,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Subagent rows in the usage ledger now record whether the return carried a path a reader can
+  open and whether it stayed inside the word cap its brief stated. `return_path` is
+  `"resolvable"`, `"unresolvable"` or `"none"` — a return that named no path carries none, which
+  is a fact about the return and not a failure — and `return_over_budget` compares the return's
+  word count against the cap `rule-detectors` reads from the brief, or the default `brief-guard`
+  appends to a brief that states none. Both are a string match and an `os.path.exists` taken when
+  the row is written, never a model judgment, so the ledger holds labelled input rather than an
+  opinion. `harness usage --by role` reports each as a share over the runs that carry the
+  measurement, and prints `-` for a role with none. Codex joins no return to a subagent row, so
+  its rows record both as `null` and its capabilities file names the gap. (#416)
+
 - `harness remote-control` supervises each host through Claude Code's ten-minute give-up: `heal`
   keeps the bridge pointer naming the live environment, stops a host with one `SIGTERM` at nine
   minutes unreachable so launchd's relaunch takes the preserving path, and recreates the session

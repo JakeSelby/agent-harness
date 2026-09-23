@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -89,6 +90,24 @@ DEFAULT_STANCES = getattr(sibling("posture", required=False), "DEFAULT_STANCES",
 # nothing prices the role: a zero would say the spawn was budgeted nothing.
 BUDGET_KEYS = ("budget_output_tokens", "budget_tool_calls")
 _COST = []
+
+# The two things a return is measured for, on the same row the budget sits on: whether it handed
+# back a path a reader can open instead of the payload, and whether it stayed inside the word cap
+# its brief stated. Both are `null` when the scan could not measure them — no parent call to join
+# on, no return text, no cap it can know, a runtime that reports no return at all.
+RETURN_KEYS = ("return_path", "return_over_budget")
+# A path as a return writes one: inside a fence, inside backticks, or bare in prose. Backticks
+# are whitespace to this matcher, so all three forms reach it alike. A candidate must carry a
+# separator, because a bare word is a word; `:` is excluded, so a URL contributes its path part
+# and never its scheme.
+PATH_TOKEN = re.compile(r"[^\s`'\"<>|*?,;:()\[\]{}]*/[^\s`'\"<>|*?,;:()\[\]{}]*")
+PATH_TRIM = ".,;:!?'\")]}>"
+# How many candidates one return is checked against the filesystem. A return that named forty
+# paths and resolved none of them is not answered differently by its forty-first.
+MAX_CANDIDATES = 40
+# A number this large is prose about something else, not a return bound.
+MAX_WORD_CAP = 100000
+_RETURN_RULES = []
 
 
 def budget_fields(role):
@@ -473,6 +492,9 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
            # `mark_reroutes` fills these from the parent's record of the call, joined on this id.
            "tool_use_id": meta.get("toolUseId") or "",
            "requested_type": "", "rerouted": False,
+           # `mark_returns` fills these from the parent's record of the return, joined on the
+           # same id. Null is "not measured", never "measured and found nothing".
+           "return_path": None, "return_over_budget": None,
            "turns": turns, "started": started, "ended": ended}
     if partial:
         row["partial"] = True
@@ -510,6 +532,139 @@ def mark_reroutes(agents, requested):
         row["requested_type"] = asked if not asked or AGENT_NAME.fullmatch(asked) else "other"
         if ran and ran != "unknown":
             row["rerouted"] = asked != ran and not (asked in UNNAMED_TYPES and ran in UNNAMED_TYPES)
+
+
+def return_rules():
+    """`(cap pattern, agents whose definition carries the cap, the default cap)`, read once.
+
+    All three are the siblings' own: `rule-detectors` decides what counts as a stated bound and
+    which agents need not repeat one, and `brief-guard`'s `BOUND` is the cap it appends to every
+    brief that states none. A second copy here would sooner or later measure returns against a
+    cap no brief ever carried. A sibling that will not import leaves the cap unknown, which the
+    row records as unmeasured.
+    """
+    if not _RETURN_RULES:
+        rules = sibling("rule-detectors", required=False)
+        guard = sibling("brief-guard", required=False)
+        default = re.search(r"\d+", getattr(guard, "BOUND", "") or "")
+        _RETURN_RULES.append((getattr(rules, "WORD_CAP_RE", None),
+                              getattr(rules, "CAPPED_AGENTS", frozenset()),
+                              int(default.group(0)) if default else None))
+    return _RETURN_RULES[0]
+
+
+def return_cap(brief, agent_type):
+    """The word cap a return was owed, or None when the scan cannot know one.
+
+    A brief that states a cap is measured against the number it states. A brief that states none
+    was capped by `brief-guard` at its own default before it reached the agent — the transcript
+    records the call as the model wrote it, not as the hook rewrote it (#324) — so that default
+    is the cap. The exception is an agent whose own definition carries the cap: the hook appends
+    nothing to those briefs, and the definition is not a file this scan reads, so they are
+    recorded as unmeasured rather than judged against a number they were never given.
+    """
+    pattern, capped, default = return_rules()
+    if pattern is None:
+        return None
+    match = pattern.search(brief or "")
+    if match is None:
+        return None if (agent_type or "") in capped else default
+    number = re.search(r"\d+", match.group(0))
+    if number is None:
+        return None
+    cap = int(number.group(0))
+    return cap if 0 < cap <= MAX_WORD_CAP else None
+
+
+def return_roots(cwd, top):
+    """Where a path a return names may resolve: the worktree it ran in, and the scratchpad.
+
+    The scratchpad is the temporary directory, which is where `transcript-hygiene` says the long
+    version goes. A path that resolves outside both — a system file, another checkout — is not
+    the detail this return was asked to write down, so it does not count as one.
+    """
+    roots = []
+    for base in (top, cwd, tempfile.gettempdir()):
+        if not base:
+            continue
+        try:
+            real = os.path.realpath(os.path.expanduser(str(base)))
+        except (OSError, ValueError):
+            continue
+        if real not in roots and os.path.isdir(real):
+            roots.append(real)
+    return roots
+
+
+def path_candidates(text):
+    """Every path-shaped token in a return, in order, without repeats."""
+    seen, found = set(), []
+    for raw in PATH_TOKEN.findall((text or "").replace("`", " ")):
+        token = raw.strip(PATH_TRIM)
+        if len(token) < 2 or "/" not in token or token in seen:
+            continue
+        seen.add(token)
+        found.append(token)
+        if len(found) >= MAX_CANDIDATES:
+            break
+    return found
+
+
+def resolves(token, roots):
+    """True when `token` names something that exists now under one of `roots`.
+
+    A relative path is tried against each root, which is how a return that wrote
+    `notes/dimension-a.md` is read. Resolution is taken at the moment the ledger row is written:
+    a path that has since been deleted did not resolve, and the row says so rather than
+    guessing what was there when the agent returned.
+    """
+    try:
+        expanded = os.path.expanduser(token)
+        tries = ([expanded] if os.path.isabs(expanded)
+                 else [os.path.join(root, expanded) for root in roots])
+        for candidate in tries:
+            real = os.path.realpath(candidate)
+            if not os.path.exists(real):
+                continue
+            if any(real == root or real.startswith(root + os.sep) for root in roots):
+                return True
+    except (OSError, ValueError):
+        return False
+    return False
+
+
+def path_state(text, roots):
+    """`"resolvable"`, `"unresolvable"` or `"none"` for one return's text.
+
+    A return that named no path at all carries none. That is a fact about the return and not a
+    failure — a one-line verdict owes no file — and the report counts it apart from a return
+    whose path went nowhere.
+    """
+    candidates = path_candidates(text)
+    if not candidates:
+        return "none"
+    return "resolvable" if any(resolves(t, roots) for t in candidates) else "unresolvable"
+
+
+def mark_returns(agents, briefs, returns, roots):
+    """Fill `return_path` and `return_over_budget` from the parent's `Agent` call and its result.
+
+    Deterministic throughout: a string match for the paths, `os.path.exists` for whether one
+    resolves, a word count against the cap the brief stated. Nothing here judges what the return
+    said — that is #157's question, and these two fields are the labelled input it needs.
+
+    A row whose parent call is not in this transcript keeps both fields `null`. So does a return
+    that arrived empty: an agent that said nothing measures nothing.
+    """
+    for row in agents:
+        use_id = row.get("tool_use_id")
+        text = returns.get(use_id) if use_id else None
+        if not isinstance(text, str) or not text.strip():
+            continue
+        row["return_path"] = path_state(text, roots)
+        cap = return_cap(briefs.get(use_id) or "", row.get("agent_type") or "")
+        if cap:
+            row["return_over_budget"] = len(text.split()) > cap
 
 
 def agent_rows(transcript, session_id="", shared=None, version=None):
@@ -567,6 +722,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     per_message = {} if shared is None else shared
     anonymous = 0
     models, agent_calls, seen, requested = [], set(), set(), {}
+    briefs = {}
     started = ended = branch = ""
     turns = 0
     turns_by_day, efforts = {}, {}
@@ -662,6 +818,10 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                     called = block.get("input")
                     if block.get("id") and isinstance(called, dict):
                         requested.setdefault(block["id"], called.get("subagent_type") or "")
+                        # The brief as the model wrote it, kept only long enough to read the
+                        # word cap off it. No row holds it: see `mark_returns`.
+                        brief = called.get("prompt")
+                        briefs.setdefault(block["id"], brief if isinstance(brief, str) else "")
             # The same repetition is why the token sums are taken once per message id, not once
             # per line, and at that id's largest figure rather than its first: the early lines
             # of one response carry a partial streaming count.
@@ -694,6 +854,13 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         return None
     totals = summed(per_message)
     top = git(cwd, "rev-parse", "--show-toplevel") if cwd and os.path.isdir(cwd) else ""
+    # After `top`, because a return's paths are resolved against the worktree it ran in. The
+    # results are the ones the event list already kept for the detectors, so measuring a return
+    # costs no second read of the transcript.
+    mark_returns(agents, briefs,
+                 dict((e["tool_use_id"], e["text"]) for e in events
+                      if e["kind"] == "tool_result" and e.get("tool_name") == "Agent"),
+                 return_roots(cwd, top))
     record = {
         "kind": "session",
         "runtime": "claude-code",
@@ -993,6 +1160,10 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
             # Codex records no parent-side tool use id on the child, so there is nothing to
             # join a reroute on; null is that absence, not a measurement of no reroute.
             "tool_use_id": None, "requested_type": None, "rerouted": False,
+            # Codex raises no subagent-return event on the parent thread and writes the child to
+            # a rollout of its own, so no return is joined to this row and none is measured;
+            # `adapters/codex/capabilities.json` names the gap.
+            "return_path": None, "return_over_budget": None,
             "turns": turn, "started": started, "ended": ended,
             "parse_failures": malformed,
         }
