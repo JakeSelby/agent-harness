@@ -10,3 +10,5 @@ measurement gets its own record, and the two are read in order.
 
 - [2026-09-22 — deferring action-gated rule text behind the hooks that fire on the act](2026-09-22-deferred-rule-text.md):
   open, nothing run yet. Framed while trimming the standing context (#430).
+- [2026-09-22 — in-run budget nudge for a running subagent](2026-09-22-in-run-budget-nudge.md):
+  do not build. Measured on one machine's ledger (#322).

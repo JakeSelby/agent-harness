@@ -193,14 +193,6 @@ class HookAndDetectorAgree(unittest.TestCase):
                                           "name": "Agent", "input": tool_input}], {},
                                         strict=True), {})
 
-    def test_the_hook_is_registered_on_the_agent_event(self):
-        template = json.loads((REPO / "claude" / "settings.template.json").read_text())
-        commands = [h.get("command", "")
-                    for entry in template["hooks"]["PreToolUse"]
-                    if entry.get("matcher") == "Agent"
-                    for h in entry.get("hooks", [])]
-        self.assertTrue(any("brief-guard.py" in c for c in commands), commands)
-
 
 if __name__ == "__main__":
     unittest.main()

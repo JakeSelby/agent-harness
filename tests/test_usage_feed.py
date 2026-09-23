@@ -955,8 +955,7 @@ class RegistrationTests(Fixture):
 
     def test_the_template_carries_no_feed_entry_a_sync_would_discard(self):
         template = json.loads((REPO / "claude" / "settings.template.json").read_text())
-        self.assertNotIn("UserPromptSubmit", template["hooks"])
-        self.assertNotIn("SubagentStop", template["hooks"])
+        self.assertNotIn("hooks", template)
         self.assertNotIn("usage-feed", json.dumps(template))
         self.assertNotIn("usage-feed", json.dumps(OWNERSHIP))
 

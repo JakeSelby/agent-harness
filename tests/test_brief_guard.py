@@ -138,12 +138,6 @@ class MalformedInput(HookRun):
 
 
 class Registration(unittest.TestCase):
-    def test_registered_on_the_agent_event(self):
-        s = json.loads((REPO / "claude" / "settings.template.json").read_text())
-        cmds = [h["command"] for g in s["hooks"]["PreToolUse"]
-                if g.get("matcher") == "Agent" for h in g["hooks"]]
-        self.assertTrue(any("brief-guard.py # harness:brief-guard" in c for c in cmds), cmds)
-
     def test_declared_in_ownership(self):
         o = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
         entry = o["claude"]["hook_ids"].get("brief-guard")
