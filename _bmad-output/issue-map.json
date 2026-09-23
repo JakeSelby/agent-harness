@@ -7,7 +7,7 @@
     "epic": 12,
     "story": 206,
     "task": 9,
-    "bug": 60,
+    "bug": 64,
     "chore": 51,
     "spike": 10,
     "decision": 8
@@ -4311,6 +4311,19 @@
       "type": "task",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T008.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B063",
+      "github_number": 611,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/611",
+      "title": "stop-gate: interleaved sessions in one checkout reset each other's block count, so the gate never releases",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B063.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
