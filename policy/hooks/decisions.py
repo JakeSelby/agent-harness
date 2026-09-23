@@ -20,6 +20,12 @@ tool output and never assistant prose. `input_sha256` is over the **uncapped** t
 rows whose capped text is identical are still told apart, and a long command can be matched
 against its own later events.
 
+`telemetry.completion_claim`, off by default, adds `completion_claim` and its hash to a
+stop-gate row: the tail of the turn's final assistant message, read from the transcript the
+Stop event names, or a null claim beside the reason there is none. It is the only assistant
+prose this file ever holds, which is why it is a switch of its own and why it is off. See
+`claim_fields`.
+
 This module sits beside the hooks rather than in `lib/harness_core`, for the reason
 `telemetry.py` gives: a hook is reached through `~/.claude/hooks/harness` and nothing above
 that directory resolves from it. `lifecycle.py` loads it with its own `load()`.
@@ -30,6 +36,7 @@ output or exit status. See docs/usage.md for the report and docs/telemetry.md fo
 import hashlib
 import json
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -48,6 +55,62 @@ MAX_INPUT = 2048
 # and naming one of them would put a label in the file that nobody measured.
 NOT_RUN = "not_run"
 RAN = "ran"
+
+# The sampled allows: a fraction of the Bash commands the harness let through without a prompt,
+# written as `grade-bash` rows with `deterministic_answer: allow` and `sampled: true`. They are
+# negatives for shadow evaluation — a check that may only tighten an allow into an ask has
+# nothing to measure its false alarms against otherwise — and they carry no outcome: "it ran"
+# says nothing about whether declining to interrupt was right. One in DEFAULT_SAMPLE_RATE by
+# default, `telemetry.allow_sample_rate` to change it and 0 to stop it. The choice is the
+# command's own hash, so a rerun of the same corpus samples the same commands, and the row
+# names the rate it was drawn at so a reader knows the denominator.
+DEFAULT_SAMPLE_RATE = 20
+
+# A sampled row is the one place this log writes text nobody prompted about, so the text is
+# redacted first and the row holds nothing but the redacted text: the value of every assignment
+# and of every credential flag, every shape the rule detectors match, and the home directory as
+# `~` so no username reaches the row. Those shapes are read out of the vendored measurement
+# engine — see `secret_shapes` — so there is one list and this file holds no copy of it.
+# `input_sha256` on a sampled row is over the **redacted** text, unlike every other row: the
+# hash of an original beside the redacted text is a dictionary attack on a short secret, which
+# is the one way a value could be recovered from the row it was taken out of. Identity within
+# the sample survives, because two rows that redact alike are alike in all this row kept.
+REDACTED = "<redacted>"
+# The engine the shapes come from, at the version `rule-detectors.py` pins: one list, one file,
+# one pin. `tests/test_allow_sampling.py` fails when this name and that import drift apart.
+ENGINE_WHEEL = "ruleprobe-0.1.0-py3-none-any.whl"
+SHAPES_MODULE = "ruleprobe/detectors/common.py"
+SHAPES_NAME = "SECRET_PATTERNS"
+# A value is a quoted string or a bare word, so `API_TOKEN="abc def"` loses the whole of it.
+VALUE = r'''"[^"]*"|'[^']*'|\S+'''
+# An assignment starts a word — after nothing, after whitespace, or after the `;`, `&&`, `|` or
+# `(` that starts the next command — so `FOO=secret cmd` loses its value where the `value` of
+# `cmd --flag=value` is kept. A credential flag is the other way a secret reaches a command
+# line, long or short, with or without a space after it.
+ASSIGNMENT_RE = re.compile(r"(^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=(" + VALUE + ")")
+CREDENTIAL_FLAGS = ("password", "passwd", "pass", "username", "user", "token", "api-key",
+                    "api_key", "apikey", "secret", "key")
+FLAG_RE = re.compile(r"(--(?:" + "|".join(CREDENTIAL_FLAGS) + r")(?:=|\s+))(" + VALUE + ")",
+                     re.IGNORECASE)
+# The short form takes its value attached, as `-phunter2` does; `-p` with a space after it is
+# `mkdir -p dir` far more often than it is a password, and that value is kept.
+SHORT_FLAG_RE = re.compile(r"(^|[\s;&|(])(-[pu])(" + VALUE + ")")
+
+_SHAPES = []
+
+# The completion claim: the tail of the turn's final assistant message, on a stop-gate row and
+# nowhere else. It is the one place this log holds model prose, so it has its own switch and
+# that switch is off. 2 KiB of it, measured in bytes as `input` is, hashed over the whole.
+MAX_CLAIM = 2048
+# The read is the last CLAIM_TAIL_BYTES of the file, so it costs the same on a transcript of any
+# size, and a file past MAX_TRANSCRIPT is not opened at all — nothing that large is a transcript
+# whose last line this hook should be seeking to inside a Stop hook's budget.
+CLAIM_TAIL_BYTES = 256 * 1024
+MAX_TRANSCRIPT = 256 * 1024 * 1024
+# Why a row carries no claim, recorded on the row itself. `no_transcript_path` is the runtime's
+# gap and the rest are the file's; `error` is the reader raising, which nothing has been seen to
+# do. A reader of the log tells a claim nobody made from a claim nobody could read.
+CLAIM_MISSES = ("no_transcript_path", "unreadable", "oversized", "no_claim", "error")
 
 _CONFIG = []
 _ERRORS = [0]
@@ -98,6 +161,118 @@ def enabled(cfg=None):
     return block.get("decisions", True) is True
 
 
+def claim_enabled(cfg=None):
+    """Whether a stop-gate row carries the completion claim: `telemetry.completion_claim`.
+
+    Off by default, unlike `decisions` beside it, because this is the only field in the log that
+    holds assistant prose: a row that quotes the turn's last words is a different thing to keep
+    on a shared machine from a row holding a command. It is no part of `export` either — a
+    decision row reaches no endpoint whatever `export` says.
+    """
+    cfg = read_config() if cfg is None else cfg
+    block = cfg.get("telemetry") if isinstance(cfg, dict) else None
+    if not isinstance(block, dict):
+        return False
+    return block.get("completion_claim", False) is True
+
+
+def sample_rate(cfg=None):
+    """One in how many allowed commands is logged: `telemetry.allow_sample_rate`, 20 by default.
+
+    0 stops the sampling and writes no allow row at all. A value this module cannot honour is
+    read as 0 rather than as the default: `telemetry.settings` refuses it by name when the CLI
+    reads the same block, and a hook that cannot read its own setting must not log more than
+    the user asked for. `telemetry.decisions: false` turns this off with everything else.
+    """
+    cfg = read_config() if cfg is None else cfg
+    block = cfg.get("telemetry") if isinstance(cfg, dict) else None
+    if block is None:
+        return DEFAULT_SAMPLE_RATE
+    if not isinstance(block, dict):
+        return 0
+    rate = block.get("allow_sample_rate", DEFAULT_SAMPLE_RATE)
+    if isinstance(rate, bool) or not isinstance(rate, int) or rate < 0:
+        return 0
+    return rate
+
+
+def in_sample(text, rate):
+    """Whether this command is one of the one-in-`rate` that are logged.
+
+    The command's own hash, never a random draw and never a clock: the same corpus replayed
+    through this function samples the same commands, which is what makes a measurement taken
+    against these rows reproducible.
+    """
+    if not rate or not text:
+        return False
+    return int(digest(text)[:8], 16) % rate == 0
+
+
+def secret_shapes():
+    """The shapes the rule detectors match, compiled, or None when they cannot be read.
+
+    Read out of the vendored `ruleprobe` wheel rather than imported from it: importing the
+    engine inside a PreToolUse hook costs a fifth of a second, and a copy of the list in this
+    file would be both a second source of truth and, to `harness lint`, a secret pattern
+    written into a committed file. `rule-detectors.py` takes the same list from the same wheel,
+    at the same pinned version. None stops the sampling, which is the safe direction: no row
+    rather than an unredacted one.
+    """
+    if not _SHAPES:
+        _SHAPES.append(_read_shapes())
+    return _SHAPES[0]
+
+
+def _read_shapes(root=None):
+    """`SHAPES_NAME` out of `SHAPES_MODULE` in the pinned wheel, compiled, or None.
+
+    None for every way this can fail — no checkout, no wheel, a wheel that is not a zip, a
+    module that has been renamed, a list that is not literal — because each of them means the
+    same thing to the caller: the text cannot be redacted, so it is not written.
+    """
+    import ast
+    import zipfile
+
+    root = checkout_root() if root is None else Path(root)
+    if root is None:
+        return None
+    wheel = root / "lib" / "vendor" / ENGINE_WHEEL
+    if not wheel.is_file():
+        return None
+    try:
+        with zipfile.ZipFile(str(wheel)) as archive:
+            source = archive.read(SHAPES_MODULE).decode("utf-8")
+        for node in ast.parse(source).body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if any(getattr(target, "id", "") == SHAPES_NAME for target in node.targets):
+                return [re.compile(pattern) for pattern in ast.literal_eval(node.value)]
+    except Exception:
+        return None
+    return None
+
+
+def _value(match, keep):
+    """One match with its value replaced by REDACTED, keeping the first `keep` groups."""
+    return "".join(match.group(index + 1) for index in range(keep)) + REDACTED
+
+
+def redact(text, shapes, home_dir=None):
+    """`text` with every value a secret can hide in replaced by REDACTED. See SHAPES_MODULE.
+
+    Assignments and credential flags lose their values, quoted or not; every shape in `shapes`
+    is replaced wherever it appears; and the home directory is written `~`, so a row carries no
+    username even when a path names one.
+    """
+    text = ASSIGNMENT_RE.sub(lambda m: m.group(1) + m.group(2) + "=" + REDACTED, text)
+    text = FLAG_RE.sub(lambda m: _value(m, 1), text)
+    text = SHORT_FLAG_RE.sub(lambda m: _value(m, 2), text)
+    for shape in shapes:
+        text = shape.sub(REDACTED, text)
+    root = str(home() if home_dir is None else home_dir).rstrip("/")
+    return text.replace(root, "~") if root and root != "/" else text
+
+
 def errors():
     """How many writes this process swallowed. A hook's decision never depends on it."""
     return _ERRORS[0]
@@ -111,21 +286,31 @@ def digest(text):
     return hashlib.sha256((text or "").encode("utf-8", "replace")).hexdigest()
 
 
-def harness_version():
-    """The version in the `VERSION` file at the root of the checkout this file belongs to.
+def checkout_root():
+    """The root of the checkout this file belongs to, or None when it is running outside one.
 
     The same walk `usage-log.py` does, and for the same reason: a hook is a script, not an
-    import of the CLI. A copy running outside a checkout stamps no version rather than a guess.
+    import of the CLI.
     """
     here = Path(os.path.realpath(__file__)).parent
     for parent in [here] + list(here.parents):
-        marker = parent / "VERSION"
-        if marker.is_file() and (parent / "bin" / "harness").exists():
-            try:
-                return marker.read_text(encoding="utf-8").strip() or None
-            except OSError:
-                return None
+        if (parent / "VERSION").is_file() and (parent / "bin" / "harness").exists():
+            return parent
     return None
+
+
+def harness_version():
+    """The version in the `VERSION` file at the root of this checkout, or None outside one.
+
+    A copy running outside a checkout stamps no version rather than a guess.
+    """
+    root = checkout_root()
+    if root is None:
+        return None
+    try:
+        return (root / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
 
 
 def match_key(event, text):
@@ -170,6 +355,139 @@ def tail_text(target=None, limit=TAIL_BYTES):
         return ""
 
 
+def _message_of(record):
+    """The message object in one transcript record, or None for a record that holds none.
+
+    Both runtimes in one shape: Claude Code holds the message under `message`, a Codex rollout
+    wraps the same object in a `response_item`, and each carries its own `role`. A sidechain
+    record is a subagent's turn and never part of the session's own.
+    """
+    if not isinstance(record, dict) or record.get("isSidechain"):
+        return None
+    if record.get("type") in ("assistant", "user"):
+        message = record.get("message")
+    elif record.get("type") == "response_item":
+        message = record.get("payload")
+    else:
+        message = record
+    return message if isinstance(message, dict) else None
+
+
+def _message_text(message):
+    """The prose of a message: every text block, joined, and nothing else.
+
+    A block with no `text` is a tool call, a thought or an image, none of which is a claim.
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+    parts = [b["text"] for b in content
+             if isinstance(b, dict) and isinstance(b.get("text"), str) and b["text"]]
+    return "\n".join(parts).strip()
+
+
+def _starts_the_turn(message):
+    """Whether this message is the user's own words, and so the far edge of the current turn.
+
+    Claude Code writes a tool result as a `user` record, so a scan that stopped at every user
+    record would stop in the middle of the turn it is reading; one that stopped at none would
+    take a claim from the turn before when this turn ended in a tool call.
+    """
+    if message.get("role") != "user":
+        return False
+    content = message.get("content")
+    if isinstance(content, list):
+        return not any(isinstance(b, dict)
+                       and b.get("type") in ("tool_result", "function_call_output")
+                       for b in content)
+    return True
+
+
+def _claim_in(tail):
+    """The claim in a tail of transcript, or None when this turn ended without one.
+
+    Newest first, back to the user message that opened the turn. Lines are split on `\n` alone:
+    a JSON string can carry U+2028, U+2029, U+0085 and the other characters `splitlines` breaks
+    on, and splitting there would tear a record in half and silently read an older turn. The
+    first line of the window is usually a fragment, which fails to parse and is discarded.
+    """
+    for line in reversed(tail.split("\n")):
+        if '"assistant"' not in line and '"user"' not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        message = _message_of(record)
+        if message is None:
+            continue
+        if _starts_the_turn(message):
+            return None
+        if message.get("role") != "assistant":
+            continue
+        text = _message_text(message)
+        if text:
+            return text
+    return None
+
+
+def read_claim(transcript):
+    """`(claim, miss)`: the turn's claim and why there is none, exactly one of them set.
+
+    The miss is a reason a reader of the log can act on. `no_transcript_path` is a runtime that
+    named no file — a gap in what the event carries, not in the session — where `unreadable`,
+    `oversized` and `no_claim` are all about a file that was named. The read is bounded on both
+    sides, see MAX_TRANSCRIPT and CLAIM_TAIL_BYTES, so it costs the same at any session length.
+    """
+    if not transcript:
+        return None, "no_transcript_path"
+    target = os.path.expanduser(str(transcript))
+    try:
+        if os.path.getsize(target) > MAX_TRANSCRIPT:
+            return None, "oversized"
+        with open(target, "rb") as stream:
+            try:
+                stream.seek(-CLAIM_TAIL_BYTES, os.SEEK_END)
+            except OSError:
+                stream.seek(0)
+            tail = stream.read().decode("utf-8", "replace")
+    except OSError:
+        return None, "unreadable"
+    text = _claim_in(tail)
+    return (text, None) if text else (None, "no_claim")
+
+
+def _capped(text):
+    """The last MAX_CLAIM **bytes** of the claim, cut back to a character boundary.
+
+    Bytes rather than characters because the cap is there to bound the file on disk, and one
+    emoji is four of them.
+    """
+    raw = text.encode("utf-8")
+    return text if len(raw) <= MAX_CLAIM else raw[-MAX_CLAIM:].decode("utf-8", "ignore")
+
+
+def claim_fields(transcript, cfg=None):
+    """The completion-claim fields for a decision row, or `{}` when there are none to add.
+
+    `{}` whenever the switch is off, so the row is byte for byte the row written before this
+    existed. With it on the row always says something: the claim and its hash, or a null claim
+    beside the reason there is none. Missing evidence is recorded, never a reason to lose the
+    decision it was evidence for, so nothing here raises.
+    """
+    if not claim_enabled(cfg):
+        return {}
+    try:
+        text, miss = read_claim(transcript)
+    except Exception:
+        text, miss = None, "error"
+    if text is None:
+        return {"completion_claim": None, "completion_claim_miss": miss}
+    return {"completion_claim": _capped(text), "completion_claim_sha256": digest(text)}
+
+
 def _append(row, target=None):
     """One line, one `write`. Appending is the only way this file is ever changed."""
     target = Path(target) if target else path()
@@ -186,7 +504,21 @@ def _append(row, target=None):
     return target
 
 
-def record(point, answer, text="", event=None, runtime="", key=None, target=None, now=None):
+def _decision_row(point, answer, text, event, runtime, key, now, written=None):
+    """The decision row itself, with `written` standing in for `text` when it is redacted."""
+    return {"kind": "decision",
+            "decision_id": uuid.uuid4().hex if key is None else decision_id(point, key),
+            "point": point,
+            "session_id": str((event or {}).get("session_id") or "") if event else "",
+            "ts": now_ts(now), "input_sha256": digest(text),
+            "input": (text if written is None else written)[:MAX_INPUT],
+            "deterministic_answer": answer, "outcome": None,
+            "runtime": runtime or os.environ.get("HARNESS_RUNTIME", ""),
+            "harness_version": harness_version()}
+
+
+def record(point, answer, text="", event=None, runtime="", key=None, target=None, now=None,
+           transcript=None):
     """Log one judgment. Returns its `decision_id`, or None when nothing was written.
 
     Never raises. A failed write is counted and the caller carries on with the decision it had
@@ -194,20 +526,52 @@ def record(point, answer, text="", event=None, runtime="", key=None, target=None
 
     `key` makes the id reproducible, so an event that arrives later can name this decision
     without having read the file; with none, the id is a fresh one nobody will join to.
+
+    `transcript` is the file a completion claim is read from, and adds nothing to the row unless
+    the caller passes one and the switch is on: see `claim_fields`.
     """
     try:
         if not enabled():
             return None
         text = text if isinstance(text, str) else ""
-        identity = uuid.uuid4().hex if key is None else decision_id(point, key)
-        row = {"kind": "decision", "decision_id": identity, "point": point,
-               "session_id": str((event or {}).get("session_id") or "") if event else "",
-               "ts": now_ts(now), "input_sha256": digest(text), "input": text[:MAX_INPUT],
-               "deterministic_answer": answer, "outcome": None,
-               "runtime": runtime or os.environ.get("HARNESS_RUNTIME", ""),
-               "harness_version": harness_version()}
+        row = _decision_row(point, answer, text, event, runtime, key, now)
+        row.update(claim_fields(transcript))
+        identity = row["decision_id"]
         _append(row, target)
         return identity
+    except Exception:
+        _ERRORS[0] += 1
+        return None
+
+
+def record_allowed(command, event=None, runtime="", target=None, now=None, cfg=None):
+    """Log one allowed command, if it is in the sample. Returns its id, or None. Never raises.
+
+    The negatives for shadow evaluation: `deterministic_answer: allow`, `sampled: true` and the
+    rate it was drawn at. Only a command the harness itself allowed reaches here — a command it
+    said nothing about is the runtime's to answer and may yet be prompted on or refused, so it
+    is no evidence of an allow. The row carries no outcome and no match key, because there is
+    no judgment here to label and an allow that later "ran" grades nothing; nothing joins to it,
+    `close_session` passes it by and `usage --by decision` counts it apart from the graded rows.
+    The text is redacted before it is capped, unlike the text of a prompt the user was shown.
+    See DEFAULT_SAMPLE_RATE.
+    """
+    try:
+        if not isinstance(command, str) or not command.strip() or not enabled(cfg):
+            return None
+        rate = sample_rate(cfg)
+        if not in_sample(command, rate):
+            return None
+        shapes = secret_shapes()
+        if shapes is None:
+            return None
+        written = redact(command, shapes)
+        row = _decision_row("grade-bash", "allow", command, event, runtime, None, now,
+                            written=written)
+        # The hash of a sampled row is over the redacted text, not the original: see REDACTED.
+        row.update({"input_sha256": digest(written), "sampled": True, "sample_rate": rate})
+        _append(row, target)
+        return row["decision_id"]
     except Exception:
         _ERRORS[0] += 1
         return None
@@ -295,7 +659,8 @@ def close_session(session_id, points=("grade-bash",), outcome=NOT_RUN, target=No
     A Bash ask whose PostToolUse never arrived is the session's answer to it, and the session
     is over: nothing else will ever arrive. Only the points whose outcome is observed this way
     are closed, so a decision that is simply not labelled yet stays unlabelled and shows up in
-    the report's unlabelled share rather than as a fabricated result.
+    the report's unlabelled share rather than as a fabricated result. A sampled allow is passed
+    by: nobody was asked about it, so "not run" would be a label about a prompt that never was.
     """
     try:
         if not session_id or not enabled():
@@ -307,6 +672,8 @@ def close_session(session_id, points=("grade-bash",), outcome=NOT_RUN, target=No
             if row.get("kind") == "outcome" or row.get("session_id") != session_id:
                 continue
             if row.get("point") not in points or row["decision_id"] in answered:
+                continue
+            if row.get("sampled"):
                 continue
             answered.add(row["decision_id"])
             if observe(row["decision_id"], outcome, row.get("point") or "", session_id,

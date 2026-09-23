@@ -45,7 +45,7 @@ Hooks handle the few things that should be deterministic. Everything else stays 
 
 - [Graded shell commands](claude/hooks/grade-bash.py): Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.
 - [Stop gate](claude/hooks/stop-gate.py): The turn doesn't end while your repo's own gate is red.
-- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code being written.
+- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code, and a framework's own review spawns are held to that whatever they call themselves.
 - [Secrets and personal data](primitives/rules/secrets.md): Lint catches tokens, keys and personal strings before they're committed.
 - [Untrusted tool output](claude/hooks/neutralize-tool-output.py): Text that comes back from a tool is data, never instructions.
 - [Sandboxing](docs/sandboxing.md): Fence the filesystem and network before you leave a loop unattended.
@@ -69,7 +69,7 @@ A hard cap cuts an agent off after it has already spent the tokens. I'd rather t
 - [Model tiering](primitives/stances/delegation): Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.
 - [Band workers](claude/agents/worker-a.md): A spawn that names no role gets a right-sized worker instead of your most expensive model.
 - [A budget in every brief](claude/hooks/brief-guard.py): Each subagent is told its expected tokens and tool calls. Finish if you're close, otherwise return what you have.
-- [Live usage feed](docs/usage.md): The orchestrator sees what each turn and each subagent cost. A decision log on this machine records what a hook decided and what settled it; only harness usage reads it.
+- [Live usage feed](docs/usage.md): The orchestrator sees what each turn and each subagent cost, and hears once when its context passes the size your stance sets. A decision log records what a hook decided.
 - [Lean context](docs/how-it-works.md): Always-loaded instructions are capped at 200 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.
 
 ### Answers and plans you can actually read

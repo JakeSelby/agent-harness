@@ -44,12 +44,13 @@ because code that never knew those roles cannot miss them. `harness uninstall` b
 downgrade is the remedy; it removes what the newer release wrote.
 
 Routing is session-scoped for the same reason that effort is sync-scoped: what a native agent is
-comes from files read at a moment, not from a live lookup. Claude Code loads its agent registry
-when the session process starts and never reloads it, so session start records which definitions
-that registry held, and an unnamed spawn is routed only to a worker named in its own session's
-record. A `startup` writes the record, a `resume` may only narrow an existing one, and `clear` and
-`compact` leave it alone. A session with no record keeps the previous behaviour and is told once
-to start a new one, so start a new session after a sync that installs or changes the band workers.
+comes from files read at a moment, not from a live lookup. Session start records which definitions
+the session's registry held, and an unnamed spawn is routed only to a worker that session can
+resolve. A `startup` writes the record, a `resume` may only narrow an existing one, and `clear` and
+`compact` leave it alone. A session that reloads a definition installed after it started is told
+so by the runtime, on its own transcript, and routes to that worker from the turn it hears it;
+a session that is told nothing — a headless one never reloads — keeps the previous behaviour and
+is asked once to start a new session, which is still the certain remedy after a sync.
 Any failure to answer the routing question leaves the spawn unrouted and silent, never refused.
 
 Usage records identify the runtime and available runtime version. Codex cumulative token snapshots
@@ -137,10 +138,10 @@ answer can be compared against the decision it did not change. Labels only: neve
 switch: while that file exists every mode reads `off`, with no configuration change and no
 restart, because the sentinel is read per decision rather than at construction.
 `governance.jev.sentinel` moves it, absolute or resolved against the state directory, never
-against the working directory. The kill switch is read per decision rather than at
-construction, so a session that was running when the file appeared stops calling, and starts
-again when it is removed, without a restart. A live request also needs a key in the environment; without
-one the call fails open to the deterministic answer like any other failure.
+against the working directory. A session that was running when the file appeared stops calling,
+and starts again when it is removed, with no restart and no edit. A live request also needs a
+key in the environment; without one the call fails open to the deterministic answer like any
+other failure.
 
 **What may leave.** `governance.jev.state_fields` is an allowlist, empty by default, over
 exactly two fields: `command` and `summary`. Everything else in a caller's context — a file
