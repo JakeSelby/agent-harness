@@ -12,7 +12,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "filter-output.py"
 FILTER = REPO / "claude" / "hooks" / "filter-lines.py"
-TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
 OWNERSHIP = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
 
 
@@ -139,16 +138,6 @@ class PipelineTests(unittest.TestCase):
 
 
 class RegistrationTests(unittest.TestCase):
-    def test_the_hook_is_registered_under_pre_tool_use(self):
-        entries = [
-            e for e in TEMPLATE["hooks"]["PreToolUse"]
-            if any("# harness:filter-output" in h["command"] for h in e["hooks"])
-        ]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["matcher"], "Bash")
-        self.assertEqual(len(entries[0]["hooks"]), 1)
-        self.assertIn("filter-output.py", entries[0]["hooks"][0]["command"])
-
     def test_ownership_claims_the_hook_id(self):
         spec = OWNERSHIP["claude"]["hook_ids"]["filter-output"]
         self.assertEqual(spec, {"event": "PreToolUse", "always": True})

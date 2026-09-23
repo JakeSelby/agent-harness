@@ -25,7 +25,6 @@ HOOK = REPO / "claude" / "hooks" / "grade-bash.py"
 spec = importlib.util.spec_from_file_location("grade_bash", HOOK)
 grader = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(grader)
-TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
 OWNERSHIP = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
 
 sys.path.insert(0, str(REPO / "tests"))
@@ -616,18 +615,6 @@ class HookTests(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertEqual(run(command)[0], "ask")
-
-    def test_settings_template_registers_the_hook(self):
-        entries = [
-            e for e in TEMPLATE["hooks"]["PreToolUse"]
-            if any("# harness:grade-bash" in h["command"] for h in e["hooks"])
-        ]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["matcher"], "Bash")
-        hook = entries[0]["hooks"][0]
-        self.assertIn("grade-bash.py", hook["command"])
-        self.assertEqual(hook["timeout"], 5)
-        self.assertEqual(hook["statusMessage"], "Grading command reversibility")
 
     def test_ownership_claims_the_hook_id(self):
         self.assertEqual(

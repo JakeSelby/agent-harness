@@ -147,7 +147,7 @@
         },
         {
           "name": "Live usage feed",
-          "line": "The orchestrator sees what each turn and each subagent cost. A decision log on this machine records what a hook decided and what settled it; only harness usage reads it.",
+          "line": "The orchestrator sees what each turn and each subagent cost, and hears once when its context passes the size your stance sets. A decision log records what a hook decided.",
           "doc": "docs/usage.md"
         },
         {
