@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 218,
     "task": 26,
-    "bug": 71,
+    "bug": 72,
     "chore": 57,
     "spike": 10,
     "decision": 9
@@ -4987,6 +4987,19 @@
       "type": "task",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T025.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B071",
+      "github_number": 666,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/666",
+      "title": "The real-corpus upgrade test fails once the last amended stub is upgraded",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B071.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
       "lifecycle": "active",
