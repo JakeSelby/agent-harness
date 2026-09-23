@@ -2350,14 +2350,16 @@ def cmd_decide(args: argparse.Namespace) -> int:
 
     A reporting command, like `stances`: it changes nothing, and nothing consults it yet. It
     exists so a policy file can be checked against the counterparty it will be read under,
-    rather than the first time a hook reads it.
+    rather than the first time a hook reads it. Changing nothing includes the ledger, so a
+    provider that would record its own call is silenced for the length of this question.
     """
     cfg = load_config()
     slug = args.counterparty or decisions_provider.counterparty(str(Path.cwd()))
     try:
         provider = decisions_provider.select_provider(cfg, root=str(Path.cwd()))
         action = decisions_provider.Action(action_class=args.action, grade=args.grade)
-        answer = provider.decide(action, slug)
+        with decisions_provider.events_suppressed():
+            answer = provider.decide(action, slug)
     except decisions_provider.PolicyError as exc:
         raise SystemExit(str(exc))
     if args.json:

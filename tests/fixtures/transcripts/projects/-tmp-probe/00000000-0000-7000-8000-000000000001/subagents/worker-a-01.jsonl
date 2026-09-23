@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Reply with the single word DONE and nothing else.\n\nExpected spend: about 12,000 output tokens and about 12 tool calls."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"DONE"}]}}

@@ -1,0 +1,3 @@
+{"type":"user","sessionId":"00000000-0000-7000-8000-000000000003","message":{"role":"user","content":[{"type":"text","text":"Use your Agent tool exactly once to launch one subagent."}]}}
+{"type":"system","subtype":"usage_feed","sessionId":"00000000-0000-7000-8000-000000000003","content":"usage-feed: worker-a finished\nusage-feed: worker-a finished at 4,210 output tokens and 9 tool calls"}
+{"type":"assistant","sessionId":"00000000-0000-7000-8000-000000000003","message":{"role":"assistant","content":[{"type":"text","text":"SPAWNED"}]}}

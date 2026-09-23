@@ -8,6 +8,115 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
+  release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
+  and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
+  hook now classifies a native spawn against those descriptors instead of trusting the
+  `subagent_type` the model wrote, so a review layer re-issued as an unnamed subagent is refused
+  with the same isolated-worker instruction a named `reviewer` spawn gets, and the refusal names
+  the read roots that worker needs. The `harness-role:` line in a routed brief goes back to being
+  an optimisation rather than the thing confinement depends on. Recognition is corroborated: one
+  of the framework's own layer names as the spawn type is enough, a path out of its routed text
+  counts only with one of its sentences beside it, and two of those sentences are enough on their
+  own, so the fix-up brief after a review, a brief that edits the override templates and a brief
+  that quotes a single line of them all still run. A classified refusal is deliberately not
+  remembered for the session, because that memory matches by prefix and similarity and one wrong
+  classification would go on refusing the corrected brief. A descriptor that will not parse or
+  will not validate is announced once per session and logged rather than skipped in silence.
+  `spawn-confinement` joins the required qualification cases, with a false-positive check, and the
+  catalog records what a descriptor still cannot recognise (#291).
+
+- `scripts/native_acceptance.py` drives the `permission-controls` case, which was qualified by
+  hand every round: it syncs the manual, unacknowledged bypass, acknowledged bypass and auto
+  postures, reads the permission mode each one wrote into the client's own settings, and asks for
+  the same one-command file write under each, pre-approving no tool so that the posture is what
+  decides the call. The acknowledged bypass is judged by `bypass_verdict`, landed uncalled in
+  0.12.0, against the mode the client reported for that turn, so the three outcomes stay apart: a
+  turn the policy blocked, a turn the model declined on its own judgement, and a turn that
+  completed. A decline is `unverified` rather than a failure, which was the defect the driver had
+  to be written around, and each posture's reading is kept as it is made, so a later posture that
+  cannot be observed reports the earlier ones rather than erasing them. Three real client turns
+  recorded under those modes — result, transcript record and the sentinel state each left — are
+  the tests' fixtures, so the suite still launches no client, and `docs/releasing.md` records the
+  comparison against a hand run that the first live round owes before this verdict is trusted
+  (#404).
+- A session that was already running when `harness sync` installed the band workers starts
+  routing unnamed spawns as soon as it can resolve them, instead of waiting for a new session.
+  Claude Code announces a reload to the session it happened in, as an `agent_listing_delta`
+  attachment on the transcript, so the spawn hook reads that over a bounded tail, keeps what it
+  found in the session record so routing survives the delta scrolling out of that read, and routes
+  to a worker the session's start-time record predates when a later delta names it. The record
+  stays the floor: an absent or unreadable transcript, a listing never seen in either place, and a
+  session that reloaded nothing all route exactly as they did before, so a reroute still never
+  turns a spawn that would have worked into one that fails. The pricing hook reads the same
+  answer, and `docs/spikes/2026-09-22-registry-reload.md` records the eight sessions this was
+  measured in, including the headless ones that never reload (#263).
+- `scripts/smoke_tier.py` runs the repository's deterministic pre-qualification checks as one
+  command that spends no model turn: the acceptance runner's self-tests against recorded
+  transcripts under `tests/fixtures/transcripts/`, the documentation-link check, the
+  credential-reachability probe, and the disposable-home sync, projection-drift and lifecycle
+  checks. Three of the four defects the 0.11.0 qualification round recorded were deterministic
+  plumbing faults of exactly this kind, each found part-way through a paid round that then had to
+  be run again. Every check is bounded by a timeout, so an unauthenticatable environment is
+  reported as an error rather than as a three-hundred-second hang, and a check that could not run
+  is `unverified` and never a pass. The tier is additive and never qualification: it observes no
+  client, and the run fails if anything it ran wrote under `compatibility/evidence/` or into the
+  catalog. CI runs it as a `smoke` job that the branch ruleset does not require, and
+  `docs/releasing.md` records that it is advisory until it is decided whether a red tier may
+  block a freeze (#334).
+
+### Fixed
+
+- The credential probe answers for a variable holding something that is not a path, where asking
+  the filesystem about it used to raise and carry the value into the error's own message — a
+  service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
+  An unusable value is now treated as a file that is not there, and the reason names the variable
+  and never the value (#334).
+
+- The usage feed tells the orchestrator when its own session has grown past the posture's
+  fresh-session threshold. A long session's cost is mostly the context every further turn
+  re-reads, and the turn line, which reports output tokens, showed none of it. A new
+  `session_nudge_at` switch in the cost sidecar lists context sizes in whole tokens, resolved
+  over `extends` like every other switch; on `UserPromptSubmit` the feed reads the newest
+  response's input tokens plus its cached prefix and, at a crossing, adds one line naming the size,
+  the threshold and the advice to finish the task, write the handoff and start fresh. It is said
+  once per threshold rather than once per turn: the thresholds already said are kept in the
+  session's state file, and survive the reader starting over on a transcript whose identity
+  changed, so a resume does not repeat them. A context that falls back under a threshold, which
+  is what an in-place compaction does, arms that threshold again. Nothing is blocked. `frugal` ships
+  80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` nothing at all; those are
+  starting points chosen against a 200,000-token window rather than measured figures, and the
+  follow-up to this issue replaces them with sizes read out of the ledger. Codex raises no
+  `UserPromptSubmit` event and declares the nudge uncovered (#321).
+- `docs/spikes/` records the measurements a decision was taken on, starting with the in-run budget
+  nudge: whether a running subagent should be told mid-run how its spend compares with its soft
+  budget. Measured on one machine's ledger, 2 of 89 budgeted subagent runs overran, the excess was
+  4.5% of subagent output, and in the larger sample of runs whose brief carried no budget the
+  median overrun was discovered with one tool call left — too late to act on — so nothing is built
+  and the record says which numbers would change the answer (#322).
+- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
+  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
+  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
+  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
+  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
+  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
+  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
+  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
+  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
+  may never widen a decision, and every path with no usable answer — no key, a timeout, an
+  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
+  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
+  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
+  to the decision ledger, and never the state. Answers are not deterministic across identical
+  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
+  no handler for any other scheme, because a bearer key goes out with every request; a request is
+  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
+  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
+  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
+  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
+  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
+  from the vendor's documentation and have not been verified against the live service from this
+  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
 - `telemetry.completion_claim`, off by default, records the agent's completion claim on a
   `stop-gate` decision row: the last 2 KiB of the turn's final assistant message, read from the
   transcript at Stop because the Stop payload carries no assistant text, with the hash over the
@@ -61,6 +170,20 @@ All notable changes to this project are documented here. The format follows
   `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
   now links to the row instead of restating it (#520).
 ### Changed
+
+- Native qualification evidence is now invalidated per target rather than per repository. Each
+  client's evidence is checked against the shared runtime source plus its own runtime's adapter
+  directory, so a fix confined to `adapters/codex` no longer costs the Claude Code targets of a
+  qualification round, and the reverse holds; a shared-source change, an unmapped runtime or a
+  record that states no scope still invalidates everything, so the narrowing fails closed. The
+  catalog declares the per-runtime directories and each evidence record states the path set it
+  was validated under. The narrowing stops at the files shared code reads whatever the runtime —
+  `bindings.json`, `capabilities.json` and `worker.py`, which `harness tiers`, stance coverage and
+  `harness role run --runtime` reach for either adapter — so those are declared in the catalog and
+  still invalidate every target; only `hook.py` is private to its runtime. A new test parses the
+  runtime source and fails when a loader reaches an adapter file the declaration does not cover.
+  Per-case scoping is not included: it changes a v1 stable interface and waits on an owner
+  decision (#333).
 
 - The delegation rule now states that subagents never message a peer, and the builder role says
   what a blocked builder does instead: stop, finish what does not depend on the answer, and return

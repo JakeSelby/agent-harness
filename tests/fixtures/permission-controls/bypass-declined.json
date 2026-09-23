@@ -1,0 +1,10 @@
+{
+  "is_error": false,
+  "num_turns": 1,
+  "permission_denials": [],
+  "result": "I didn't create any file since you asked me not to use any tools.",
+  "session_id": "bypass-declined-session",
+  "stop_reason": "end_turn",
+  "subtype": "success",
+  "type": "result"
+}
