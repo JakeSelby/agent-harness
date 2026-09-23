@@ -3,8 +3,9 @@
 
 Every check here already exists in this repository; the tier is the single command that runs
 them before a qualification round is paid for — the acceptance runner's self-tests against
-recorded transcripts, the documentation-link check, the credential-reachability probe, and the
-disposable-home sync, projection-drift and lifecycle checks.
+recorded transcripts, the documentation-link check, the credential and host precondition probe
+for each target the round will run, and the disposable-home sync, projection-drift and lifecycle
+checks.
 
 A green tier is never native client qualification. It observes no client behaviour, writes
 nothing under `compatibility/evidence/` and appears in no catalog record; the run fails if
@@ -14,6 +15,7 @@ contain, is in docs/compatibility.md.
     python3 scripts/smoke_tier.py --list
     python3 scripts/smoke_tier.py
     python3 scripts/smoke_tier.py --only credentials,documentation-links
+    python3 scripts/smoke_tier.py --targets claude-code-cli-macos,codex-cli-linux
 """
 import argparse
 import hashlib
@@ -27,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from native_acceptance import redact
+from native_acceptance import CLIENTS, redact
 
 NOT_QUALIFICATION = ("smoke tier: deterministic pre-qualification checks, no model turn; "
                      "a green run is not native client qualification")
@@ -42,13 +44,19 @@ def unittest_argv(pattern):
     return [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", pattern]
 
 
-def steps(work):
-    """Each check, in the order a failing one is cheapest to read: fastest and narrowest first."""
+def steps(work, targets=None):
+    """Each check, in the order a failing one is cheapest to read: fastest and narrowest first.
+
+    `credentials` checks, for each target, what docs/qualification-runbook.md says must exist
+    before it starts: its client and login here, or a Docker daemon for a Linux target this host
+    runs in a container.
+    """
     return [
         {"name": "credentials",
-         "how": "name the credential a client launched under this environment would use",
-         "argv": [sys.executable, "-m", "harness_core.credentials"],
-         "env": {"PYTHONPATH": str(ROOT / "lib")}, "timeout": 15},
+         "how": "check each target's client, login or Docker daemon on this host",
+         "argv": [sys.executable, "-m", "harness_core.target_preconditions",
+                  "--targets", ",".join(targets or sorted(CLIENTS))],
+         "env": {"PYTHONPATH": str(ROOT / "lib")}, "timeout": 30},
         {"name": "projection-drift",
          "how": "regenerate every native projection and compare it with the committed one",
          "argv": [sys.executable, str(ROOT / "bin" / "harness"), "generate", "--check"],
@@ -196,11 +204,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--only", help="comma-separated subset of the checks to run")
     parser.add_argument("--skip", help="comma-separated checks to leave out of this run")
+    parser.add_argument("--targets",
+                        help="comma-separated targets the round will run; default every one")
     parser.add_argument("--list", action="store_true", dest="listing",
                         help="print what would run, running nothing")
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="harness-smoke-") as work:
-        plan = selected(args.only, args.skip, steps(Path(work)))
+        targets = [name.strip() for name in (args.targets or "").split(",") if name.strip()]
+        unknown = [name for name in targets if name not in CLIENTS]
+        if unknown:
+            raise SystemExit("unknown target: " + ", ".join(unknown))
+        plan = selected(args.only, args.skip, steps(Path(work), targets))
         if not plan:
             raise SystemExit("no smoke check selected; --list names them")
         if args.listing:
