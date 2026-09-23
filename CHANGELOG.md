@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A labelled corpus for the eleven detectors this repository writes itself, and a `corpus` job
+  beside `test` that scores it. `tests/fixtures/detector-corpus/` holds thirteen synthetic
+  transcripts and the labels over them, five positives and five near-misses per detector bar the one whose positive costs two hundred
+  searches, written
+  by `build_sessions.py` beside them; `scripts/detector_corpus.py --floor 0.9` runs both that
+  corpus and the one inside the vendored `ruleprobe` wheel through the whole registry and exits
+  non-zero when a detector's precision or recall falls under the floor, or when a detector has no
+  labelled example at all. Every row `harness usage --rules` prints now has a measured precision
+  and recall rather than a hit count of unknown quality. `secrets/git-add-secret-file` measures
+  0.83 precision, because any basename holding `id_rsa` is a hit and a runbook named after a key
+  is one too; the floor stays where it is and the miss is recorded in the corpus with its measured
+  score, so an improvement or a regression both fail the job until the record is updated (#522).
+
 - A spike record measures what the Claude Code Workflow tool does to the delegation guards. A
   script's `agent()` calls produce no `Agent` tool call, so band routing, the brief guard and the
   constrained-role refusal never see them, and a script can run a read-only harness role in session
