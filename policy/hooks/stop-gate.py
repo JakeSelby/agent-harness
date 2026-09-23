@@ -52,17 +52,23 @@ def log_gate(payload, root, commands, answer, outcome):
 
     Both records are written here because both facts are known here: the hook runs the gate
     itself, so the outcome does not wait for a later event. The judged input is the repository's
-    own gate block — the text this hook decided to run — and not the turn's final message: a
-    Stop payload carries no assistant text, and reading the tail of a transcript to find some
-    would put model prose in a file whose whole point is that it holds neither prose nor output.
+    own gate block — the text this hook decided to run — and never the turn's final message.
+
+    The claim the turn ended on is the transcript's, not the payload's: a Stop event carries no
+    assistant text, so the log reads a capped tail of the file the event names. That read only
+    happens under `telemetry.completion_claim`, which is off, because it is the one field in the
+    log that holds model prose. Both runtimes' names for the file are accepted.
     """
     module = decisions()
     if module is None:
         return
+    payload = payload if isinstance(payload, dict) else {}
     text = str(root) + "\n" + "\n".join(commands)
-    identity = module.record("stop-gate", answer, text, payload if isinstance(payload, dict) else {})
+    transcript = (payload.get("transcript_path") or payload.get("rollout_path")
+                  or payload.get("session_path") or "")
+    identity = module.record("stop-gate", answer, text, payload, transcript=transcript)
     if identity and outcome is not None:
-        module.observe(identity, outcome, "stop-gate", (payload or {}).get("session_id") or "")
+        module.observe(identity, outcome, "stop-gate", payload.get("session_id") or "")
 
 
 def git(root, *args):

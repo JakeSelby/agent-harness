@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `telemetry.completion_claim`, off by default, records the agent's completion claim on a
+  `stop-gate` decision row: the last 2 KiB of the turn's final assistant message, read from the
+  transcript at Stop because the Stop payload carries no assistant text, with the hash over the
+  uncapped message. Verifying what an agent said it had done against the gate result needs the
+  two on one row, and until now the row held only the gate. It is its own switch, and off,
+  because it is the only field in the decision log that holds assistant prose; with it off the
+  row is byte for byte what it was. The claim is the turn's own: the scan stops at the user
+  prompt that opened it, so a turn that ended in a tool call claims nothing rather than
+  repeating the previous turn's words. The read is a bounded tail, so it costs the same on a
+  transcript of any size, and where there is no claim the row carries a null one beside a
+  `completion_claim_miss` naming why — a runtime that supplied no path reads differently from
+  evidence that is gone (#387).
 - Every replay-benchmark row records `cache_miss_ratio` beside its cache-normalised cost: the
   share of the run's prefix the provider re-wrote rather than served, summed over every turn the
   run opened. The arithmetic is the one `harness usage --by prefix` applies to a ledger row, and

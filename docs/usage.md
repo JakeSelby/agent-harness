@@ -328,7 +328,8 @@ a context token.
 The file is **append-only**: an outcome is its own record, joined to its decision by
 `decision_id` when the report reads it, and no line is ever rewritten. `input` is the text the
 hook judged, capped at 2 KiB; `input_sha256` is over the **uncapped** text, so the cap loses
-evidence and never identity. No tool output and no assistant prose reaches either field.
+evidence and never identity. No tool output and no assistant prose reaches either field; the
+one field that holds prose is [the completion claim](#the-completion-claim), which is off.
 
 | point | the judgment | the outcome, when there is one |
 | --- | --- | --- |
@@ -352,6 +353,42 @@ A write that fails is counted and swallowed — a log that can change a permissi
 worse than no log — and `telemetry.decisions: false` in `config.json` turns the whole thing off,
 after which no row, no file and no directory is written. See
 [telemetry.md](telemetry.md#the-decision-log-switch).
+
+### The completion claim
+
+One optional pair of fields is the exception, on a `stop-gate` row alone:
+
+```json
+{"kind": "decision", "point": "stop-gate", "deterministic_answer": "blocked",
+ "completion_claim": "…the suite is green and the change is ready to land.",
+ "completion_claim_sha256": "9f21…"}
+```
+
+`completion_claim` is the **last 2 KiB of the turn's final assistant message**, in bytes and cut
+back to a character boundary, read from the transcript the Stop event names because a Stop
+payload carries no assistant text of its own. It is the turn's own message: the scan stops at
+the user prompt that opened the turn, so a turn that ended in a tool call rather than a reply
+claims nothing instead of borrowing the previous turn's words. `completion_claim_sha256` is over
+the uncapped message, on the same rule as `input_sha256`. The two fields exist so that a stop
+claim can be read against the gate evidence sitting on the same row.
+
+It is **off by default** — `telemetry.completion_claim` in `config.json`,
+[telemetry.md](telemetry.md#the-completion-claim-switch) — and with it off the row is exactly
+the row above, with none of these fields present.
+
+With it on the row always says something. Where there is no claim to record, it carries
+`"completion_claim": null` and a `completion_claim_miss` naming why, and no hash:
+
+| `completion_claim_miss` | what happened |
+| --- | --- |
+| `no_transcript_path` | the Stop event named no file — the runtime's gap, not the session's |
+| `unreadable` | the file was named and could not be opened |
+| `oversized` | the file is past 256 MiB, which this hook will not seek into |
+| `no_claim` | the turn was read and ended without assistant prose |
+| `error` | the reader raised; the decision is still recorded |
+
+The read is the last 256 KiB of the file, so it costs the same on a transcript of any size — a
+claim older than that window reads as `no_claim` rather than as the wrong turn's words.
 
 ```sh
 bin/harness usage --by decision        # counts, outcome rates and the unlabelled share per point
