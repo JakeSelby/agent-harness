@@ -406,6 +406,7 @@ development_status:
   ah-s196-record-the-cache-prefix-figure-per-replay-run: done
   ah-s205-trim-the-output-style-and-the-harness: done
   ah-s218-pass-claude-code-oauth-token-into-the-disposable: done
+  ah-s223-spawn-confinement-observes-the-refusal-from-the: backlog
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-t001-give-each-replay-arm-its-own-profile-and: done
   ah-t002-record-the-fields-a-cost-replay-regression-needs: done
