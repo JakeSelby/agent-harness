@@ -53,6 +53,9 @@ from harness_core import reconcile, lifecycle, tasks, compatibility, workers, in
 from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
 from harness_core import decision as decisions_provider
+# The opt-in block for a provider that leaves the machine. Importing the controls does not
+# import the provider: nothing that reaches the network is loaded unless a config names it.
+from harness_core.decisions import controls as decision_controls
 VERSION = (REPO / "VERSION").read_text().strip() if (REPO / "VERSION").exists() else "0.0.0"
 
 STANCE_NAMES = ["licensing", "build-vs-buy", "commits", "plan-ceremony", "delegation", "testing",
@@ -1716,6 +1719,39 @@ def hook_health(settings: Dict[str, Any]) -> Tuple[int, List[str]]:
     return len(commands), problems
 
 
+def governance_lines(cfg: Dict[str, Any]) -> List[str]:
+    """What `doctor` reports about the decision provider and what it may send.
+
+    The mode per decision point, whether the kill switch is in place, and whether a credential
+    exists — by variable name. A value is a credential and is never printed, here or anywhere.
+    """
+    block = cfg.get("governance") if isinstance(cfg.get("governance"), dict) else {}
+    name = str(block.get("provider") or decisions_provider.NullProvider.name)
+    lines = [f"  governance provider: {name}"]
+    try:
+        controls = decision_controls.Controls.from_config(cfg)
+    except decisions_provider.PolicyError as exc:
+        return lines + [f"    governance.jev is unreadable: {exc}",
+                        "    no provider runs on a configuration nobody can honour"]
+    status = controls.status()
+    if name != "jev" and not any(mode != "off" for mode in status["modes"].values()):
+        return lines + ["    decisions are answered on this machine; no provider reaches the "
+                        "network"]
+    lines.append("    jev modes: " + ", ".join(f"{point}={mode}"
+                                               for point, mode in sorted(status["modes"].items())))
+    fields = ", ".join(status["state_fields"]) or "none"
+    lines.append(f"    jev sends: {', '.join(decision_controls.BASE_FIELDS)}, and {fields} "
+                 f"from the context")
+    lines.append("    jev kill switch: {} ({})".format(
+        status["sentinel"], "present, every call is off" if status["sentinel_present"]
+        else f"absent; create it to stop every call without editing {config_path()}"))
+    lines.append("    jev credential: " + (
+        f"{status['credential']} is set (the value is never printed)" if status["credential"]
+        else "none of " + ", ".join(decision_controls.credential_variables())
+        + " is set; every call fails open to the deterministic answer"))
+    return lines
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     say(f"agent-harness {VERSION}")
     say(f"  repo: {REPO}")
@@ -1770,6 +1806,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if age > PRICE_STALE_DAYS:
             say(f"    over {PRICE_STALE_DAYS} days old. Prices go stale silently and the report "
                 f"keeps printing dollars; re-read each entry's source and update {PRICES_PATH}.")
+    for line in governance_lines(cfg):
+        say(line)
     telemetry = telemetry_settings(cfg)
     module = load_telemetry()
     if telemetry.get("export") != "otlp" or module is None:
@@ -2838,6 +2876,8 @@ def coerce_config_value(key: str, value: str) -> Any:
         if parts[2] == "adapter":
             integrations.identifier(value)
         return value
+    if key.startswith("governance."):
+        return coerce_governance_value(key, value)
     if key in BOOL_KEYS:
         if value.lower() not in ("true", "false"):
             raise SystemExit(f"{key} is true or false; got '{value}'")
@@ -2875,7 +2915,43 @@ def coerce_config_value(key: str, value: str) -> Any:
             raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
         return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"permissions, plan_allow_tools, or one of {', '.join(BOOL_KEYS)}")
+                     f"permissions, plan_allow_tools, governance.provider, governance.jev.*, "
+                     f"or one of {', '.join(BOOL_KEYS)}")
+
+
+def coerce_governance_value(key: str, value: str) -> Any:
+    """Validate one governance key by resolving the block it would produce.
+
+    The block is built and handed to the same loader a provider reads, so a mode, a decision
+    point or an outbound field this harness does not know fails at the keystroke rather than
+    at the first decision that would have sent something.
+    """
+    parts = key.split(".")
+    coerced: Any = value
+    if parts[-1] in ("timeout", "max_requests", "max_tokens", "state_fields"):
+        try:
+            coerced = json.loads(value)
+        except ValueError:
+            # The value itself is never echoed back: a governance value is whatever a user
+            # pasted, and an error message is printed, logged and scrolled past.
+            raise SystemExit(f"{key} takes a JSON value")
+    if parts[1] == "provider":
+        known = sorted(set(decisions_provider.PROVIDERS)
+                       | set(decisions_provider.TRANSPORT_PROVIDERS))
+        if len(parts) != 2 or coerced not in known:
+            raise SystemExit("governance.provider must name one of " + ", ".join(known))
+        return coerced
+    if parts[1] != "jev" or len(parts) < 3:
+        raise SystemExit("governance keys are governance.provider and governance.jev."
+                         + "|".join(decision_controls.KEYS))
+    block: Any = coerced
+    for part in reversed(parts[2:]):
+        block = {part: block}
+    try:
+        decision_controls.Controls.from_config({"governance": {"jev": block}})
+    except decisions_provider.PolicyError as exc:
+        raise SystemExit(str(exc))
+    return coerced
 
 
 def config_set(key: str, value: Optional[str]) -> int:
@@ -2890,7 +2966,8 @@ def config_set(key: str, value: Optional[str]) -> int:
             cfg = read_json(path)
             if cfg is None:
                 cfg = deepcopy(example_config())
-            parts = key.split(".") if key.startswith("integrations.") else key.split(".", 1)
+            parts = (key.split(".") if key.startswith(("integrations.", "governance."))
+                     else key.split(".", 1))
             reconcile.assign(cfg, parts, {"present": True, "value": coerced})
             if key.startswith("integrations."):
                 selected = integrations.selection(cfg)
@@ -2901,7 +2978,11 @@ def config_set(key: str, value: Optional[str]) -> int:
             reconcile.atomic_text(path, json.dumps(cfg, indent=2) + "\n")
     except ValueError as exc:
         raise SystemExit(str(exc))
-    say(f"{key} = {json.dumps(coerced)}  ({path})")
+    if key.startswith("governance."):
+        # Named, not echoed: the same reason the coercion above refuses to quote a value.
+        say(f"{key} set  ({path})")
+    else:
+        say(f"{key} = {json.dumps(coerced)}  ({path})")
     say("applies to new viewer sessions" if key.startswith("integrations.") else "run `harness sync` to apply it")
     return 0
 

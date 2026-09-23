@@ -546,4 +546,8 @@ def select_provider(config: Optional[Dict[str, Any]] = None, **kwargs) -> Decisi
         kwargs.pop("root", None)
         kwargs.pop("policy_path", None)
         kwargs.pop("variant", None)
+    if name in TRANSPORT_PROVIDERS:
+        # A provider that leaves the machine reads its own opt-in block, so selecting it is
+        # never on its own enough to make it call anything.
+        kwargs.setdefault("config", config or {})
     return cls(**kwargs)

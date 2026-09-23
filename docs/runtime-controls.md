@@ -112,9 +112,53 @@ and the status mapping come from the vendor's documentation and have not been ch
 the live service from this repository. Answers are not
 deterministic across identical requests, so nothing promises a repeated request answers the same
 way — only that the same request hashes the same. Credentials come from `TYPESAFE_API_KEY` or
-`JEV_API_KEY` in the environment; no key file is ever read. The client is not live unless it is
-constructed with `live=True`, so selecting this provider today calls nothing: the opt-in
-configuration, the per-decision-point modes and the sentinel that disables every call are #137.
+`JEV_API_KEY` in the environment; no key file is ever read.
+
+## What a provider that leaves the machine may do, and send
+
+Selecting `jev` is not consent to a request. `lib/harness_core/decisions/controls.py` resolves
+three separate questions per decision, and all three must agree before anything is sent.
+
+**How far this point may be judged.** `governance.jev.mode` sets the default and
+`governance.jev.modes.<point>` overrides it for one of the decision points the ledger already
+names — `grade-bash`, `stop-gate`, `tier-agent-spawns`, `brief-guard`, `evasion-deny`. `off`
+calls nothing. `shadow` calls, writes the ledger row and returns the deterministic decision
+untouched, so an answer can be measured before it is trusted: nothing reaches the model or the
+user. `advise` puts the judgment in `rule_matches`, says what `act` would have done, and changes
+no outcome. `act` lets a judgment turn an `allow` into an `ask`, and nothing else. Every mode
+defaults to `off`, so a configuration written before this existed makes no request; a mode, a
+point or a field the harness does not know fails at `harness config set`, not at the first call,
+and a point name this harness does not know reads `off` rather than the default. Each call
+writes one ledger row carrying the mode, the judgment label, the severity level, the
+deterministic outcome and the outcome acting on the judgment would have reached, so a `shadow`
+answer can be compared against the decision it did not change. Labels only: never the state.
+
+**Whether anything may go out at all.** `~/.local/state/agent-harness/jev-disabled` is the kill
+switch: while that file exists every mode reads `off`, with no configuration change and no
+restart, because the sentinel is read per decision rather than at construction.
+`governance.jev.sentinel` moves it, absolute or resolved against the state directory, never
+against the working directory. The kill switch is read per decision rather than at
+construction, so a session that was running when the file appeared stops calling, and starts
+again when it is removed, without a restart. A live request also needs a key in the environment; without
+one the call fails open to the deterministic answer like any other failure.
+
+**What may leave.** `governance.jev.state_fields` is an allowlist, empty by default, over
+exactly two fields: `command` and `summary`. Everything else in a caller's context — a file
+path, a prompt, an environment value, tool output, assistant prose — has no field to travel in
+and is never built into the request, which carries the action class, the counterparty, the grade
+and the grade scale besides. A listed field whose text matches one of the shared secret shapes
+is dropped whole rather than masked, and if that pattern list cannot be loaded no free text is
+sent at all. Redaction recognises the shapes it knows; a credential that reads like ordinary
+prose still travels, which is why the allowlist is two fields and not a free vocabulary.
+
+`governance.jev.timeout` (2 seconds by default, inside the hook budget),
+`governance.jev.max_requests` and `governance.jev.max_tokens` bound the rest, and they bound a
+session rather than a process: a hook is a new process per event, so the counters live in
+`~/.local/state/agent-harness/jev-spend.json` keyed by session id, under the lock, read before
+each check and added to as each request is charged. A spend file that cannot be read or written
+leaves the in-process count standing rather than failing a decision. `harness doctor`
+prints the mode per point, the allowlist, where the kill switch lives and whether a credential
+variable is set — by name, never its value.
 
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.
