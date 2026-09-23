@@ -2932,14 +2932,14 @@ def coerce_governance_value(key: str, value: str) -> Any:
         try:
             coerced = json.loads(value)
         except ValueError:
-            raise SystemExit(f"{key} takes a JSON value; got '{value}'")
+            # The value itself is never echoed back: a governance value is whatever a user
+            # pasted, and an error message is printed, logged and scrolled past.
+            raise SystemExit(f"{key} takes a JSON value")
     if parts[1] == "provider":
-        if len(parts) != 2:
-            raise SystemExit("governance.provider takes a provider name")
-        try:
-            decisions_provider.provider_class(coerced)
-        except decisions_provider.PolicyError as exc:
-            raise SystemExit(str(exc))
+        known = sorted(set(decisions_provider.PROVIDERS)
+                       | set(decisions_provider.TRANSPORT_PROVIDERS))
+        if len(parts) != 2 or coerced not in known:
+            raise SystemExit("governance.provider must name one of " + ", ".join(known))
         return coerced
     if parts[1] != "jev" or len(parts) < 3:
         raise SystemExit("governance keys are governance.provider and governance.jev."
@@ -2978,7 +2978,11 @@ def config_set(key: str, value: Optional[str]) -> int:
             reconcile.atomic_text(path, json.dumps(cfg, indent=2) + "\n")
     except ValueError as exc:
         raise SystemExit(str(exc))
-    say(f"{key} = {json.dumps(coerced)}  ({path})")
+    if key.startswith("governance."):
+        # Named, not echoed: the same reason the coercion above refuses to quote a value.
+        say(f"{key} set  ({path})")
+    else:
+        say(f"{key} = {json.dumps(coerced)}  ({path})")
     say("applies to new viewer sessions" if key.startswith("integrations.") else "run `harness sync` to apply it")
     return 0
 

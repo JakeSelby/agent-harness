@@ -17,14 +17,20 @@ Three separate questions, deliberately not one switch:
   rather than trimming it.
 
 A live request needs all three to agree and a credential in the environment besides; the
-harness never reads a key file. Nothing here has an effect until a configuration asks for one.
+harness never reads a key file. `SessionSpend` sits alongside them for the budget the provider
+charges: a hook is a new process per event, so counters that live in one bound nothing, and a
+session's spend is kept in the state directory under the lock instead. Nothing here has an
+effect until a configuration asks for one.
 """
+import json
 import os
 import re
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import decision
+from .. import reconcile
 
 # The hook points a mode may name. A copy rather than an import: `policy/hooks/decisions.py`
 # is reached by file from a hook directory, not by module path, and a configuration must
@@ -43,6 +49,18 @@ STATE_FIELDS = ("command", "summary")
 BASE_FIELDS = ("action_class", "counterparty", "grade", "grade_scale")
 
 SENTINEL_NAME = "jev-disabled"
+# Where a session's spend is kept, so a ceiling bounds a session rather than a process: every
+# hook is a new process, and a counter that lives in one bounds nothing at all.
+SPEND_NAME = "jev-spend.json"
+# A session's row is dropped a day after its last request. Long enough that a session cannot
+# outlive its own ceiling, short enough that the file stays a file a person can read.
+SPEND_RETENTION_SECONDS = 24 * 60 * 60
+SPEND_LOCK_ATTEMPTS = 5
+SPEND_LOCK_PAUSE = 0.01
+SESSION_VARIABLES = ("HARNESS_SESSION_ID", "CLAUDE_SESSION_ID")
+# The bucket a process with no session id spends from. Shared rather than per-process, which
+# is the conservative direction: an unidentified caller may not have a fresh ceiling.
+UNKNOWN_SESSION = "unknown-session"
 # Read from the environment only. The harness never reads a key file, and a value is never
 # printed: what a report may say is which of these names is set.
 KEY_VARIABLES = ("TYPESAFE_API_KEY", "JEV_API_KEY")
@@ -54,14 +72,21 @@ DEFAULT_MAX_TOKENS = 200000
 KEYS = ("mode", "modes", "state_fields", "sentinel", "timeout", "max_requests", "max_tokens")
 
 
+def state_dir() -> Path:
+    """`~/.local/state/agent-harness`, the directory the ledgers already live in."""
+    home = os.environ.get("HARNESS_HOME") or os.environ.get("HOME")
+    return (Path(home) if home else Path.home()) / ".local" / "state" / "agent-harness"
+
+
 def _where(key: str) -> str:
     return "governance.jev." + key
 
 
 def _mode(value: Any, key: str) -> str:
     if value not in MODES:
-        raise decision.PolicyError(_where(key) + " must be one of " + ", ".join(MODES)
-                                   + ", not " + repr(value))
+        # The offending value is never quoted back. A configuration value can hold anything a
+        # user pasted, and an error message is printed, logged and scrolled past.
+        raise decision.PolicyError(_where(key) + " must be one of " + ", ".join(MODES))
     return value
 
 
@@ -98,11 +123,14 @@ class Controls:
         for name in state_fields or ():
             if name not in STATE_FIELDS:
                 raise decision.PolicyError(
-                    _where("state_fields") + " names " + repr(name) + "; a decision point may "
-                    "send " + ", ".join(STATE_FIELDS) + " and nothing else")
+                    _where("state_fields") + " names a field a decision point may not send; "
+                    "it may send " + ", ".join(STATE_FIELDS) + " and nothing else")
             if name not in self.state_fields:
                 self.state_fields.append(name)
-        self.sentinel = str(sentinel) if sentinel else None
+        if sentinel is not None and (not isinstance(sentinel, str) or not sentinel.strip()
+                                     or "\x00" in sentinel or "\n" in sentinel):
+            raise decision.PolicyError(_where("sentinel") + " must be a path")
+        self.sentinel = sentinel.strip() if sentinel else None
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) \
                 or not 0 < timeout <= 10:
             raise decision.PolicyError(_where("timeout")
@@ -147,11 +175,15 @@ class Controls:
                    state_fields=STATE_FIELDS)
 
     def sentinel_path(self) -> Path:
-        if self.sentinel:
-            return Path(self.sentinel).expanduser()
-        home = os.environ.get("HARNESS_HOME") or os.environ.get("HOME")
-        return (Path(home) if home else Path.home()) / ".local" / "state" / \
-            "agent-harness" / SENTINEL_NAME
+        """Where the kill switch lives. Relative is resolved against the state directory.
+
+        Never against the working directory: a switch whose meaning depends on where a hook
+        happened to be invoked from is one that is on for some decisions and off for others.
+        """
+        if not self.sentinel:
+            return state_dir() / SENTINEL_NAME
+        path = Path(self.sentinel).expanduser()
+        return path if path.is_absolute() else state_dir() / path
 
     def disabled(self) -> bool:
         """Whether the kill switch is in place. Read per decision, never cached."""
@@ -162,7 +194,14 @@ class Controls:
             return True
 
     def mode_for(self, point: Optional[str] = None) -> str:
+        """The mode for one decision point, the sentinel and an unknown name included.
+
+        A point this harness does not know reads `off`, never the default: a caller naming a
+        point nobody configured is a caller nobody decided about.
+        """
         if self.disabled():
+            return "off"
+        if point is not None and point not in POINTS:
             return "off"
         if point is not None and point in self.modes:
             return self.modes[point]
@@ -172,10 +211,21 @@ class Controls:
         """Every known point and the mode it resolves to, the sentinel included."""
         return dict((point, self.mode_for(point)) for point in POINTS)
 
+    def enabled(self) -> bool:
+        """Whether any configured mode asks for a call, the sentinel left out of it.
+
+        What a client is built with, because the kill switch is answered per decision by
+        `mode_for`: a client built while the sentinel existed must still work the moment it is
+        removed, without a restart.
+        """
+        if not self.configured:
+            return False
+        modes = [self.modes.get(point, self.default_mode) for point in POINTS]
+        return any(mode != "off" for mode in modes)
+
     def live(self) -> bool:
-        """Whether a client this provider builds may reach the network at all."""
-        return bool(self.configured) and any(mode != "off"
-                                             for mode in self.selected().values())
+        """Whether a call could be made right now: enabled, and not switched off."""
+        return self.enabled() and not self.disabled()
 
     def allowed_fields(self) -> List[str]:
         return list(BASE_FIELDS) + list(self.state_fields)
@@ -214,13 +264,85 @@ class Controls:
         The credential is reported by variable name only. A value is a credential and is never
         printed, here or anywhere.
         """
-        path = self.sentinel_path()
+        try:
+            path = str(self.sentinel_path())
+        except (OSError, RuntimeError):
+            path = "unresolved"
         return {"default_mode": self.default_mode, "modes": self.selected(),
-                "sentinel": str(path), "sentinel_present": path.exists(),
+                "sentinel": path, "sentinel_present": self.disabled(),
                 "state_fields": list(self.state_fields),
                 "credential": credential_variable(env), "live": self.live(),
                 "timeout": self.timeout, "max_requests": self.max_requests,
                 "max_tokens": self.max_tokens}
+
+
+class SessionSpend:
+    """One session's requests and tokens, shared by every process that answers for it.
+
+    A hook is a new process per event, so a ceiling counted in memory bounds a single decision
+    and nothing else. The counters live in the state directory keyed by session id, read before
+    each check and added to after each charge, under the same lock the rest of the harness uses
+    for a file two processes may write.
+
+    Nothing here may fail a decision. A lock that stays held, an unreadable file or a full disk
+    leaves the process-local count standing, which is the same conservative direction as the
+    rest of this provider: a judgment is never worth a turn.
+    """
+
+    def __init__(self, session: Optional[str] = None, path=None,
+                 env: Optional[Dict[str, str]] = None):
+        env = os.environ if env is None else env
+        named = session or next((env[name] for name in SESSION_VARIABLES if env.get(name)), None)
+        self.session = named if _session_key(named) else UNKNOWN_SESSION
+        self.path = Path(path) if path else state_dir() / SPEND_NAME
+
+    def read(self) -> Tuple[int, int]:
+        """`(requests, tokens)` already spent in this session. Unreadable is zero."""
+        row = self._rows().get(self.session) or {}
+        return (_nonnegative(row.get("requests")), _nonnegative(row.get("tokens")))
+
+    def add(self, requests: int, tokens: int) -> bool:
+        """Add to this session's spend; says whether the file took it."""
+        for attempt in range(SPEND_LOCK_ATTEMPTS):
+            try:
+                with reconcile.lock(self.path.parent):
+                    rows = self._prune(self._rows())
+                    row = rows.get(self.session) or {}
+                    rows[self.session] = {
+                        "requests": _nonnegative(row.get("requests")) + int(requests),
+                        "tokens": max(0, _nonnegative(row.get("tokens")) + int(tokens)),
+                        "updated": int(time.time())}
+                    reconcile.atomic_text(self.path, json.dumps(rows, sort_keys=True) + "\n")
+                return True
+            except ValueError:
+                # Another process holds the lock. It holds it for one small write.
+                time.sleep(SPEND_LOCK_PAUSE * (attempt + 1))
+            except OSError:
+                return False
+        return False
+
+    def _rows(self) -> Dict[str, Any]:
+        try:
+            rows = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return dict((k, v) for k, v in rows.items() if isinstance(v, dict)) \
+            if isinstance(rows, dict) else {}
+
+    def _prune(self, rows: Dict[str, Any]) -> Dict[str, Any]:
+        cutoff = time.time() - SPEND_RETENTION_SECONDS
+        return dict((name, row) for name, row in rows.items()
+                    if name == self.session or _nonnegative(row.get("updated")) >= cutoff)
+
+
+def _session_key(value: Any) -> bool:
+    """A session id safe to key a row by: ASCII, bounded, no separator and no traversal."""
+    return (isinstance(value, str) and value.isascii() and 0 < len(value) <= 128
+            and value[0].isalnum() and all(c.isalnum() or c in "._-" for c in value))
+
+
+def _nonnegative(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
 
 def credential_variables() -> List[str]:

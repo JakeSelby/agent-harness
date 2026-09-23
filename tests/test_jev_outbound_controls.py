@@ -44,13 +44,21 @@ LEAKY = {"file_path": "/" + "Users/someone/repos/private/secrets.env",
 
 
 class _Refusing(object):
-    """A client that fails the test if anything asks it for a judgment."""
+    """A client that must not be called. It counts, because the provider swallows a raise.
+
+    Every exception inside the advisory half is caught and failed open by design, so a raise
+    here would be reported as a provider error rather than as a test failure. The counter is
+    asserted on instead.
+    """
 
     name = "refusing"
 
+    def __init__(self):
+        self.calls = 0
+
     def __call__(self, request):
-        raise AssertionError("a call was made when the configuration allowed none: "
-                             + json.dumps(request, sort_keys=True))
+        self.calls += 1
+        raise AssertionError("a call was made when the configuration allowed none")
 
 
 class _Capturing(object):
@@ -91,6 +99,20 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("and nothing else", self.refused({"state_fields": ["transcript"]}))
         self.assertIn("unknown key(s) sentinal", self.refused({"sentinal": "/tmp/x"}))
         self.assertIn("must be an object", self.refused({"modes": ["grade-bash"]}))
+
+    def test_a_sentinel_is_a_path_and_a_relative_one_is_not_the_working_directory(self):
+        relative = controls.Controls.from_config(config(sentinel="paused"))
+        self.assertEqual(relative.sentinel_path(), controls.state_dir() / "paused")
+        absolute = controls.Controls.from_config(config(sentinel="/tmp/paused"))
+        self.assertEqual(absolute.sentinel_path(), Path("/tmp/paused"))
+        for bad in ("", "  ", "two\nlines", 7, []):
+            with self.subTest(sentinel=repr(bad)):
+                self.assertIn("must be a path", self.refused({"sentinel": bad}))
+
+    def test_a_refusal_never_quotes_the_value_back(self):
+        """A configuration value is whatever was pasted; an error message gets read and logged."""
+        self.assertNotIn("loud", self.refused({"mode": "loud"}))
+        self.assertNotIn("transcript", self.refused({"state_fields": ["transcript"]}))
 
     def test_a_timeout_or_a_ceiling_that_cannot_be_honoured_is_refused(self):
         self.assertIn("(0, 10]", self.refused({"timeout": 0}))
@@ -181,6 +203,83 @@ class OutboundTests(unittest.TestCase):
             self.assertNotIn(absent, body)
 
 
+# What a second process runs: one decision under the same home, session and ceiling, so the
+# parent can prove the spend it left behind is the spend this process starts from.
+SPEND_SCRIPT = """
+import json, sys
+sys.path.insert(0, %r)
+from harness_core import decision
+from harness_core.decisions import jev
+root, ledger = sys.argv[1], sys.argv[2]
+base = decision.LocalProvider(root=root, policy_path=root + '/missing.json',
+                              variant='execute', target=ledger)
+provider = jev.JevProvider(base=base, target=ledger, client=jev.ReplayClient.from_file(%r),
+                           config={'governance': {'jev': {'mode': 'act', 'max_requests': 1,
+                                                          'state_fields': ['command']}}})
+answer = provider.decide(decision.Action(action_class='coding.git_push', grade=3),
+                         'repo:agent-harness/main', {'command': 'git push --force origin main'})
+print(json.dumps([answer.outcome, provider.budget.spend.read()]))
+"""
+
+
+class SpendTests(unittest.TestCase):
+    """A ceiling bounds a session, not a process: every hook is a process of its own."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.ledger = self.root / "decisions.jsonl"
+
+    def environment(self):
+        env = without_harness_vars()
+        env.update({"HOME": str(self.root), "HARNESS_HOME": str(self.root),
+                    "HARNESS_SESSION_ID": "s137-session"})
+        return env
+
+    def run_one(self):
+        done = subprocess.run(
+            [sys.executable, "-c", SPEND_SCRIPT % (str(REPO / "lib"), str(FIXTURE)),
+             str(self.root), str(self.ledger)],
+            capture_output=True, text=True, cwd=str(self.root), env=self.environment())
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_a_second_process_starts_from_the_spend_the_first_one_left(self):
+        first_outcome, first_spend = self.run_one()
+        self.assertEqual(first_outcome, "ask")
+        self.assertEqual(first_spend[0], 1)
+        self.assertGreater(first_spend[1], 0)
+        second_outcome, second_spend = self.run_one()
+        # The ceiling is one request for the session, so the second process makes none.
+        self.assertEqual(second_outcome, "allow")
+        self.assertEqual(second_spend, first_spend)
+        rows = decision.read_events(str(self.ledger))
+        self.assertEqual([row["detail"]["error"] for row in rows], [None, "over_budget"])
+
+    def test_a_session_spends_from_its_own_row_and_not_another_s(self):
+        spend = controls.SessionSpend("one", path=self.root / controls.SPEND_NAME)
+        other = controls.SessionSpend("two", path=self.root / controls.SPEND_NAME)
+        self.assertTrue(spend.add(1, 400))
+        self.assertEqual((spend.read(), other.read()), ((1, 400), (0, 0)))
+        self.assertTrue(other.add(2, 10))
+        self.assertEqual((spend.read(), other.read()), ((1, 400), (2, 10)))
+
+    def test_an_unwritable_spend_file_leaves_the_decision_alone(self):
+        spend = controls.SessionSpend("one", path=self.root / "missing" / "dir" / "spend.json")
+        spend.path.parent.mkdir(parents=True)
+        spend.path.parent.chmod(0o500)
+        self.addCleanup(spend.path.parent.chmod, 0o700)
+        self.assertEqual(spend.read(), (0, 0))
+        self.assertFalse(spend.add(1, 10))
+
+    def test_a_process_with_no_session_id_spends_from_one_shared_row(self):
+        env = dict((name, "") for name in controls.SESSION_VARIABLES)
+        self.assertEqual(controls.SessionSpend(env=env).session, controls.UNKNOWN_SESSION)
+        self.assertEqual(controls.SessionSpend(env={"HARNESS_SESSION_ID": "../escape"}).session,
+                         controls.UNKNOWN_SESSION)
+
+
 class ModeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -191,10 +290,13 @@ class ModeTests(unittest.TestCase):
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
         isolate_home(self.root)
 
-    def provider(self, client=None, **block):
-        base = decision.LocalProvider(root=str(self.root),
+    def base(self):
+        return decision.LocalProvider(root=str(self.root),
                                       policy_path=str(self.root / "missing.json"),
                                       variant="execute", target=str(self.ledger))
+
+    def provider(self, client=None, **block):
+        base = self.base()
         block.setdefault("state_fields", ["command", "summary"])
         return jev.JevProvider(base=base, target=str(self.ledger),
                                client=client or jev.ReplayClient.from_file(FIXTURE),
@@ -212,29 +314,57 @@ class ModeTests(unittest.TestCase):
         return decision.read_events(str(self.ledger))
 
     def test_off_calls_nothing_writes_nothing_and_keeps_the_deterministic_answer(self):
-        answer = self.decide(provider=self.provider(client=_Refusing()))
+        client = _Refusing()
+        answer = self.decide(provider=self.provider(client=client))
         self.assertEqual((answer.outcome, answer.autonomy_level), ("allow", 3))
         self.assertIn("jev: no judgment (off", " ".join(
             answer.injected_cognition["rule_matches"]))
-        self.assertEqual(self.events(), [])
+        self.assertEqual((client.calls, self.events()), (0, []))
 
     def test_a_point_left_off_calls_nothing_while_another_point_acts(self):
-        provider = self.provider(client=_Refusing(), modes={"grade-bash": "off"},
-                                 mode="off")
+        client = _Refusing()
+        provider = self.provider(client=client, modes={"grade-bash": "off"}, mode="act")
         self.assertEqual(self.decide(provider=provider, point="grade-bash").outcome, "allow")
-        self.assertEqual(self.events(), [])
+        self.assertEqual((client.calls, self.events()), (0, []))
+        self.assertEqual(self.decide(provider=self.provider(mode="act"),
+                                     point="stop-gate").outcome, "ask")
+
+    def test_a_point_this_harness_does_not_know_is_off_rather_than_the_default(self):
+        client = _Refusing()
+        provider = self.provider(client=client, mode="act")
+        answer = self.decide(provider=provider, point="invented-point")
+        self.assertEqual(answer.outcome, "allow")
+        self.assertIn("no mode selects invented-point",
+                      " ".join(answer.injected_cognition["rule_matches"]))
+        self.assertEqual((client.calls, self.events()), (0, []))
 
     def test_shadow_calls_and_logs_and_reaches_neither_the_model_nor_the_user(self):
-        base = self.decide(provider=self.provider(client=_Refusing()))
         answer = self.decide(provider=self.provider(mode="shadow"))
         self.assertEqual((answer.outcome, answer.autonomy_level, answer.provider),
                          ("allow", 3, "local"))
         self.assertIsNone(answer.injected_cognition["agent_message"])
-        self.assertNotIn("jev", " ".join(answer.injected_cognition["rule_matches"]))
-        self.assertNotEqual(base.injected_cognition["rule_matches"], ["jev"])
+        # The deterministic decision, as the local provider made it: one rule match naming
+        # where the level came from, and no line the judgment added.
+        self.assertEqual(answer.injected_cognition["rule_matches"], ["autonomy stance = 3"])
         rows = self.events()
         self.assertEqual([row["detail"]["status"] for row in rows], ["ok"])
         self.assertNotIn("git push --force", json.dumps(rows))
+
+    def test_a_shadow_row_carries_the_judgment_and_what_it_would_have_changed(self):
+        """A shadow answer nobody can compare against the decision measures nothing."""
+        self.decide(provider=self.provider(mode="shadow"))
+        detail = self.events()[0]["detail"]
+        self.assertEqual((detail["mode"], detail["judgment"], detail["severity"]),
+                         ("shadow", "confirm", "severe"))
+        self.assertEqual((detail["base_outcome"], detail["advised_outcome"]), ("allow", "ask"))
+        self.assertNotIn("git push --force", json.dumps(detail))
+
+    def test_a_row_for_a_call_with_no_usable_answer_names_no_judgment(self):
+        self.decide("malformed", provider=self.provider(mode="act"))
+        detail = self.events()[0]["detail"]
+        self.assertEqual(detail["status"], "error")
+        self.assertEqual((detail["judgment"], detail["severity"], detail["advised_outcome"]),
+                         (None, None, None))
 
     def test_advise_says_what_it_would_have_done_and_changes_no_outcome(self):
         answer = self.decide(provider=self.provider(mode="advise"))
@@ -260,14 +390,21 @@ class ModeTests(unittest.TestCase):
         answer = self.decide(provider=provider)
         self.assertEqual(answer.outcome, "allow")
         self.assertEqual(self.events(), [])
+        # A client this provider builds for itself is built live all the same, because the
+        # switch is answered per decision rather than at construction.
+        built = jev.JevProvider(base=self.base(), target=str(self.ledger),
+                                config=config(mode="act"))
+        self.assertTrue(built.client.live)
         sentinel.unlink()
-        # Read per decision, not at construction: removing it restores the mode in place.
+        # Removed, and the same provider judges again with no restart and no edit.
         self.assertEqual(provider.controls.mode_for("grade-bash"), "act")
+        provider.client = jev.ReplayClient.from_file(FIXTURE)
+        self.assertEqual(self.decide(provider=provider).outcome, "ask")
 
     def test_a_sentinel_elsewhere_is_honoured_when_a_configuration_names_one(self):
         elsewhere = self.root / "paused"
         provider = self.provider(client=_Refusing(), mode="act",
-                                 sentinel=str(elsewhere))
+                                 sentinel=str(elsewhere))  # absolute, honoured as given
         elsewhere.write_text("", encoding="utf-8")
         self.assertEqual(self.decide(provider=provider).outcome, "allow")
 
@@ -319,9 +456,14 @@ class ReportTests(unittest.TestCase):
             json.dumps(config(**block)), encoding="utf-8")
 
     def run_harness(self, *args, **env):
+        """`bin/harness` under this test's home. A `None` value drops the variable."""
         environment = without_harness_vars()
         environment.update({"HOME": str(self.home), "HARNESS_HOME": str(self.home)})
-        environment.update(env)
+        for name, value in env.items():
+            if value is None:
+                environment.pop(name, None)
+            else:
+                environment[name] = value
         done = subprocess.run([sys.executable, str(REPO / "bin" / "harness")] + list(args),
                               capture_output=True, text=True, cwd=str(self.home),
                               env=environment)
@@ -343,8 +485,11 @@ class ReportTests(unittest.TestCase):
         done = self.run_harness("doctor", TYPESAFE_API_KEY="not-a-real-key")
         self.assertIn("TYPESAFE_API_KEY is set", done.stdout)
         self.assertNotIn("not-a-real-key", done.stdout)
+        # The developer running the suite may have a key in the shell; the process that must
+        # report none drops both names itself rather than trusting what it inherited.
         self.assertIn("none of TYPESAFE_API_KEY, JEV_API_KEY is set",
-                      self.run_harness("doctor").stdout)
+                      self.run_harness("doctor", **dict((name, None)
+                                                        for name in controls.KEY_VARIABLES)).stdout)
 
     def test_doctor_says_nothing_reaches_the_network_when_nothing_selects_it(self):
         (self.home / ".config" / "agent-harness" / "config.json").write_text(
@@ -366,15 +511,18 @@ class ReportTests(unittest.TestCase):
                 ("governance.jev.modes.nope", "act", "unknown decision point"),
                 ("governance.jev.state_fields", '["transcript"]', "and nothing else"),
                 ("governance.jev.timeout", "30", "(0, 10]"),
-                ("governance.provider", "hosted", "not a provider")):
+                ("governance.jev.sentinel", "  ", "must be a path"),
+                ("governance.provider", "hosted", "must name one of")):
             with self.subTest(key=key):
                 done = self.run_harness("config", "set", key, value)
                 self.assertEqual(done.returncode, 1, done.stdout)
                 self.assertIn(message, done.stderr)
 
-    def test_a_set_value_round_trips_through_the_file_it_writes(self):
-        self.assertEqual(self.run_harness("config", "set", "governance.jev.mode",
-                                          "advise").returncode, 0)
+    def test_a_set_value_round_trips_and_is_never_echoed_on_the_way_in(self):
+        done = self.run_harness("config", "set", "governance.jev.mode", "advise")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("governance.jev.mode set", done.stdout)
+        self.assertNotIn("advise", done.stdout)
         self.assertEqual(self.run_harness("config", "get",
                                           "governance.jev.mode").stdout.strip(), "advise")
 

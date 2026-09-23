@@ -127,12 +127,19 @@ untouched, so an answer can be measured before it is trusted: nothing reaches th
 user. `advise` puts the judgment in `rule_matches`, says what `act` would have done, and changes
 no outcome. `act` lets a judgment turn an `allow` into an `ask`, and nothing else. Every mode
 defaults to `off`, so a configuration written before this existed makes no request; a mode, a
-point or a field the harness does not know fails at `harness config set`, not at the first call.
+point or a field the harness does not know fails at `harness config set`, not at the first call,
+and a point name this harness does not know reads `off` rather than the default. Each call
+writes one ledger row carrying the mode, the judgment label, the severity level, the
+deterministic outcome and the outcome acting on the judgment would have reached, so a `shadow`
+answer can be compared against the decision it did not change. Labels only: never the state.
 
 **Whether anything may go out at all.** `~/.local/state/agent-harness/jev-disabled` is the kill
 switch: while that file exists every mode reads `off`, with no configuration change and no
 restart, because the sentinel is read per decision rather than at construction.
-`governance.jev.sentinel` moves it. A live request also needs a key in the environment; without
+`governance.jev.sentinel` moves it, absolute or resolved against the state directory, never
+against the working directory. The kill switch is read per decision rather than at
+construction, so a session that was running when the file appeared stops calling, and starts
+again when it is removed, without a restart. A live request also needs a key in the environment; without
 one the call fails open to the deterministic answer like any other failure.
 
 **What may leave.** `governance.jev.state_fields` is an allowlist, empty by default, over
@@ -145,7 +152,11 @@ sent at all. Redaction recognises the shapes it knows; a credential that reads l
 prose still travels, which is why the allowlist is two fields and not a free vocabulary.
 
 `governance.jev.timeout` (2 seconds by default, inside the hook budget),
-`governance.jev.max_requests` and `governance.jev.max_tokens` bound the rest. `harness doctor`
+`governance.jev.max_requests` and `governance.jev.max_tokens` bound the rest, and they bound a
+session rather than a process: a hook is a new process per event, so the counters live in
+`~/.local/state/agent-harness/jev-spend.json` keyed by session id, under the lock, read before
+each check and added to as each request is charged. A spend file that cannot be read or written
+leaves the in-process count standing rather than failing a decision. `harness doctor`
 prints the mode per point, the allowlist, where the kill switch lives and whether a credential
 variable is set — by name, never its value.
 

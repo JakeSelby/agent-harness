@@ -24,7 +24,13 @@ All notable changes to this project are documented here. The format follows
   shapes is dropped whole rather than masked, and free text is withheld entirely when that
   pattern list cannot be loaded; redaction recognises the shapes it knows, which is why the
   allowlist is two fields rather than a free vocabulary. The request timeout defaults to two
-  seconds inside the hook budget, a request and token ceiling bound the rest, every failure path
+  seconds inside the hook budget, and a request and token ceiling bound the session rather than
+  the process: a hook is a new process per event, so the counters are kept in the state directory
+  keyed by session id under the existing lock, and a spend file that cannot be read or written
+  leaves the in-process count standing rather than failing a decision. Each call writes one
+  ledger row carrying the mode, the judgment label, the severity level, the deterministic outcome
+  and the outcome acting on it would have reached, so a `shadow` answer can be compared against
+  the decision it did not change; labels only, never the state. Every failure path
   still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
   the allowlist, where the kill switch lives and whether a credential variable is set — by name,
   never its value (#137).

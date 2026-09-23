@@ -39,7 +39,7 @@ from typing import Any, Dict, Optional
 
 from .. import decision
 from . import controls
-from .controls import Controls
+from .controls import Controls, SessionSpend
 
 # Everything in this block — the endpoint, the default model id, the token ceilings, the
 # response shape and the HTTP status mapping below — is taken from the vendor's documentation
@@ -334,6 +334,35 @@ class Budget:
                 "max_requests": self.max_requests, "max_tokens": self.max_tokens}
 
 
+class SharedBudget(Budget):
+    """A budget whose counters survive the process, because a hook is a process per event.
+
+    The ceilings are a session's, not a call's: the counters are re-read from the session's
+    spend file before every check and added to as every request is charged, so two hooks
+    answering in the same session cannot each spend the whole allowance. A spend file that
+    cannot be read or written leaves the in-memory count standing rather than failing the
+    decision — the same direction everything else here fails in.
+    """
+
+    def __init__(self, max_requests: Optional[int] = None, max_tokens: Optional[int] = None,
+                 spend: Optional[controls.SessionSpend] = None):
+        Budget.__init__(self, max_requests, max_tokens)
+        self.spend = spend if spend is not None else controls.SessionSpend()
+        self.requests, self.tokens = self.spend.read()
+
+    def check(self) -> None:
+        self.requests, self.tokens = self.spend.read()
+        Budget.check(self)
+
+    def charge(self, estimate: int) -> None:
+        Budget.charge(self, estimate)
+        self.spend.add(1, estimate)
+
+    def settle(self, usage: Dict[str, int], estimate: int) -> None:
+        Budget.settle(self, usage, estimate)
+        self.spend.add(0, usage["input_tokens"] + usage["output_tokens"] - estimate)
+
+
 # ------------------------------------------------------------------ answers
 
 
@@ -584,17 +613,20 @@ class JevProvider(decision.DecisionProvider):
                  model: str = DEFAULT_MODEL, budget: Optional[Budget] = None,
                  threshold: float = DEFAULT_THRESHOLD, pack: Optional[Dict[str, Any]] = None,
                  config: Optional[Dict[str, Any]] = None,
-                 controls: Optional[Controls] = None):
+                 controls: Optional[Controls] = None, session: Optional[str] = None):
         self.base = base if base is not None else decision.LocalProvider(
             root=root, policy_path=policy_path, variant=variant, target=target)
         self.controls = (controls if controls is not None
                          else Controls.from_config(config) if config is not None
                          else Controls.acting())
+        # `enabled`, not `live`: the kill switch is answered per decision, so a client built
+        # while the sentinel existed still works the moment the file is removed.
         self.client = client if client is not None else JevClient(
-            live=self.controls.live(), timeout=self.controls.timeout)
+            live=self.controls.enabled(), timeout=self.controls.timeout)
         self.model = model
-        self.budget = budget if budget is not None else Budget(self.controls.max_requests,
-                                                               self.controls.max_tokens)
+        self.budget = budget if budget is not None else SharedBudget(
+            self.controls.max_requests, self.controls.max_tokens,
+            spend=SessionSpend(session))
         self.threshold = threshold
         self.pack = require_decision_questions(
             pack if pack is not None else DECISION_PACK)
@@ -604,7 +636,8 @@ class JevProvider(decision.DecisionProvider):
         base = self.base.decide(action, counterparty, context)
         try:
             point = (context or {}).get("point") if isinstance(context, dict) else None
-            mode = self.controls.mode_for(point if point in controls.POINTS else None)
+            point = point if isinstance(point, str) else None
+            mode = self.controls.mode_for(point)
             if mode == "off":
                 return self._unchanged(base, "off", "no mode selects "
                                        + (point or "this decision point"))
@@ -616,7 +649,7 @@ class JevProvider(decision.DecisionProvider):
         result = ask(self.pack,
                      decision_state(action, counterparty, context, self.controls), self.client,
                      model=self.model, budget=self.budget, threshold=self.threshold)
-        self._log(action, counterparty, result)
+        self._log(action, counterparty, result, base, mode)
         if mode == "shadow":
             # Called, logged, and nothing more: a shadow answer reaches the ledger and neither
             # the model nor the user, which is what makes it measurable before it is trusted.
@@ -670,10 +703,27 @@ class JevProvider(decision.DecisionProvider):
     def learn(self, approval_stream):
         return self.base.learn(approval_stream)
 
-    def _log(self, action, counterparty, result):
+    def _log(self, action, counterparty, result, base=None, mode=None):
+        """One ledger row per call: what was asked, what came back, what it would have changed.
+
+        The judgment label, the severity level, the deterministic outcome and the outcome an
+        `act` mode would have reached are all on the row, because a `shadow` answer nobody can
+        compare against the decision it did not change measures nothing. Labels only: never the
+        state, never an answer's prose.
+        """
+        judgment = severity = advised = None
+        if result["status"] == "ok":
+            judgment = result["answers"][JUDGMENT]["choice"]
+            severity = result["answers"][SEVERITY]["level"]
+            advised = base.outcome if base is not None else None
+            if judgment == "confirm" and advised == "allow":
+                advised = "ask"
         decision.append_event("jev", {
             "action_class": action.action_class, "counterparty": counterparty,
-            "status": result["status"], "error": result["error"],
+            "status": result["status"], "error": result["error"], "mode": mode,
             "requested_model": result["requested_model"], "model": result["model"],
             "pack_hash": result["pack_hash"], "request_hash": result["request_hash"],
-            "usage": result["usage"], "latency_ms": result["latency_ms"]}, self.target)
+            "usage": result["usage"], "latency_ms": result["latency_ms"],
+            "judgment": judgment, "severity": severity,
+            "base_outcome": base.outcome if base is not None else None,
+            "advised_outcome": advised}, self.target)
