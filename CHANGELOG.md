@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `scripts/native_acceptance.py` drives the `permission-controls` case, which was qualified by
+  hand every round: it syncs the manual, unacknowledged bypass, acknowledged bypass and auto
+  postures, reads the permission mode each one wrote into the client's own settings, and asks for
+  the same one-command file write under each. The acknowledged bypass is judged by
+  `bypass_verdict`, landed uncalled in 0.12.0, so the three outcomes stay apart: a turn the policy
+  blocked, a turn the model declined on its own judgement, and a turn that completed. A decline is
+  `unverified` rather than a failure, which was the defect the driver had to be written around.
+  Three real client results recorded under those modes are the tests' fixtures, so the suite still
+  launches no client, and `docs/releasing.md` records the comparison against a hand run that the
+  first live round owes before this verdict is trusted (#404).
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
   the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
   behind each state. It is derived from a `tier_restriction` entry in

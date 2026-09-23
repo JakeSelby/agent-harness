@@ -104,7 +104,13 @@ For every target listed in the catalog, verify every `required_cases` entry nati
 1. Install, restart, and inspect effective instructions, discovered skills and registered roles.
 2. Switch a representative communication and delegation stance; observe both instruction text
    and agent/tool behavior. Repeat with a custom dimension, project override and invalid choice.
-3. Exercise manual, auto and acknowledged bypass postures against native restrictions.
+3. Exercise manual, auto and acknowledged bypass postures against native restrictions. Read each
+   posture twice: the permission mode the sync wrote into the client's own settings, and what the
+   client then did with one file write. A `bypass` posture must be refused by the sync until it is
+   acknowledged, and the refused sync must leave the mode where it was. Judge the acknowledged
+   bypass from the turn's own permission denials and mode, never from the written file alone: a
+   turn the model declined on its own judgement observed no permission control and is unverified,
+   not a block.
 4. Check hook trust, composition, denials and multi-file patches; attempt writes from read-only
    roles and outside the planner artifact scope. Configuration defaults are insufficient proof.
 5. Change staged and untracked files after a green gate; check reruns and unverified failures.

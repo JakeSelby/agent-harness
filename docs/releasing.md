@@ -23,6 +23,10 @@ change. What the release must carry before it can be tagged is the next section.
 1. Complete each native acceptance case in [compatibility](compatibility.md). Keep exact runtime,
    client and platform versions, source commit, observations and evidence digests. Resolve failed
    controls or record a deliberately narrower support contract before calling a client qualified.
+   `permission-controls` gained a driver after 0.12.0 and has not run live yet: on the first round
+   that runs it, qualify the target by hand as well and compare the two results before the
+   automated verdict is trusted. Record that comparison with the round's observations, and replace
+   the recorded decline in `tests/fixtures/permission-controls/` if the round produces a real one.
 2. Merge reviewed changes through the repository's PR gate. Keep stacked PR bases current without
    overwriting other contributors' history. Preserve personal configuration and the live checkout.
 3. Set `VERSION`, `compatibility/catalog.json` and `compatibility/migration.json` to the same
