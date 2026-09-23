@@ -83,6 +83,23 @@ and an unknown grade is judged as 1. A policy file that cannot be honoured as wr
 naming the file, never a silent "no policy". Both providers write to the existing
 `decisions.jsonl` ledger and neither reaches the network.
 
+A third provider, `jev`, lives in `lib/harness_core/decisions/jev.py` and answers over the
+network. It asks a validated question pack — a `choice` judgment and a `score` severity — about
+the action class, the counterparty, the command grade and at most a command string and a summary,
+and it carries the deterministic `local` provider underneath. The service has no abstention
+outcome, so every `choice` question must offer an explicit `unknown` option and a pack without one
+is refused before anything is sent; `unknown` and an answer below the confidence threshold both
+mean "use the deterministic answer". A judgment may turn an `allow` into an `ask` and may never
+widen a decision or produce a `deny`. Every other outcome fails open to the deterministic
+decision: no key, a timeout, an exhausted budget, a malformed response, an unexpected exception.
+Each call writes one `event` row carrying the status, the requested and returned model ids, the
+pack and request hashes, the usage and the latency, and never the state. Answers are not
+deterministic across identical requests, so nothing promises a repeated request answers the same
+way — only that the same request hashes the same. Credentials come from `TYPESAFE_API_KEY` or
+`JEV_API_KEY` in the environment; no key file is ever read. The client is not live unless it is
+constructed with `live=True`, so selecting this provider today calls nothing: the opt-in
+configuration, the per-decision-point modes and the sentinel that disables every call are #137.
+
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.
 Nothing consults a provider yet: command grading still answers the permission question on its own,

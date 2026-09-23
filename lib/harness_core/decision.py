@@ -14,6 +14,8 @@ repository and branch matches whatever asks the question.
 
 Two providers ship here. `none` is the default and governs nothing: every action is allowed at
 autonomy level 3. `local` reads a per-repository policy file and resolves a level from it.
+A provider that answers over a transport lives in `harness_core.decisions` and is imported only
+when a configuration names it; `jev` is the one that ships.
 Nothing in this module reaches the network, and nothing in this module is consulted by a hook
 yet: `grade-bash.py` still answers the permission question on its own. The binding is a later
 story, and until it lands this seam changes no behaviour at all.
@@ -487,6 +489,26 @@ class LocalProvider(DecisionProvider):
 
 
 PROVIDERS = {NullProvider.name: NullProvider, LocalProvider.name: LocalProvider}
+# A provider that answers over a transport lives in `harness_core.decisions` and imports this
+# module, so it is named here and loaded only when a configuration asks for it.
+TRANSPORT_PROVIDERS = {"jev": ("harness_core.decisions.jev", "JevProvider")}
+
+
+def provider_class(name: str):
+    """The class a provider name selects, importing a transport provider on demand."""
+    if name in PROVIDERS:
+        return PROVIDERS[name]
+    if name in TRANSPORT_PROVIDERS:
+        import importlib
+
+        module_name, attribute = TRANSPORT_PROVIDERS[name]
+        try:
+            return getattr(importlib.import_module(module_name), attribute)
+        except Exception as exc:
+            raise PolicyError("governance.provider " + repr(name) + " cannot be loaded: "
+                              + str(exc))
+    raise PolicyError("governance.provider " + repr(name) + " is not a provider; known "
+                      "providers are " + ", ".join(sorted(set(PROVIDERS) | set(TRANSPORT_PROVIDERS))))
 
 
 def select_provider(config: Optional[Dict[str, Any]] = None, **kwargs) -> DecisionProvider:
@@ -498,10 +520,7 @@ def select_provider(config: Optional[Dict[str, Any]] = None, **kwargs) -> Decisi
     block = (config or {}).get("governance")
     name = block.get("provider") if isinstance(block, dict) else None
     name = name if isinstance(name, str) and name.strip() else NullProvider.name
-    if name not in PROVIDERS:
-        raise PolicyError("governance.provider " + repr(name) + " is not a provider; "
-                          "known providers are " + ", ".join(sorted(PROVIDERS)))
-    cls = PROVIDERS[name]
+    cls = provider_class(name)
     if cls is NullProvider:
         kwargs.pop("root", None)
         kwargs.pop("policy_path", None)

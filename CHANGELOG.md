@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
+  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
+  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
+  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
+  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
+  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
+  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
+  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
+  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
+  may never widen a decision, and every path with no usable answer — no key, a timeout, an
+  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
+  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
+  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
+  to the decision ledger, and never the state. Answers are not deterministic across identical
+  requests, so nothing here promises otherwise. The client is inert unless a caller constructs it
+  with `live=True`; the opt-in configuration, per-decision-point modes and the sentinel file are
+  #137 (#136).
+
 ### Fixed
 
 - The repository's own copy states the figures its code holds. The landing copy said nineteen
