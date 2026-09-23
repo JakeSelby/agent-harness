@@ -1,0 +1,10 @@
+{
+  "is_error": false,
+  "num_turns": 2,
+  "permission_denials": [],
+  "result": "DONE",
+  "session_id": "bypass-completed-session",
+  "stop_reason": "end_turn",
+  "subtype": "success",
+  "type": "result"
+}
