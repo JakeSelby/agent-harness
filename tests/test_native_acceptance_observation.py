@@ -79,7 +79,9 @@ class RoleConfinementTests(unittest.TestCase):
         return ""
 
     def test_a_completed_isolated_worker_record_passes(self):
-        verdict = MODULE.case_role_confinement(self.home)
+        # The write probes after this read are driven in test_native_acceptance_role_writes.py.
+        with patch.object(MODULE, "role_write_attempts"):
+            verdict = MODULE.case_role_confinement(self.home)
         self.assertIn("mode isolated-cli and status completed", verdict)
         self.assertIn("held the workspace line", verdict)
 
