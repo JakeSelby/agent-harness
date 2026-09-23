@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Every one of the eleven required acceptance cases now has a driver in
+  `scripts/native_acceptance.py`, so `--dry-plan` no longer says of any case that it is not
+  automated yet. Ten of them were prose in an evidence record that a worker re-implemented by
+  hand each round, which is most of what a round's orchestrator tokens were spent on. Each new
+  case emits the observation string a reviewer assesses, and each returns `unverified` rather
+  than a pass when the behaviour it is about was not observed: a runtime that writes no subagent
+  record is a named gap, a model that declined a turn is not a control, a BMad framework checkout
+  that was not provisioned is a reason and never a skip. `gate-invalidation` delivers its Stop
+  events to the runtime's own coordinator rather than paying for eleven client turns, and says so
+  in its observation. The provisioning and driver that used to live only in each round's scratch
+  copy are committed as `scripts/qualification_provision.py` and `scripts/qualification_round.py`;
+  the clone comes from this repository's own object store, and the pinned BMad installer is the
+  only step that reaches the network. The runner also gained a Codex configuration home — its own
+  `CODEX_HOME`, the `codex exec --json` invocation and the rollout layout — derived from
+  `adapters/codex/worker.py`, `policy/hooks/usage-log.py` and the documentation. No Codex round
+  has been driven through it, so every Codex verdict is reported `unverified` with its
+  observation kept until an operator compares one against a hand run and passes
+  `--home-confirmed`, which is the discipline `permission-controls` already owes (#336).
 - A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
   the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
   this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`

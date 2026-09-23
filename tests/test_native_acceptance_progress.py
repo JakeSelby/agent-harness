@@ -18,7 +18,7 @@ from test_native_acceptance import CLIENT, MODULE
 CASES = ["cost-posture", "installation", "migration-uninstall"]
 
 
-def passing(client, name, model, keep):
+def passing(client, name, model, keep, confirmed=False):
     return {"case": name, "result": "passed", "observation": "A native session did " + name + ".",
             "seconds": 0.1, "sessions": 1}
 
@@ -42,7 +42,7 @@ class ProgressTests(unittest.TestCase):
 
     def killed_after(self, count):
         """A runner that dies on the case after `count` finished ones, as a kill would."""
-        def runner(client, name, model, keep):
+        def runner(client, name, model, keep, confirmed=False):
             if len(self.lines() if self.progress.exists() else []) >= count:
                 raise KeyboardInterrupt("the round was killed")
             return passing(client, name, model, keep)
@@ -77,7 +77,7 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual([item["case"] for item in self.lines()], CASES)
 
     def test_a_rerun_case_supersedes_its_earlier_result(self):
-        def failing(client, name, model, keep):
+        def failing(client, name, model, keep, confirmed=False):
             return {"case": name, "result": "failed", "observation": "the spawn was not routed",
                     "seconds": 0.1, "sessions": 1}
 
