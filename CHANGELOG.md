@@ -481,6 +481,15 @@ All notable changes to this project are documented here. The format follows
   corpus current. The build workflow treats a work item's story file as its spec and writes the design back
   into it. (#621)
 
+- The field scan credits claude-md-doctor and RuleReceipt, which now bind a check to each rule and report from Claude Code transcripts whether it was followed, and narrows the measured-rules uniqueness claim to what they do not do: the lint that refuses an unmeasured rule, detectors scored against a labelled corpus with a precision floor in CI, per-variant grouping, and Codex as well as Claude Code. The research run for the scan carries both sources as a dated amendment. (#710)
+
+- Step 8 of the qualification procedure now says what a headless client can show about a session
+  started before the band workers were installed: its session record never widens to them and its
+  spawn still succeeds. Such a session is continued by resuming it, and the resumed process loads
+  the workers from disk and announces them, so routing its spawn to an announced worker is correct;
+  a reroute to a worker that neither its record nor that announcement named is still a defect. The
+  old sentence asked for a session that was never rerouted, which no headless turn can show. (#733)
+
 ### Fixed
 
 - The stop gate releases a turn after eight consecutive red blocks in each session, even when
@@ -708,6 +717,48 @@ All notable changes to this project are documented here. The format follows
   runner's default (`haiku`) while the records named the routed model. An operator's `--model`
   still wins and the routing says so with `model_source: operator` and the routed model beside it.
   Every evidence record and per-case row now carries `model_run`, the model passed to the client. (#721)
+
+- A hook you add beside the harness's own in `~/.claude/settings.json` or Codex's `hooks.json` is no longer reported by `harness sync` as a changed owned field, is not drift for `harness doctor`, and stays in place at `harness uninstall`, which removes only the harness's entries. Before, one such hook froze the harness's entries for that event. (#725)
+
+- A native evidence record now pairs every observation with the case it belongs to. The record is
+  written with sorted keys, which reordered `cases` alphabetically and left `observations` in the
+  order the cases ran, so pairing by position put most observations against the wrong case. Each
+  case observation now opens with its case name, the list follows the record's case order with one
+  entry per case, and a record rebuilt from an older durable log with `--from-progress` gains the
+  same pairing. (#728)
+
+- The `role-confinement` native case now has roles attempt the writes step 4 of the qualification
+  procedure names. An isolated read-only `gatherer` is told to create a file in its workspace, and
+  the planner, run with a valid `--artifact`, is told to write inside the workspace and above it.
+  What stopped each write is read from the worker run's own event stream, its init event's tool set
+  or the refused call, and a file that lands fails the case; a role that held a write tool and never
+  used it is unverified. The `--artifact` path refusal it read before is kept, reported as the
+  command-line check it is. (#729)
+
+- The `hook-composition` native case now reads step 4 from turns rather than from the merged settings
+  table. One headless turn writes two files with the client's Write tool in an untrusted repository
+  that has a `## Gate` block, and the case reads the user-owned hook's own log line for each file
+  and the stop gate's logged `untrusted` verdict for that session. The `grade-bash` deny under an
+  acknowledged bypass is read from the deny turn's permission denials and attributed to the hook by
+  its decision-log row. A turn that never uses the file tool, or writes only one file, is unverified. (#730)
+
+- The `stance-switch` native case now switches a communication stance beside the delegation one:
+  it cycles `voice` from `scannable` to `answer-card`, reads the resolved voice text and output style,
+  and asks the same comparison prompt under each, passing only when the reply carries a table under
+  `scannable` and none under `answer-card`. The `custom-stance` case now also applies a project
+  override in a disposable repository and reads that a turn inside it follows the override, a turn
+  outside it follows the global selection, and the global link does not move. An `off`
+  turn that never attempts the spawn is now `unverified` rather than failed. (#731)
+
+- The `spawn-confinement` native case now observes all of step 9 of the qualification procedure,
+  and step 9 now states the claim it can prove. A review layer's spawn carrying the framework's own
+  spawn text and naming no role must be refused, and the refusal, tied to its decision-log row by
+  the brief's fingerprint, must name the framework, the layer and `harness role run <role>`.
+  Recognition is lexical, so a brief the model rewrites in its own words is run and recorded as the
+  claim's observed limit rather than passed or failed (#739). The same layer then runs through
+  `harness role run`, and a run that leaves no isolated worker state or returns no findings fails
+  the case. Two ordinary spawns, one whose brief mentions review, a diff and findings in passing and
+  one that edits a file under the framework's input roots, must still run unrefused. (#732)
 
 ## [0.12.0] — 2026-09-22
 
