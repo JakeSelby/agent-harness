@@ -57,7 +57,7 @@ Sync keeps a journal of what it changed and refuses to overwrite what it does no
 - [Reversible](docs/settings-ownership.md): Sync has a dry run, diff shows drift, an ownership journal records prior and applied values, and uninstall restores what it adopted.
 - [Shared primitives](docs/sync-model.md): Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.
 - [Same policy on both](docs/runtime-controls.md): A Claude Code spawn and a Codex spawn resolve to the same delegation policy.
-- [Capability classes](docs/role-workers.md): frontier, strong, standard, light. Each adapter maps them to its own models.
+- [Declared integrations](docs/bmad.md): A planning framework declares itself in one descriptor. harness integration check|apply installs its overrides, and the spawn hook confines its review layers.
 - [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.
 - [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents do not step on your checkout or on each other.
 
@@ -66,7 +66,7 @@ Sync keeps a journal of what it changed and refuses to overwrite what it does no
 A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things cost and let it pace itself.
 
 - [Cost postures](primitives/stances/cost): Pick frugal, balanced or max, or write your own. One table sets model, effort and a soft budget per role.
-- [Model tiering](primitives/stances/delegation): Roles ask for a capability class, not a model name. Gathering files doesn't run on the model that reviews your code.
+- [Model tiering](primitives/stances/delegation): Roles ask for a capability class, one of frontier, strong, standard and light, not a model name. Gathering files doesn't run on the model that reviews your code.
 - [Band workers](claude/agents/worker-a.md): A spawn that names no role gets a right-sized worker instead of your most expensive model.
 - [A budget in every brief](claude/hooks/brief-guard.py): Each subagent is told its expected tokens and tool calls. Finish if you're close, otherwise return what you have.
 - [Live usage feed](docs/usage.md): The orchestrator sees what each turn and each subagent cost, and hears once when its context passes the size your stance sets. A decision log records what a hook decided.
@@ -91,6 +91,7 @@ Reasonable developers disagree about testing, autonomy and how much to delegate.
 - [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
 - [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
 - [Autonomy stances](primitives/stances/autonomy): Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.
+- [Judgment stays local by default](docs/runtime-controls.md): An external judgment provider is off at every decision point until you turn it on, sends only the fields you list, and one file switches every call off.
 
 ### On the way
 
@@ -329,7 +330,8 @@ and the [sync model](docs/sync-model.md).
 - [Author a custom stance, skill, role or workflow](docs/primitive-authoring.md)
 - [Runtime controls](docs/runtime-controls.md), [sandboxing](docs/sandboxing.md),
   [workspaces](docs/workspaces.md) and [always-on Remote Control servers](docs/remote-control.md)
-- [BMad integration and bidirectional task continuation](docs/bmad.md)
+- [Bidirectional task continuation](docs/task-continuation.md) and the
+  [BMad integration](docs/bmad.md)
 - [Contributing](CONTRIBUTING.md) and the [public reference](https://agent-harness.jakeselby.com)
 
 Agent Harness uses the open-source [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD)

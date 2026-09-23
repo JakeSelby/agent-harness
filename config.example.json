@@ -34,7 +34,12 @@
     "export": "off"
   },
   "governance": {
-    "provider": "none"
+    "provider": "none",
+    "jev": {
+      "mode": "off",
+      "modes": {},
+      "state_fields": []
+    }
   },
   "primitive_roots": [],
   "remote_control": {

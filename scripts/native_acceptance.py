@@ -31,7 +31,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
-from harness_core import compatibility  # noqa: E402  (after ROOT, which locates the package)
+from harness_core import compatibility, frameworks  # noqa: E402  (after ROOT, which locates the package)
 
 VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
@@ -482,6 +482,89 @@ def case_cost_posture(home):
             % (len(rewritten), len(after), feed[-1]))
 
 
+def descriptor_recipe(descriptor):
+    """A fixture recipe: enough of a declared integration's own routed text to be recognised.
+
+    The case is generic on purpose — it reads whatever `policy/integrations/` declares — so a
+    release qualifies framework layering without running any framework's workflow.
+    """
+    spawn = descriptor["spawns"][0]
+    phrases = spawn.get("phrases", [])[: max(2, int(descriptor.get("corroboration", 2)))]
+    if len(phrases) < 2:
+        raise Unverified("the descriptor declares too few phrases to build a fixture recipe")
+    return (spawn["id"], spawn["role"], list(descriptor.get("input_roots", [])),
+            "You are reviewing the change in the assigned worktree. " + " ".join(phrases)
+            + " Return what you find as text in your final message.")
+
+
+def offered_roots(reason):
+    """The read roots a refusal offers, as a set.
+
+    Parsed rather than searched: one declared root is often a prefix of another, so a refusal
+    that offered only the longer one would still satisfy a containment check for the shorter.
+    """
+    return set(item.strip() for group in re.findall(r"read roots: (.*?)(?:\. |$)", reason)
+               for item in group.split(",") if item.strip())
+
+
+def hook_answer(home, prompt, subagent_type=None, session="framework-routing"):
+    """One real PreToolUse spawn event through the client's registered hook. No model turn."""
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": session,
+               "cwd": str(home.project),
+               "tool_input": {"prompt": prompt, "subagent_type": subagent_type}}
+    result = run([sys.executable, str(ROOT / "adapters" / "claude-code" / "hook.py")],
+                 env=home.env({"HARNESS_STANCE_DELEGATION": "tiered"}),
+                 input=json.dumps(payload))
+    if result.returncode:
+        raise Unverified("the spawn hook did not run: " + redact(result.stderr[-200:]))
+    try:
+        data = json.loads(result.stdout or "{}")
+    except ValueError:
+        raise Unverified("the spawn hook returned no JSON: " + redact(result.stdout[-200:]))
+    answer = data.get("hookSpecificOutput", {})
+    return answer.get("permissionDecision", ""), answer.get("permissionDecisionReason", "")
+
+
+def case_framework_spawn_routing(home):
+    # Validated first, and invalid ones skipped, because the spawn hook ignores a descriptor that
+    # does not validate: a case built on one would assert against a rule that is not in force.
+    usable = []
+    for path in sorted((ROOT / "policy" / "integrations").glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if data.get("spawns") and not frameworks.problems(data):
+            usable.append(data)
+    if not usable:
+        raise Unverified("no valid integration descriptor declares a spawn to build a recipe from")
+    descriptor = usable[0]
+    layer, role, roots, recipe = descriptor_recipe(descriptor)
+    home.seed(stances={"cost": "balanced", "delegation": "tiered"})
+    home.harness("sync")
+    for named_as in (None, "general-purpose", "worker-a"):
+        decision, why = hook_answer(home, recipe, named_as, "routing-" + str(named_as))
+        if decision != "deny":
+            raise AssertionError("a recipe layer spawned as %s was allowed, not confined"
+                                 % redact(named_as))
+        if ("harness role run " + role) not in why:
+            raise AssertionError("the refusal did not route %s to the constrained role: %s"
+                                 % (redact(named_as), redact(why)))
+        offered = offered_roots(why)
+        if offered != set(roots):
+            raise AssertionError("the refusal offered %s as read roots, not the descriptor's "
+                                 "declared input roots %s"
+                                 % (redact(sorted(offered)), redact(sorted(roots))))
+    posture = case_cost_posture(home)
+    return ("A fixture recipe built from the %s %s `%s` descriptor was refused at the spawn hook "
+            "whether it was spawned unnamed, as a generic subagent or as a band worker, each "
+            "refusal routed it to `harness role run %s` and offered exactly its declared input "
+            "roots (%s) as the isolated worker's read roots and no others. No framework workflow "
+            "was run. Beside that: %s"
+            % (descriptor["name"], descriptor["version"]["pinned"], layer, role,
+               ", ".join(roots), posture))
+
+
 MANUAL_MODE = "default"
 AUTO_MODE = "auto"
 ACK_KEY = "permissions_bypass_acknowledged"
@@ -630,8 +713,10 @@ def case_permission_controls(home):
                     mode_clause(turn_mode(home, auto_data))))
     return "; ".join(notes) + "."
 
-
 CASES = {
+    "framework-spawn-routing": (case_framework_spawn_routing,
+                               "drive the spawn hook with a fixture recipe built from a declared "
+                               "integration descriptor, then run the cost-posture turn"),
     "permission-controls": (case_permission_controls,
                             "sync the manual, unacknowledged bypass, acknowledged bypass and auto "
                             "postures, and read each one's synced permission mode and what a "

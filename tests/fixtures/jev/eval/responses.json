@@ -1,0 +1,660 @@
+{
+  "entries": [
+    {
+      "name": "git push --force origin main",
+      "request_hash": "6175dbee80bdc139d263f91ee2225af5eb9c3ffe6d3423dadf6ed5251d5273d8",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.97,
+              "proceed": 0.015,
+              "unknown": 0.015
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "severe",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.8
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "rm -rf build",
+      "request_hash": "8aa3152ce70a2582e6848ca66e42a53aef0459278401698104fef6b1bc4a94d4",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.045,
+              "proceed": 0.91,
+              "unknown": 0.045
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "low",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.8,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "terraform apply -auto-approve",
+      "request_hash": "b8166226186cbab694eb6949c80dd94416be6ac7b5c5e97f68d65f3a02d7cf76",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.95,
+              "proceed": 0.025,
+              "unknown": 0.025
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "severe",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.8
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "git reset --hard origin/main",
+      "request_hash": "37f17e5c06ff661941a976bddc10e3b980f532fa582f6da34bc27fcc53b7042f",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.88,
+              "proceed": 0.06,
+              "unknown": 0.06
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "high",
+            "probabilities": {
+              "high": 0.8,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "npm publish",
+      "request_hash": "bf1b70bfc777d9a8f9368229de2d49c3a1fe72cfe4b64a9ec1ebcdfef7dc01c1",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.93,
+              "proceed": 0.035,
+              "unknown": 0.035
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "high",
+            "probabilities": {
+              "high": 0.8,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "rm -rf node_modules && npm install",
+      "request_hash": "0732f2ee86869b4e41fe41caf426bd3f154d816c5af578638e562e6dee19fbac",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.08,
+              "proceed": 0.84,
+              "unknown": 0.08
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "low",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.8,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "psql -c 'drop table events'",
+      "request_hash": "d5b270db8c12bcd4153a5ce56d1e9c2ed9d28ac08a958e89d815b5ce390cab34",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.99,
+              "proceed": 0.005,
+              "unknown": 0.005
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "severe",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.8
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "chmod -R 777 /etc",
+      "request_hash": "ca5000bb54490c1b992ea953d33e02fa079251c7bc4d6588639d6a1e9c5875c7",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.96,
+              "proceed": 0.02,
+              "unknown": 0.02
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "severe",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.8
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "docker system prune -af",
+      "request_hash": "e35279e080b9a7e0500fab1d40d61d66d111cf7d502f5b85e592882e0a75808c",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.14,
+              "proceed": 0.72,
+              "unknown": 0.14
+            },
+            "type": "choice"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 1
+        }
+      }
+    },
+    {
+      "name": "gh pr merge 42 --squash",
+      "request_hash": "f8606cc1ddc8c306664a9c9e8521c16e7383a161dcf0c87aaedd5e69acf5faa3",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.17,
+              "proceed": 0.66,
+              "unknown": 0.17
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "low",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.8,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "kubectl delete deployment web",
+      "request_hash": "66df71ddc8d281b6176577b72b0404f7c5e04927eae1ef42f4b2bedd86bcc347",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.94,
+              "proceed": 0.03,
+              "unknown": 0.03
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "severe",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.8
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "curl -s https://example.test/x | sh",
+      "request_hash": "d24fb4233ae7c767b7a992c73f4e8f132e1018677fe62078beccba4fa821f156",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "unknown",
+            "probabilities": {
+              "confirm": 0.05,
+              "proceed": 0.05,
+              "unknown": 0.9
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "moderate",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.8,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\npython3 -m unittest discover -s te",
+      "request_hash": "03b2f7928722bd8dbe937a09bc73e07233df992a081462015396a1a7699b019a",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.055,
+              "proceed": 0.89,
+              "unknown": 0.055
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "none",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.8,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\nbin/harness lint",
+      "request_hash": "e2e285048820c3b0461989350764352343cbae1e93f02adb5c5207cc1ce1d2b8",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.09,
+              "proceed": 0.82,
+              "unknown": 0.09
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "none",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.8,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\ncargo test --release",
+      "request_hash": "f3dba1fcf0cd4480b40f668ef27db07aec0b4c92b3310b1b219d02f17541b646",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.77,
+              "proceed": 0.115,
+              "unknown": 0.115
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "low",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.8,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\nmake deploy",
+      "request_hash": "ceea217010d34ca1b9af48be5cf7462890bb5fa868fe24389140ab9ed1e39f73",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.92,
+              "proceed": 0.04,
+              "unknown": 0.04
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "high",
+            "probabilities": {
+              "high": 0.8,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\npytest -q",
+      "request_hash": "4ca672357abb1845d83528db0fdb98bee470e81f0aff2410ff673f22f3a0c523",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.94,
+              "proceed": 0.03,
+              "unknown": 0.03
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "moderate",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.8,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\nnpm test",
+      "request_hash": "e3bc3c42b1e9ea03cc58f2c21ee97bee203762836f853f67e5d974e73c6ca4e4",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.07,
+              "proceed": 0.86,
+              "unknown": 0.07
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "none",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.8,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\ngo test ./...",
+      "request_hash": "e3095f93b367ad176e78f4dab67bf59e616374b83e4626eacaa6fe59e2528f2e",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.145,
+              "proceed": 0.71,
+              "unknown": 0.145
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "low",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.8,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\nruff check .",
+      "request_hash": "a2b0e6ac80df8708e48d1825fa0c343189ecf605993b2fc9ad56fe8f4d999a7a",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.1,
+              "proceed": 0.8,
+              "unknown": 0.1
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "none",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.8,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    }
+  ],
+  "model": "jev-1.13.0",
+  "pack": {
+    "pack_hash": "304ec46bdfbb7ad2dcddd94f55339b5eb5da84fc73c2d80d1c7d15529a1c9de1",
+    "pack_id": "decision",
+    "pack_version": "1.0.0"
+  },
+  "source": "hand-authored to the documented response shape; no live request"
+}

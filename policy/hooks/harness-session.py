@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """SessionStart hook: report harness drift, per-session HARNESS_* overrides, and the handoff,
-and check BMad integration without modifying repository configuration.
+and check declared framework integrations without modifying repository configuration.
 
 It also records, silently, which agent definitions this session's registry holds, because the
 tool loads that registry once at process start: `posture.sessions_dir` says why, and the spawn
@@ -131,23 +131,40 @@ def handoff_lines(cwd):
     return lines
 
 
-def bmad_lines(repo, cwd):
+def integrations_present(repo, root):
+    """`(id, name)` for every declared integration whose descriptor says it is installed here.
+
+    The probe is the descriptor's `install.detect` path, so no framework directory is named in
+    this hook; `lib/harness_core/frameworks.py` says why a framework declares itself.
+    """
+    found = []
+    for path in sorted((Path(repo) / "policy" / "integrations").glob("*.json")):
+        data = load(path) or {}
+        detect = (data.get("install") or {}).get("detect")
+        if detect and (Path(root) / detect).is_dir():
+            found.append((data.get("id", path.stem), data.get("name", path.stem)))
+    return found
+
+
+def integration_lines(repo, cwd):
     """Report integration drift; installation requires an explicit CLI operation."""
     root = git(cwd, "rev-parse", "--show-toplevel").strip()
-    if not root or not (Path(root) / "_bmad").is_dir():
-        return []
     tool = Path(repo) / "bin" / "harness"
-    if not tool.exists():
+    if not root or not tool.exists():
         return []
     env = {k: v for k, v in os.environ.items() if k != "HARNESS_QUIET"}
-    try:
-        out = subprocess.run([sys.executable, str(tool), "bmad", "check", root], env=env,
-                             capture_output=True, text=True, timeout=remaining(2))
-    except Exception:
-        return []
-    notable = [ln.strip() for ln in (out.stdout or "").splitlines()
-               if "not installed (harness" in ln or "differs" in ln or "drift:" in ln]
-    return ["BMad integration check: " + "; ".join(notable)] if notable else []
+    lines = []
+    for ident, name in integrations_present(repo, root):
+        try:
+            out = subprocess.run([sys.executable, str(tool), "integration", "check", ident, root],
+                                 env=env, capture_output=True, text=True, timeout=remaining(2))
+        except Exception:
+            continue
+        notable = [ln.strip() for ln in (out.stdout or "").splitlines()
+                   if "not installed (harness" in ln or "differs" in ln or "drift:" in ln]
+        if notable:
+            lines.append(name + " integration check: " + "; ".join(notable))
+    return lines
 
 
 def record_session(data):
@@ -244,7 +261,7 @@ def main():
         pass
     if manifest and manifest.get("repo"):
         try:
-            lines.extend(bmad_lines(manifest["repo"], cwd))
+            lines.extend(integration_lines(manifest["repo"], cwd))
         except Exception:
             pass
     if not lines:

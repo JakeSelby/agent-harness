@@ -1,6 +1,6 @@
 ---
 name: sandbox
-description: Run an autonomous or long-running agent loop with the filesystem and network fenced: the built-in sandbox with network off, or a container with the worktree mounted. Use before any unattended loop, before `execute` autonomy on an unfamiliar repo, and whenever a task pulls untrusted input.
+description: Fence an autonomous or long-running agent loop: the built-in sandbox with network off, or a container with the worktree mounted. Use before any unattended loop, before `execute` autonomy on an unfamiliar repo, and whenever a task pulls untrusted input.
 ---
 
 # Fence the loop
