@@ -543,7 +543,7 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-D004 [#417](https://github.com/JakeSelby/agent-harness/issues/417): Decide whether repeated agent pairs get an amortized return schema, and whether fan-outs get a shared workspace
 - AH-C030 [#418](https://github.com/JakeSelby/agent-harness/issues/418): Reserve BMad IDs for the traceability-gap issues
 
-### Issues #421 onward (30)
+### Issues #421 onward (31)
 
 - AH-C032 [#422](https://github.com/JakeSelby/agent-harness/issues/422): Reserve BMad IDs for the traceability close-out issues
 - AH-C033 [#424](https://github.com/JakeSelby/agent-harness/issues/424): Reserve BMad IDs for the comms-gap issues filed into v0.12.0
@@ -575,3 +575,4 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-C051 [#625](https://github.com/JakeSelby/agent-harness/issues/625): docs(changelog): restore five Unreleased entries the #598 merge dropped
 - AH-B066 [#649](https://github.com/JakeSelby/agent-harness/issues/649): Replay counts the CLI's synced skill packs as sync leftovers and stops after the first tag
 - AH-S218 [#672](https://github.com/JakeSelby/agent-harness/issues/672): Pass CLAUDE_CODE_OAUTH_TOKEN into the disposable home so a subscription can run a Claude Code round
+- AH-C064 [#700](https://github.com/JakeSelby/agent-harness/issues/700): 0.13.0 requires only the two Claude Code CLI targets; Codex CLI defers to 0.14.0 per FR-12
