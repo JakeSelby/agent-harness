@@ -54,6 +54,7 @@ from harness_core import reconcile, lifecycle, tasks, compatibility, workers, in
 from harness_core import frameworks
 from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
+from harness_core import changelog as changelog_fragments
 from harness_core import decision as decisions_provider
 # The opt-in block for a provider that leaves the machine. Importing the controls does not
 # import the provider: nothing that reaches the network is loaded unless a config names it.
@@ -184,6 +185,7 @@ ALWAYS_LOADED_CAP = 200
 NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates", "primitives", "adapters"}
 NAME_FORBIDDEN_FILES = {"config.example.json"}
 LINT_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".pytest_cache"}
+LOCAL_WORK_DIR = ".agent-harness"
 
 
 def lint_terms_path() -> Path:
@@ -2237,13 +2239,24 @@ def check_stance_constraints(root: Path) -> List[str]:
 
 def lint_tree(root: Path, terms: Optional[Tuple[List[str], List[str]]] = None) -> List[str]:
     """Lint everything git would commit: tracked files plus untracked files that are not ignored.
-    Outside a git repository, every file."""
-    try:
-        out = subprocess.run(["git", "-C", str(root), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+    Outside a git repository, every file.
+
+    Untracked files under `.agent-harness/` are the exception. That directory stays unignored so a
+    handoff can read its plans, which leaves every session's local notes one listing away from
+    reddening another session's gate; staging one brings it back into the lint before it commits.
+    """
+    def listed(*flags: str) -> List[str]:
+        out = subprocess.run(["git", "-C", str(root), "ls-files", *flags, "-z"],
                              capture_output=True, text=True, timeout=10)
-        if out.returncode == 0:
-            files = sorted(root / f for f in out.stdout.split("\0") if f)
-            return lint_files(root, files, terms) + check_detectors(root)
+        if out.returncode != 0:
+            raise RuntimeError(out.stderr)
+        return [f for f in out.stdout.split("\0") if f]
+    try:
+        tracked = listed("--cached")
+        untracked = [f for f in listed("--others", "--exclude-standard")
+                     if not f.startswith(LOCAL_WORK_DIR + "/")]
+        files = sorted(root / f for f in set(tracked + untracked))
+        return lint_files(root, files, terms) + check_detectors(root)
     except Exception:
         pass
     return lint_files(root, sorted(p for p in root.rglob("*") if p.is_file()), terms) + check_detectors(root)
@@ -2355,10 +2368,14 @@ def cmd_lint(args: argparse.Namespace) -> int:
         scope = str(root)
     hits = hits + check_context_cap(root) + check_cost_sidecars(root) + check_stance_constraints(root)
     hits += check_collisions(root)
+    notes: List[str] = []
+    # Fragments are this repository's release process, so the rule uses projection drift's guard.
+    if not getattr(args, "staged", False) and (root / "primitives" / "roles").is_dir():
+        hits += changelog_fragments.findings(root, notes)
     if (root / "primitives" / "roles").is_dir():
         hits += ["projection drift: " + name + "; run `harness generate`"
                  for name in primitive_catalog.projection_drift(root)]
-    for h in hits:
+    for h in hits + notes:
         say(h)
     if not getattr(args, "staged", False) and always_loaded_groups(root):
         say(context_summary(root))
@@ -3317,11 +3334,16 @@ def cmd_remote_control(args: argparse.Namespace) -> int:
         path = agents / (name + ".plist")
         body = remote_control.render(folder, opts, claude_bin, home(), remote_control_log_dir())
         loaded = launchctl("print", f"{launchd_domain()}/{name}").returncode == 0
-        # Reloading an unchanged agent would cut off every session its server is carrying.
-        if loaded and path.exists() and path.read_bytes() == body:
+        unchanged = path.exists() and path.read_bytes() == body
+        pid = host_pid(name) if loaded and not unchanged else None
+        env = remote_control.environment_id(read_host_log(name)) if pid is not None else None
+        step = remote_control.install_step(loaded, unchanged, pid, env)
+        if step == "unchanged":
             say(f"unchanged {folder}")
             continue
         say(("would serve " if dry else "serving ") + str(folder))
+        if step == "adopt":
+            adopt_environment(folder, pid, env, dry)
         if dry:
             continue
         agents.mkdir(parents=True, exist_ok=True)
@@ -3360,12 +3382,45 @@ def cmd_remote_control(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def read_host_log(name: str) -> str:
+    try:
+        return (remote_control_log_dir() / (name + ".log")).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def claude_projects_root() -> Path:
+    """Where Claude Code keeps per-folder state, `bridge-pointer.json` among it."""
+    root = claude_state_file().parent / ".claude" / "projects"
+    return root if root.is_dir() else home() / ".claude" / "projects"
+
+
+def adopt_environment(folder: Path, pid: int, env: str, dry: bool) -> None:
+    """Hand a running host's environment to its replacement; see `remote_control.install_step`."""
+    path = remote_control.pointer_path(claude_projects_root(), folder)
+    say(f"  {'would adopt' if dry else 'adopting'} {env} from pid {pid}")
+    if dry:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(path, remote_control.pointer_payload(
+        env, None, None, remote_control.read_pointer(path)))
+    host = claude_host_pid(pid)
+    if host is None:
+        say(f"  warning: no `claude` process under pid {pid}; reloading without the kill")
+        return
+    try:
+        os.kill(host, signal.SIGKILL)
+    except OSError as exc:
+        say(f"  warning: SIGKILL to pid {host} failed: {exc}")
+
+
 def report_lost_sessions(folders: List[Path], opts: Dict[str, Any]) -> int:
     """List sessions still active but disconnected, with the manual command that recovers each.
 
-    Reattaching is deliberately not automated: a `--session-id` host registers the lost
-    environment a second time as a single-session environment, and the client then routes new
-    chats to it. The count is returned so `doctor` can report it without asking twice.
+    Heal re-queues these through `bridge/reconnect`; the `--session-id` reattach printed here
+    stays manual, because such a host registers the lost environment a second time as a
+    single-session environment and the client then routes new chats to it. The count is
+    returned so `doctor` can report it without asking twice.
     """
     page = lost_sessions(folders)
     if page.status == remote_control.SessionPage.REFUSED:
@@ -3535,7 +3590,8 @@ def cmd_remote_control_heal(args: argparse.Namespace) -> int:
     Claude Code only asks the server to reuse an environment when the folder's
     `bridge-pointer.json` is younger than its four-hour TTL and names a pid that is no longer
     running. A host that started without a pointer never writes one, so the file expires and
-    every relaunch registers a fresh environment that adopts nothing.
+    every relaunch registers a fresh environment that adopts nothing. Each pass then re-queues
+    this Mac's disconnected sessions; see `reconnect_lost_sessions`.
     """
     if platform.system() != "Darwin":
         say("remote-control heal: launchd agents are macOS only; nothing done")
@@ -3545,9 +3601,7 @@ def cmd_remote_control_heal(args: argparse.Namespace) -> int:
         opts = remote_control.settings(load_config())
     except ValueError as exc:
         raise SystemExit(f"remote-control heal: {exc}")
-    projects_root = claude_state_file().parent / ".claude" / "projects"
-    if not projects_root.is_dir():
-        projects_root = home() / ".claude" / "projects"
+    projects_root = claude_projects_root()
     state = remote_control.read_state(supervisor_state_path())
     state_changed = False
     for folder in opts["folders"]:
@@ -3612,10 +3666,43 @@ def cmd_remote_control_heal(args: argparse.Namespace) -> int:
             for tree in dirty_bridge_worktrees(Path(folder)):
                 ok = wip_commit(tree, dry)
                 heal_say(f"wip {tree}: {'committed' if ok else 'commit failed'}", dry)
+    if reconnect_lost_sessions(opts["folders"], projects_root, state, dry):
+        state_changed = True
     if state_changed and not dry:
         supervisor_state_path().parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(supervisor_state_path(), state)
     return 0
+
+
+def reconnect_lost_sessions(folders: List[Path], projects_root: Path, state: Dict[str, Any],
+                            dry: bool) -> bool:
+    """Re-queue each active but disconnected session on an environment this Mac holds.
+
+    One sessions read per pass, and each session at most once per ten minutes. A missing token
+    or a failed read is not an action and is not logged. Returns whether `state` changed.
+    """
+    token = claude_oauth_token()
+    if not token:
+        return False
+    page = remote_control.fetch_sessions(token)
+    if not page.ok:
+        return False
+    pointers = [remote_control.read_pointer(remote_control.pointer_path(projects_root, f))
+                for f in folders]
+    owned = remote_control.owned_environments(host_environment_ids(folders), pointers)
+    changed, now = False, time.time()
+    for row in remote_control.disconnected_sessions(page.rows, owned):
+        session, env = row.get("id"), row.get("environment_id")
+        if not session or not remote_control.reconnect_is_due(session, state, now):
+            continue
+        if dry:
+            heal_say(f"reconnect {session} on {env}: not sent", dry)
+            continue
+        status = remote_control.reconnect(token, env, session)
+        heal_say(f"reconnect {session} on {env}: {status}", dry)
+        remote_control.record_reconnect(state, session, now)
+        changed = True
+    return changed
 
 
 # A rule that trips in more than this share of sessions is prose the agent keeps walking past,

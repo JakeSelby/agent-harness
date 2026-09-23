@@ -8,6 +8,43 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Where the qualification targets run and how each is provisioned is now written down, because a
+  release session had to rediscover it every time. `docs/compatibility.md` names the binary
+  source, the login and the host for each of the four CLI targets: every round to date ran on one
+  Mac, Codex on macOS is the binary bundled in the ChatGPT desktop app logged in with a ChatGPT
+  session, and both Linux targets run in a container on that Mac built from the new
+  `scripts/linux-target.Dockerfile`, which pins both clients. The runbook's new target-hosts
+  section gives the commands in order. The smoke tier's `credentials` check now takes
+  `--targets`, which a qualification round passes through, and fails at once, naming the target,
+  when a client is off `PATH`, the Codex login is missing or the Docker daemon a Linux target
+  needs does not answer; with no targets named it checks what this host can run and reports a
+  macOS target on a Linux host as skipped. The runbook also records that the acceptance runner
+  does not yet carry a Codex session login into its disposable home, so Codex evidence can only
+  be produced by hand until it does. (#408)
+- `scripts/cost_bench.py replay --tag` runs a pinned git ref of this repository, and is repeatable,
+  so `--tag v0.12.0 --tag v0.13.0 --model <id>` measures two harness versions against bare in one
+  invocation and writes a history row for each, labelled with the version and commit of the ref it
+  actually ran rather than of whatever harness happens to be installed. Each ref is checked out
+  with its history intact and projected by its own `bin/harness sync` into a config directory of
+  its own, run with a temporary HOME as well as an explicit `CLAUDE_CONFIG_DIR`: the profile the
+  owner runs under is neither read nor written, and the owner's identity and stance selection —
+  which a sync renders out of `~/.config/agent-harness/config.json` — stay out of the measurement,
+  so two tags are asked the same question. Every ref is resolved before the first launch, a ref
+  that does not resolve is a named error rather than a quietly missing row, and both temporary
+  directories go even when a run in the middle of a tag's schedule raises. The harness arm's fence
+  admits the pinned checkout its profile links into, and `--dry-run` prints the schedule per tag
+  and syncs nothing. `--spend-cap` applies to each tag's schedule on its own. A profile's
+  credential is keyed on its absolute path, so a temporary one is not signed in: name a signed-in
+  `--harness-config` for the tag to be synced into when the run is meant to spend. That profile
+  must start with no harness files in it, none of the names the sync writes may be a link out of
+  it, and it cannot serve `candidate` in the same run; after each tag the sync is taken back out
+  of it — exactly what its own manifest records is removed and `settings.json` is put back
+  atomically from a copy — while anything else written during the run stays and credential files
+  are never copied, rewritten or deleted, and the profile is checked afterwards so a tag whose
+  sync recorded elsewhere stops the run with the leftovers named rather than stranding the next
+  one; the pinned checkout is readable, never writable, from the arm, and every refusal about the
+  target is decided before the first launch (#599).
+
 - A qualification round names two capability classes per target rather than one: an execution
   class, `standard` by default, for the worker that runs the scripted cases and writes the
   findings, and an assessment class, `strong` by default and a floor rather than a preference,
@@ -56,6 +93,45 @@ All notable changes to this project are documented here. The format follows
   per target, because one surface agreeing with a hand run says nothing about another, and on an
   unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
   what is in question there is the reading, not the harness (#336).
+- Every decision-provider call now leaves a `kind: "decision"` row in the usage ledger beside the
+  session rows, carrying the decision point, the mode, the status, the requested and the returned
+  model id, the pack and request hashes, the judgment and severity labels, the deterministic
+  outcome and the one an `act` mode would have reached, the token counts, the latency and the
+  session that asked — and none of the state it sent, no prompt, no file path and no environment
+  value, because the row is built key by key from that list and reads nothing else. The
+  counterparty is part of what goes out in the request and could be a path, so a row keeps it only
+  when it matches the `repo:<name>/<branch>` slug the ledger already derives, within a bounded
+  length, and keeps a short digest of anything else. Exported over OTLP the row travels under
+  `harness.decision.*`, its price included, because its `input` and `usd` in the columns a
+  session's land in would have a backend counting the harness's question as session spend. A
+  judgment costs tokens and holds up a turn, and until now neither figure was anywhere: `harness
+  usage --by provider` prices the calls from `policy/prices.json` like any other row and reports
+  the latency distribution beside the statuses, which are separate columns rather than a success
+  rate — an answer the provider abstained from is not the same event as no answer at all. A call
+  whose usage nobody reported is `partial`, so it is named in the unpriced footer rather than read
+  as free, and the rows are counted on that report alone: their tokens were spent asking a
+  question, not by the session, so adding them to a day or a repo would charge a session for a
+  bill it did not run up. The write is an append under the ledger lock rather than the rewrite a
+  session record does, so a call inside a hook's budget does not re-read and rewrite the whole
+  file. `harness doctor` now also names the model every request pins and what the last call
+  returned, since a provider may answer on a model the harness did not ask for and a report priced
+  at the requested one would then be priced at the wrong rate. `telemetry.decisions` is one switch
+  over both ledgers: off, neither row is written (#139).
+- A labelled corpus for the eleven detectors this repository writes itself, and a `corpus` job
+  beside `test` that scores it. `tests/fixtures/detector-corpus/` holds thirteen synthetic
+  transcripts and the labels over them, five positives and five near-misses per detector bar the one whose positive costs two hundred
+  searches, written
+  by `build_sessions.py` beside them; `scripts/detector_corpus.py --floor 0.9` runs both that
+  corpus and the one inside the vendored `ruleprobe` wheel through the whole registry and exits
+  non-zero when a detector's precision or recall falls under the floor, or when a detector has no
+  labelled example at all. Every row `harness usage --rules` prints now has a measured precision
+  and recall rather than a hit count of unknown quality. Two detectors measure 0.83
+  precision: any basename holding `id_rsa` is a hit for `secrets/git-add-secret-file`, so a runbook
+  named after a key is one, and `autonomy/denied-by-grade` matches the grade hook's signature
+  anywhere in a Bash result, so a grep that prints it is one. The floor stays where it is and each
+  miss is recorded in the corpus with the score and the floor it was measured against, so an
+  improvement or a regression both fail the job until the record is updated, while a run at a
+  lower floor leaves the record dormant rather than stale (#522).
 - `harness integration check|apply <name>` is the surface for a declared framework integration.
   It reads the template directory, the install destination, the presence probe and the skill
   surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
@@ -227,6 +303,34 @@ All notable changes to this project are documented here. The format follows
   in the same checkout zeroed each other's count and the gate never let either go. The count is
   now kept per session, and a session silent for a day is forgotten (#611).
 
+- `scripts/cost_bench.py replay --tag` no longer counts the CLI's own synced skill packs
+  under `skills/synced/` as leftovers of a tag's sync, so a run with two tags into one named
+  profile reaches its second tag instead of stopping after the first (#649).
+
+- `harness lint` no longer reads untracked files under `.agent-harness/`. That directory stays
+  unignored so a handoff can read its plans, so any session's local note naming a project outside
+  `docs/` turned the lint red, and the stop gate with it, for every other session in the same
+  checkout. Tracked files there are still linted, and staging a note brings it back into the lint
+  before it can be committed (#605).
+- Remote Control hosts managed by `harness remote-control` now reuse their environment across a
+  restart. Claude Code 2.1.280 reads the folder's bridge pointer only when `createSessionInDir`
+  is on, and every host was launched with `--no-create-session-in-dir`, so each restart
+  registered a fresh environment and each `SIGTERM` archived the host's sessions. The flag is
+  gone; heal's pointer rewrite keeps 2.1.280's two `parkedProjectThreadSessionIds` keys; `install`
+  on a changed agent adopts the running host's environment, writing the pointer and stopping the
+  host with `SIGKILL` so its archive path never runs; `heal` re-queues this Mac's disconnected
+  sessions through `bridge/reconnect`, at most once per session every ten minutes; and a
+  `remote_control.folders` entry may be an object with its own `spawn` and `env`, so each
+  workspace root gets a host that loads its own `CLAUDE.md`, skills and hooks (#603).
+
+- The `delegation` stance, the shared role descriptions and the refusal a native `gatherer` or
+  `reviewer` spawn receives now carry one sentence word for word: a read-only role runs through
+  `harness role run <role>`, because confinement is read roots and return shape rather than the
+  absence of write tools, which is also why `builder` is exempt and spawns natively. A session
+  that followed the stance used to spend a refused call discovering a rule none of the three
+  texts stated, and the refusal's reason for exempting the write-capable role was nowhere. A test
+  holds the three copies together, so the sentence cannot drift in one of them (#304).
+
 - The credential probe answers for a variable holding something that is not a path, where asking
   the filesystem about it used to raise and carry the value into the error's own message — a
   service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
@@ -303,6 +407,37 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Pull requests to `main` land through a merge queue, and changelog entries after 0.13.0 are
+  one fragment file per change under `changelog.d/`. Every pull request workflow also runs on
+  `merge_group`, and the issue-ownership and landing-copy checks read the queued pull request's
+  number from the queue branch, since a queued entry whose checks never report stalls the queue.
+  `scripts/release_notes.py --changelog <version>` assembles the fragments into a version section
+  in a stable order, and `bin/harness lint` fails a branch that changes `bin/`, `lib/`,
+  `adapters/`, `primitives/`, `policy/`, `docs/` or `scripts/` without a fragment or a
+  `<number>.none.md` waiver. Every branch used to edit the same Unreleased section, so any two in
+  flight conflicted there, and the up-to-date requirement cost a rebase and a full CI rerun per
+  landing. (#337)
+- An isolated role worker is no longer handed the harness checkout as a read root and pointed at
+  the whole skill corpus. It carries the shared policy as its system text and is mounted only
+  what that policy tells it to open: the skills the resolved rules and stances name, and copies
+  of the `docs/*.md` files they cite. The set is derived from the text itself, so a stance that
+  stops citing a skill stops paying for it, and a worker is never told to obey a rule whose
+  reference it cannot reach. A role adds what its body assumes but the shared text never names
+  with a `skills:` line — `design-loop` for `design-judge`, `all` for `planner`, whose body tells
+  it to read the skills the plan will name — and a name that resolves to no shipped skill fails
+  the run rather than quietly removing that authority. Measured as what is mounted rather than
+  what a run reads, a review layer went from the whole checkout, about 1,073,900 estimated tokens
+  of text, to about 30,800, and the corpus it was offered as skill authority from all 31,600
+  tokens to the 26,600 the policy cites. Each run records the figure under `context` in
+  `status.json` — policy, reference and total against a 50,000-token budget, counted with the
+  approximation `harness lint` applies to always-loaded context — recorded and not enforced,
+  because what a worker is shown is fixed by its contract before any brief is read. On Claude
+  Code the narrowing is enforced by the restricted file tools; under Codex's read-only sandbox it
+  is instruction text, as that runtime's declared input roots already were (#335).
+- The BMad override templates ask each review layer to launch only once the previous layer's
+  worker has exited. This is correctness before economy: a role worker that is still running
+  publishes no token count, so a round with four layers in flight cannot be held under a cap it
+  cannot measure, which is how an observed 450,000-token cap became 985,000 (#335).
 - A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
   `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
   fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with

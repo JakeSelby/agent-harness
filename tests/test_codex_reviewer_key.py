@@ -94,7 +94,9 @@ class FakeClient:
                                   encoding="utf-8")
             executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
         self.prior = os.environ.get("PATH", "")
-        os.environ["PATH"] = str(self.directory) + os.pathsep + self.prior
+        # No client means none at all: keeping the rest of PATH would find one the machine has.
+        os.environ["PATH"] = (str(self.directory) if accepts is None
+                              else str(self.directory) + os.pathsep + self.prior)
         case.addCleanup(self._restore)
 
     def _restore(self):

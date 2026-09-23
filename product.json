@@ -234,16 +234,6 @@
       "catalog": "grok"
     },
     {
-      "title": "Fresh-session nudge",
-      "line": "A heads-up when the orchestrator's context has become expensive to keep dragging forward.",
-      "issue": 321
-    },
-    {
-      "title": "Budget nudges mid-run",
-      "line": "Today a subagent learns its budget in the brief. Next it hears about it while it works.",
-      "issue": 322
-    },
-    {
       "title": "Close the loop",
       "line": "Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.",
       "issue": 135

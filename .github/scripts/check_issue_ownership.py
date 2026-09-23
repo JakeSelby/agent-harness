@@ -6,7 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-ISSUE_MAP = Path(__file__).resolve().parents[2] / '_bmad-output' / 'issue-map.json'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pull_number import pull_number  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[2]
+ISSUE_MAP = ROOT / '_bmad-output' / 'issue-map.json'
+SYNC_TOOL = ROOT / 'scripts' / 'bmad_issue_sync.py'
+DEPTH_TIMEOUT_SECONDS = 60
 
 
 QUERY = """
@@ -66,6 +72,22 @@ def require_mapping(issue, map_path):
     return item['bmad_id']
 
 
+def require_story_depth(issue, tool=None):
+    """The delivery issue's own story must fill its kind's required sections; a legacy stub passes with a notice."""
+    tool = SYNC_TOOL if tool is None else tool
+    try:
+        result = subprocess.run(
+            [sys.executable, str(tool), 'audit', '--delivery', str(issue)],
+            cwd=str(Path(tool).resolve().parents[1]), capture_output=True, text=True,
+            timeout=DEPTH_TIMEOUT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError('The story depth check could not run: {!r}'.format(error))
+    output = (result.stdout + result.stderr).strip()
+    if result.returncode != 0:
+        raise ValueError('The story for delivery issue #{} is not ready:\n{}'.format(issue, output))
+    return output
+
+
 def main():
     repository = os.environ['GITHUB_REPOSITORY']
     owner, name = repository.split('/')
@@ -78,8 +100,9 @@ def main():
         if page.get('errors'):
             raise ValueError('GitHub returned errors; ownership is unknown.')
         pulls.extend(page['data']['repository']['pullRequests']['nodes'])
-    issue = validate(pulls, int(os.environ['PR_NUMBER']), repository)
+    issue = validate(pulls, pull_number(), repository)
     bmad_id = require_mapping(issue, ISSUE_MAP)
+    print(require_story_depth(issue))
     print('Issue ownership verified: #{} ({})'.format(issue, bmad_id))
 
 

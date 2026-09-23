@@ -4,13 +4,13 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "epic": 12,
-    "story": 206,
-    "task": 9,
-    "bug": 64,
-    "chore": 51,
+    "epic": 18,
+    "story": 218,
+    "task": 26,
+    "bug": 72,
+    "chore": 57,
     "spike": 10,
-    "decision": 8
+    "decision": 9
   },
   "items": [
     {
@@ -803,7 +803,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S049.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "reconstructed"
     },
     {
@@ -816,7 +816,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S050.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "reconstructed"
     },
     {
@@ -829,7 +829,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S051.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "reconstructed"
     },
     {
@@ -842,7 +842,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S052.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "reconstructed"
     },
     {
@@ -1713,7 +1713,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S100.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -1947,7 +1947,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S112.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2036,8 +2036,8 @@
       "type": "decision",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D002.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E002",
+      "parent_github_number": 116,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2142,7 +2142,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B021.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2153,8 +2153,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B022.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2166,8 +2166,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B023.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2179,8 +2179,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B024.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2246,7 +2246,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B026.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2402,7 +2402,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S119.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2415,7 +2415,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S120.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2493,7 +2493,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S123.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2506,7 +2506,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S124.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2519,7 +2519,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S125.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2532,7 +2532,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S126.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2545,7 +2545,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S127.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2558,7 +2558,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S128.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2584,7 +2584,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S130.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2649,7 +2649,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S133.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2777,8 +2777,8 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S138.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -2909,7 +2909,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S144.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2922,7 +2922,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S145.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2972,8 +2972,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B040.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3026,7 +3026,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S146.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3050,8 +3050,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B047.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3078,7 +3078,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S147.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3102,8 +3102,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B042.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3115,8 +3115,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B043.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3128,8 +3128,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B044.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3141,8 +3141,8 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B049.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3156,7 +3156,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C031.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3182,7 +3182,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S149.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3219,8 +3219,8 @@
       "type": "decision",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D005.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3232,8 +3232,8 @@
       "type": "decision",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D006.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3284,8 +3284,8 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S194.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3351,7 +3351,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S195.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3364,7 +3364,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B059.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3741,7 +3741,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S196.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3806,7 +3806,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C036.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3832,7 +3832,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S174.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3845,7 +3845,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B054.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3858,7 +3858,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C037.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3871,7 +3871,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C038.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3884,7 +3884,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C039.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3936,7 +3936,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C040.md",
       "parent_bmad_id": "AH-E006",
       "parent_github_number": 212,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3973,8 +3973,8 @@
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C043.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -3992,6 +3992,32 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B069",
+      "github_number": 537,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/537",
+      "title": "Reserve a BMad ID in the same invocation that files the issue",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B069.md",
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B068",
+      "github_number": 538,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/538",
+      "title": "Hide an installed Codex client from the reviewer-key detection test",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B068.md",
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C045",
       "github_number": 539,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/539",
@@ -4001,7 +4027,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C045.md",
       "parent_bmad_id": "AH-E002",
       "parent_github_number": 116,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4014,7 +4040,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-SP007.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4118,7 +4144,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C047.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4287,6 +4313,45 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C050.md",
       "parent_bmad_id": "AH-E011",
       "parent_github_number": 552,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S217",
+      "github_number": 576,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/576",
+      "title": "Guard the Workflow tool launch: log it, honour delegation off, refuse constrained roles in agentType",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S217.md",
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S216",
+      "github_number": 577,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/577",
+      "title": "harness usage: separate workflow rows and stop pricing them against a confined role budget",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S216.md",
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D008",
+      "github_number": 582,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/582",
+      "title": "Decide whether qualification evidence is invalidated per case (#333 part 1b)",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D008.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -4300,20 +4365,59 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S205.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T007",
+      "github_number": 599,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/599",
+      "title": "Replay a pinned older tag into a temporary config directory, not only the installed candidate",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T007.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S215",
+      "github_number": 602,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/602",
+      "title": "Tighten the two detectors the corpus records under the precision floor",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S215.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
       "lifecycle": "active",
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-T008",
-      "github_number": 607,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/607",
-      "title": "Rule: recognize \"spawn a new chat\" as a cloud-run request",
-      "type": "task",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-T008.md",
+      "bmad_id": "AH-B060",
+      "github_number": 603,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/603",
+      "title": "fix(remote-control): hosts never reuse their environment, so restarts archive sessions",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B060.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B061",
+      "github_number": 605,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/605",
+      "title": "fix(lint): skip untracked files under .agent-harness/ so local plans cannot redden the gate",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B061.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4326,6 +4430,591 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B063.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B062",
+      "github_number": 606,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/606",
+      "title": "test(codex): make the no-client detection test hermetic against an installed client",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B062.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T008",
+      "github_number": 607,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/607",
+      "title": "Rule: recognize \"spawn a new chat\" as a cloud-run request",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T008.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B067",
+      "github_number": 611,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/611",
+      "title": "stop-gate: interleaved sessions in one checkout reset each other's block count, so the gate never releases",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B067.md",
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S214",
+      "github_number": 612,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/612",
+      "title": "Acceptance runner: use the Codex session login in its disposable home",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S214.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-E012",
+      "github_number": 616,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/616",
+      "title": "Re-baseline the BMad corpus and make story files the design record",
+      "type": "epic",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-E012.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T009",
+      "github_number": 617,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/617",
+      "title": "Promote existing research into BMad research artifacts",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T009.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T010",
+      "github_number": 618,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/618",
+      "title": "Re-baseline the product brief and PRD",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T010.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T011",
+      "github_number": 619,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/619",
+      "title": "Re-baseline the UX specification and architecture spine",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T011.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S206",
+      "github_number": 620,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/620",
+      "title": "Rich story files: typed templates, managed issue block, lossless upgrade, depth check",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S206.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S207",
+      "github_number": 621,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/621",
+      "title": "Repo rule: route every operation through BMad and keep its corpus current",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S207.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T012",
+      "github_number": 622,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/622",
+      "title": "Re-derive epics and reparent the open issue tree",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T012.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S208",
+      "github_number": 623,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/623",
+      "title": "Implementation readiness and a derived sprint status",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S208.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C051",
+      "github_number": 625,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/625",
+      "title": "docs(changelog): restore five Unreleased entries the #598 merge dropped",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C051.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C052",
+      "github_number": 627,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/627",
+      "title": "Open the 0.13.0 candidate",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C052.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-E013",
+      "github_number": 632,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/632",
+      "title": "Measurement: the cost benchmark, detector precision and the evaluation pyramid",
+      "type": "epic",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-E013.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-E014",
+      "github_number": 633,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/633",
+      "title": "Qualify a release in one round, and let its claims match its evidence",
+      "type": "epic",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-E014.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-E015",
+      "github_number": 634,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/634",
+      "title": "Guardrails and runtime parity: close the gaps between runtimes and between docs and code",
+      "type": "epic",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-E015.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-E016",
+      "github_number": 635,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/635",
+      "title": "Harden BMad traceability for many sessions filing at once",
+      "type": "epic",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-E016.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-E017",
+      "github_number": 636,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/636",
+      "title": "Bring the code into line with the 2026-09-23 architecture spine",
+      "type": "epic",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-E017.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T013",
+      "github_number": 638,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/638",
+      "title": "Amend the 0.12.0 release notes with the work merged between #465 and #494",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T013.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S209",
+      "github_number": 639,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/639",
+      "title": "Compatibility catalog: an explicit waiver for a release with no required target",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S209.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C053",
+      "github_number": 640,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/640",
+      "title": "CI: check the Python 3.9 floor on every pull request",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C053.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B064",
+      "github_number": 641,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/641",
+      "title": "Plugin channel: constrained roles install unconfined, and the manifest version lags VERSION",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B064.md",
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B065",
+      "github_number": 642,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/642",
+      "title": "bmad_issue_sync apply: verify artifact frontmatter on main, not only presence",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B065.md",
+      "parent_bmad_id": "AH-E016",
+      "parent_github_number": 635,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S210",
+      "github_number": 643,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/643",
+      "title": "Resolve stances only through posture.py and retire the CLI ladder",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S210.md",
+      "parent_bmad_id": "AH-E017",
+      "parent_github_number": 636,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S211",
+      "github_number": 644,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/644",
+      "title": "Ledger rows carry a schema version and readers tolerate unknown fields",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S211.md",
+      "parent_bmad_id": "AH-E017",
+      "parent_github_number": 636,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C054",
+      "github_number": 645,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/645",
+      "title": "One kernel helper for atomic whole-file rewrites that keeps file mode",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C054.md",
+      "parent_bmad_id": "AH-E017",
+      "parent_github_number": 636,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S212",
+      "github_number": 646,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/646",
+      "title": "Remote Control: pin the verified client versions and warn in doctor outside them",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S212.md",
+      "parent_bmad_id": "AH-E017",
+      "parent_github_number": 636,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S213",
+      "github_number": 647,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/647",
+      "title": "harness usage --rules: list every rule as measured, dark or unmeasured, and load declarative detectors",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S213.md",
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C055",
+      "github_number": 648,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/648",
+      "title": "Align product.json on-the-way entries with the PRD and drop em dashes from README copy",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C055.md",
+      "parent_bmad_id": "AH-E006",
+      "parent_github_number": 212,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B066",
+      "github_number": 649,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/649",
+      "title": "Replay counts the CLI's synced skill packs as sync leftovers and stops after the first tag",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B066.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B070",
+      "github_number": 650,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/650",
+      "title": "sync --dry-run words its summary lines as if it had applied the changes",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B070.md",
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T014",
+      "github_number": 652,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/652",
+      "title": "Enrich story files: the seventeen epics and the re-baseline tree",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T014.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T015",
+      "github_number": 653,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/653",
+      "title": "Enrich story files: the stance and settings contract (#116)",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T015.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T016",
+      "github_number": 654,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/654",
+      "title": "Enrich story files: close the loop and the decision layer (#135)",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T016.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T017",
+      "github_number": 655,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/655",
+      "title": "Enrich story files: the selection model, measurement and architecture conformance (#552, #632, #636)",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T017.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T018",
+      "github_number": 656,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/656",
+      "title": "Enrich story files: qualification, guardrails and traceability (#633, #634, #635)",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T018.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T019",
+      "github_number": 657,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/657",
+      "title": "Enrich story files: the provider-agnostic rebuild, BMad commit, v1 and client graduation (#93, #189, #206, #216)",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T019.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T020",
+      "github_number": 658,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/658",
+      "title": "Enrich story files: adoption and the 0.13 adoption epics (#212, #442, #443, #444)",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T020.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T021",
+      "github_number": 659,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/659",
+      "title": "Enrich story files: delivered work without an epic, issues #1 to #120",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T021.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T022",
+      "github_number": 660,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/660",
+      "title": "Enrich story files: delivered work without an epic, issues #121 to #300",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T022.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T023",
+      "github_number": 661,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/661",
+      "title": "Enrich story files: delivered work without an epic, issues #301 to #360",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T023.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T024",
+      "github_number": 662,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/662",
+      "title": "Enrich story files: delivered work without an epic, issues #361 to #420",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T024.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T025",
+      "github_number": 663,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/663",
+      "title": "Enrich story files: delivered work without an epic, issues #421 onward",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T025.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B071",
+      "github_number": 666,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/666",
+      "title": "The real-corpus upgrade test fails once the last amended stub is upgraded",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B071.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
       "lifecycle": "active",
       "provenance": "authored"
     }

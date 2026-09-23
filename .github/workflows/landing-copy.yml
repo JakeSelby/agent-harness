@@ -3,6 +3,7 @@ name: landing copy
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, ready_for_review]
+  merge_group:
 
 permissions:
   contents: read
@@ -19,4 +20,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
         run: python3 .github/scripts/check_landing_copy.py

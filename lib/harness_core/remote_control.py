@@ -12,12 +12,15 @@ import plistlib
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 LABEL_PREFIX = "com.agent-harness.remote-control."
 SPAWN_MODES = ("same-dir", "worktree", "session")
 PERMISSION_MODES = ("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")
 DEFAULTS = {"folders": [], "spawn": "worktree", "permission_mode": "default", "keep_awake": False}
+# A `folders` entry is a path, or an object naming a path plus what differs for that one host.
+FOLDER_KEYS = ("path", "spawn", "env")
 SYSTEM_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
 # A server that cannot register (folder served from a terminal, no network) exits at once;
 # launchd's ten-second default would hammer the registration endpoint.
@@ -37,16 +40,52 @@ def settings(cfg):
         raise ValueError("remote_control.spawn must be one of " + ", ".join(SPAWN_MODES))
     if out["permission_mode"] not in PERMISSION_MODES:
         raise ValueError("remote_control.permission_mode must be one of " + ", ".join(PERMISSION_MODES))
-    if not isinstance(out["folders"], list) or not all(isinstance(f, str) and f for f in out["folders"]):
-        raise ValueError("remote_control.folders must be a list of paths")
-    folders = []
-    for raw in out["folders"]:
-        folder = Path(raw).expanduser().resolve()
+    if not isinstance(out["folders"], list):
+        raise ValueError("remote_control.folders must be a list of paths or folder objects")
+    folders, options = [], {}
+    for index, raw in enumerate(out["folders"]):
+        folder, extra = folder_entry(raw, index)
+        if folder in options and options[folder] != extra:
+            raise ValueError(f"remote_control.folders lists {folder} twice with different options")
         if folder not in folders:
             folders.append(folder)
+            options[folder] = extra
     out["folders"] = folders
+    out["folder_options"] = options
     out["keep_awake"] = bool(out["keep_awake"])
     return out
+
+
+def folder_entry(raw, index):
+    """One `folders` entry as `(resolved path, {"spawn"?: mode, "env": {name: value}})`."""
+    where = f"remote_control.folders[{index}]"
+    if isinstance(raw, str):
+        raw = {"path": raw}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{where} must be a path or an object with a `path`")
+    unknown = set(raw) - set(FOLDER_KEYS)
+    if unknown:
+        raise ValueError(f"unknown {where} key(s): " + ", ".join(sorted(unknown)))
+    path = raw.get("path")
+    if not isinstance(path, str) or not path:
+        raise ValueError(f"{where}.path must be a non-empty path")
+    extra = {}
+    if "spawn" in raw:
+        if raw["spawn"] not in SPAWN_MODES:
+            raise ValueError(f"{where}.spawn must be one of " + ", ".join(SPAWN_MODES))
+        extra["spawn"] = raw["spawn"]
+    env = raw.get("env", {})
+    if not isinstance(env, dict) or not all(
+            isinstance(k, str) and k and isinstance(v, str) for k, v in env.items()):
+        raise ValueError(f"{where}.env must be an object of string names to string values")
+    extra["env"] = dict(env)
+    return Path(path).expanduser().resolve(), extra
+
+
+def folder_options(folder, opts):
+    """The block's options with one folder's own `spawn` and `env` laid over them."""
+    extra = (opts.get("folder_options") or {}).get(Path(folder), {})
+    return {"spawn": extra.get("spawn", opts["spawn"]), "env": dict(extra.get("env") or {})}
 
 
 def label(folder):
@@ -57,10 +96,12 @@ def label(folder):
 
 
 def command(folder, opts, claude_bin):
+    # No `--no-create-session-in-dir`: Claude Code 2.1.280 reads the bridge pointer, and so
+    # reuses the environment on a relaunch, only while createSessionInDir is on. The session it
+    # pre-creates is reused across restarts for as long as the pointer stays fresh.
     argv = [str(claude_bin), "remote-control", "--name", Path(folder).name,
-            "--spawn", opts["spawn"], "--permission-mode", opts["permission_mode"],
-            # The pre-created session would reappear as an empty entry after every restart.
-            "--no-create-session-in-dir"]
+            "--spawn", folder_options(folder, opts)["spawn"],
+            "--permission-mode", opts["permission_mode"]]
     if opts["keep_awake"]:
         # -i holds idle sleep, -s holds system sleep on AC power; neither survives a closed lid.
         argv = ["/usr/bin/caffeinate", "-is"] + argv
@@ -74,7 +115,8 @@ def plist(folder, opts, claude_bin, home, log_dir):
         "Label": name,
         "ProgramArguments": command(folder, opts, claude_bin),
         "WorkingDirectory": str(folder),
-        "EnvironmentVariables": {"HOME": str(home), "PATH": ":".join(path)},
+        "EnvironmentVariables": dict({"HOME": str(home), "PATH": ":".join(path)},
+                                     **folder_options(folder, opts)["env"]),
         "RunAtLoad": True,
         "KeepAlive": True,
         "ThrottleInterval": THROTTLE_SECONDS,
@@ -147,7 +189,9 @@ POINTER_TTL_SECONDS = 4 * 60 * 60
 # The reader's schema is closed: an unknown key fails validation and the file is deleted.
 POINTER_KEYS = ("sessionId", "environmentId", "source", "pid", "procStart",
                 "activeSessionIds", "activeSessionIdsPersistedAt",
-                "projectThreadSessionIds", "projectThreadSessionIdsPersistedAt")
+                "projectThreadSessionIds", "projectThreadSessionIdsPersistedAt",
+                # Added by 2.1.280.
+                "parkedProjectThreadSessionIds", "parkedProjectThreadSessionIdsPersistedAt")
 CARRIED_KEYS = POINTER_KEYS[5:]
 ENV_ID = re.compile(r"env_01[A-Za-z0-9]+")
 # The host prints its own error-budget age, so it is read rather than recomputed from the clock:
@@ -191,19 +235,39 @@ def pointer_payload(environment_id, pid, proc_start, previous=None):
     Only keys the reader validates survive: it rejects the whole file on an unknown one. Ids
     from a different environment are dropped, as the client drops them — a session id is only
     meaningful to the environment it was created on, and `bridge/reconnect` refuses the rest.
+
+    A `pid` of None writes no `pid` and no `procStart`: the pointer `install` leaves for a host
+    it is about to replace, which the next host reads as belonging to no live process.
     """
     previous = previous if isinstance(previous, dict) else {}
     if previous.get("environmentId") != environment_id:
         previous = {}
     out = {"sessionId": previous.get("sessionId") if isinstance(previous.get("sessionId"), str) else "",
            "environmentId": environment_id,
-           "source": "standalone",
-           "pid": int(pid),
-           "procStart": str(proc_start)}
+           "source": "standalone"}
+    if pid is not None:
+        out["pid"] = int(pid)
+        out["procStart"] = str(proc_start)
     for key in CARRIED_KEYS:
         if key in previous:
             out[key] = previous[key]
     return out
+
+
+def install_step(loaded, unchanged, pid, environment):
+    """What `install` does with one folder's agent: `unchanged`, `adopt` or `load`.
+
+    An unchanged, loaded agent is left alone: reloading it would cut off its sessions. A changed
+    one whose host is running on a known environment is adopted — the pointer is written for
+    that environment and the host is SIGKILLed before the reload, because a host that did not
+    reuse an environment at start archives its sessions and deregisters on SIGTERM, and
+    `launchctl bootout` sends exactly that. Anything else is a plain load.
+    """
+    if loaded and unchanged:
+        return "unchanged"
+    if pid is not None and environment:
+        return "adopt"
+    return "load"
 
 
 def environment_id(log_text):
@@ -303,7 +367,8 @@ STATE_NAME = "supervisor-state.json"
 
 
 def read_state(path):
-    """What the supervisor already did: `{"stopped": {label: pid}, "recreated": [key]}`.
+    """What the supervisor already did:
+    `{"stopped": {label: pid}, "recreated": [key], "reconnected": {session: epoch}}`.
 
     A missing or unreadable file is an empty state, so the worst a lost file costs is one
     repeated SIGTERM to a host that is failing anyway.
@@ -315,8 +380,10 @@ def read_state(path):
     value = value if isinstance(value, dict) else {}
     stopped = value.get("stopped")
     recreated = value.get("recreated")
+    reconnected = value.get("reconnected")
     return {"stopped": stopped if isinstance(stopped, dict) else {},
-            "recreated": recreated if isinstance(recreated, list) else []}
+            "recreated": recreated if isinstance(recreated, list) else [],
+            "reconnected": reconnected if isinstance(reconnected, dict) else {}}
 
 
 def stop_is_due(elapsed, label, pid, state):
@@ -350,6 +417,21 @@ def record_worktree(state, stamp, path):
     return state
 
 
+def reconnect_is_due(session_id, state, now):
+    """Whether heal may re-queue this session now: at most once per `RECONNECT_EVERY_SECONDS`."""
+    last = state.get("reconnected", {}).get(str(session_id))
+    return not isinstance(last, (int, float)) or now - last >= RECONNECT_EVERY_SECONDS
+
+
+def record_reconnect(state, session_id, now):
+    """Stamp one attempt, and forget the ones old enough that they no longer hold anything back."""
+    kept = {sid: when for sid, when in state.get("reconnected", {}).items()
+            if isinstance(when, (int, float)) and now - when < RECONNECT_EVERY_SECONDS}
+    kept[str(session_id)] = int(now)
+    state["reconnected"] = kept
+    return state
+
+
 def worktree_branch(path):
     """The branch name Claude Code gives a spawned session's worktree: `worktree-<dirname>`."""
     return "worktree-" + Path(path).name
@@ -375,10 +457,16 @@ PAGE_LIMIT = 50
 SESSIONS_URL = "https://api.anthropic.com/v1/code/sessions?limit=%d" % PAGE_LIMIT
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 API_HEADERS = {"anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20"}
-# `--session-id` reattach hosts register the lost environment a second time, as a single-session
-# environment that then takes new chats from the client, so the command is printed and never run.
-REATTACH_WARNING = ("reattaching registers a second environment for this Mac and new chats may "
-                    "land on it; stop the host as soon as the session has answered")
+# Heal re-queues these through `bridge/reconnect`. A `--session-id` reattach host registers the
+# lost environment a second time, as a single-session environment that then takes new chats from
+# the client, so that command is printed for the sessions heal cannot reconnect and never run.
+REATTACH_WARNING = ("heal reconnects these automatically each minute; the command below is for a "
+                    "session it cannot reconnect. Reattaching registers a second environment for "
+                    "this Mac and new chats may land on it; stop the host as soon as the session "
+                    "has answered")
+RECONNECT_URL = "https://api.anthropic.com/v1/environments/%s/bridge/reconnect"
+ENVIRONMENTS_BETA = "environments-2025-11-01"
+RECONNECT_EVERY_SECONDS = 600
 
 
 def oauth_token(keychain_payload):
@@ -393,6 +481,37 @@ def oauth_token(keychain_payload):
 
 def sessions_request(token):
     return Request(SESSIONS_URL, headers=dict(API_HEADERS, Authorization="Bearer " + token))
+
+
+def reconnect_request(token, environment, session_id):
+    """`POST bridge/reconnect`, which puts a disconnected session back in its environment's queue."""
+    headers = dict(API_HEADERS, Authorization="Bearer " + token)
+    headers["anthropic-beta"] = ",".join([API_HEADERS["anthropic-beta"], ENVIRONMENTS_BETA])
+    headers["Content-Type"] = "application/json"
+    body = json.dumps({"session_id": str(session_id)}).encode("utf-8")
+    return Request(RECONNECT_URL % environment, data=body, headers=headers, method="POST")
+
+
+def reconnect(token, environment, session_id, opener=None):
+    """Re-queue one session; the HTTP status as text, or `failed: <reason>`. Never raises."""
+    try:
+        with (opener or urlopen)(reconnect_request(token, environment, session_id),
+                                 timeout=20) as response:
+            return str(getattr(response, "status", None) or response.getcode())
+    except HTTPError as exc:
+        return str(exc.code)
+    except Exception as exc:  # noqa: BLE001 - a network failure is a log line, not a crash
+        return "failed: " + (type(exc).__name__ + (f" {exc}" if str(exc) else ""))
+
+
+def owned_environments(host_ids, pointers):
+    """Every environment this Mac's hosts hold: those their logs name plus those their pointers name."""
+    out = []
+    for env in list(host_ids or []) + [p.get("environmentId") for p in pointers or []
+                                       if isinstance(p, dict)]:
+        if isinstance(env, str) and env and env not in out:
+            out.append(env)
+    return out
 
 
 def session_rows(payload):
