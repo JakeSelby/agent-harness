@@ -4354,6 +4354,19 @@
       "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B061",
+      "github_number": 605,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/605",
+      "title": "fix(lint): skip untracked files under .agent-harness/ so local plans cannot redden the gate",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B061.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
     }
   ]
 }

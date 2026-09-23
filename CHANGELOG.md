@@ -258,6 +258,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `harness lint` no longer reads untracked files under `.agent-harness/`. That directory stays
+  unignored so a handoff can read its plans, so any session's local note naming a project outside
+  `docs/` turned the lint red, and the stop gate with it, for every other session in the same
+  checkout. Tracked files there are still linted, and staging a note brings it back into the lint
+  before it can be committed (#605).
 - Remote Control hosts managed by `harness remote-control` now reuse their environment across a
   restart. Claude Code 2.1.280 reads the folder's bridge pointer only when `createSessionInDir`
   is on, and every host was launched with `--no-create-session-in-dir`, so each restart
