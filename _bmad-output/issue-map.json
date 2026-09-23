@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 227,
     "task": 26,
-    "bug": 80,
+    "bug": 83,
     "chore": 66,
     "spike": 10,
     "decision": 12
@@ -5377,6 +5377,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B079.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B082",
+      "github_number": 730,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/730",
+      "title": "hook-composition proves composition from configuration, never from a turn that fires the hooks",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B082.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
