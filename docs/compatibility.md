@@ -108,11 +108,11 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    record the feed as not applicable with that reason.
 
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
-`source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, and a `cases`
-object whose values are `passed`, `failed`, or
+`source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, `cases` and
+`invalidation_scope`, with the case values `passed`, `failed`, or
 `unverified`. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
 client or harness version. Its full source commit must be an ancestor of the release with no
-subsequent runtime-source changes; changed adapters or primitives invalidate the evidence. Set exact runtime/client versions before changing status to qualified.
+subsequent change under the paths that invalidate this target. Set exact runtime/client versions before changing status to qualified.
 Each linked record must match the catalog's exact runtime version, client version and platform.
 Linked failed or unverified results block qualification even if another record passes the same
 case. When a rerun supersedes a record, remove the old reference from the active claim while
@@ -123,6 +123,30 @@ with `--from-progress`, and link that partial record as the partial record it is
 The CLI verifies these records and `harness compatibility --release-check` fails until all
 required clients are qualified. A reviewer must assess the observations; a JSON label alone is
 not empirical evidence.
+
+### Which source change invalidates which evidence
+
+Evidence is invalidated per target, not per repository. A target's path set is the shared runtime
+source — `VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`,
+`config.example.json` — minus every *other* runtime's adapter directory, as the catalog's
+`evidence_invalidation` block maps them. A fix confined to `adapters/codex` therefore leaves the
+Claude Code targets of a round standing, and the reverse holds; a change to shared source, or to a
+file under `adapters/` that no runtime owns, still invalidates every target.
+
+The scope fails closed. A runtime the catalog does not map is excluded from nothing and keeps the
+whole-source rule, a declared path that is not that runtime's own `adapters/<runtime>` directory is
+rejected, and a record that carries no `invalidation_scope` is checked against the whole source.
+Each record states the scope it was validated under, so a reviewer reads the assumption from the
+artifact instead of recomputing it; a record claiming any other scope is refused. The claim the
+narrowing rests on — that no runtime's loader reads a file under another's adapter directory — is
+asserted by `tests/test_adapter_directory_isolation.py`, which scans the runtime source for a
+hardcoded adapter path rather than taking it on trust.
+
+Per-*case* scoping, which would invalidate only the acceptance cases whose declared source paths
+changed, is not implemented. It would replace the published requirement with "no change under the
+paths a maintainer believes this case depends on", losing any coupling the map does not model, and
+the evidence requirements are a v1 stable interface. That is an owner decision and a policy edit,
+not a quiet patch; it waits on one. See [#333](https://github.com/JakeSelby/agent-harness/issues/333).
 
 A released catalog pins the exact source commit its evidence qualifies. Later development does
 not rewrite or invalidate that historical release record, but any change under the runtime-source

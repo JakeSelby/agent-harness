@@ -30,6 +30,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from harness_core import compatibility  # noqa: E402  (after ROOT, which locates the package)
+
 VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
 TURN_TIMEOUT = 300
@@ -564,6 +567,17 @@ def build_record(items):
     return data
 
 
+def scoped(client, data):
+    """State the path set whose change invalidates this record, so a reviewer need not derive it.
+
+    The catalog grants the scope; a record that claims any other one is rejected. See
+    docs/compatibility.md.
+    """
+    entry = dict(CLIENTS[client], id=client)
+    data["invalidation_scope"] = compatibility.evidence_scope(catalog(), entry)
+    return data
+
+
 def selected(names):
     required = catalog()["required_cases"]
     if names in (None, "all"):
@@ -604,8 +618,8 @@ def record(client, names, model, keep, runner=probe, progress=None):
                 else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
         append_case(progress, header, item)
         results.append(item)
-    return build_record(progress_lines(progress, header)
-                        or [dict(header, **item) for item in results])
+    return scoped(client, build_record(progress_lines(progress, header)
+                                      or [dict(header, **item) for item in results]))
 
 
 def main(argv=None):
@@ -630,7 +644,7 @@ def main(argv=None):
         return 0
     progress = args.progress or progress_path(args.client, args.out)
     if args.from_progress:
-        data = build_record(progress_lines(progress))
+        data = scoped(args.client, build_record(progress_lines(progress)))
     else:
         data = record(args.client, names, args.model, args.keep_home, progress=progress)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"

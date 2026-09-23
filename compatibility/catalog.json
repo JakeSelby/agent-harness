@@ -16,6 +16,13 @@
     "bidirectional-handoff",
     "migration-uninstall"
   ],
+  "evidence_invalidation": {
+    "version": 1,
+    "runtime_paths": {
+      "claude-code": "adapters/claude-code",
+      "codex": "adapters/codex"
+    }
+  },
   "clients": [
     {
       "id": "claude-code-cli-macos",

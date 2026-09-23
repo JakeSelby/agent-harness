@@ -9,6 +9,7 @@ STATES = {"qualified", "unqualified", "planned", "unsupported"}
 SOURCE_PATHS = ("VERSION", "bin", "lib", "adapters", "primitives", "policy", "templates",
                 "config.example.json")
 FREEZE_STATES = {"open", "frozen"}
+SCOPE_VERSION = 1
 
 
 def qualification_source(data):
@@ -94,6 +95,53 @@ def merge_refusal(root, data, ref):
             + " changes qualified runtime source: " + ", ".join(result["paths"])]
 
 
+def runtime_scopes(data):
+    """The adapter directory each runtime owns, as the catalog declares it.
+
+    A directory here is private to its runtime, so a change inside it invalidates only that
+    runtime's evidence. The claim is gated by tests/test_adapter_directory_isolation.py.
+    """
+    declared = data.get("evidence_invalidation")
+    if not declared:
+        return {}
+    if declared.get("version") != SCOPE_VERSION:
+        raise ValueError("unsupported evidence invalidation scope version")
+    scopes = declared.get("runtime_paths")
+    if not isinstance(scopes, dict) or len(scopes) < 2:
+        raise ValueError("evidence invalidation scope requires two or more runtime paths")
+    for runtime in sorted(scopes):
+        if scopes[runtime] != "adapters/" + runtime:
+            raise ValueError("evidence invalidation scope must name each runtime's own adapter "
+                             "directory: " + runtime)
+    return dict(scopes)
+
+
+def evidence_scope(data, client):
+    """The path set whose change invalidates one client's evidence.
+
+    Shared source always counts; another runtime's adapter directory does not. A runtime the
+    catalog does not map is excluded from nothing, so an unmapped or undeclared target keeps the
+    whole-source rule and the scope fails closed.
+    """
+    scopes = runtime_scopes(data)
+    excluded = sorted(path for name, path in scopes.items() if name != client.get("runtime"))
+    if client.get("runtime") not in scopes:
+        excluded = []
+    return {"version": SCOPE_VERSION, "paths": list(SOURCE_PATHS), "excluded": excluded}
+
+
+def scope_pathspec(scope):
+    """Render a scope as the git pathspec a diff of the invalidating source uses."""
+    return list(scope["paths"]) + [":(exclude)" + path for path in scope["excluded"]]
+
+
+def same_scope(declared, scope):
+    """Whether an evidence record claims exactly the scope the catalog grants its client."""
+    if not isinstance(declared, dict) or declared.get("version") != scope["version"]:
+        return False
+    return all(sorted(declared.get(key) or []) == sorted(scope[key]) for key in ("paths", "excluded"))
+
+
 def catalog(root):
     data = json.loads((root / "compatibility" / "catalog.json").read_text())
     if data.get("schema_version") != 1:
@@ -103,6 +151,7 @@ def catalog(root):
     identifiers = [row["id"] for row in data["clients"]]
     if len(identifiers) != len(set(identifiers)):
         raise ValueError("duplicate compatibility client")
+    runtime_scopes(data)
     target = qualification_source(data)
     if target != "HEAD":
         available = subprocess.run(["git", "-C", str(root), "cat-file", "-e", target + "^{commit}"],
@@ -122,6 +171,7 @@ def catalog(root):
 def evidence_errors(root, data, client):
     errors, passed = [], set()
     target = qualification_source(data)
+    scope = evidence_scope(data, client)
     if not client.get("runtime_version") or not client.get("client_version"):
         errors.append("native runtime and client versions are required")
     for item in client.get("evidence", []):
@@ -155,9 +205,14 @@ def evidence_errors(root, data, client):
         if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40,64}", commit):
             errors.append("native evidence requires a full source commit identity")
             continue
+        declared = record.get("invalidation_scope")
+        if declared is not None and not same_scope(declared, scope):
+            errors.append("evidence claims an invalidation scope the catalog does not grant")
+            continue
+        paths = scope_pathspec(scope) if declared is not None else list(SOURCE_PATHS)
         ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, target], capture_output=True)
         unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target, "--",
-                                    *SOURCE_PATHS], capture_output=True)
+                                    *paths], capture_output=True)
         if ancestry.returncode or unchanged.returncode:
             errors.append("runtime source changed or evidence commit is unavailable")
             continue
