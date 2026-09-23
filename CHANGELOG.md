@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The usage feed tells the orchestrator when its own session has grown past the posture's
+  fresh-session threshold. A long session's cost is mostly the context every further turn
+  re-reads, and the turn line, which reports output tokens, showed none of it. A new
+  `session_nudge_at` switch in the cost sidecar lists context sizes in whole tokens, resolved
+  over `extends` like every other switch; on `UserPromptSubmit` the feed reads the newest
+  response's input tokens plus its cached prefix and, at a crossing, adds one line naming the size,
+  the threshold and the advice to finish the task, write the handoff and start fresh. It is said
+  once per threshold rather than once per turn, and the thresholds already said are kept in the
+  session's state file so a resume does not repeat them. Nothing is blocked. Every shipped
+  variant carries an empty list until the sizes are measured on real sessions, so the line is
+  silent today, and Codex raises no `UserPromptSubmit` event and declares the gap (#321).
+
 ### Fixed
 
 - The repository's own copy states the figures its code holds. The landing copy said nineteen

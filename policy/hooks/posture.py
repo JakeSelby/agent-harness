@@ -361,6 +361,11 @@ def validate_sidecar(data, roles=None):
         elif key == "nudge_at":
             ok = (isinstance(value, list) and len(value) <= MAX_NUDGES
                   and all(_number(v, 0, MAX_MULTIPLIER) and v > 0 for v in value))
+        elif key == "session_nudge_at":
+            # Context sizes, not multiples: whole tokens, because that is what a transcript
+            # counts in and a fractional token is a number nobody measured.
+            ok = (isinstance(value, list) and len(value) <= MAX_NUDGES
+                  and all(_number(v, 0, MAX_BUDGET, integer=True) and v > 0 for v in value))
         else:
             findings.append("unknown switch '" + key + "'")
             continue
