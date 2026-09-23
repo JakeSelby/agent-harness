@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The `jev` decision provider is opt-in per decision point, and sends only what a configuration
+  lists. `governance.jev.mode` sets a default and `governance.jev.modes.<point>` overrides it for
+  one of the points the decision ledger already names: `off` calls nothing, `shadow` calls and
+  writes the ledger row where neither the model nor the user sees it, `advise` adds the judgment
+  and says what acting on it would have done, and `act` may turn an `allow` into an `ask` and
+  nothing else. Every mode defaults to `off`, so a configuration written before this existed
+  makes no request, and an unknown mode, decision point or field is refused at
+  `harness config set` rather than at the first call. Two controls sit outside the modes:
+  `~/.local/state/agent-harness/jev-disabled` disables every call while it exists, read per
+  decision so the switch needs no restart or configuration change, and the allowlist
+  `governance.jev.state_fields` is empty by default and covers `command` and `summary` alone:
+  a file path, a prompt, an environment value, tool output or assistant prose has no field to go in
+  and is never built into a request. A listed field whose text matches one of the shared secret
+  shapes is dropped whole rather than masked, and free text is withheld entirely when that
+  pattern list cannot be loaded; redaction recognises the shapes it knows, which is why the
+  allowlist is two fields rather than a free vocabulary. The request timeout defaults to two
+  seconds inside the hook budget, a request and token ceiling bound the rest, every failure path
+  still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
+  the allowlist, where the kill switch lives and whether a credential variable is set — by name,
+  never its value (#137).
+
 ### Changed
 
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been

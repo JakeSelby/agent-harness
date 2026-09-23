@@ -91,6 +91,7 @@ Reasonable developers disagree about testing, autonomy and how much to delegate.
 - [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
 - [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
 - [Autonomy stances](primitives/stances/autonomy): Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.
+- [Judgment stays local by default](docs/runtime-controls.md): An external judgment provider is off at every decision point until you turn it on, sends only the fields you list, and one file switches every call off.
 
 ### On the way
 
