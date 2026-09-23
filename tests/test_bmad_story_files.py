@@ -352,26 +352,42 @@ class RealCorpusTests(unittest.TestCase):
         self.assertEqual(len(report), len(manifest["items"]))
 
     def test_each_conversion_carries_the_original_tail_byte_for_byte(self):
-        # Each item's own legacy stub, with an amendment appended, is converted as well as any file still
-        # in legacy form, so the test keeps its reach after the corpus has been upgraded.
+        # Each item's own legacy stub is converted with tails of every shape a hand edit leaves, as well as
+        # any file still in legacy form, so the test keeps its reach after the corpus has been upgraded.
         last_line = re.compile(r"planning context rather than duplicate the issue\.\r?\n")
+
+        def expected(item, original):
+            bom = sync.BOM if original.startswith(sync.BOM) else ""
+            body = original[len(bom):]
+            end = body.find("\n")
+            newline = "\r\n" if end > 0 and body[end - 1] == "\r" else "\n"
+            skeleton = sync.render_artifact(item).replace("\n", newline)
+            tail = body[last_line.search(body).end():]
+            if tail and not tail.startswith(("\n", "\r\n")):
+                skeleton += newline
+            return bom + skeleton + tail
+
         items = sync.load_manifest()["items"]
+        self.assertTrue(items)
         checked = 0
         for item in items:
-            amendment = "\n## Amendment — carried\n\nKept byte for byte for {}.\n".format(item["bmad_id"])
-            originals = [sync.render_legacy_stub(item) + amendment]
+            stub = sync.render_legacy_stub(item)
+            bmad_id = item["bmad_id"]
+            originals = [
+                stub + "\n## Amendment — carried\n\nKept byte for byte for {}.\n".format(bmad_id),
+                stub + "## Amendment — no blank line\nText for {}.  ".format(bmad_id),
+                stub + "\n## Mixed endings\r\nfor {}\n\n\n".format(bmad_id),
+                stub.replace("\n", "\r\n") + "\r\n## Amendment — CRLF\r\n\r\nText for {}.\r\n".format(bmad_id),
+                sync.BOM + stub + "\n## Amendment — after a BOM\n",
+            ]
             real = (REPO / item["artifact_path"]).read_bytes().decode("utf-8")
             if sync.upgrade_text(item, real)[0] != "current":
                 originals.append(real)
-            with self.subTest(item["bmad_id"]):
+            with self.subTest(bmad_id):
                 for original in originals:
                     status, converted, _ = sync.upgrade_text(item, original)
                     self.assertEqual(status, "convert")
-                    tail = original[last_line.search(original).end():]
-                    skeleton = sync.render_artifact(item)
-                    if tail and not tail.startswith("\n"):
-                        skeleton += "\n"
-                    self.assertEqual(converted, skeleton + tail)
+                    self.assertEqual(converted, expected(item, original))
                 checked += 1
         self.assertEqual(checked, len(items))
 
