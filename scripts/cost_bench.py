@@ -22,6 +22,7 @@ import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -409,11 +410,25 @@ def refuse_live_config(config_dir, base=None, bare=None):
 
 # Paths a harness sync leaves in a profile as regular files, beside the links it makes.
 HARNESS_FILES = ("CLAUDE.md", "CLAUDE.personal.md", "rules/harness-stances", "skills/harness-*")
-# Names the harness manifest manages: a link at one of these is the harness's whatever it leads to.
-HARNESS_NAMES = ("rules", "skills", "hooks", "output-styles", "CLAUDE.md", "stances", "agents")
+# Every top-level name `bin/harness sync` writes under the config directory: the files it
+# generates or merges, and the directories it fills with links. A link at one of these is the
+# harness's whatever it leads to; one that leads outside the profile would have the sync write
+# through it, outside anything the undo can see.
+HARNESS_NAMES = ("CLAUDE.md", "CLAUDE.personal.md", "agents", "commands", "hooks", "output-styles",
+                 "plans", "rules", "settings.json", "skills", "stances")
 # The one file a sync rewrites in place when the profile already holds it. Everything else it
 # writes is new, or is at a path `harness_residue` refuses beforehand.
 SYNC_MERGES = ("settings.json",)
+# What the CLI keeps a sign-in in. Never copied, written, or deleted here, whatever wrote it and
+# whenever it appeared: a profile that loses one is signed out.
+CREDENTIAL_NAMES = (".credentials.json", ".claude.json")
+# Where a sync records what it wrote, under the HOME it ran with.
+SYNC_STATE = Path(".local") / "state" / "agent-harness"
+
+
+def is_credential(rel):
+    name = Path(rel).name
+    return name in CREDENTIAL_NAMES or name.startswith(CREDENTIAL_NAMES) or "credential" in name.lower()
 
 
 def leads_into_harness(link):
@@ -452,9 +467,40 @@ def harness_residue(config_dir):
     return sorted(set(found))
 
 
+def escapes_profile(config_dir):
+    """Names in HARNESS_NAMES the sync would write through to somewhere outside the profile: any
+    that is a symlink, or whose resolved path is not under the profile's."""
+    root = Path(config_dir).expanduser()
+    try:
+        inside = root.resolve()
+    except OSError:
+        inside = root
+    out = []
+    for name in HARNESS_NAMES:
+        path = root / name
+        if path.is_symlink():
+            out.append(name)
+            continue
+        if not path.exists():
+            continue
+        try:
+            real = path.resolve()
+        except (OSError, RuntimeError):
+            out.append(name)
+            continue
+        if real != inside / name and inside not in real.parents:
+            out.append(name)
+    return out
+
+
 def check_sync_target(config_dir, bare=None, base=None):
     """Every refusal a named sync target can meet, run before anything is launched or spent."""
     refuse_live_config(config_dir, base, bare)
+    escaping = escapes_profile(config_dir)
+    if escaping:
+        raise SystemExit("cost-bench: refusing to sync a tag into %s: %s would take the sync's writes "
+                         "outside the profile, where nothing could undo them"
+                         % (config_dir, ", ".join(escaping)))
     residue = harness_residue(config_dir)
     if residue:
         raise SystemExit("cost-bench: refusing to sync a tag into %s: it already holds harness files "
@@ -463,13 +509,19 @@ def check_sync_target(config_dir, bare=None, base=None):
 
 
 def profile_entries(root):
-    """`{relative path: "dir" | "file" | "link"}` for everything under `root`, no link followed."""
+    """`{relative path: "dir" | "file" | "link" | "other"}` for everything under `root`, no link
+    followed and nothing opened; a socket or a FIFO is `other`."""
     root, out = Path(root), {}
     for dirpath, dirnames, filenames in os.walk(str(root), followlinks=False):
         for name in dirnames + filenames:
             path = Path(dirpath) / name
-            out[path.relative_to(root).as_posix()] = ("link" if path.is_symlink()
-                                                      else "dir" if path.is_dir() else "file")
+            try:
+                mode = os.lstat(str(path)).st_mode
+            except OSError:
+                continue
+            out[path.relative_to(root).as_posix()] = ("link" if stat.S_ISLNK(mode) else "dir"
+                                                      if stat.S_ISDIR(mode) else "file"
+                                                      if stat.S_ISREG(mode) else "other")
     return out
 
 
@@ -478,16 +530,21 @@ def _digest(path):
 
 
 def profile_listing(root):
-    """`{relative path: (kind, detail)}`: a file's size and sha256, a link's target, a directory's
-    nothing. What a write would change, recorded so that only what changed is ever touched."""
+    """`{relative path: (kind, detail)}`: a regular file's size and sha256, a link's target,
+    nothing for a directory or anything else. Only a regular file that can be read is ever
+    opened, so a FIFO cannot hang this and an unreadable file is listed as `("file", None)`
+    rather than stopping the walk."""
     root, out = Path(root), {}
     for rel, kind in profile_entries(root).items():
         path = root / rel
-        if kind == "link":
-            out[rel] = (kind, os.readlink(str(path)))
-        elif kind == "file":
-            out[rel] = (kind, (path.stat().st_size, _digest(path)))
-        else:
+        try:
+            if kind == "link":
+                out[rel] = (kind, os.readlink(str(path)))
+            elif kind == "file":
+                out[rel] = (kind, (path.stat().st_size, _digest(path)))
+            else:
+                out[rel] = (kind, None)
+        except OSError:
             out[rel] = (kind, None)
     return out
 
@@ -522,7 +579,8 @@ def copy_aside(config, dest, listing):
     config, dest = Path(config), Path(dest)
     partial = dest.with_name(dest.name + ".partial")
     partial.mkdir(parents=True)
-    copied = [rel for rel in SYNC_MERGES if listing.get(rel, ("",))[0] == "file"]
+    copied = [rel for rel in SYNC_MERGES if listing.get(rel, ("",))[0] == "file"
+              and listing[rel][1] is not None and not is_credential(rel)]
     for rel in copied:
         (partial / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(config / rel), str(partial / rel))
@@ -533,36 +591,87 @@ def copy_aside(config, dest, listing):
     return copied
 
 
-def undo_sync(config, before, saved, copied):
-    """Take back what a sync and a run wrote into `config`, and nothing else.
+def sync_wrote(config, state):
+    """Relative paths a sync recorded as its own, read from the state it left under its HOME:
+    every link in its manifest, every file its ownership store generated or created, and the
+    files at HARNESS_FILES paths it renders without recording. Only paths inside `config`."""
+    config = Path(config)
+    try:
+        inside = config.resolve()
+    except OSError:
+        inside = config
+    out = set()
+
+    def add(path):
+        path = Path(path)
+        try:  # the parent resolved, the entry itself never followed: a link is the entry
+            rel = (path.parent.resolve() / path.name).relative_to(inside)
+        except (OSError, ValueError):
+            return
+        if not is_credential(rel):
+            out.add(rel.as_posix())
+
+    def read(name):
+        try:
+            return json.loads((Path(state) / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+    for link in read("manifest.json").get("links", []) or []:
+        if isinstance(link, dict) and link.get("path"):
+            add(link["path"])
+    for path, record in (read("ownership.json").get("files", {}) or {}).items():
+        if isinstance(record, dict) and (record.get("kind") == "generated" or record.get("created")):
+            add(path)
+    for pattern in HARNESS_FILES:
+        for path in config.glob(pattern):
+            add(path)
+            if path.is_dir() and not path.is_symlink():
+                for child in path.rglob("*"):
+                    add(child)
+    return out
+
+
+def undo_sync(config, before, saved, copied, state):
+    """Take back exactly what a sync wrote into `config`, and nothing else.
 
     `before` is `profile_listing` of `config` from before the sync, `saved` the directory
-    `copy_aside` built and `copied` what it holds. What was not there before goes. A file that
-    was there and whose bytes changed is put back only from its copy, and only through an atomic
-    write; a changed file with no copy, such as a credential the CLI refreshed during the run, is
-    left exactly as the run left it, because rolling a refreshed token back signs the profile
-    out. Nothing is rewritten whose bytes already match."""
+    `copy_aside` built, `copied` what it holds, and `state` the sync's own state directory,
+    from which `sync_wrote` reads what it made. Only those paths are removed: what the run's own
+    sessions or anyone else's wrote into the profile meanwhile, a transcript or a credential
+    created for the first time, is not the sync's and stays. A directory the sync created goes
+    only when it is empty. `settings.json`, which the sync merged into, is put back from its copy
+    through an atomic write, and only when its bytes differ; a credential file is never written,
+    so a token the CLI refreshed during the run stays refreshed."""
     config, saved = Path(config), Path(saved)
-    now = profile_listing(config)
-    for rel in sorted((r for r in now if r not in before), key=lambda r: -r.count("/")):
+    wrote = sync_wrote(config, state)
+    for rel in sorted(wrote, key=lambda r: -r.count("/")):
         path = config / rel
-        if path.is_symlink() or path.is_file():
-            path.unlink()
-        elif path.is_dir():
-            shutil.rmtree(str(path))
-    for rel in copied:
-        if rel not in before or before[rel][0] != "file":
+        if is_credential(rel) or rel in before and before[rel][0] != "dir":
+            continue  # a pre-existing file is restored below or left alone, never deleted
+        try:
+            if path.is_symlink() or (path.exists() and not path.is_dir()):
+                path.unlink()
+        except OSError:
             continue
-        current = now.get(rel)
-        if current is not None and current == before[rel]:
+    made = {r for r, (kind, _) in profile_listing(config).items() if kind == "dir"} - set(before)
+    for rel in sorted(made | {r for r in wrote if (config / rel).is_dir()}, key=lambda r: -r.count("/")):
+        if rel in before:
+            continue
+        try:
+            (config / rel).rmdir()  # refuses anything still holding a file: never rmtree
+        except OSError:
+            pass
+    for rel in copied:
+        if rel not in before or before[rel][0] != "file" or is_credential(rel):
             continue
         data = (saved / rel).read_bytes()
-        if (config / rel).is_symlink() or (config / rel).is_dir():
+        target = config / rel
+        if target.is_symlink() or target.is_dir():
             raise RuntimeError("%s is no longer a file; its copy is kept" % rel)
-        if (config / rel).is_file() and (config / rel).read_bytes() == data:
+        if target.is_file() and target.read_bytes() == data:
             continue
-        (config / rel).parent.mkdir(parents=True, exist_ok=True)
-        atomic_write(config / rel, data)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(target, data)
 
 
 def sync_tag(repo, ref, parent, config_dir=None, python=sys.executable):
@@ -621,7 +730,7 @@ def synced_tag(repo, ref, tmp=None, config_dir=None, python=sys.executable, bare
     finally:
         if saved is not None:
             try:
-                undo_sync(config, before, saved, copied)
+                undo_sync(config, before, saved, copied, parent / "home" / SYNC_STATE)
             except BaseException:
                 keep = True
                 print("cost-bench: could not take the sync back out of %s; the copy of what it "
@@ -1221,8 +1330,10 @@ def cmd_replay(args):
     if harness_config and not harness_config.is_dir():
         raise SystemExit("cost-bench: the harness profile %s does not exist; sign in to it once, then "
                          "sync the harness into it" % harness_config)
-    # Every refusal before the first launch of any tag, so no tag's schedule is spent and then
-    # stranded by a refusal the next one meets.
+    # Every refusal about the target itself, the refs and the install runs here, before the first
+    # launch of any tag, so no tag's schedule is spent and then stranded by one the next tag
+    # meets. The per-tag work (copy-aside, snapshot, sync) necessarily runs as each tag's turn
+    # comes, and a failure there is that tag's.
     harness = None
     if CANDIDATE in tags:
         harness = Path(args.harness_repo).expanduser() if args.harness_repo else installed_harness(home)

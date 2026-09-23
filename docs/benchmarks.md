@@ -80,14 +80,20 @@ python3 scripts/cost_bench.py replay --model <id> \
   tag is synced into when the run is meant to spend. That profile must hold no harness files
   already (a link counts only when it leads into a harness checkout or sits at a name the harness
   manages; the CLI's own `debug/latest` does not), and it cannot serve `candidate` in the same
-  run. After each tag's schedule, exception or interrupt included, the sync is taken back out of
-  it rather than the profile rolled back: what the sync and the run added is removed, and the one
-  file a sync rewrites in place, `settings.json`, is put back from a copy taken beforehand through
-  an atomic write. Credential files are never copied, rewritten or deleted, so a token the CLI
-  refreshed during the run stays refreshed. If taking the sync back fails, the copy is kept and
-  its path printed. Every one of these refusals happens before the first launch of any tag. The
-  pinned checkout is admitted to the harness arm's fence for reading only, and a pinned tag's
-  results go in a folder named for it.
+  run, and none of the names the sync writes (`rules`, `skills`, `commands`, `agents`, `hooks`,
+  `output-styles`, `plans`, `CLAUDE.md`, `settings.json` and the rest) may be a link leading out
+  of it. After each tag's schedule, exception or interrupt included, the sync is taken back out
+  of it rather than the profile rolled back: exactly the links and files the sync's own manifest
+  and ownership records name are removed, a directory it made goes only once empty, and the one
+  file it rewrites in place, `settings.json`, is put back from a copy taken beforehand through an
+  atomic write. Nothing else is touched: a transcript another session wrote during the run stays,
+  and credential files are never copied, rewritten or deleted, whether they existed before or
+  the CLI created them mid-run, so a refreshed token stays refreshed and a fresh sign-in stays
+  signed in. A FIFO or an unreadable file in the profile is listed and never opened. If taking
+  the sync back fails, the copy is kept and its path printed. The refusals above are all decided
+  before the first launch of any tag; the copy-aside, checkout and sync run as each tag's turn
+  comes. The pinned checkout is admitted to the harness arm's fence for reading only, and a
+  pinned tag's results go in a folder named for it.
 
 - **The arms differ by environment only.** Both get one command line: the same `--model`,
   `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network
