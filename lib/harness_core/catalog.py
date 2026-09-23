@@ -210,16 +210,19 @@ def role_contract(root, name):
 
 
 def role_skills(root, fields):
-    """The skill directories a role declares, as paths; an undeclared role reads none.
+    """The skill directories a role declares beyond the ones the shared policy cites, as paths.
 
-    An isolated worker is pointed at these and nothing else, so the whole skill corpus is not
-    part of what it may load. Each name must resolve to a shipped skill, because a typo would
-    silently widen nothing and quietly remove the authority the role's body assumes.
+    Each name must resolve to a shipped skill, because a typo would quietly remove authority the
+    role's body assumes. `all` is the planner's case: its body tells it to read the skills the
+    plan will name, and which those are is not known until the brief is read.
     """
-    named = [part.strip() for part in str(fields.get("skills", "")).split(",") if part.strip()]
+    shipped = root / "primitives" / "skills"
+    declared = [part.strip() for part in str(fields.get("skills", "")).split(",") if part.strip()]
+    if declared == ["all"]:
+        return sorted(p for p in shipped.iterdir() if (p / "SKILL.md").is_file())
     paths = []
-    for skill in named:
-        path = root / "primitives" / "skills" / identifier(skill)
+    for skill in declared:
+        path = shipped / identifier(skill)
         if not (path / "SKILL.md").is_file():
             raise ValueError("role declares an unknown skill: " + skill)
         paths.append(path)

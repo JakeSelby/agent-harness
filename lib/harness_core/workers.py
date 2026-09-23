@@ -19,10 +19,11 @@ RUNTIMES = {"codex": "codex", "claude-code": "claude"}
 # Characters per token, the tokenizer-free approximation `bin/harness` and `scripts/cost_bench.py`
 # use; the tests assert the three agree. Good for a budget and a trend, never for billing.
 CHARS_PER_TOKEN = 4.0
-# What a worker may load before it stops being cheap: the shared policy it carries plus every byte
-# of the skill authority it is pointed at. Recorded per run rather than enforced, because the cost
-# of a run is a property of the role's contract and is fixed before any brief is read (issue #335).
-CONTEXT_BUDGET_TOKENS = 30000
+# What a worker may be shown before it stops being cheap: the policy it carries plus every byte
+# mounted beside it. Recorded per run rather than enforced, because what a worker is shown is a
+# property of its contract and the policy's own pointers, fixed before any brief is read. A review
+# role resolves at about 30,800 of it and the planner, which may read any skill, at 43,800 (#335).
+CONTEXT_BUDGET_TOKENS = 50000
 
 
 def harness_version(root):
@@ -105,10 +106,30 @@ def resolution(root, config, runtime, name, model=None, prompt=None):
     if sentence:
         record["budget"] = posture_figures(root, row)
     instructions = "\n\n---\n\n".join(parts)
-    skills = catalog.role_skills(root, fields)
+    skills, docs = policy_reads(root, instructions, catalog.role_skills(root, fields))
     return {"fields": fields, "bindings": bindings, "instructions": instructions,
-            "skills": skills, "context": context_estimate(instructions, skills),
+            "skills": skills, "docs": docs, "context": context_estimate(instructions, skills, docs),
             "posture": record, "budget_sentence": sentence}
+
+
+POLICY_DOC = re.compile(r"docs/[a-z0-9][a-z0-9.-]*\.md")
+
+
+def policy_reads(root, instructions, declared):
+    """The skills and documents the resolved policy tells this worker to open, as `(skills, docs)`.
+
+    Every rule and stance in that text points somewhere — "the `licensing-review` skill", "Lists:
+    `docs/preferences.md`" — and a worker that cannot follow the pointer is being told to obey a
+    policy it cannot read. So the set is derived from the text itself rather than maintained by
+    hand: a stance that stops citing a skill stops paying for it on the next run. `declared` is
+    the role's own `skills:` line, which adds what its body assumes but the shared text never
+    names.
+    """
+    available = sorted(p for p in (root / "primitives" / "skills").iterdir() if (p / "SKILL.md").is_file())
+    cited = [p for p in available if re.search(r"\b" + re.escape(p.name) + r"\b", instructions)]
+    skills = sorted(set(cited) | set(declared))
+    docs = sorted({root / name for name in POLICY_DOC.findall(instructions) if (root / name).is_file()})
+    return skills, docs
 
 
 def est_tokens(chars):
@@ -116,22 +137,29 @@ def est_tokens(chars):
     return int(round(chars / CHARS_PER_TOKEN))
 
 
-def context_estimate(instructions, skills):
-    """What this worker may load, in estimated tokens: shared policy plus its skill authority.
-
-    Not the workspace and not the brief: those are the caller's, and vary per run. This is the
-    standing cost the role's own contract fixes, which is what a review layer pays four times.
-    """
-    authority = 0
-    for path in skills:
-        for item in sorted(path.rglob("*")):
+def text_size(paths):
+    """Characters of every readable text file at or under these paths."""
+    total = 0
+    for path in paths:
+        for item in [path] + (sorted(path.rglob("*")) if path.is_dir() else []):
             if item.is_file():
                 try:
-                    authority += len(item.read_text(encoding="utf-8"))
+                    total += len(item.read_text(encoding="utf-8"))
                 except (OSError, UnicodeDecodeError):
                     continue
-    return {"policy_tokens": est_tokens(len(instructions)), "skill_tokens": est_tokens(authority),
-            "total_tokens": est_tokens(len(instructions) + authority),
+    return total
+
+
+def context_estimate(instructions, skills, docs):
+    """What this worker is shown, in estimated tokens: the policy plus every byte mounted with it.
+
+    This counts what is mounted, not what a run reads: a worker opens what its brief needs. Not
+    the workspace and not the brief either, since those are the caller's and vary per run. It is
+    the standing cost the role's own contract fixes, which is what a review round pays four times.
+    """
+    reference = text_size(skills) + text_size(docs)
+    return {"policy_tokens": est_tokens(len(instructions)), "reference_tokens": est_tokens(reference),
+            "total_tokens": est_tokens(len(instructions) + reference),
             "budget_tokens": CONTEXT_BUDGET_TOKENS}
 
 
@@ -254,6 +282,20 @@ def execute(command, prompt, env, cwd, run_dir, timeout):
         return proc.returncode
 
 
+def policy_reference(work, docs):
+    """Copy the documents the policy cites into the worker's own directory, and return it.
+
+    A read root is a directory, and the directory these live in is the 237,000-token `docs/`
+    tree; copying the cited files is how a worker follows `docs/preferences.md` without being
+    handed everything beside it.
+    """
+    reference = Path(work) / "policy-reference"
+    reference.mkdir(exist_ok=True)
+    for path in docs:
+        shutil.copyfile(str(path), str(reference / path.name))
+    return reference
+
+
 def run(root, config, runtime, name, workspace, prompt, state_root, model=None, artifact=None, timeout=300, read_dirs=()):
     if os.name != "posix" or not 1 <= timeout <= 3600:
         raise ValueError("workers require POSIX and a timeout between 1 and 3600 seconds")
@@ -267,7 +309,7 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
         raise ValueError("--read-dir must name an existing directory")
     ready = resolution(root, config, runtime, name, model, prompt)
     fields, bindings, instructions = ready["fields"], ready["bindings"], ready["instructions"]
-    skills = ready["skills"]
+    skills, docs = ready["skills"], ready["docs"]
     if ready["budget_sentence"]:
         prompt = prompt.rstrip() + ready["budget_sentence"]
     if bool(artifact) != (fields["authority"] == "artifact-write"):
@@ -290,6 +332,8 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
               "harness_version": harness_version(root),
               "model": bindings["model"], "workspace": str(workspace),
               "effort": bindings.get("model_reasoning_effort", bindings.get("effort")),
+              # The documents the policy cites are mounted as copies, so the roots recorded here
+              # are the ones that outlive the run: the workspace, the skills and the caller's.
               "read_roots": [str(workspace)] + [str(p) for p in skills] + list(map(str, read_roots)),
               "context": ready["context"],
               "mode": "isolated-cli", "status": "starting", "started_at": time.time(),
@@ -309,18 +353,22 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
             env = environment(original, work)
             cwd = work / "cwd"
             cwd.mkdir()
+            reference = policy_reference(work, docs)
             instructions += "\n\nProject to inspect (read-only): " + str(workspace)
-            # Only the skills this role declares, and no path into the harness checkout: the
-            # policy above is the whole of the shared authority a worker is given, so it cannot
-            # spend a review layer reading the corpus it was never asked about (issue #335).
+            # The skills and documents the policy above cites, and no other path into the
+            # checkout: a worker must be able to follow its own policy's pointers, and must not
+            # be able to spend a review layer on the corpus nobody asked about (issue #335).
             if skills:
-                instructions += ("\nSkill authority (read-only), the only skills this role reads: "
+                instructions += ("\nSkill authority (read-only), the skills this role may read: "
                                  + ", ".join(str(p) for p in skills))
             else:
                 instructions += "\nThis role reads no skill authority: the policy above is complete."
+            if docs:
+                instructions += ("\nDocuments the policy above cites, as copies under "
+                                 + str(reference) + ": " + ", ".join(p.name for p in docs))
             instructions += "\nAdditional read-only inputs: " + ", ".join(map(str, read_roots))
             command = native.prepare(executable, work, root, workspace,
-                                     [Path(p) for p in skills] + read_roots,
+                                     list(skills) + ([reference] if docs else []) + read_roots,
                                      instructions, bindings, original, env)
             record["status"] = "running"
             reconcile.atomic_text(status_path, json.dumps(record, indent=2) + "\n")
