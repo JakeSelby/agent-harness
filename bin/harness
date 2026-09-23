@@ -3795,17 +3795,22 @@ def decision_report(days: int) -> int:
 ROLE_MIN_RUNS = 30
 
 
-def measured_share(rows: List[Dict[str, Any]], field: str, value: Any) -> Optional[float]:
-    """The share of `rows` whose `field` is `value`, over the rows that carry a measurement.
+def measured_share(rows: List[Dict[str, Any]], field: str, value: Any,
+                   among: Optional[Tuple[Any, ...]] = None) -> Optional[float]:
+    """The share of `rows` whose `field` is `value`, over the rows the question applies to.
 
-    None when none of them does. A row written before the field existed, a runtime that reports
-    no return and a return nothing could be joined to all record `null`, and counting those as
-    the absence of the property would report a measurement the ledger never made.
+    None when it applies to none of them. A row written before the field existed, a runtime
+    that reports no return and a return nothing could be joined to all record `null`, and
+    counting those as the absence of the property would report a measurement the ledger never
+    made. `among` narrows the denominator further: the share of returns that resolved is asked
+    of the returns that carried a path at all, since a return that named none — a one-line
+    verdict owes no file — is not a return whose path went nowhere.
     """
-    measured = [row.get(field) for row in rows if row.get(field) is not None]
-    if not measured:
+    seen = [row.get(field) for row in rows if row.get(field) is not None]
+    counted = [value_ for value_ in seen if among is None or value_ in among]
+    if not counted:
         return None
-    return sum(1 for seen in measured if seen == value) / len(measured)
+    return sum(1 for value_ in counted if value_ == value) / len(counted)
 
 
 def role_report(rows: List[Dict[str, Any]], days: int,
@@ -3820,11 +3825,12 @@ def role_report(rows: List[Dict[str, Any]], days: int,
     A role with fewer than `ROLE_MIN_RUNS` runs is marked `n<30`, because a p90 over eight runs
     is the second-largest of eight and a budget re-seeded from it is a guess wearing a number.
 
-    `path` and `over` are the two measured facts about the returns themselves: the share that
-    handed back a path that resolved, and the share that ran past the word cap their brief
-    stated. Each is taken over the runs that carry the measurement, so a row from before it
-    existed, a Codex row and a return nothing could be joined to lower neither share; a role
-    with no measured return at all prints `-` rather than a zero.
+    `path` and `over` are the two measured facts about the returns themselves: of the returns
+    that named a path, the share whose path resolved; and of the returns measured against a
+    cap, the share that ran past it. A return that named no path is in neither figure, so a
+    role whose returns are all one-line verdicts prints `-` for `path` rather than `0%`, which
+    would read as a role that wrote paths and got them all wrong. A row from before the
+    measurement existed, a Codex row and a return nothing could be joined to are `-` too.
     """
     table = {} if table is None else table
     groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -3837,7 +3843,7 @@ def role_report(rows: List[Dict[str, Any]], days: int,
     head = (f"{'role':<30}{'runs':>6}{'out p50':>10}{'out p75':>10}{'out p90':>10}"
             f"{'usd p50':>9}{'usd p75':>9}"
             f"{'tools p50':>11}{'tools p75':>11}{'tools p90':>11}"
-            f"{'path':>7}{'over':>7}{'unmeasured':>12}{'sample':>8}")
+            f"{'path':>5}{'over':>5}{'unmeasured':>12}{'sample':>8}")
     say(head)
     say("-" * len(head))
     unpriced = 0
@@ -3856,8 +3862,9 @@ def role_report(rows: List[Dict[str, Any]], days: int,
         cells = [f"{percentile(output, s):>10,}" if output else f"{'-':>10}" for s in (0.5, 0.75, 0.9)]
         cells += [f"{percentile(usd, s):>9.4f}" if usd else f"{'-':>9}" for s in (0.5, 0.75)]
         cells += [f"{percentile(tools, s):>11,}" if tools else f"{'-':>11}" for s in (0.5, 0.75, 0.9)]
-        cells += [f"{share:>7.0%}" if share is not None else f"{'-':>7}"
-                  for share in (measured_share(group, "return_path", "resolvable"),
+        cells += [f"{share:>5.0%}" if share is not None else f"{'-':>5}"
+                  for share in (measured_share(group, "return_path", "resolvable",
+                                               among=("resolvable", "unresolvable")),
                                 measured_share(group, "return_over_budget", True))]
         mark = f"n<{ROLE_MIN_RUNS}" if len(group) < ROLE_MIN_RUNS else ""
         say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}{mark:>8}")

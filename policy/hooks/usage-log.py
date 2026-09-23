@@ -96,12 +96,30 @@ _COST = []
 # its brief stated. Both are `null` when the scan could not measure them — no parent call to join
 # on, no return text, no cap it can know, a runtime that reports no return at all.
 RETURN_KEYS = ("return_path", "return_over_budget")
-# A path as a return writes one: inside a fence, inside backticks, or bare in prose. Backticks
-# are whitespace to this matcher, so all three forms reach it alike. A candidate must carry a
-# separator, because a bare word is a word; `:` is excluded, so a URL contributes its path part
-# and never its scheme.
+# Why a return was not measured, when the reason is one a reader would otherwise mistake for a
+# short return: a result the scan kept only the first 64 KB of is not a return it can count the
+# words of, and saying so beats a figure taken over part of the text.
+MEASURED_KEY = "return_measured"
+# A path as a return writes one: inside a fence, inside backticks, or bare in prose. The three
+# differ in what proves a token is a path at all. Quoted text is taken at its word; bare prose
+# is not, because `pass/fail`, `24/7`, `2026/09/22` and `they/them` are prose and every one of
+# them carries a separator. There a token counts only when it carries a path's own shape.
+QUOTED = re.compile(r"`{3,}[^\n]*\n(.*?)(?:`{3,}|\Z)|`([^`\n]+)`", re.S)
 PATH_TOKEN = re.compile(r"[^\s`'\"<>|*?,;:()\[\]{}]*/[^\s`'\"<>|*?,;:()\[\]{}]*")
+# Trailing only: a leading `.` is `./notes`, and stripping it would make the path absolute and
+# send it looking in the root of the filesystem.
 PATH_TRIM = ".,;:!?'\")]}>"
+PATH_ROOTS = ("/", "./", "../", "~/")
+PATH_EXTENSION = re.compile(r"\.[A-Za-z0-9]{1,8}\Z")
+# A URL names someone else's file, so it contributes nothing at all — not even its path part.
+URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S+")
+# What counts as a word when a return is measured against its cap: a token carrying a letter or
+# a digit. A fence line, a bullet's `-` and a `·` separator are punctuation, and counting them
+# would put a return over a cap it kept.
+WORD = re.compile(r"[A-Za-z0-9]")
+# The number a cap states is the one beside the word `words`, not the first in the sentence:
+# "cap each of the 3 sections at 200 words" is a 200-word cap.
+CAP_NUMBER = re.compile(r"(?i)(\d+)\s*[- ]?words?|word\s+cap\s*(?:of\s+)?(\d+)")
 # How many candidates one return is checked against the filesystem. A return that named forty
 # paths and resolved none of them is not answered differently by its forty-first.
 MAX_CANDIDATES = 40
@@ -182,23 +200,29 @@ def git(cwd, *args):
     return out.stdout.strip() if out.returncode == 0 else ""
 
 
-def _result_text(content, tool_name):
-    """A tool result's text, whether the transcript wrote a string or a block list.
+def _result_parts(content, tool_name):
+    """A tool result's text and whether it was cut, from a string or a block list alike.
 
     Only the two tools a detector reads keep their text, and only the first 64 KB of it: the
     event list is held whole in memory, and a `Read` of a large file would otherwise be carried
-    through the entire scan for nothing.
+    through the entire scan for nothing. Whether the cut bit is returned beside the text,
+    because a measurement taken over the head of a result is not a measurement of the result.
     """
     if tool_name not in TEXT_KEPT_FOR:
-        return ""
+        return "", False
     if isinstance(content, str):
         text = content
     elif isinstance(content, list):
         text = "\n".join(b.get("text") or "" for b in content
                          if isinstance(b, dict) and b.get("type") == "text")
     else:
-        return ""
-    return text[:MAX_RESULT_TEXT]
+        return "", False
+    return text[:MAX_RESULT_TEXT], len(text) > MAX_RESULT_TEXT
+
+
+def _result_text(content, tool_name):
+    """The text alone, for a caller that does not care whether it was cut."""
+    return _result_parts(content, tool_name)[0]
 
 
 def record_usage(per_message, key, usage, day="", model=""):
@@ -493,8 +517,9 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
            "tool_use_id": meta.get("toolUseId") or "",
            "requested_type": "", "rerouted": False,
            # `mark_returns` fills these from the parent's record of the return, joined on the
-           # same id. Null is "not measured", never "measured and found nothing".
-           "return_path": None, "return_over_budget": None,
+           # same id. Null is "not measured", never "measured and found nothing", and
+           # `return_measured` names the reason where one would otherwise be mistaken for it.
+           "return_path": None, "return_over_budget": None, "return_measured": None,
            "turns": turns, "started": started, "ended": ended}
     if partial:
         row["partial"] = True
@@ -556,23 +581,26 @@ def return_rules():
 def return_cap(brief, agent_type):
     """The word cap a return was owed, or None when the scan cannot know one.
 
-    A brief that states a cap is measured against the number it states. A brief that states none
-    was capped by `brief-guard` at its own default before it reached the agent — the transcript
-    records the call as the model wrote it, not as the hook rewrote it (#324) — so that default
-    is the cap. The exception is an agent whose own definition carries the cap: the hook appends
-    nothing to those briefs, and the definition is not a file this scan reads, so they are
-    recorded as unmeasured rather than judged against a number they were never given.
+    A brief that states a cap is measured against the number beside the word `words`, which is
+    not always the first number in the sentence. A brief that states none was capped by
+    `brief-guard` at its own default before it reached the agent — the transcript records the
+    call as the model wrote it, not as the hook rewrote it (#324) — so that default is the cap.
+
+    Two briefs get no cap at all, because the hook appends none to them: an empty prompt, and a
+    spawn of an agent whose own definition carries the cap. `agent_type` there is the type the
+    call asked for, as the hook reads it, and not the type the spawn ran as — a reroute must not
+    move a return onto a cap its brief never carried.
     """
     pattern, capped, default = return_rules()
-    if pattern is None:
+    if pattern is None or not (brief or "").strip():
         return None
-    match = pattern.search(brief or "")
+    match = pattern.search(brief)
     if match is None:
         return None if (agent_type or "") in capped else default
-    number = re.search(r"\d+", match.group(0))
+    number = CAP_NUMBER.search(match.group(0))
     if number is None:
         return None
-    cap = int(number.group(0))
+    cap = int(number.group(1) or number.group(2))
     return cap if 0 < cap <= MAX_WORD_CAP else None
 
 
@@ -596,12 +624,27 @@ def return_roots(cwd, top):
     return roots
 
 
+def path_shaped(token):
+    """True when a token carries a path's own shape rather than a slash between two words."""
+    return token.startswith(PATH_ROOTS) or bool(PATH_EXTENSION.search(token.rsplit("/", 1)[-1]))
+
+
 def path_candidates(text):
-    """Every path-shaped token in a return, in order, without repeats."""
+    """Every path-shaped token in a return, in order, without repeats.
+
+    Quoted text — a fenced block or inline backticks — is taken at its word: a token written
+    inside it with a separator in it was written as a path. Bare prose has to look like one.
+    """
+    body = URL.sub(" ", text or "")
+    quoted = [(m.start(), m.end()) for m in QUOTED.finditer(body)]
     seen, found = set(), []
-    for raw in PATH_TOKEN.findall((text or "").replace("`", " ")):
-        token = raw.strip(PATH_TRIM)
+    for match in PATH_TOKEN.finditer(body):
+        token = match.group(0).rstrip(PATH_TRIM)
         if len(token) < 2 or "/" not in token or token in seen:
+            continue
+        if not (path_shaped(token)
+                or any(start <= match.start() and match.end() <= end
+                       for start, end in quoted)):
             continue
         seen.add(token)
         found.append(token)
@@ -633,6 +676,11 @@ def resolves(token, roots):
     return False
 
 
+def word_count(text):
+    """The words a cap counts: tokens carrying a letter or a digit, and no punctuation alone."""
+    return sum(1 for token in (text or "").split() if WORD.search(token))
+
+
 def path_state(text, roots):
     """`"resolvable"`, `"unresolvable"` or `"none"` for one return's text.
 
@@ -654,17 +702,23 @@ def mark_returns(agents, briefs, returns, roots):
     said — that is #157's question, and these two fields are the labelled input it needs.
 
     A row whose parent call is not in this transcript keeps both fields `null`. So does a return
-    that arrived empty: an agent that said nothing measures nothing.
+    that arrived empty, and one the scan kept only the head of: a truncated result is recorded
+    as `return_measured: "truncated"` rather than measured over the part that was read.
     """
     for row in agents:
         use_id = row.get("tool_use_id")
-        text = returns.get(use_id) if use_id else None
+        if not use_id or use_id not in returns:
+            continue
+        text, truncated = returns[use_id]
+        if truncated:
+            row[MEASURED_KEY] = "truncated"
+            continue
         if not isinstance(text, str) or not text.strip():
             continue
         row["return_path"] = path_state(text, roots)
-        cap = return_cap(briefs.get(use_id) or "", row.get("agent_type") or "")
+        cap = return_cap(briefs.get(use_id) or "", row.get("requested_type") or "")
         if cap:
-            row["return_over_budget"] = len(text.split()) > cap
+            row["return_over_budget"] = word_count(text) > cap
 
 
 def agent_rows(transcript, session_id="", shared=None, version=None):
@@ -774,9 +828,10 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 for block in results:
                     tool_use_id = block.get("tool_use_id") or ""
                     name = tool_names.get(tool_use_id, "")
+                    text, cut = _result_parts(block.get("content"), name)
                     events.append({"kind": "tool_result", "turn": turn,
                                    "tool_use_id": tool_use_id, "tool_name": name,
-                                   "text": _result_text(block.get("content"), name)})
+                                   "text": text, "truncated": cut})
                 if results or entry.get("isMeta") or entry.get("isCompactSummary"):
                     continue
                 turn += 1
@@ -858,7 +913,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     # results are the ones the event list already kept for the detectors, so measuring a return
     # costs no second read of the transcript.
     mark_returns(agents, briefs,
-                 dict((e["tool_use_id"], e["text"]) for e in events
+                 dict((e["tool_use_id"], (e["text"], e.get("truncated")))
+                      for e in events
                       if e["kind"] == "tool_result" and e.get("tool_name") == "Agent"),
                  return_roots(cwd, top))
     record = {
@@ -1163,7 +1219,7 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
             # Codex raises no subagent-return event on the parent thread and writes the child to
             # a rollout of its own, so no return is joined to this row and none is measured;
             # `adapters/codex/capabilities.json` names the gap.
-            "return_path": None, "return_over_budget": None,
+            "return_path": None, "return_over_budget": None, "return_measured": None,
             "turns": turn, "started": started, "ended": ended,
             "parse_failures": malformed,
         }

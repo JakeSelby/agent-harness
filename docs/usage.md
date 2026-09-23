@@ -120,11 +120,17 @@ because a zero would say the spawn was budgeted nothing. `return_path` and
 `Agent` call on the same `tool_use_id`: whether it named a path that existed under the worktree
 or the scratchpad at the moment the row was written (`"resolvable"`, `"unresolvable"`, or
 `"none"` for a return that named no path at all, which is a fact and not a failure), and
-whether its word count passed the cap its brief stated — the cap `rule-detectors` reads, or the
-400-word default `brief-guard` appends to a brief that states none. Both are `null` when the
-scan could not measure them: no parent call to join on, an empty return, an agent whose own
-definition carries the cap, or a Codex row, whose runtime joins no return at all. The match is a
-string match and the resolution an `os.path.exists`; no model judges the return here. These rows
+whether its word count passed the cap its brief stated — the number beside the word `words` in
+the cap `rule-detectors` reads, or the 400-word default `brief-guard` appends to a brief that
+states none. A path counts when it is quoted, in a fence or in backticks, or when bare prose
+gives it a path's own shape: a root, a relative prefix, or an extension on its last segment, so
+`pass/fail` and `2026/09/22` are prose and a URL is nobody's file here. Both fields are `null`
+when the scan could not measure them: no parent call to join on, an empty return, an empty
+brief, a spawn whose `requested_type` carries its cap in its own definition, or a Codex row,
+whose runtime joins no return at all. A result the scan kept only the first 64 KB of records
+`return_measured: "truncated"` instead, because a word count over the head of a return is not a
+word count of the return. The match is a string match and the resolution an `os.path.exists`;
+no model judges the return here. These rows
 carry the same tokens a second time, attributed, which is why no grouping sums both them and
 their session.
 
@@ -380,10 +386,12 @@ reported no tool-call figure, which are named there rather than averaged in as a
 with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
 second-largest of eight, and a budget re-seeded from it is a guess wearing a number.
 
-`path` and `over` are the returns themselves: the share that handed back a path that resolved,
-and the share that ran past the word cap their brief stated. Both are taken over the runs that
-carry the measurement, so a row written before it existed, a Codex row and a return nothing
-could be joined to lower neither share, and a role with no measured return prints `-`.
+`path` and `over` are the returns themselves: of the returns that named a path, the share whose
+path resolved; and of the returns measured against a cap, the share that ran past it. A return
+that named no path is in neither figure, so a role whose returns are all one-line verdicts
+prints `-` for `path` rather than `0%`, which would read as a role that wrote paths and got
+them all wrong. A row written before the measurement existed, a Codex row and a return nothing
+could be joined to print `-` too.
 
 `--by day` reads a row's `days` slices when it carries them and falls back to its end date when
 it does not, so a session that ran for a fortnight is spread over the days it spent on. The

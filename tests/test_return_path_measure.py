@@ -48,7 +48,7 @@ class Transcript(unittest.TestCase):
     def spawn(self, agent_id, brief, returned, agent_type="builder"):
         self.spawns.append((agent_id, brief, returned, agent_type))
 
-    def rows(self, join=True):
+    def rows(self, join=True, ran_as=None):
         entries = [{"type": "user", "sessionId": "s-1", "cwd": str(self.cwd),
                     "timestamp": STAMPS[0]}]
         calls, results = [], []
@@ -74,7 +74,7 @@ class Transcript(unittest.TestCase):
                  "message": {"id": "a-" + agent_id, "model": "model-b", "content": [],
                              "usage": {"input_tokens": 1, "output_tokens": 40}}}) + "\n",
                 encoding="utf-8")
-            meta = {"agentType": agent_type, "spawnDepth": 1}
+            meta = {"agentType": ran_as or agent_type, "spawnDepth": 1}
             if join:
                 meta["toolUseId"] = "tu-" + agent_id
             (subagents / ("agent-%s.meta.json" % agent_id)).write_text(json.dumps(meta),
@@ -85,6 +85,11 @@ class Transcript(unittest.TestCase):
     def row(self, returned, brief="Return at most 400 words.", agent_type="builder"):
         self.spawn("aaa", brief, returned, agent_type)
         return self.rows()["aaa"]
+
+    def rows_for(self, returned):
+        """One row per call, over a fixture that is built fresh each time."""
+        self.spawns = []
+        return self.row(returned)
 
 
 class PathTests(Transcript):
@@ -114,14 +119,27 @@ class PathTests(Transcript):
         self.assertEqual(row["return_path"], "none")
 
     def test_a_scratchpad_file_resolves_from_outside_the_worktree(self):
-        scratch = Path(tempfile.mkdtemp())
-        self.addCleanup(lambda: (scratch / "digest.md").unlink())
+        scratch = Path(self.tmp.name) / "scratch"
+        scratch.mkdir()
         (scratch / "digest.md").write_text("detail", encoding="utf-8")
         row = self.row("Fixed. Digest: %s" % (scratch / "digest.md"))
         self.assertEqual(row["return_path"], "resolvable")
 
-    def test_a_url_is_not_read_as_a_path(self):
+    def test_a_url_contributes_nothing_at_all(self):
         row = self.row("Fixed. See https://example.com/notes/dimension-a.md for the source.")
+        self.assertEqual(row["return_path"], "none")
+
+    def test_a_relative_prefix_survives_the_trailing_trim(self):
+        row = self.row("Fixed. Detail in ./notes/dimension-a.md.")
+        self.assertEqual(row["return_path"], "resolvable")
+
+    def test_prose_with_a_slash_in_it_is_not_a_path(self):
+        for prose in ("the check is pass/fail", "24/7 and 3/4 of the rows", "on 2026/09/22",
+                      "they/them throughout"):
+            self.assertEqual(self.rows_for(prose)["return_path"], "none", prose)
+
+    def test_a_slashed_word_pair_inside_backticks_is_taken_at_its_word(self):
+        row = self.row("Wrote `notes/dimension-a`.")
         self.assertEqual(row["return_path"], "unresolvable")
 
     def test_resolution_is_taken_when_the_row_is_written_not_when_the_agent_returned(self):
@@ -153,6 +171,31 @@ class BudgetTests(Transcript):
         self.assertIsNone(row["return_over_budget"])
         self.assertEqual(row["return_path"], "none")
 
+    def test_the_cap_is_the_number_beside_the_word_words(self):
+        self.assertEqual(usage_log.return_cap("cap each of the 3 sections at 200 words", ""), 200)
+        self.assertEqual(usage_log.return_cap("a word cap of 300 applies", ""), 300)
+        row = self.row(brief_of(210), brief="Cap each of the 3 sections at 200 words.")
+        self.assertIs(row["return_over_budget"], True)
+
+    def test_a_brief_that_was_empty_is_measured_against_no_cap(self):
+        # `brief-guard` appends nothing to an empty prompt, so there is no default to apply.
+        self.assertIsNone(usage_log.return_cap("", ""))
+        self.assertIsNone(usage_log.return_cap("   ", "builder"))
+        self.assertIsNone(self.row(brief_of(900), brief="")["return_over_budget"])
+
+    def test_the_exemption_follows_the_type_the_call_asked_for(self):
+        # The spawn asked for a capped agent and was rerouted; the brief it carried is the one
+        # the hook read, so the reroute must not put it under a cap it never had.
+        self.spawn("aaa", "Do the thing.", brief_of(900), "gatherer")
+        rows = self.rows(ran_as="worker-b")
+        self.assertEqual(rows["aaa"]["requested_type"], "gatherer")
+        self.assertIsNone(rows["aaa"]["return_over_budget"])
+
+    def test_punctuation_is_not_counted_as_words(self):
+        self.assertEqual(usage_log.word_count("one - two \u00b7 three\n```\nfour\n```"), 4)
+        row = self.row("- a\n- b\n- c\n", brief="Return at most 3 words.")
+        self.assertIs(row["return_over_budget"], False)
+
     def test_a_cap_the_detector_does_not_read_as_one_leaves_the_field_unmeasured(self):
         # Not a word cap and not the default either: a capped agent whose brief says nothing.
         self.assertIsNone(usage_log.return_cap("keep it short", "gatherer"))
@@ -172,6 +215,18 @@ class UnmeasuredTests(Transcript):
         row = self.row("   ")
         for field in usage_log.RETURN_KEYS:
             self.assertIsNone(row[field], field)
+
+    def test_a_return_the_scan_only_kept_the_head_of_is_named_truncated(self):
+        oversized = ("word " * 40) + ("x" * usage_log.MAX_RESULT_TEXT)
+        row = self.row(oversized)
+        self.assertEqual(row["return_measured"], "truncated")
+        for field in usage_log.RETURN_KEYS:
+            self.assertIsNone(row[field], field)
+
+    def test_a_return_inside_the_kept_size_is_measured_and_not_named(self):
+        row = self.row("Fixed. See notes/dimension-a.md.")
+        self.assertIsNone(row["return_measured"])
+        self.assertEqual(row["return_path"], "resolvable")
 
     def test_a_subagent_row_still_holds_no_text(self):
         row = self.row("Fixed. See notes/dimension-a.md.")
@@ -218,18 +273,27 @@ class ReportTests(unittest.TestCase):
                 return line
         self.fail("no line for " + role)
 
-    def test_both_shares_are_taken_over_the_measured_runs_alone(self):
-        rows = [self.row(return_path="resolvable", return_over_budget=False),
-                self.row(return_path="none", return_over_budget=True),
-                self.row()]
-        line = self.line(rows)
-        self.assertIn("50%", line)
-        self.assertEqual(line.count("50%"), 2)
+    def cells(self, rows, role="builder"):
+        """`(path, over)` as the report printed them, by position on the role's line."""
+        fields = self.line(rows, role).split()
+        return fields[10], fields[11]
 
-    def test_a_role_with_no_measured_return_prints_a_dash_and_not_a_zero(self):
-        line = self.line([self.row(), self.row()])
-        self.assertNotIn("0%", line)
-        self.assertIn("-", line)
+    def test_the_path_share_is_taken_over_the_returns_that_named_a_path(self):
+        rows = [self.row(return_path="resolvable"), self.row(return_path="unresolvable"),
+                self.row(return_path="none"), self.row()]
+        self.assertEqual(self.cells(rows)[0], "50%")
+
+    def test_a_role_whose_returns_all_named_no_path_prints_a_dash_not_a_zero(self):
+        rows = [self.row(return_path="none"), self.row(return_path="none")]
+        self.assertEqual(self.cells(rows)[0], "-")
+
+    def test_the_over_share_is_taken_over_the_returns_measured_against_a_cap(self):
+        rows = [self.row(return_over_budget=True), self.row(return_over_budget=False),
+                self.row()]
+        self.assertEqual(self.cells(rows)[1], "50%")
+
+    def test_a_role_with_no_measured_return_prints_a_dash_in_both_cells(self):
+        self.assertEqual(self.cells([self.row(), self.row()]), ("-", "-"))
 
     def test_the_header_names_both_columns(self):
         head = self.report([self.row()]).splitlines()[0]
@@ -247,6 +311,23 @@ class CandidateTests(unittest.TestCase):
 
     def test_a_bare_word_is_never_a_path(self):
         self.assertEqual(usage_log.path_candidates("fixed the parser and ran the suite"), [])
+
+    def test_prose_joined_by_a_slash_is_never_a_path(self):
+        for prose in ("pass/fail", "and/or", "24/7", "3/4", "2026/09/22", "they/them"):
+            self.assertEqual(usage_log.path_candidates(prose), [], prose)
+
+    def test_a_root_a_relative_prefix_or_an_extension_makes_one(self):
+        for text in ("/etc/hosts", "./notes/a", "../notes/a", "~/notes/a", "notes/a.md"):
+            self.assertEqual(len(usage_log.path_candidates(text)), 1, text)
+
+    def test_quoted_text_is_taken_at_its_word(self):
+        self.assertEqual(usage_log.path_candidates("wrote `notes/a` there"), ["notes/a"])
+
+    def test_a_leading_dot_survives_the_trim(self):
+        self.assertEqual(usage_log.path_candidates("see ./notes/a.md."), ["./notes/a.md"])
+
+    def test_a_url_contributes_nothing(self):
+        self.assertEqual(usage_log.path_candidates("https://example.com/notes/a.md"), [])
 
     def test_the_candidate_list_is_bounded(self):
         text = " ".join("dir%d/file.md" % i for i in range(usage_log.MAX_CANDIDATES + 20))
