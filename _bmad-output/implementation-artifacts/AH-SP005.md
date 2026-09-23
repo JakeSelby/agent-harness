@@ -26,9 +26,8 @@ This work item was authored as part of the repository's committed BMad planning 
 ## Question
 
 Does deletion-only compaction, with each tool call and result scored by a decision provider for
-relevance to the task still open, preserve task success while cutting context? The decision waiting on
-it is whether the harness offers provider-scored compaction on Claude Code's compaction hook, or the
-spike closes negative.
+relevance to the task still open, preserve task success while cutting context? The issue records one outcome: if
+the exit criterion is missed, the spike closes negative and says so.
 [Source: https://github.com/JakeSelby/agent-harness/issues/373]
 
 ## Experiment
@@ -59,8 +58,9 @@ Not yet run. Blocked by #136 and #137 (merged) and #369, the first live replay r
 
 ## Decision
 
-Open: the replay comparison against the exit criterion decides it. A pass opens a story to ship the
-compaction filter on Claude Code; a miss closes the spike negative.
+Open: the replay comparison against the exit criterion decides it. A miss closes the spike negative.
+[ASSUMPTION: a pass would open a story to ship the compaction filter on Claude Code; the issue records
+only the negative outcome.]
 
 ## Dev notes
 
@@ -74,3 +74,5 @@ compaction filter on Claude Code; a miss closes the spike negative.
 ## Change log
 
 - 2026-09-23: written from the issue and pull-request record.
+- 2026-09-23: corrected after sample review: architecture bindings, current behaviour and history
+  checked against the 2026-09-23 spine, the code and the record.

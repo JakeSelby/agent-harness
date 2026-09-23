@@ -32,8 +32,7 @@ Does the Claude Code Workflow tool bypass the harness? Three sub-questions:
 
 Why it mattered: the Workflow tool ships natively and any user can run one. If band routing,
 brief-guard and the ledger do not see its spawns, a script is a way around the delegation stance whether
-or not the harness adopts scripts. The decision waiting on it was which bugs or capability gaps to file,
-and how #545 should route confined roles. #520 asks the same question of the tier restriction per
+or not the harness adopts scripts. #520 asks the same question of the tier restriction per
 runtime; this is the Workflow-shaped instance.
 [Source: https://github.com/JakeSelby/agent-harness/issues/540]
 
@@ -64,9 +63,9 @@ Partially bypassed, measured 2026-09-22.
 2. **No, and it does not need to.** The script body has no filesystem or shell access and refuses
    `import()`, so it cannot call `harness role run`; naming the role in `agentType` runs it in session,
    unconfined, on that definition's model.
-3. **Yes, partly.** `usage-log.py` records every workflow agent as a subagent row tagged with the
-   workflow id, but with no `tool_use_id`, so the reroute join is empty and compliance cannot be
-   measured from those rows.
+3. **Yes. Not bypassed.** `usage-log.py` records every workflow agent as a subagent row tagged with
+   the workflow id. Those rows carry no `tool_use_id`, however, so the reroute join is empty and
+   compliance cannot be measured from them.
 
 Fan-out is one level deep: the built-in workflow subagent disallows the `Agent` tool. Untested and said
 so in the record: whether `PreToolUse` fires on a workflow agent's own `Bash`. The raw evidence is in
@@ -97,3 +96,5 @@ routes confined roles that way.
 ## Change log
 
 - 2026-09-23: written from the issue and pull-request record.
+- 2026-09-23: corrected after sample review: architecture bindings, current behaviour and history
+  checked against the 2026-09-23 spine, the code and the record.

@@ -27,8 +27,7 @@ This file reconstructs planning metadata from the existing GitHub record. It doe
 
 Can bounded, advisory judgments from a decision provider close the semantic gaps that deterministic
 command grading and instruction-pattern scanning leave: whether an unfamiliar action is on task,
-destructive or an exfiltration risk, and whether tool output carries injected instructions? The
-decision waiting on it was whether action-risk and tool-output screening would join the integration.
+destructive or an exfiltration risk, and whether tool output carries injected instructions?
 
 Closed as not planned on 2026-09-19, before the experiment ran.
 [Source: https://github.com/JakeSelby/agent-harness/issues/146]
@@ -75,3 +74,5 @@ ask-band gate.
 ## Change log
 
 - 2026-09-23: written from the issue and pull-request record.
+- 2026-09-23: corrected after sample review: architecture bindings, current behaviour and history
+  checked against the 2026-09-23 spine, the code and the record.

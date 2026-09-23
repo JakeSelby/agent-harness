@@ -27,8 +27,7 @@ This file reconstructs planning metadata from the existing GitHub record. It doe
 
 Can a decision provider judge the semantic fidelity of a short output to a short source under a narrow
 transformation instruction, checking contradictions, unsupported additions, changed attribution and
-lost uncertainty as separate criteria? The decision waiting on it was whether a fidelity pack would be
-offered as a bounded check.
+lost uncertainty as separate criteria?
 
 Closed as not planned on 2026-09-21, before the experiment ran. It was one of seven additional bounded
 experiments (#156 to #162) that the epic re-scope closed with the other prose-level checks, because
@@ -74,3 +73,5 @@ live configuration changes. Publishing the provider's performance results stays 
 ## Change log
 
 - 2026-09-23: written from the issue and pull-request record.
+- 2026-09-23: corrected after sample review: architecture bindings, current behaviour and history
+  checked against the 2026-09-23 spine, the code and the record.

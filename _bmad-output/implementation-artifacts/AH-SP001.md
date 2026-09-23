@@ -81,7 +81,9 @@ Open: the held-out result against the exit criterion decides it.
   its own switch, because it is the only decision-log field holding assistant prose.
   [Source: https://github.com/JakeSelby/agent-harness/pull/574]
 - Bound: FR-48 (tighten-only stages; stop-claim check named as the first `act` consumer), FR-49
-  (evidence gates), FR-27 (decision log and completion claim).
+  (evidence gates), FR-27 (decision log and completion claim), and AD-15, Decision providers are
+  subordinate: at the stop point `act` may turn an allowed stop into a block that returns the turn to
+  the agent, and never releases a block. [Source: _bmad-output/planning-artifacts/architecture-spines/architecture-agent-harness-2026-09-23/ARCHITECTURE-SPINE.md#AD-15]
 - [Source: https://github.com/JakeSelby/agent-harness/issues/141]
 - [Source: https://github.com/JakeSelby/agent-harness/issues/387]
 - [Source: _bmad-output/planning-artifacts/prds/prd-agent-harness-2026-09-23/prd.md#FR-48]
@@ -90,3 +92,5 @@ Open: the held-out result against the exit criterion decides it.
 ## Change log
 
 - 2026-09-23: written from the issue and pull-request record.
+- 2026-09-23: corrected after sample review: architecture bindings, current behaviour and history
+  checked against the 2026-09-23 spine, the code and the record.
