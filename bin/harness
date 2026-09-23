@@ -4053,6 +4053,12 @@ def cmd_usage(args: argparse.Namespace) -> int:
     delegated: List[Dict[str, Any]] = []
     unknown_metrics = set()
     unpriced = 0
+    # The measured inflation of the counted totals, weighted by the deduplicated tokens each
+    # run contributed to them, so the footer figure is the window's raw sum over its counted
+    # sum and a long session moves it more than a short one. A run whose row carries no
+    # measured ratio — a Codex row, which says `unknown`, a worker row, or a row written
+    # before the field existed, which carries no key at all — is counted as unknown.
+    dedup_raw, dedup_counted, dedup_runs, dedup_unknown = 0.0, 0, 0, 0
     ledger: List[Dict[str, Any]] = []
     for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
         try:
@@ -4093,6 +4099,11 @@ def cmd_usage(args: argparse.Namespace) -> int:
             continue
         cost = row_cost(row, table, children.get(row.get("session_id") or "")
                         if kind == "session" and row.get("runtime") != "codex" else None)
+        # The ratio is reported over exactly what TOTAL counts: a run where the runs column
+        # counts one, and tokens where the token columns add them, which under `--by day` is
+        # the in-window slices and not the whole row.
+        ratio = row.get("raw_vs_deduped")
+        measured = isinstance(ratio, float)
         if sliced and days_map:
             # The run is counted on the day the session ended, once; its tokens are counted on
             # the days they were spent. So the run column still counts sessions rather than
@@ -4101,6 +4112,10 @@ def cmd_usage(args: argparse.Namespace) -> int:
                 groups.setdefault(ended[:10], [0, 0, 0, 0, 0, 0.0])[0] += 1
                 if cost is None:
                     unpriced += 1
+                if measured:
+                    dedup_runs += 1
+                else:
+                    dedup_unknown += 1
             # A slice carries tokens and no model, so a multi-day session's cost is allocated
             # across its days by each day's share of its tokens. For the single-day session,
             # which is nearly all of them, the share is one and the allocation is exact; for a
@@ -4119,6 +4134,9 @@ def cmd_usage(args: argparse.Namespace) -> int:
                         value = 0
                     acc[i + 1] += value
                     share += value
+                if measured:
+                    dedup_raw += ratio * share
+                    dedup_counted += share
                 if cost is not None and spent:
                     acc[5] += cost * share / spent
             continue
@@ -4136,6 +4154,14 @@ def cmd_usage(args: argparse.Namespace) -> int:
         acc[0] += 1
         if cost is None:
             unpriced += 1
+        counted = sum(v for v in (row.get(name) for name in RATE_FIELDS)
+                      if isinstance(v, int) and not isinstance(v, bool) and v > 0)
+        if measured:
+            dedup_raw += ratio * counted
+            dedup_counted += counted
+            dedup_runs += 1
+        else:
+            dedup_unknown += 1
         if cost is not None:
             acc[5] += cost
         for i, name in enumerate(RATE_FIELDS):
@@ -4179,6 +4205,15 @@ def cmd_usage(args: argparse.Namespace) -> int:
     # cheap window unless the runs it could not price are counted somewhere.
     say(f"unpriced: {unpriced} run(s), unknown model or partial tokens" if unpriced
         else "unpriced: none")
+    # The size of the deduplication, said rather than silently applied: the columns above are
+    # the corrected figures, and this is how much larger counting every transcript line would
+    # have made them. See docs/usage.md.
+    if dedup_counted:
+        say(f"raw_vs_deduped: raw totals were {dedup_raw / dedup_counted:.2f}x the counted "
+            f"totals over {dedup_runs} run(s), weighted by counted tokens"
+            + (f"; {dedup_unknown} run(s) unknown" if dedup_unknown else ""))
+    else:
+        say("raw_vs_deduped: unknown, no run in this window recorded a raw figure")
     if not table:
         say(f"no price table: {PRICES_PATH} is missing or unreadable")
     return 0
