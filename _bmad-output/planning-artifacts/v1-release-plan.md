@@ -117,11 +117,10 @@ candidate commit becomes the immutable tag. The release workflow deterministical
 candidate archive, refuses a digest mismatch, and publishes that verified archive with checksums;
 metadata, changelog, catalog, notes, and install/rollback commands must agree with it.
 
-Publish in this order: immutable tag, verified GitHub release artifact, reference-site pin, then
-project-website metadata. Stop on the first failed surface. A tag or artifact mismatch is never repaired
-by moving the tag: mark the failed release clearly and use the SemVer policy for the corrective release.
-Mutable sites roll back through their prior immutable pins. Record each publication identity so a
-partial release can be resumed or reversed without guessing.
+Publish in this order: immutable tag, verified GitHub release artifact, then repository metadata. Stop
+on the first failed surface. A tag or artifact mismatch is never repaired by moving the tag: mark the
+failed release clearly and use the SemVer policy for the corrective release. Record each publication
+identity so a partial release can be resumed or reversed without guessing.
 
 ## Sequencing and ownership
 

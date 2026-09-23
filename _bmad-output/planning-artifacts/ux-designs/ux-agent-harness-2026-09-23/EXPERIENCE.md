@@ -116,13 +116,12 @@ library.
 ## UJ-7. Jordan cuts a release
 
 Jordan freezes the candidate on a release branch, runs the smoke tier, qualifies the required targets once,
-then works the seven release surfaces in order.
+then works the five release surfaces in order.
 
 **Confirmation:** preflight passes only when all of the following hold:
 - the compatibility catalog, its evidence and `VERSION` agree;
 - the checkout is clean, with no projection drift;
-- GitHub About matches `product.json`, if `gh` is authenticated (otherwise preflight warns);
-- the reference deployment's pin matches the tag, when `--reference-repo` is given.
+- GitHub About matches `product.json`, if `gh` is authenticated (otherwise preflight warns).
 
 Each release surface is reported as done, skipped or unverified.
 

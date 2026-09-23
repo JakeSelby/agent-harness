@@ -203,3 +203,8 @@ class ReleaseDocumentationTests(unittest.TestCase):
         for needle in ("seven days old", "at once as a patch", "scripts/sync_about.py --check"):
             self.assertIn(needle, self.AGENTS, msg=needle)
             self.assertIn(needle, self.RELEASING, msg=needle)
+
+    def test_the_release_surfaces_end_at_this_repository(self):
+        self.assertIn("A release has five surfaces", self.AGENTS)
+        for text in (self.AGENTS, self.RELEASING):
+            self.assertNotIn("--reference-repo", text)

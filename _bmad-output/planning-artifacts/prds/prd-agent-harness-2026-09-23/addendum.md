@@ -327,8 +327,7 @@ logged in `.memlog.md`.
     `compatibility/freeze.json`. `main` keeps merging meanwhile.
   - The evidence commit must stay an ancestor of the qualification source commit, so a squash-merged or
     diverged release branch fails closed instead of publishing an unqualified source.
-- **Seven release surfaces,** worked in order and each reported, so no surface is inferred from another.
-  The reference site and the maintainer site card repin themselves; the release verifies them.
+- **Five release surfaces,** worked in order and each reported, so no surface is inferred from another.
 
 ### Cost benchmarks (FR-55 to FR-58)
 - **The bare arm must be truly bare.**
