@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The acceptance runner passes `CLAUDE_CODE_OAUTH_TOKEN` into each case's disposable home and the
+  smoke tier counts it as a reachable credential, so an operator on a Claude subscription runs
+  a Claude Code round on the token `claude setup-token` mints instead of on-demand credit (#672).
+
 - Where the qualification targets run and how each is provisioned is now written down, because a
   release session had to rediscover it every time. `docs/compatibility.md` names the binary
   source, the login and the host for each of the four CLI targets: every round to date ran on one
