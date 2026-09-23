@@ -287,20 +287,21 @@ How to read it:
   - AH-T011 [#619](https://github.com/JakeSelby/agent-harness/issues/619): Re-baseline the UX specification and architecture spine (done)
   - AH-S206 [#620](https://github.com/JakeSelby/agent-harness/issues/620): Rich story files: typed templates, managed issue block, lossless upgrade, depth check (done)
   - AH-S207 [#621](https://github.com/JakeSelby/agent-harness/issues/621): Repo rule: route every operation through BMad and keep its corpus current (done)
-  - AH-T012 [#622](https://github.com/JakeSelby/agent-harness/issues/622): Re-derive epics and reparent the open issue tree (open)
+  - AH-T012 [#622](https://github.com/JakeSelby/agent-harness/issues/622): Re-derive epics and reparent the open issue tree (done)
   - AH-S208 [#623](https://github.com/JakeSelby/agent-harness/issues/623): Implementation readiness and a derived sprint status (open)
-  - AH-T014 [#652](https://github.com/JakeSelby/agent-harness/issues/652): Enrich story files: the seventeen epics and the re-baseline tree (open)
-  - AH-T015 [#653](https://github.com/JakeSelby/agent-harness/issues/653): Enrich story files: the stance and settings contract (#116) (open)
-  - AH-T016 [#654](https://github.com/JakeSelby/agent-harness/issues/654): Enrich story files: close the loop and the decision layer (#135) (open)
-  - AH-T017 [#655](https://github.com/JakeSelby/agent-harness/issues/655): Enrich story files: the selection model, measurement and architecture conformance (#552, #632, #636) (open)
-  - AH-T018 [#656](https://github.com/JakeSelby/agent-harness/issues/656): Enrich story files: qualification, guardrails and traceability (#633, #634, #635) (open)
-  - AH-T019 [#657](https://github.com/JakeSelby/agent-harness/issues/657): Enrich story files: the provider-agnostic rebuild, BMad commit, v1 and client graduation (#93, #189, #206, #216) (open)
-  - AH-T020 [#658](https://github.com/JakeSelby/agent-harness/issues/658): Enrich story files: adoption and the 0.13 adoption epics (#212, #442, #443, #444) (open)
-  - AH-T021 [#659](https://github.com/JakeSelby/agent-harness/issues/659): Enrich story files: delivered work without an epic, issues #1 to #120 (open)
-  - AH-T022 [#660](https://github.com/JakeSelby/agent-harness/issues/660): Enrich story files: delivered work without an epic, issues #121 to #300 (open)
-  - AH-T023 [#661](https://github.com/JakeSelby/agent-harness/issues/661): Enrich story files: delivered work without an epic, issues #301 to #360 (open)
-  - AH-T024 [#662](https://github.com/JakeSelby/agent-harness/issues/662): Enrich story files: delivered work without an epic, issues #361 to #420 (open)
-  - AH-T025 [#663](https://github.com/JakeSelby/agent-harness/issues/663): Enrich story files: delivered work without an epic, issues #421 onward (open)
+  - AH-T014 [#652](https://github.com/JakeSelby/agent-harness/issues/652): Enrich story files: the seventeen epics and the re-baseline tree (done)
+  - AH-T015 [#653](https://github.com/JakeSelby/agent-harness/issues/653): Enrich story files: the stance and settings contract (#116) (done)
+  - AH-T016 [#654](https://github.com/JakeSelby/agent-harness/issues/654): Enrich story files: close the loop and the decision layer (#135) (done)
+  - AH-T017 [#655](https://github.com/JakeSelby/agent-harness/issues/655): Enrich story files: the selection model, measurement and architecture conformance (#552, #632, #636) (done)
+  - AH-T018 [#656](https://github.com/JakeSelby/agent-harness/issues/656): Enrich story files: qualification, guardrails and traceability (#633, #634, #635) (done)
+  - AH-T019 [#657](https://github.com/JakeSelby/agent-harness/issues/657): Enrich story files: the provider-agnostic rebuild, BMad commit, v1 and client graduation (#93, #189, #206, #216) (done)
+  - AH-T020 [#658](https://github.com/JakeSelby/agent-harness/issues/658): Enrich story files: adoption and the 0.13 adoption epics (#212, #442, #443, #444) (done)
+  - AH-T021 [#659](https://github.com/JakeSelby/agent-harness/issues/659): Enrich story files: delivered work without an epic, issues #1 to #120 (done)
+  - AH-T022 [#660](https://github.com/JakeSelby/agent-harness/issues/660): Enrich story files: delivered work without an epic, issues #121 to #300 (done)
+  - AH-T023 [#661](https://github.com/JakeSelby/agent-harness/issues/661): Enrich story files: delivered work without an epic, issues #301 to #360 (done)
+  - AH-T024 [#662](https://github.com/JakeSelby/agent-harness/issues/662): Enrich story files: delivered work without an epic, issues #361 to #420 (done)
+  - AH-T025 [#663](https://github.com/JakeSelby/agent-harness/issues/663): Enrich story files: delivered work without an epic, issues #421 onward (done)
+  - AH-B071 [#666](https://github.com/JakeSelby/agent-harness/issues/666): The real-corpus upgrade test fails once the last amended stub is upgraded (done)
 
 ### AH-E013: Measurement: the cost benchmark, detector precision and the evaluation pyramid ([#632](https://github.com/JakeSelby/agent-harness/issues/632), open)
 
@@ -340,7 +341,7 @@ How to read it:
   - AH-B068 [#538](https://github.com/JakeSelby/agent-harness/issues/538): Hide an installed Codex client from the reviewer-key detection test (open)
   - AH-S217 [#576](https://github.com/JakeSelby/agent-harness/issues/576): Guard the Workflow tool launch: log it, honour delegation off, refuse constrained roles in agentType (open)
   - AH-S216 [#577](https://github.com/JakeSelby/agent-harness/issues/577): harness usage: separate workflow rows and stop pricing them against a confined role budget (open)
-  - AH-B067 [#611](https://github.com/JakeSelby/agent-harness/issues/611): stop-gate: interleaved sessions in one checkout reset each other's block count, so the gate never releases (open)
+  - AH-B067 [#611](https://github.com/JakeSelby/agent-harness/issues/611): stop-gate: interleaved sessions in one checkout reset each other's block count, so the gate never releases (done)
   - AH-B064 [#641](https://github.com/JakeSelby/agent-harness/issues/641): Plugin channel: constrained roles install unconfined, and the manifest version lags VERSION (open)
   - AH-B070 [#650](https://github.com/JakeSelby/agent-harness/issues/650): sync --dry-run words its summary lines as if it had applied the changes (open)
 
@@ -526,7 +527,7 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-D004 [#417](https://github.com/JakeSelby/agent-harness/issues/417): Decide whether repeated agent pairs get an amortized return schema, and whether fan-outs get a shared workspace
 - AH-C030 [#418](https://github.com/JakeSelby/agent-harness/issues/418): Reserve BMad IDs for the traceability-gap issues
 
-### Issues #421 onward (29)
+### Issues #421 onward (30)
 
 - AH-C032 [#422](https://github.com/JakeSelby/agent-harness/issues/422): Reserve BMad IDs for the traceability close-out issues
 - AH-C033 [#424](https://github.com/JakeSelby/agent-harness/issues/424): Reserve BMad IDs for the comms-gap issues filed into v0.12.0
@@ -557,3 +558,4 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-T008 [#607](https://github.com/JakeSelby/agent-harness/issues/607): Rule: recognize "spawn a new chat" as a cloud-run request
 - AH-C051 [#625](https://github.com/JakeSelby/agent-harness/issues/625): docs(changelog): restore five Unreleased entries the #598 merge dropped
 - AH-B066 [#649](https://github.com/JakeSelby/agent-harness/issues/649): Replay counts the CLI's synced skill packs as sync leftovers and stops after the first tag
+- AH-S218 [#672](https://github.com/JakeSelby/agent-harness/issues/672): Pass CLAUDE_CODE_OAUTH_TOKEN into the disposable home so a subscription can run a Claude Code round
