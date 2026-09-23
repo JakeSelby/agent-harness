@@ -1357,7 +1357,8 @@ def case_spawn_confinement(home):
     return "; ".join(notes) + "."
 
 
-GATE_REPO_FILES = {
+GATE_REPO_FILES = {  # the run counter is ignored, or every green run would change the tree
+    ".gitignore": "gate-runs.log\n",
     "AGENTS.md": "# probe\n\n## Gate\n\n```sh\npython3 gate.py\n```\n",
     "gate.py": ("import pathlib, sys\n"
                 "log = pathlib.Path(__file__).with_name('gate-runs.log')\n"
@@ -1401,8 +1402,12 @@ def gate_runs(repo):
 
 
 def gate_state(home, repo):
-    """The stop-gate hook's own state record for this repository, or ``{}``."""
-    digest = hashlib.sha256(str(repo).encode("utf-8")).hexdigest()
+    """The stop-gate hook's own state record for this repository, or ``{}``.
+
+    The hook keys the record on the root git prints, which is resolved, so a disposable home
+    under a symlinked temporary directory is read at its resolved path too.
+    """
+    digest = hashlib.sha256(str(repo.resolve()).encode("utf-8")).hexdigest()
     path = home.root / ".local" / "state" / "agent-harness" / "stop-gate" / (digest + ".json")
     try:
         return json.loads(path.read_text())
