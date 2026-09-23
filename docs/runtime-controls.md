@@ -127,12 +127,19 @@ untouched, so an answer can be measured before it is trusted: nothing reaches th
 user. `advise` puts the judgment in `rule_matches`, says what `act` would have done, and changes
 no outcome. `act` lets a judgment turn an `allow` into an `ask`, and nothing else. Every mode
 defaults to `off`, so a configuration written before this existed makes no request; a mode, a
-point or a field the harness does not know fails at `harness config set`, not at the first call.
+point or a field the harness does not know fails at `harness config set`, not at the first call,
+and a point name this harness does not know reads `off` rather than the default. Each call
+writes one ledger row carrying the mode, the judgment label, the severity level, the
+deterministic outcome and the outcome acting on the judgment would have reached, so a `shadow`
+answer can be compared against the decision it did not change. Labels only: never the state.
 
 **Whether anything may go out at all.** `~/.local/state/agent-harness/jev-disabled` is the kill
 switch: while that file exists every mode reads `off`, with no configuration change and no
 restart, because the sentinel is read per decision rather than at construction.
-`governance.jev.sentinel` moves it. A live request also needs a key in the environment; without
+`governance.jev.sentinel` moves it, absolute or resolved against the state directory, never
+against the working directory. The kill switch is read per decision rather than at
+construction, so a session that was running when the file appeared stops calling, and starts
+again when it is removed, without a restart. A live request also needs a key in the environment; without
 one the call fails open to the deterministic answer like any other failure.
 
 **What may leave.** `governance.jev.state_fields` is an allowlist, empty by default, over
@@ -145,9 +152,60 @@ sent at all. Redaction recognises the shapes it knows; a credential that reads l
 prose still travels, which is why the allowlist is two fields and not a free vocabulary.
 
 `governance.jev.timeout` (2 seconds by default, inside the hook budget),
-`governance.jev.max_requests` and `governance.jev.max_tokens` bound the rest. `harness doctor`
+`governance.jev.max_requests` and `governance.jev.max_tokens` bound the rest, and they bound a
+session rather than a process: a hook is a new process per event, so the counters live in
+`~/.local/state/agent-harness/jev-spend.json` keyed by session id, under the lock, read before
+each check and added to as each request is charged. A spend file that cannot be read or written
+leaves the in-process count standing rather than failing a decision. `harness doctor`
 prints the mode per point, the allowlist, where the kill switch lives and whether a credential
 variable is set — by name, never its value.
+
+## Measuring a provider before trusting it
+
+A typed answer is not evidence that it was the right one. `harness decisions eval` replays the
+labelled rows of the [decision log](usage.md) — real inputs, the answer the deterministic hook
+gave, and the outcome the session later showed — through a question pack in `shadow` mode, and
+writes a report to `~/.local/state/agent-harness/jev-eval.json` or wherever `--out` says.
+
+```sh
+bin/harness decisions eval --replay tests/fixtures/jev/eval/responses.json   # no socket
+bin/harness decisions eval --point grade-bash --split heldout --out report.json
+bin/harness decisions eval --live --max-requests 50 --usd-per-mtok 3 --budget-usd 2
+```
+
+A **pack is versioned**. `lib/harness_core/decisions/packs.py` holds each one as an id, a
+`major.minor.patch` version and the hash of its content, frozen at construction so nothing that
+holds a pack can rewrite a criterion between the hash being taken and the request being built.
+The provider puts the id and the version on every ledger row beside the request hash, so a row
+resolves to the words that were asked. A threshold fitted against one version says nothing
+about another, and `Pack.verify` refuses the mismatch rather than carrying the number across.
+
+The **split is seeded by content**: a case lands in `dev` or `heldout` by the hash of the text
+that was judged, never by `random` and never by position, so a re-run reproduces the split and
+adding rows does not reshuffle the old ones. Thresholds are fitted on `dev` alone and reported
+on both; there is no global default, and a point with no labelled dev case is reported
+**unfitted** rather than given the shipped 0.8 as though it had been measured. The report
+carries, per point and per split: accuracy, the confusion by label, agreement with the
+deterministic answer, a calibration table over the confidence with its expected calibration
+error and a bootstrap interval, input and output tokens, cost per 1,000 decisions where a price
+was given, the returned model ids, and an `unusable` block counting unavailable calls, errors
+and abstentions — none of which is ever counted as a pass. The report holds no clock, so two
+runs over one log are byte-identical.
+
+What the labels do **not** prove is in the report's own `caveats`, and is the first thing to
+read. `grade-bash` logs a row only where the harness said `ask` or `deny`, so the set is the
+prompts and never the commands allowed through without one; `ran` is a user approving something
+they were asked about, which is evidence the prompt was unnecessary and not proof; `not_run`
+does not separate a refusal from an interrupted turn. A flip rate over `--repeat` passes is
+zero by construction under `--replay`, because a recorded response cannot disagree with itself,
+and latency under `--replay` is the runner's and is reported as unmeasured rather than as a
+number whose name claims the service produced it.
+
+Ordinary runs need `--replay` and open no socket at all. `--live` needs `--max-requests`, and
+`--budget-usd` needs `--usd-per-mtok` beside it, because no price for this provider is
+published here and a dollar ceiling nobody can convert is not a ceiling. A live run sends under
+the user's own `governance.jev.state_fields`, so an evaluation cannot send a field a hook is
+not allowed to send.
 
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.

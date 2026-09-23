@@ -397,6 +397,11 @@ bin/harness usage --by decision        # counts, outcome rates and the unlabelle
 The **unlabelled share** is the column to read first: an outcome rate over the two decisions
 that happened to be labelled is not evidence about the point.
 
+`harness decisions eval` replays the labelled rows of this file through a question pack and
+reports how closely the judgment tracked them, with a threshold fitted per decision point. What
+it measures, what it writes and what its labels do not prove are in
+[runtime controls](runtime-controls.md).
+
 ## Reading it
 
 ```sh

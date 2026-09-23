@@ -8,6 +8,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `harness decisions eval` replays the labelled rows of the decision log through a question
+  pack and reports how closely the judgment tracked them, so a provider can be measured before
+  it is trusted. The evaluated set is the real log — the input a hook judged, the deterministic
+  answer it gave and the outcome the session later showed — replayed in `shadow` mode against a
+  recorded fixture, so an ordinary run opens no socket, writes no ledger row and needs no
+  credential. Question packs are versioned: a pack carries an id, a `major.minor.patch` version
+  and the hash of its content, is frozen at construction so nothing holding one can rewrite a
+  criterion between the hash being taken and the request being built, and the provider puts the
+  id and version on every ledger row beside the request hash. The dev and held-out split is
+  seeded by the hash of the text that was judged rather than by `random`, so a re-run reproduces
+  it and new rows do not reshuffle the old ones. Thresholds are fitted per decision point on the
+  dev split and reported on both; there is no global default, because a cutoff optimal on one
+  workload does not transfer, and a point with no labelled dev case is reported unfitted rather
+  than given the shipped 0.8 as though it had been measured. The report names accuracy, the
+  confusion by label, agreement with the deterministic answer, a calibration table over the
+  confidence with its expected calibration error and a deterministic bootstrap interval, the
+  flip rate over repeated passes, tokens, cost per 1,000 decisions where a price was given, the
+  returned model ids, and an `unusable` block in which an unavailable call, an error and an
+  abstention are each counted and none is ever a pass. It carries no clock, so two runs over one
+  log are byte-identical. What the labels do not prove is in the report itself: `grade-bash`
+  records a row only where the harness asked or denied, `ran` is a user approving something they
+  were asked about rather than proof the prompt was unneeded, and `not_run` does not tell a
+  refusal from an interrupted turn. `--live` is the opt-in path and needs an explicit request
+  ceiling; `--budget-usd` needs a price beside it, because none is published here and a dollar
+  ceiling nobody can convert is not a ceiling (#138).
 - The `jev` decision provider is opt-in per decision point, and sends only what a configuration
   lists. `governance.jev.mode` sets a default and `governance.jev.modes.<point>` overrides it for
   one of the points the decision ledger already names: `off` calls nothing, `shadow` calls and
@@ -24,7 +49,13 @@ All notable changes to this project are documented here. The format follows
   shapes is dropped whole rather than masked, and free text is withheld entirely when that
   pattern list cannot be loaded; redaction recognises the shapes it knows, which is why the
   allowlist is two fields rather than a free vocabulary. The request timeout defaults to two
-  seconds inside the hook budget, a request and token ceiling bound the rest, every failure path
+  seconds inside the hook budget, and a request and token ceiling bound the session rather than
+  the process: a hook is a new process per event, so the counters are kept in the state directory
+  keyed by session id under the existing lock, and a spend file that cannot be read or written
+  leaves the in-process count standing rather than failing a decision. Each call writes one
+  ledger row carrying the mode, the judgment label, the severity level, the deterministic outcome
+  and the outcome acting on it would have reached, so a `shadow` answer can be compared against
+  the decision it did not change; labels only, never the state. Every failure path
   still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
   the allowlist, where the kill switch lives and whether a credential variable is set — by name,
   never its value (#137).
