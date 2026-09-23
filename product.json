@@ -63,7 +63,7 @@
         },
         {
           "name": "Fresh-context review",
-          "line": "Scope is checked against the ask, then quality, by agents that never saw the code being written.",
+          "line": "Scope is checked against the ask, then quality, by agents that never saw the code, and a framework's own review spawns are held to that whatever they call themselves.",
           "doc": "claude/agents/reviewer.md"
         },
         {

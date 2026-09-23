@@ -128,6 +128,13 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    of this occurs. On a runtime that does not route native spawns, verify the posture through an
    isolated role worker's model and effort and the budget sentence in a named role's brief, and
    record the feed as not applicable with that reason.
+9. Run a review layer of a framework named by a descriptor in `policy/integrations/` as a native
+   subagent that names no role, with the brief reworded as the client writes it, and confirm the
+   spawn is refused and the refusal names the framework, the layer and `harness role run <role>`.
+   Confirm the same layer run the routed way writes isolated worker state and returns findings,
+   and that a session with no worker state written is a failed case rather than a passed review.
+   Then the false positive: spawn ordinary work whose brief mentions review, a diff or findings
+   in passing, and one that edits the framework's own input roots, and confirm both run.
 
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
 `source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, `cases` and
