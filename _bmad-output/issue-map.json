@@ -5,10 +5,10 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 11,
-    "story": 194,
+    "story": 197,
     "task": 7,
     "bug": 55,
-    "chore": 47,
+    "chore": 48,
     "spike": 9,
     "decision": 8
   },
@@ -3277,6 +3277,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S194",
+      "github_number": 430,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/430",
+      "title": "Trim the harness's 12,607-token standing context",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S194.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-T006",
       "github_number": 431,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/431",
@@ -3326,6 +3339,19 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S195",
+      "github_number": 439,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/439",
+      "title": "Let plan mode own the plan review surface, so the native pane and the native approval replace the typed build gate",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S195.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3693,6 +3719,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S196",
+      "github_number": 497,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/497",
+      "title": "Record the cache-prefix figure per replay run beside normalised_cost",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S196.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B052",
       "github_number": 498,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/498",
@@ -4054,6 +4093,19 @@
       "parent_bmad_id": "AH-E002",
       "parent_github_number": 116,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C047",
+      "github_number": 550,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/550",
+      "title": "Reserve BMad IDs for the three unmapped v0.13.0 issues",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C047.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     }
   ]
