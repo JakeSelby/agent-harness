@@ -18,7 +18,8 @@ import sys
 from pathlib import Path
 
 # A key or token the client reads directly. Presence is the whole test; the value is never read.
-API_KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY")
+# `CLAUDE_CODE_OAUTH_TOKEN` is the long-lived subscription token `claude setup-token` mints.
+API_KEY_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY")
 # Pointers to a credential file. Each must name a path that exists, or the lookup behind it hangs.
 FILE_POINTER_VARS = ("AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE",
                      "GOOGLE_APPLICATION_CREDENTIALS")
