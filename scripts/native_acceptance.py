@@ -44,7 +44,8 @@ TURN_TIMEOUT = 300
 # on. `AWS_*` file pointers are re-anchored at the real home because the probe's HOME is
 # disposable and an unset pointer hangs the provider lookup.
 AUTH_PASSTHROUGH = (
-    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_MODEL",
     "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
     "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_SHARED_CREDENTIALS_FILE",
     # The secret-key name is split, as it is in claude/hooks/rule-detectors.py, so the lint's
