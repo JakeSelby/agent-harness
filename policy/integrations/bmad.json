@@ -35,12 +35,12 @@
         "review-prompts/adversarial-general.md"
       ],
       "phrases": [
-        "unified diff",
-        "content under review",
-        "list of findings",
-        "hunt for what is missing",
-        "do not spawn subagents of your own",
-        "findings as text in your final message"
+        "read that file, it is the content under review",
+        "hunt for what is missing as well as what is wrong",
+        "do not invoke any skill and do not spawn subagents of your own",
+        "return the findings as text in your final message, not through any findings-reporting tool",
+        "follow it as your review instructions; if it is unreadable, report that exact failure and stop",
+        "if the diff is empty, say so and stop"
       ]
     },
     {
@@ -53,8 +53,9 @@
       "identifiers": [],
       "phrases": [
         "judge the diff against the spec only",
-        "acceptance criteria the diff and its tests do not prove",
-        "what the spec asks for that it does not do"
+        "which acceptance criteria the diff and its tests do not prove",
+        "what the spec asks for that it does not do",
+        "read that file, it is the change under review"
       ]
     }
   ]

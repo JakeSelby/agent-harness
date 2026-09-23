@@ -12,33 +12,58 @@ from unittest.mock import patch
 from test_harness import REPO
 from harness_core import frameworks, lifecycle, compatibility
 
-# The blind-hunter layer as a client actually re-issues it: no `harness-role:` line, no role name,
-# the sentences rewritten, the framework's own nouns kept. This is the spawn #291 was filed for.
-PARAPHRASED_LAYER = (
-    "You are an adversarial code reviewer. The content under review is the unified diff at "
-    "/tmp/review/diff.patch — open it first, then read the changed files around each hunk. "
-    "Look for what the change forgot as hard as you look for what it got wrong, and come back "
-    "with a list of findings in Markdown and nothing besides. Work alone: do not spawn subagents "
-    "of your own."
+# The standing preamble a coordinator puts at the head of every brief it sends, review and build
+# alike. Over 400 characters, so any two briefs that carry it are the same work to `same_work`.
+PREAMBLE = (
+    "Work in the assigned worktree and nowhere else. Read the repository's AGENTS.md before you "
+    "touch anything, follow the commit convention it names, and run the gate it names before you "
+    "say you are finished. Never push, never open a pull request, never bypass a hook. Keep to "
+    "the files the task names; anything outside them is a conflict with whoever else is working "
+    "right now. Report what you did, what you could not do, and what only the owner can decide. "
+)
+# The blind-hunter layer as a client re-issues it: the launch sentence and the `harness-role:`
+# line are gone, the framing is rewritten, and the layer's own instructions are kept. This is the
+# spawn #291 was filed for.
+PARAPHRASED_LAYER = PREAMBLE + (
+    "You are an adversarial reviewer. The change is at /tmp/review/diff.patch. Read that file, it "
+    "is the content under review, then read the changed files around the hunks. Hunt for what is "
+    "missing as well as what is wrong, and come back with a Markdown list and nothing else. Do "
+    "not invoke any skill and do not spawn subagents of your own."
 )
 ACCEPTANCE_LAYER = (
-    "Act as an acceptance auditor. Read the spec at /tmp/review/spec.md together with every "
-    "context document it names, then read the unified diff at /tmp/review/diff.patch. Judge the "
-    "diff against the spec only: what it does that the spec did not ask for, what the spec asks "
-    "for that it does not do, and which acceptance criteria the diff and its tests do not prove."
+    "Act as an acceptance auditor. The spec is /tmp/review/spec.md; read it, with any context "
+    "documents it names. The diff is at /tmp/review/diff.patch; read that file, it is the change "
+    "under review. Judge the diff against the spec only: what it does that the spec did not ask "
+    "for, what the spec asks for that it does not do, and which acceptance criteria the diff and "
+    "its tests do not prove."
 )
-BUILDER = (
-    "Implement issue #412 in the worktree at /tmp/work. Read AGENTS.md first, add the migration "
-    "and its test, run the gate, and commit once. Return the branch, the SHA and the gate tail."
+# Same preamble, different work: allowed, and the test that the classified refusal above was not
+# written into the session's memory, where prefix matching would have caught this too.
+BUILDER = PREAMBLE + (
+    "Implement issue #412: add the migration and its test, run the gate, and commit once. Return "
+    "the branch, the SHA and the gate tail."
+)
+# The ordinary brief that follows a review. It says every generic noun a review says, which is
+# why those nouns are not signals.
+FIX_UP = (
+    "Read the list of findings in /tmp/review.md, fix each one in the worktree, and return the "
+    "unified diff of what you changed together with the gate output."
+)
+# Work on the framework's own files, which necessarily quotes the paths the descriptor identifies.
+TEMPLATE_EDIT = (
+    "Edit templates/bmad/custom/bmad-code-review.user.toml so the edge-case layer points at "
+    "review-prompts/edge-case-hunter.md rather than the old path, then run harness bmad check."
+)
+# One sentence of the template, quoted in passing. One is a coincidence; the classifier says so.
+QUOTED_SENTENCE = (
+    "The layer text ends with `do not invoke any skill and do not spawn subagents of your own`. "
+    "Tell me whether that sentence is still accurate now that the layers run as isolated workers, "
+    "and where else in the docs it is repeated."
 )
 MENTIONS_REVIEW = (
     "Read docs/releasing.md and summarise how a release is cut. The section on review is the one "
     "I care about: say who reviews what, and flag anything a first-time contributor would have to "
     "guess. Return a short bulleted list."
-)
-ONE_PHRASE = (
-    "Apply the patch in /tmp/patch.diff to the worktree, then tell me whether the unified diff "
-    "applied cleanly and which files it touched. Return a bulleted list."
 )
 
 
@@ -100,22 +125,46 @@ class ClassifiedSpawnTests(unittest.TestCase):
             with self.subTest(role=role):
                 self.assertNotEqual(decision(self.spawn(BUILDER, role=role)), "deny")
 
-    def test_a_brief_that_only_mentions_review_or_one_framework_noun_runs(self):
-        for prompt in (MENTIONS_REVIEW, ONE_PHRASE):
+    def test_the_briefs_a_review_leaves_behind_all_run(self):
+        """Generic review nouns, the framework's own files, and one quoted sentence: none of these
+        is the framework's work, and refusing any of them would cost more than it caught."""
+        for prompt in (MENTIONS_REVIEW, FIX_UP, TEMPLATE_EDIT, QUOTED_SENTENCE):
             with self.subTest(prompt=prompt[:40]):
                 self.assertNotEqual(decision(self.spawn(prompt)), "deny")
 
-    def test_a_classified_refusal_is_remembered_so_the_next_rewording_is_refused_too(self):
-        self.spawn(PARAPHRASED_LAYER)
-        remembered = lifecycle.denied_spawns("session-one")
-        self.assertEqual([entry["role"] for entry in remembered], ["reviewer"])
-        # A classified refusal was not remembered before this change, so a re-spawn the descriptor
-        # no longer recognises used to run. With the classifier blinded, the memory carries it.
-        edited = PARAPHRASED_LAYER + " Also flag any test that asserts nothing."
-        with patch.object(frameworks, "classify", lambda *args, **kwargs: None):
-            result = self.spawn(edited)
-        self.assertEqual(decision(result), "deny")
-        self.assertIn("refused as a native reviewer spawn in this session", reason(result))
+    def test_a_classified_refusal_is_not_written_into_the_session_memory(self):
+        # `same_work` matches on a 400-character prefix or 0.85 similarity, so a remembered
+        # inference would refuse every later brief that shares a standing preamble with it.
+        denied = self.spawn(PARAPHRASED_LAYER)
+        self.assertEqual(decision(denied), "deny")
+        self.assertEqual(lifecycle.denied_spawns("session-one"), [])
+        self.assertTrue(lifecycle.same_work(lifecycle.fingerprint(PARAPHRASED_LAYER),
+                                            lifecycle.fingerprint(BUILDER)))
+        self.assertNotEqual(decision(self.spawn(BUILDER)), "deny")
+
+    def test_a_named_or_marked_refusal_is_still_remembered(self):
+        self.spawn(BUILDER, role="reviewer")
+        self.assertEqual([e["role"] for e in lifecycle.denied_spawns("session-one")], ["reviewer"])
+        self.spawn("harness-role: spec-reviewer\n" + MENTIONS_REVIEW, session="marked")
+        self.assertEqual([e["role"] for e in lifecycle.denied_spawns("marked")], ["spec-reviewer"])
+
+    def test_the_refusal_names_the_read_roots_the_isolated_worker_will_need(self):
+        result = self.spawn(PARAPHRASED_LAYER)
+        self.assertIn("input roots as read roots", reason(result))
+        for root in ("_bmad", "_bmad-output", ".claude/skills"):
+            self.assertIn(root, reason(result))
+
+    def test_a_descriptor_that_cannot_be_used_is_announced_once_a_session(self):
+        integrations = self.base / "integrations"
+        integrations.mkdir()
+        (integrations / "broken.json").write_text("{ not json", encoding="utf-8")
+        with patch.object(frameworks, "DESCRIPTORS", integrations):
+            first = self.spawn(PARAPHRASED_LAYER)
+            second = self.spawn(BUILDER)
+        self.assertIn("harness:integrations: ignored broken.json", first.get("systemMessage", ""))
+        self.assertNotIn("integrations", second.get("systemMessage", ""))
+        # Nothing was classified, so nothing was refused: the notice is the only signal there is.
+        self.assertNotEqual(decision(first), "deny")
 
     def test_the_off_stance_still_answers_once_and_remembers_nothing(self):
         with patch.dict(os.environ, {"HARNESS_STANCE_DELEGATION": "off"}):
@@ -173,27 +222,64 @@ class DescriptorTests(unittest.TestCase):
         self.assertIn("BMAD_VERSION=" + data["version"]["pinned"],
                       (REPO / "docs" / "bmad.md").read_text(encoding="utf-8"))
 
-    def test_a_descriptor_recognised_only_by_ordinary_wording_is_rejected(self):
-        data = {"schema_version": 1, "id": "loose", "name": "Loose", "doc": "docs/bmad.md",
-                "version": {"pinned": "1.0"},
-                "spawns": [{"id": "layer", "role": "reviewer", "phrases": ["review the code"]}]}
-        self.assertIn("declares no identifier", " ".join(frameworks.problems(data)))
+    def test_every_declared_phrase_is_a_sentence_of_the_framework_s_own_prompt_text(self):
+        """A phrase invented for the descriptor recognises nothing; only the shipped text does."""
+        data = json.loads((REPO / "policy/integrations/bmad.json").read_text(encoding="utf-8"))
+        template = frameworks.normalise(
+            (REPO / "templates/bmad/custom/bmad-code-review.user.toml").read_text(encoding="utf-8"))
+        for spawn in data["spawns"]:
+            for phrase in spawn["phrases"]:
+                with self.subTest(phrase=phrase):
+                    self.assertIn(frameworks.normalise(phrase), template)
 
-    def test_an_invalid_or_unparsable_descriptor_is_skipped_not_raised(self):
+    def test_a_descriptor_whose_signals_are_too_slight_to_identify_anything_is_rejected(self):
+        base = {"schema_version": 1, "id": "loose", "name": "Loose", "doc": "docs/bmad.md",
+                "version": {"pinned": "1.0"}, "input_roots": ["_bmad"]}
+        cases = [
+            ({"id": "layer", "role": "reviewer", "phrases": ["unified diff", "list of findings"]},
+             "too slight"),
+            ({"id": "layer", "role": "reviewer", "identifiers": ["_bmad/custom"],
+              "phrases": ["read that file, it is the content under review"]}, "input root"),
+            ({"id": "layer", "role": "builder",
+              "phrases": ["read that file, it is the content under review"]}, "isolated worker"),
+            ({"id": "layer", "role": "reviewer", "identifiers": ["review-prompts/blind-hunter.md"]},
+             "declares no phrases"),
+        ]
+        for spawn, needle in cases:
+            with self.subTest(needle=needle):
+                found = " ".join(frameworks.problems(dict(base, spawns=[spawn])))
+                self.assertIn(needle, found)
+
+    def test_an_invalid_or_unparsable_descriptor_is_skipped_and_the_reason_is_kept(self):
         (self.dir / "broken.json").write_text("{ not json", encoding="utf-8")
         self.write("wrong-schema.json", {"schema_version": 99, "id": "x", "name": "X",
                                          "version": {"pinned": "1"}, "spawns": []})
         self.assertEqual(frameworks.descriptors(self.dir), [])
         self.assertIsNone(frameworks.classify(PARAPHRASED_LAYER, None, self.dir))
+        reasons = dict(frameworks.ignored(self.dir))
+        self.assertEqual(sorted(reasons), ["broken.json", "wrong-schema.json"])
+        self.assertIn("JSONDecodeError", reasons["broken.json"])
+        self.assertIn("schema_version", reasons["wrong-schema.json"])
 
-    def test_corroboration_is_what_separates_a_framework_brief_from_a_borrowed_phrase(self):
+    def test_an_edited_descriptor_is_reread_rather_than_served_from_the_cache(self):
         data = json.loads((REPO / "policy/integrations/bmad.json").read_text(encoding="utf-8"))
         self.write("bmad.json", data)
-        self.assertIsNone(frameworks.classify(ONE_PHRASE, None, self.dir))
-        self.assertEqual(frameworks.classify(PARAPHRASED_LAYER, None, self.dir)["role"], "reviewer")
-        raised = dict(data, corroboration=9)
-        self.write("bmad.json", raised)
+        self.assertIsNotNone(frameworks.classify(PARAPHRASED_LAYER, None, self.dir))
+        self.write("bmad.json", dict(data, corroboration=9))  # same size is not the same bytes
         self.assertIsNone(frameworks.classify(PARAPHRASED_LAYER, None, self.dir))
+
+    def test_an_identifier_needs_a_phrase_beside_it_and_a_layer_name_does_not(self):
+        self.assertIsNone(frameworks.classify(TEMPLATE_EDIT, None))
+        self.assertEqual(frameworks.classify(
+            TEMPLATE_EDIT + " Then hunt for what is missing as well as what is wrong.",
+            None)["role"], "reviewer")
+        self.assertEqual(frameworks.classify(TEMPLATE_EDIT, "edge-case-hunter")["role"], "reviewer")
+
+    def test_a_match_the_guard_would_not_constrain_never_outscores_one_it_would(self):
+        seen = []
+        frameworks.classify(PARAPHRASED_LAYER, None, accept=lambda role: seen.append(role) or False)
+        self.assertIn("reviewer", seen)
+        self.assertIsNone(frameworks.classify(PARAPHRASED_LAYER, None, accept=lambda role: False))
 
     def test_input_roots_are_declaration_and_never_a_signal(self):
         data = json.loads((REPO / "policy/integrations/bmad.json").read_text(encoding="utf-8"))

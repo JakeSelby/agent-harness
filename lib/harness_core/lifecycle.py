@@ -29,6 +29,7 @@ ROLE_MARKER = re.compile(r"^[ \t]*harness-role:[ \t]*([a-z][a-z0-9-]*)[ \t]*$", 
 # Bounded on both axes: 32 entries of 2,000 normalised characters is far past any real fan-out,
 # and a session record is not a place to accumulate transcript.
 DENIED_KEY = "denied_spawns"
+NOTICED_KEY = "session_notices"
 DENIED_MAX = 32
 FINGERPRINT_MAX = 2000
 PREFIX_MATCH = 400
@@ -192,15 +193,21 @@ def marker_role(prompt):
     return None
 
 
-def framework_role(runtime, session_id, prompt, subagent_type):
+def framework_deny(runtime, session_id, prompt, subagent_type):
     """The refusal a declared integration's spawn gets, or None when this call is not one.
 
     The classification is the descriptor's, not the model's: `subagent_type` is one signal among
-    several and carries no more weight than the rest. See `frameworks.py`.
+    several and carries no more weight than the rest. Only a role the guard would constrain is
+    ever matched, so a mapping cannot be used to refuse work the harness does not confine.
+
+    This refusal is deliberately not remembered. A remembered one is matched by prefix or
+    similarity for the rest of the session, so one wrong classification would go on refusing the
+    corrected brief too; the descriptor answers each spawn on its own evidence instead. See
+    `frameworks.py`.
     """
     try:
         from . import frameworks
-        match = frameworks.classify(prompt, subagent_type)
+        match = frameworks.classify(prompt, subagent_type, accept=lambda role: constrained_role(role) is not None)
     except Exception:
         return None
     if match is None:
@@ -213,7 +220,44 @@ def framework_role(runtime, session_id, prompt, subagent_type):
     if module is not None:
         module.record("framework-spawn", "deny", fingerprint(prompt),
                       {"session_id": session_id}, runtime)
-    return name, role_deny(runtime, name, fields, frameworks.origin(match))
+    return role_deny(runtime, name, fields, frameworks.origin(match))
+
+
+def descriptor_notice(session_id):
+    """One `systemMessage` naming every integration descriptor the loader could not use.
+
+    Said once per session, because a descriptor nobody can load is enforcement that stopped, and
+    the only place a user would otherwise see that is a refusal that never came.
+    """
+    try:
+        from . import frameworks
+        broken = frameworks.ignored()
+    except Exception:
+        return None
+    if not broken or not notice_once(session_id, "integration-descriptors"):
+        return None
+    module = decisions()
+    for name, reason in broken:
+        if module is not None:
+            module.record("integration-descriptor", "ignored", name + ": " + reason,
+                          {"session_id": session_id})
+    return {"systemMessage": "harness:integrations: ignored " + "; ".join(
+        name + " (" + reason + ")" for name, reason in broken)
+        + ". Spawns that descriptor would have confined are not being classified."}
+
+
+def notice_once(session_id, key):
+    """Whether this session has yet to be told `key`. Records that it now has. Never raises."""
+    try:
+        posture = load("posture")
+        record = posture.read_session_record(session_id) or {}
+        said = [k for k in record.get(NOTICED_KEY, []) if isinstance(k, str)]
+        if key in said:
+            return False
+        posture.write_session_record(session_id, dict(record, **{NOTICED_KEY: (said + [key])[-DENIED_MAX:]}))
+        return True
+    except Exception:
+        return False
 
 
 def fingerprint(prompt):
@@ -436,24 +480,28 @@ def dispatch(runtime, payload):
             # Refusing the named spawn only moves the work: the same brief comes back with the role
             # name dropped, and nothing sees it. So a spawn is classified by what it carries as well
             # as by what it called itself — a `harness-role:` line, then a declared framework
-            # integration's own mapping — and every refusal is remembered for the session, so the
-            # next rewording of the same work is refused too. None of this runs where the stance
-            # already denies every spawn.
+            # integration's own mapping. A refusal the spawn declared, by role name or marker, is
+            # remembered for the session so the next rewording is refused too; a refusal the
+            # classifier inferred is not, because a wrong inference remembered is a session that
+            # cannot get the corrected brief through. None of this runs where the stance already
+            # denies every spawn.
             if delegation != "off":
                 session = event.get("session_id")
                 if fields is not None:
                     remember_denial(session, role_name, prompt)
                 else:
                     marked = marker_role(prompt)
-                    classified = ((marked[0], role_deny(runtime, marked[0], marked[1])) if marked
-                                  else framework_role(runtime, session, prompt, role_name))
-                    if classified is not None:
-                        results.append(classified[1])
-                        remember_denial(session, classified[0], prompt)
+                    if marked is not None:
+                        results.append(role_deny(runtime, marked[0], marked[1]))
+                        remember_denial(session, marked[0], prompt)
                     else:
-                        evaded = evasion_deny(runtime, session, prompt)
+                        framed = framework_deny(runtime, session, prompt, role_name)
+                        evaded = framed or evasion_deny(runtime, session, prompt)
                         if evaded is not None:
                             results.append(evaded)
+                notice = descriptor_notice(session)
+                if notice is not None:
+                    results.append(notice)
             if delegation == "off":
                 results.append({"hookSpecificOutput": {"permissionDecision": "deny",
                     "permissionDecisionReason": "Delegation is off; perform the work inline or change the selected stance."}})

@@ -148,17 +148,33 @@ spawn guard that only read the name the model wrote (#291).
 So the framework declares itself, in `policy/integrations/bmad.json`, and the spawn hook
 classifies against that descriptor instead. A descriptor names the framework, the release it was
 read from, the layer-to-role mapping, the input roots a confined worker needs, and how a spawn is
-recognised: an **identifier** only the framework's own text carries — one of its layer names as
-the spawn's type, or a path to one of its prompt files — or `corroboration` of its characteristic
-**phrases**. One identifier is enough; one phrase is never enough, which is what keeps an ordinary
-brief that mentions a review, a diff or findings from being refused. Input roots are declaration
-only: `_bmad/` names the framework but appears in any brief about editing it.
+recognised:
+
+- **agents** — the spawn's `subagent_type` is one of the framework's own layer names. Nothing else
+  puts that name there, so it is enough on its own.
+- **identifiers** — a literal only the framework's routed text carries, such as the path of one of
+  its prompt files. Never enough alone, because a brief that edits the override templates quotes
+  the same path; an identifier counts only with a phrase beside it.
+- **phrases** — whole sentences of the framework's own prompt text. One is a coincidence;
+  `corroboration` of them, two by default, is not.
+
+Generic nouns are not phrases. "unified diff" and "list of findings" are what the ordinary fix-up
+brief after a review says, and a descriptor that declared them would refuse the work the review
+asked for. The loader enforces that: a signal below the minimum length and word count, an
+identifier that is an input root or a bare directory under one, a spawn with no phrases at all, or
+a role the spawn guard would not constrain, and the descriptor is refused as a whole. A descriptor
+that will not parse or will not validate is announced once per session and recorded in the
+decision log, never dropped in silence.
 
 A recognised spawn is refused with the same isolated-worker instruction a named role's spawn gets,
-the refusal names the framework and the layer, and it is remembered for the session, so the same
-work reworded is refused again. The `harness-role:` line the templates carry is an optimisation on
-top: it is read by the marker guard, which requires it on a line of its own, and a descriptor must
-not restate it as loose text.
+and the refusal names the framework, the layer and the input roots the worker has to be given as
+read roots. Unlike a refusal the spawn declared by role name or `harness-role:` line, it is not
+written into the session's memory of refused work: that memory matches later briefs by prefix and
+similarity, so one wrong classification would go on refusing the corrected brief for the rest of
+the session. Each spawn is answered on its own evidence.
+
+The `harness-role:` line the templates carry is an optimisation on top: it is read by the marker
+guard, which requires it on a line of its own, and a descriptor must not restate it as loose text.
 
 Another framework becomes a tenant by adding its own descriptor file; nothing in the hook is
 BMad-specific. Keep `version.pinned` equal to the release the repository installs — a mapping read
