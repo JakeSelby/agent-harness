@@ -19,6 +19,7 @@ running and not the round; `--from-progress` rebuilds a record from what survive
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -292,6 +293,11 @@ class Home:
                         continue
             found.append((json.loads(meta.read_text()), records))
         return found
+
+    def transcript_path(self, session_id):
+        """The orchestrator's own transcript file, or None when the client wrote none."""
+        paths = sorted((self.client_dir / "projects").glob("*/" + session_id + ".jsonl"))
+        return paths[0] if paths else None
 
     def orchestrator_text(self, session_id):
         """The orchestrator's own transcript, whether or not the session spawned a subagent.
@@ -636,6 +642,53 @@ def brief_of(records):
     return ""
 
 
+def hook_posture():
+    """The `posture.py` the spawn and session hooks load, so the case reads what they read."""
+    spec = importlib.util.spec_from_file_location(
+        "harness_hook_posture", str(ROOT / "policy" / "hooks" / "posture.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def resume_verdict(record, announced, agent_type, ran):
+    """Judge the resumed turn by the registry evidence it ran under; returns the summary clause.
+
+    A headless `--resume` is a new process with the same session id: `SessionStart` fires with
+    `source: resume`, so the hook narrows the startup record and the workers restored since stay
+    out of it, but the new process loads its registry from disk and writes a non-initial
+    `agent_listing_delta` naming them. That announcement is the runtime saying this session
+    resolves the worker, and the spawn hook routes on it by design, so a reroute here is only
+    a defect when nothing the session ran under named the worker. `record` is the session's
+    record, `announced` what `posture.transcript_agents` read from its transcript.
+    """
+    if record is None:
+        raise Unverified("the resumed session left no session record, so the registry its start "
+                         "recorded was never observed")
+    recorded = record.get("agents")
+    widened = sorted(name for name in (recorded if isinstance(recorded, list) else [])
+                     if str(name).startswith("worker-"))
+    if widened:
+        raise AssertionError("resuming a session whose record predates the workers widened the "
+                             "record to " + redact(", ".join(widened)))
+    if not ran:
+        raise AssertionError("the spawn in a resumed session whose record predates the workers "
+                             "did not run")
+    kind = str(agent_type or "").lower()
+    told = sorted(announced or ())
+    if not kind.startswith("worker-"):
+        return ("a resumed session whose record predates the workers was not rerouted (the "
+                "runtime announced %s) and its spawn still succeeded"
+                % (", ".join(told) if told else "nothing"))
+    if kind not in told:
+        raise AssertionError("a session whose record predates the workers was rerouted to %s, "
+                             "which neither its record nor the runtime's listing named"
+                             % redact(agent_type))
+    return ("a resumed session whose record predates the workers kept them out of its record and "
+            "was rerouted to %s only after the resumed process announced it, and that spawn ran"
+            % kind)
+
+
 def case_cost_posture(home):
     root = home.primitives
     for name, body in (("unmanaged.md", NULL_PROSE),):
@@ -684,11 +737,10 @@ def case_cost_posture(home):
         path.write_text(body)
     resumed = home.session(SPAWN_PROMPT, resume=older["session_id"])
     resumed_meta, resumed_records = spawned_subagent(home, resumed["session_id"])
-    if str(resumed_meta.get("agentType", "")).lower().startswith("worker-"):
-        raise AssertionError("a session whose record predates the workers was rerouted to "
-                             + redact(resumed_meta.get("agentType")))
-    if not resumed_records:
-        raise AssertionError("the spawn in a session predating the workers did not run")
+    resumed_clause = resume_verdict(
+        hook_posture().read_session_record(resumed["session_id"], env=home.env()),
+        hook_posture().transcript_agents(home.transcript_path(resumed["session_id"])),
+        resumed_meta.get("agentType"), bool(resumed_records))
     data["stances"]["cost"] = "unmanaged"
     home.write_config(data)
     home.harness("sync")
@@ -703,9 +755,9 @@ def case_cost_posture(home):
     if not feed or not routed:
         raise Unverified(
             "the routed spawn ran on the variant's band worker, model, effort and budget sentence, "
-            "and the null variant and the pre-existing session did none of it, but the usage feed "
+            "%s, and the null variant did none of it, but the usage feed "
             "line (%s) and the routed usage row (%s) were not both observed"
-            % ("seen" if feed else "absent", "seen" if routed else "absent"))
+            % (resumed_clause, "seen" if feed else "absent", "seen" if routed else "absent"))
     complaint = spend_complaint(feed[-1])
     if complaint:
         raise AssertionError(complaint)
@@ -713,9 +765,8 @@ def case_cost_posture(home):
             "rest byte-identical; in a new native session an unnamed spawn ran as the variant's "
             "default band worker on its row's model and effort with the budget sentence in its "
             "brief, the orchestrator's context carried \"%s\", harness usage --rescan --by role "
-            "recorded the routed row, a session whose record predates the workers was not rerouted "
-            "and its spawn still succeeded, and a null variant did none of it."
-            % (len(rewritten), len(after), feed[-1]))
+            "recorded the routed row, %s, and a null variant did none of it."
+            % (len(rewritten), len(after), feed[-1], resumed_clause))
 
 
 def descriptor_recipe(descriptor):

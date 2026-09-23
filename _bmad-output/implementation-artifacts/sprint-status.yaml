@@ -288,6 +288,7 @@ development_status:
   ah-b061-fix-lint-skip-untracked-files-under-agent: done
   ah-b062-test-codex-make-the-no-client-detection-test: done
   ah-b066-replay-counts-the-cli-s-synced-skill-packs-as: done
+  ah-b075-cost-posture-and-framework-spawn-routing-cannot: backlog
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done

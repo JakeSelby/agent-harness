@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 219,
     "task": 26,
-    "bug": 72,
+    "bug": 76,
     "chore": 65,
     "spike": 10,
     "decision": 9
@@ -5026,6 +5026,19 @@
       "type": "chore",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C064.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B075",
+      "github_number": 705,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/705",
+      "title": "cost-posture and framework-spawn-routing cannot tell a headless resume from a restart",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B075.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
