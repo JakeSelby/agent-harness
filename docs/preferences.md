@@ -3,6 +3,12 @@
 Two kinds of preference exist, and they are configured differently because Claude Code reads
 rule text literally: there is no variable substitution inside a rule or CLAUDE.md.
 
+Nine stance axes ship, and only three of them bind to enforcement today: `autonomy` sets which
+shell-command grade stops and asks, `delegation` changes how a spawn is routed, and `cost`
+resolves a class, an effort and a soft budget per role. The other six are prose that swaps cleanly
+and acquires no enforced control by being switched. `harness usage --rules --by stance` groups rule
+hits by the variant in force, so a switch can be checked rather than assumed.
+
 ## Identity
 
 The `identity` block of `~/.config/agent-harness/config.json` (`name`, `pronouns`, `role`,
@@ -73,7 +79,10 @@ the `harness-session.py` hook compares the environment with the synced config an
 line of context for any difference, so `HARNESS_STANCE_TESTING=off claude` works for one
 session without a re-sync.
 
-The `plan-ceremony` stance also decides whether the plan-card validator hook is registered.
+The `plan-ceremony` stance also decides whether the plan-card validator runs. Registration is
+unconditional — one coordinator per lifecycle event, as in
+[how it works](how-it-works.md) — so the stance is read inside dispatch, at the moment a plan
+file is written, and a switch takes effect in the next turn rather than at the next sync.
 
 ## What a session costs
 
@@ -219,11 +228,18 @@ for yourself unless the user asks. The `grade-bash` hook enforces the stance: it
 shell command 0–3 and gates at grade 3 under `execute`, 2 and up under `confirm-writes`, 1 and up
 under `ask`; [`grade-bash.py`](../claude/hooks/grade-bash.py) documents the grades and the modes.
 
-**Plan ceremony.** `review-card` makes plan mode feel like a design review: the approach in chat, a
-link to the plan file, an explicit build gate, then autonomous implementation. The card is a review
-document before it is an execution document — length below it is free, length above it is the
-defect — and a hook validates it on every write. Skip the ceremony only if the user explicitly asks
-for a quick plan or says to just exit plan mode. `light` drops the file and the validator but keeps
+**Plan ceremony.** `review-card` makes plan mode the review surface: `/plan` asks to enter it,
+writes the card into the file plan mode designates, posts the approach in chat and finishes at
+`ExitPlanMode`, so the pane renders the plan and the native approval is the gate. Approval is
+also when the naming happens: `/plan` renames the runtime-generated file to a topic slug and hands
+`/build` that path — which is why `/build` never searches for a plan, and why the builder is what
+commits the file, into the worktree the pull request comes from. Where there is no plan mode —
+Codex, and any plan written outside `/plan` — the file is named for the topic, opened for the
+reviewer and closed with the typed build line instead. Either way, autonomous implementation
+follows approval. The card is a review document before it is an execution document — length
+below it is free, length above it is the defect — and a hook validates it on every write,
+whatever the runtime named the file. Skip the ceremony only if the user explicitly asks for a
+quick plan or says to just exit plan mode. `light` drops the file and the validator but keeps
 the explicit go-ahead.
 
 **Build versus buy.** The user has heard the maintenance-burden argument and rejects its premise:
@@ -238,7 +254,10 @@ session's own effort rather than by spawning. What each variant sets is above, u
 `delegation-tiering` skill.
 
 **Voice.** `voice` governs how a reply is laid out, and nothing about what the work is. `scannable`
-defers to the Scannable output style: verdict first, registers separated, at most one table.
+defers to the Scannable output style: verdict first, registers separated, at most one table. It is
+the only variant that carries presentation material, on either runtime; under `answer-card` and
+`off` a sync installs no output style and takes back out the one a previous selection left, while
+an output style you chose yourself is left exactly as it is, whatever it is called.
 `answer-card` is for reading on a phone — the answer in the first line, then why, the catch, and the
 alternatives, about 150 words, no tables, with the reasoning left in the file it links rather than
 re-argued in the message. It wins over the output style where the two differ. `off` imposes no shape

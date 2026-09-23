@@ -137,6 +137,29 @@ def turn(thread, read, model="claude-test-20260101"):
             "message": {"model": model, "usage": {"cache_read_input_tokens": read}}}
 
 
+def call(thread, tools=(), write=0, read=0, model="claude-test-20260101"):
+    """An assistant message that both spends cache and calls tools, as a real turn does."""
+    return {"type": "assistant", "parent_tool_use_id": thread,
+            "message": {"model": model,
+                        "usage": {"cache_read_input_tokens": read, "cache_creation_input_tokens": write},
+                        "content": [{"type": "tool_use", "name": name, "input": {}} for name in tools]}}
+
+
+def config_tree(root, personal="p" * 64, rules=2):
+    """A profile directory shaped like an installed one: the layers a fingerprint counts."""
+    root = Path(root)
+    files = {"CLAUDE.md": "c" * 100, "CLAUDE.personal.md": personal,
+             "skills/one/SKILL.md": "s" * 10, "agents/worker.md": "a" * 10,
+             "output-styles/style.md": "o" * 10, "notes.md": "ignored"}
+    for index in range(rules):
+        files["rules/rule-%d.md" % index] = "r" * 20
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return root
+
+
 class Launch:
     """Stands in for the CLI: replays recorded output and records how it was called."""
     def __init__(self, outputs):
@@ -164,7 +187,8 @@ def options(tmp, **over):
     opts = {"repo": git_repo(Path(tmp) / "source"), "home": Path(tmp) / "home", "claude": "claude",
             "model": "claude-test", "tag": "candidate", "reps": 2, "run_cap": 2.0, "spend_cap": 25.0,
             "prices": PRICES, "bare_config": Path(tmp) / "bare", "tmp": str(Path(tmp) / "runs"),
-            "scorer": lambda task, workdir, repo: (True, ""), "stamp": {"date": "2026-01-01"}}
+            "scorer": lambda task, workdir, repo: (True, ""), "stamp": {"date": "2026-01-01"},
+            "skip_preflight": True}  # the pre-flight has its own tests; these count scored launches
     (Path(tmp) / "runs").mkdir()
     opts["repo"].parent.joinpath("home").mkdir()
     opts.update(over)
@@ -180,6 +204,19 @@ class ReplayArmTests(unittest.TestCase):
         self.assertNotIn("HARNESS_STANCE_COST", BENCH.arm_env("bare", "/bare", "frugal", base=base))
         self.assertEqual(BENCH.arm_env("harness", "/bare", "frugal", base=base)["HARNESS_STANCE_COST"], "frugal")
 
+    def test_a_named_harness_profile_is_the_only_thing_that_isolates_that_arm(self):
+        """Without one the harness arm inherits the live ~/.claude through HOME, so the owner's
+        personal layer joins the comparison. The profile cannot be a copy: the credential is keyed
+        on the directory's absolute path, so only a directory signed into directly is authenticated."""
+        base = {"HOME": "/h", "USER": "u", "PATH": "/bin"}
+        self.assertNotIn("CLAUDE_CONFIG_DIR", BENCH.arm_env("harness", "/bare", base=base))
+        isolated = BENCH.arm_env("harness", "/bare", base=base, harness_config="/harness")
+        self.assertEqual(isolated["CLAUDE_CONFIG_DIR"], "/harness")
+        self.assertEqual(BENCH.arm_env("bare", "/bare", base=base, harness_config="/harness")
+                         ["CLAUDE_CONFIG_DIR"], "/bare")
+        self.assertEqual(BENCH.arm_env("harness", "/bare", "frugal", base=base,
+                                       harness_config="/harness")["HARNESS_STANCE_COST"], "frugal")
+
     def test_every_arm_runs_one_command_with_the_required_flags(self):
         command = BENCH.arm_command("claude", "claude-test", "prompt")
         for flag in ("--strict-mcp-config", "--no-session-persistence", "--verbose"):
@@ -189,6 +226,22 @@ class ReplayArmTests(unittest.TestCase):
         fence = json.loads(command[command.index("--settings") + 1])["sandbox"]
         self.assertTrue(fence["enabled"] and fence["network"]["strictAllowlist"])
         self.assertFalse(fence["allowUnsandboxedCommands"])
+
+    def test_the_fence_admits_the_arms_own_profile_and_the_scratch_directory(self):
+        """An arm on a bench profile has to be able to write it: this repository's own suite writes
+        under the config directory and under /tmp, and a fence that admits neither fails the gate
+        for that arm alone."""
+        bench = json.loads(BENCH.arm_command("claude", "claude-test", "p", 2.0,
+                                             "/b/.claude-bench-harness")[-1])["sandbox"]["filesystem"]
+        for key in ("allowWrite", "allowRead"):
+            self.assertEqual(sorted(bench[key]), sorted(["/b/.claude-bench-harness"] + list(BENCH.SCRATCH_DIRS)))
+        self.assertEqual(bench["denyRead"], BENCH.DENY_READ)
+
+    def test_an_arm_with_no_profile_of_its_own_gets_the_clis_default_one(self):
+        inherited = BENCH.fence()["sandbox"]["filesystem"]
+        self.assertEqual(sorted(inherited["allowWrite"]), sorted(list(BENCH.SCRATCH_DIRS) + ["~/.claude"]))
+        self.assertEqual(inherited["allowWrite"], inherited["allowRead"])
+        self.assertEqual(BENCH.fence("")["sandbox"]["filesystem"]["allowRead"], ["~/.claude"] + list(BENCH.SCRATCH_DIRS))
 
     def test_a_workdir_under_home_in_a_checkout_or_below_instructions_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -265,6 +318,32 @@ class ReplayCaptureTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 BENCH.parse_result(bad)
 
+    def test_the_first_call_cache_write_is_the_standing_prefix_not_the_run_total(self):
+        """The first usage block pays for the instruction layer; the run's total also pays for
+        everything the agent read afterwards, so the two answer different questions."""
+        stream = [call(None, ["Read"], write=9000), call(None, ["Bash"], write=400), result()]
+        parsed = BENCH.parse_result(json.dumps(stream))
+        self.assertEqual(parsed["first_call_cache_write"], 9000)
+        self.assertEqual(parsed["tokens"]["cache_creation_input_tokens"], 30)  # the result's total
+        self.assertIsNone(BENCH.parse_result(json.dumps(result()))["first_call_cache_write"])
+
+    def test_every_tool_use_block_is_counted_and_spawns_are_the_subagent_share(self):
+        stream = [call(None, ["Bash", "Read", "Task"]), call(None, ["Task", "Agent", "Bash"]),
+                  call("toolu_1", ["Bash"]), result()]
+        parsed = BENCH.parse_result(json.dumps(stream))
+        self.assertEqual(parsed["tool_counts"], {"Bash": 3, "Read": 1, "Task": 2, "Agent": 1})
+        self.assertEqual(parsed["spawns"], 3)
+        self.assertEqual(BENCH.parse_result(json.dumps(result()))["tool_counts"], {})
+
+    def test_hook_blocks_is_none_because_this_output_format_carries_no_hook_decision(self):
+        """Hook lifecycle events are the only structured place a Stop hook's `block` appears, and
+        the CLI emits them only under `--include-hook-events`, which its help limits to
+        `--output-format=stream-json`. The runner reads `--output-format json`, so the field is
+        unknown rather than zero, and no text pattern is allowed to stand in for it."""
+        stream = [call(None, ["Bash"]), result()]
+        self.assertIsNone(BENCH.parse_result(json.dumps(stream))["hook_blocks"])
+        self.assertIn("--include-hook-events", BENCH.parse_result.__doc__)
+
     def test_normalised_cost_reprices_first_turn_reads_as_writes_or_declines(self):
         turns = [{"model": "claude-test-20260101", "cache_read": 1000000}]
         self.assertEqual(BENCH.normalised_cost(1.0, turns, PRICES), 3.3)  # + 1M x (2.5 - 0.2)
@@ -324,6 +403,36 @@ class ReplayRunTests(unittest.TestCase):
             self.assertFalse(Path(kwargs["cwd"]).exists())
             self.assertEqual(list(Path(opts["tmp"]).iterdir()), [])
 
+    def test_a_row_records_which_instruction_layer_its_arm_launched_with(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = options(tmp, reps=1, change_note="raised the effort dial")
+            config_tree(opts["bare_config"])
+            config_tree(Path(opts["home"]) / ".claude", personal="p" * 8, rules=1)
+            stream = json.dumps([call(None, ["Bash", "Task"], write=1234), result()])
+            rows, _ = BENCH.replay([TASK], opts, Launch([stream] * 2))
+            bare = [r for r in rows if r["arm"] == "bare"][0]
+            harness = [r for r in rows if r["arm"] == "harness"][0]
+            self.assertEqual(bare["arm_config_dir"], str(opts["bare_config"]))
+            self.assertEqual(harness["arm_config_dir"], "inherited")  # no CLAUDE_CONFIG_DIR: ~/.claude
+            self.assertEqual(bare["arm_fingerprint"]["rules"], 2)
+            self.assertEqual(bare["arm_fingerprint"]["personal_bytes"], 64)
+            self.assertEqual(harness["arm_fingerprint"]["rules"], 1)
+            self.assertNotEqual(bare["arm_fingerprint"]["sha"], harness["arm_fingerprint"]["sha"])
+            self.assertEqual(bare["fingerprint_source"], "launch")
+            for row in rows:
+                self.assertEqual(row["change_note"], "raised the effort dial")
+                self.assertEqual((row["first_call_cache_write"], row["spawns"]), (1234, 1))
+                self.assertEqual(row["tool_counts"], {"Bash": 1, "Task": 1})
+                self.assertIsNone(row["hook_blocks"])
+
+    def test_an_errored_row_carries_the_arm_fields_and_no_stream_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows, _ = BENCH.replay([TASK], options(tmp, reps=1), Launch(["garbage"] * 2))
+            self.assertEqual([r["error"] for r in rows], [True, True])
+            self.assertEqual(rows[0]["tool_counts"], {})
+            self.assertIsNone(rows[0]["spawns"])
+            self.assertEqual(rows[0]["arm_fingerprint"]["rules"], 0)
+
     def test_a_run_under_the_home_directory_is_refused_before_launching(self):
         with tempfile.TemporaryDirectory() as tmp:
             launch = Launch([])
@@ -332,10 +441,111 @@ class ReplayRunTests(unittest.TestCase):
             self.assertEqual(launch.calls, [])
 
 
-def row(arm, rep, passed, cost, error=False):
+def gate_reply(text, cost=0.1):
+    """The CLI's JSON stream for a `-p` run in which one Bash call returned `text`: the gate's
+    output as the tool saw it, which is what the pre-flight judges, plus a relay in `result`."""
+    call = {"type": "assistant", "message": {"role": "assistant", "id": "m1", "content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "gate"}}]}}
+    back = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "t1", "content": text}]}}
+    return json.dumps([call, back, dict(result(cost=cost), result=text.strip().splitlines()[-1] if text.strip() else "")])
+
+
+GREEN = "lint: 0 finding(s) in /repo\n"
+RED = "tests/test_x.py:1: home-directory path\nlint: 1 finding(s) in /repo\n"
+
+
+class ReplayPreflightTests(unittest.TestCase):
+    """The gate runs once per arm, in that arm's own profile and fence, before anything is scored."""
+    def preflight_calls(self, launch):
+        return [c for c in launch.calls if BENCH.PREFLIGHT_PROMPT in c[0]]
+
+    def test_a_red_gate_refuses_the_replay_before_any_scored_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = Launch([gate_reply(GREEN), gate_reply(RED)])
+            with self.assertRaises(SystemExit) as caught:
+                BENCH.replay([TASK], options(tmp, reps=1, skip_preflight=False), launch)
+            self.assertEqual(caught.exception.code, 2)
+            self.assertEqual(len(self.preflight_calls(launch)), 2)
+            self.assertEqual(len(launch.calls), 2)  # the scored schedule never launched
+
+    def test_the_bar_is_lint_and_a_red_suite_does_not_refuse(self):
+        """The full suite is profile-dependent at every snapshot commit, so a suite verdict in the
+        output, or worktree-path noise after it, is neither the bar nor a refusal."""
+        noisy = GREEN + "Ran 704 tests in 35s\n\nFAILED (failures=22)\n/private/tmp/x/worktrees/project/task-one\n"
+        self.assertTrue(BENCH.gate_passed(gate_reply(noisy)))
+        self.assertNotIn("unittest", BENCH.PREFLIGHT_PROMPT)
+        self.assertFalse(BENCH.gate_passed(gate_reply("/private/tmp/x/task-one\n")))
+
+    def test_a_red_gate_keeps_its_failure_lines_in_the_saved_stream(self):
+        """A refusal has to be readable from the saved stream: the lint findings and any refused read."""
+        self.assertIn("harness lint", BENCH.PREFLIGHT_PROMPT)
+        with tempfile.TemporaryDirectory() as tmp:
+            red = RED + "PermissionError: [Errno 1] Operation not permitted: '/x/rules'\n"
+            launch = Launch([gate_reply(red), gate_reply(red)])
+            opts = options(tmp, reps=1, skip_preflight=False); opts["raw"] = tmp
+            with self.assertRaises(SystemExit):
+                BENCH.replay([TASK], opts, launch)
+            saved = (Path(tmp) / "preflight-bare.json").read_text(encoding="utf-8")
+            self.assertIn("home-directory path", BENCH.gate_output(saved))
+            self.assertIn("Operation not permitted", BENCH.gate_output(saved))
+
+    def test_a_refused_read_is_red_even_when_lint_is_clean(self):
+        blocked = GREEN + "PermissionError: [Errno 1] Operation not permitted: '/x/plans'\n"
+        self.assertFalse(BENCH.gate_passed(gate_reply(blocked)))
+        self.assertFalse(BENCH.gate_passed(gate_reply(GREEN.replace("lint: 0 finding(s)", "lint: 2 finding(s)"))))
+
+    def test_unreadable_output_is_a_red_gate_and_never_a_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = Launch(["garbage", subprocess.TimeoutExpired("claude", 1)])
+            checks, spent = BENCH.preflight([TASK], options(tmp), launch)
+            self.assertEqual([c["passed"] for c in checks], [False, False])
+            self.assertEqual([c["reply"] for c in checks], ["", "timeout"])
+            self.assertEqual(spent, 0.5)  # a run with no readable cost is counted at its own cap
+
+    def test_a_green_gate_stamps_every_scored_row_and_runs_each_arms_own_fence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = options(tmp, reps=1, skip_preflight=False)
+            launch = Launch([gate_reply(GREEN)] * 2 + [json.dumps(result())] * 2)
+            rows, stopped = BENCH.replay([TASK], opts, launch)
+            self.assertEqual((stopped, len(rows)), (False, 2))
+            self.assertEqual([r["preflight"] for r in rows], ["passed"] * 2)
+            checks = self.preflight_calls(launch)
+            self.assertEqual(len(checks), 2)
+            for command, kwargs in checks:
+                self.assertEqual(command[command.index("--max-turns") + 1], "3")
+                self.assertEqual(command[command.index("--max-budget-usd") + 1], "0.25")
+                self.assertEqual(command[command.index("--model") + 1], "claude-test")
+                fence = json.loads(command[command.index("--settings") + 1])["sandbox"]["filesystem"]
+                self.assertEqual(sorted(fence["allowWrite"]),
+                                 sorted([kwargs["env"].get("CLAUDE_CONFIG_DIR", "~/.claude")] + list(BENCH.SCRATCH_DIRS)))
+            self.assertEqual(checks[0][1]["env"]["CLAUDE_CONFIG_DIR"], str(opts["bare_config"]))
+            self.assertNotIn("CLAUDE_CONFIG_DIR", checks[1][1]["env"])
+
+    def test_the_pre_flight_spends_against_the_same_cumulative_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = Launch([gate_reply(GREEN, cost=0.5)] * 2)
+            rows, stopped = BENCH.replay([TASK], options(tmp, reps=1, skip_preflight=False,
+                                                         spend_cap=2.5), launch)
+            self.assertEqual((rows, stopped), ([], True))  # 1.0 spent, and 1.0 + 2.0 passes 2.5
+            self.assertEqual(len(launch.calls), 2)
+
+    def test_skipping_the_pre_flight_stamps_the_rows_and_launches_nothing_extra(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            opts = options(tmp, reps=1)
+            launch = Launch([json.dumps(result())] * 2)
+            rows, _ = BENCH.replay([TASK], opts, launch)
+            self.assertEqual([r["preflight"] for r in rows], ["skipped"] * 2)
+            self.assertEqual(self.preflight_calls(launch), [])
+            scored = json.loads(launch.calls[0][0][launch.calls[0][0].index("--settings") + 1])
+            self.assertIn(str(opts["bare_config"]), scored["sandbox"]["filesystem"]["allowWrite"])
+
+
+def row(arm, rep, passed, cost, error=False, bucket="", predicted=None, task="demo", note=""):
     return {"arm": arm, "rep": rep, "passed": None if error else passed, "error": error, "cost_usd": cost,
             "cost_normalised_usd": cost, "date": "2026-01-01", "harness_version": "9.9.9", "harness_sha": "a" * 40,
-            "tag": "candidate", "model": "claude-test", "cli_version": "1.0"}
+            "tag": "candidate", "model": "claude-test", "cli_version": "1.0", "bucket": bucket,
+            "predicted_ratio": predicted, "task": task, "change_note": note}
 
 
 class FixtureGateTests(unittest.TestCase):
@@ -391,13 +601,158 @@ class ReplaySummaryTests(unittest.TestCase):
         self.assertIn("| 0.500 |", text)
         self.assertNotIn("\u2014", text)
 
+    def test_two_buckets_on_one_day_and_commit_are_two_rows_not_one(self):
+        """The programme changes one thing at a time, so several buckets share a day and a sha.
+        Before the bucket joined the key each row silently replaced the one before it."""
+        first = [row("bare", 1, True, 1.0, bucket="A"), row("harness", 1, True, 0.5, bucket="A")]
+        second = [row("bare", 1, True, 1.0, bucket="C"), row("harness", 1, True, 0.4, bucket="C")]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.jsonl"
+            BENCH.upsert_history(path, BENCH.history_row(first, "s1"))
+            kept = BENCH.upsert_history(path, BENCH.history_row(second, "s1"))
+            self.assertEqual([r["bucket"] for r in kept], ["A", "C"])
+            again = BENCH.upsert_history(path, BENCH.history_row(second, "s1"))
+            self.assertEqual(len(again), 2)
+
+    def test_a_row_carries_the_ratio_its_bucket_was_predicted_to_produce(self):
+        rows = [row("bare", 1, True, 1.0, bucket="A", predicted=1.03),
+                row("harness", 1, True, 0.5, bucket="A", predicted=1.03)]
+        built = BENCH.history_row(rows, "s1")
+        self.assertEqual((built["bucket"], built["predicted_ratio"], built["ratio"]), ("A", 1.03, 0.5))
+        text = BENCH.render_history([built])
+        self.assertIn("| A |", text)
+        self.assertIn("| 1.030 |", text)
+
+    def test_a_row_written_before_buckets_existed_still_renders(self):
+        legacy = BENCH.history_row([row("bare", 1, True, 1.0), row("harness", 1, True, 0.5)], "s1")
+        del legacy["bucket"], legacy["predicted_ratio"], legacy["per_task"], legacy["change_note"]
+        self.assertIn("| n/a |", BENCH.render_history([legacy]))
+
+    def test_the_history_row_breaks_the_aggregate_down_by_task_with_each_cell_s_spread(self):
+        """One task moving is the usual shape of a regression, and a cell whose reps differ by half
+        says the aggregate above it is noise. Both are unreadable from the aggregate alone."""
+        rows = [row("bare", 1, True, 1.0, task="alpha"), row("bare", 2, True, 2.0, task="alpha"),
+                row("harness", 1, True, 0.5, task="alpha"), row("harness", 2, True, 0.5, task="alpha"),
+                row("bare", 1, True, 4.0, task="beta"), row("harness", 1, True, 8.0, task="beta")]
+        cells = BENCH.history_row(rows, "s1")["per_task"]
+        self.assertEqual(cells["alpha"], {"bare": 1.5, "harness": 0.5, "ratio": 0.3333,
+                                          "bare_spread": 2.0, "harness_spread": 1.0, "n": 2})
+        self.assertEqual(cells["beta"]["ratio"], 2.0)
+        self.assertIsNone(cells["beta"]["bare_spread"])  # one priced run has no spread
+
+    def test_the_rendered_ledger_carries_the_task_lines_and_the_change_note(self):
+        rows = [row("bare", 1, True, 1.0, task="alpha", note="moved the skills out of context"),
+                row("bare", 2, True, 2.0, task="alpha", note="moved the skills out of context"),
+                row("harness", 1, True, 0.5, task="alpha", note="moved the skills out of context"),
+                row("harness", 2, True, 0.5, task="alpha", note="moved the skills out of context")]
+        text = BENCH.render_history([BENCH.history_row(rows, "s1")])
+        self.assertIn("    note: moved the skills out of context", text)
+        self.assertIn("    alpha: bare 1.500, harness 0.500, ratio 0.333, spread bare 2.000 /"
+                      " harness 1.000, n 2", text)
+        self.assertIn("| 9.9.9 @ aaaaaaa |", text)  # the aggregate columns are untouched
+        self.assertNotIn("—", text)
+
+    def test_an_errored_or_unpriced_run_is_left_out_of_its_task_cell(self):
+        rows = [row("bare", 1, True, 1.0, task="alpha"), row("bare", 2, None, 9.0, True, task="alpha"),
+                row("harness", 1, True, 0.5, task="alpha")]
+        cells = BENCH.per_task(rows)
+        self.assertEqual((cells["alpha"]["bare"], cells["alpha"]["bare_spread"]), (1.0, None))
+        self.assertEqual(cells["alpha"]["n"], 2)  # the rep happened, even though it priced nothing
+
+
+class ArmFingerprintTests(unittest.TestCase):
+    def test_the_fingerprint_counts_the_layers_and_moves_when_a_file_changes_length(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = config_tree(Path(tmp) / "profile")
+            first = BENCH.config_fingerprint(root)
+            self.assertEqual({k: v for k, v in first.items() if k != "sha"},
+                             {"rules": 2, "skills": 1, "agents": 1, "personal_bytes": 64})
+            (root / "rules" / "rule-0.md").write_text("r" * 21, encoding="utf-8")
+            self.assertNotEqual(BENCH.config_fingerprint(root)["sha"], first["sha"])
+            (root / "rules" / "rule-0.md").write_text("q" * 21, encoding="utf-8")
+            same_size = BENCH.config_fingerprint(root)
+            self.assertNotEqual(same_size["sha"], first["sha"])
+            self.assertEqual(len(same_size["sha"]), 8)
+            self.assertEqual(BENCH.config_fingerprint(root / "gone"),
+                             {"sha": BENCH.config_fingerprint(Path(tmp) / "empty")["sha"], "rules": 0,
+                              "skills": 0, "agents": 0, "personal_bytes": 0})
+
+    def test_an_inherited_arm_is_fingerprinted_from_the_home_profile_and_named_not_pathed(self):
+        """A row must survive being read by anyone, so it carries `inherited` and sizes, never the
+        owner's home directory. The repository's own lint rejects a home path in a file."""
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            config_tree(home / ".claude", rules=3)
+            self.assertEqual(BENCH.config_fingerprint(BENCH.INHERITED, home)["rules"], 3)
+            self.assertEqual(BENCH.config_fingerprint(None, home),
+                             BENCH.config_fingerprint(home / ".claude", home))
+            self.assertEqual(BENCH.config_label(None, home), "inherited")
+            self.assertEqual(BENCH.config_label(home / ".claude-bare", home), "~/.claude-bare")
+            self.assertEqual(BENCH.config_label("/opt/profile", home), "/opt/profile")
+
+
+class BackfillTests(unittest.TestCase):
+    def written(self, tmp, rows, raw):
+        results = Path(tmp) / "results"
+        results.mkdir()
+        BENCH.write_jsonl(results / BENCH.RESULTS, rows)
+        folder = Path(tmp) / "raw"
+        folder.mkdir()
+        for name, text in raw.items():
+            (folder / name).write_text(text, encoding="utf-8")
+        return results, folder
+
+    def test_backfill_enriches_a_copy_and_leaves_the_original_alone(self):
+        stream = json.dumps([call(None, ["Bash", "Task"], write=777), result()])
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = config_tree(Path(tmp) / "profile")
+            old = [row("bare", 1, True, 1.0), row("harness", 1, True, 0.5)]
+            for stale in old:
+                stale.pop("change_note")
+            results, raw = self.written(tmp, old, {"demo-bare-1.json": stream,
+                                                   "demo-harness-1.json": stream})
+            before = (results / BENCH.RESULTS).read_text(encoding="utf-8")
+            code = BENCH.main(["backfill", "--results", str(results), "--raw", str(raw),
+                               "--config-dir", str(profile)])
+            self.assertEqual(code, 0)
+            self.assertEqual((results / BENCH.RESULTS).read_text(encoding="utf-8"), before)
+            enriched = BENCH.read_jsonl(results / BENCH.ENRICHED)
+            self.assertEqual([r["spawns"] for r in enriched], [1, 1])
+            self.assertEqual(enriched[0]["first_call_cache_write"], 777)
+            self.assertEqual(enriched[0]["tool_counts"], {"Bash": 1, "Task": 1})
+            self.assertEqual(enriched[0]["change_note"], "")
+            self.assertEqual(enriched[0]["cost_usd"], 1.0)  # the original figures are untouched
+            self.assertEqual(enriched[0]["arm_config_dir"], str(profile))
+            self.assertEqual(enriched[0]["arm_fingerprint"], BENCH.config_fingerprint(profile))
+            for row_out in enriched:
+                self.assertEqual(row_out["fingerprint_source"], "backfill")
+
+    def test_a_row_with_no_raw_output_is_reported_and_keeps_its_fields_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            results, raw = self.written(tmp, [row("bare", 1, True, 1.0)], {})
+            code = BENCH.main(["backfill", "--results", str(results), "--raw", str(raw),
+                               "--inherited", "--in-place"])
+            self.assertEqual(code, 1)
+            enriched = BENCH.read_jsonl(results / BENCH.ENRICHED)
+            self.assertEqual(enriched[0]["tool_counts"], {})
+            self.assertIsNone(enriched[0]["spawns"])
+            self.assertEqual(enriched[0]["arm_config_dir"], "inherited")
+            self.assertEqual(BENCH.read_jsonl(results / BENCH.RESULTS), enriched)  # --in-place
+
+    def test_a_missing_results_file_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit):
+                BENCH.main(["backfill", "--results", tmp, "--raw", tmp])
+
 
 class ManifestTests(unittest.TestCase):
     def setUp(self):
         self.tasks = BENCH.load_tasks(REPO / BENCH.TASKS)
 
-    def test_two_solved_issues_and_two_synthetic_tasks_are_pinned_by_full_sha(self):
-        self.assertEqual(sorted(t["kind"] for t in self.tasks), ["issue", "issue", "synthetic", "synthetic"])
+    def test_every_solved_issue_and_synthetic_task_is_pinned_by_full_sha(self):
+        kinds = [t["kind"] for t in self.tasks]
+        self.assertEqual((kinds.count("issue"), kinds.count("synthetic")), (6, 2))
+        self.assertEqual(len(kinds), len(set(t["id"] for t in self.tasks)))
         for task in self.tasks:
             self.assertRegex(task["parent_sha"], r"^[0-9a-f]{40}$")
             if task["kind"] == "issue":
@@ -411,6 +766,12 @@ class ManifestTests(unittest.TestCase):
             for held in task["tests"].get("copy", []) + task["tests"].get("select", []) + ["oracle"]:
                 self.assertNotIn(held, prompt, msg=task["id"])
 
+    def test_every_task_declares_a_known_leak_class_the_loader_ignores(self):
+        for task in self.tasks:
+            self.assertIn(task["leak_class"], ("clean", "leaks", "control"), msg=task["id"])
+        self.assertEqual([t["id"] for t in self.tasks if t["leak_class"] != "clean"],
+                         ["link-alias", "cost-variants"])
+
     def test_a_malformed_task_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "tasks.json"
@@ -420,10 +781,15 @@ class ManifestTests(unittest.TestCase):
 
 
 class OracleTests(unittest.TestCase):
+    # The fixture builds exactly as many modules as the oracle expects, which is the count at the
+    # task's pinned `parent_sha`; `tests/test_doc_figures_derive_from_code.py` holds that constant to the glob
+    # at that sha. A repin moves both without a hand-typed number here.
+    MODULES = BENCH._oracle(REPO, "hook_ids").EXPECTED_MODULES
+
     def hooks(self, tmp):
         folder = Path(tmp) / "policy" / "hooks"
         folder.mkdir(parents=True)
-        for index in range(18):
+        for index in range(self.MODULES):
             future = "from __future__ import annotations\n" if index == 0 else ""
             (folder / ("hook-%02d.py" % index)).write_text(
                 '"""Hook %d does  one thing.\n\nMore.\n"""\n%simport os\n\n\ndef run():\n    def inner():\n'
@@ -447,7 +813,7 @@ class OracleTests(unittest.TestCase):
         oracle = BENCH._oracle(REPO, "hook_ids")
         with tempfile.TemporaryDirectory() as tmp:
             root = self.hooks(tmp)
-            self.assertEqual(len(oracle.check(root)), 18)
+            self.assertEqual(len(oracle.check(root)), self.MODULES)
             oracle.solve(root)
             self.assertEqual(oracle.check(root), [])
             first = root / "policy" / "hooks" / "hook-00.py"

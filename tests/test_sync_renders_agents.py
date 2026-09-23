@@ -19,6 +19,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import isolate_home
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 loader = importlib.machinery.SourceFileLoader("harness", str(REPO / "bin" / "harness"))
@@ -55,11 +57,7 @@ class RenderedAgentTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = Path(self.tmp.name)
         self._old_environ = dict(os.environ)
-        os.environ["HOME"] = str(self.home)
-        for key in list(os.environ):
-            if key.startswith("HARNESS_"):
-                del os.environ[key]
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
         self.agents = self.home / ".claude" / "agents"
 
     def tearDown(self):

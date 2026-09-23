@@ -13,6 +13,35 @@ the branch, model ids and token counts. Sending those rows to an observability b
 opt-in, off by default and described in [telemetry.md](telemetry.md); the ledger stays the
 record and the backend is a copy that `harness usage export --since` can rebuild.
 
+## Which rules fired
+
+The same report that sums the tokens scores the rules. `bin/harness usage --rules` counts
+detector hits per rule over the window instead of tokens, and `harness --help` lists it beside
+the token groupings.
+
+```sh
+bin/harness usage --rules                      # hits per detector over the last 30 days
+bin/harness usage --rules --by repo            # sessions, hits and the top three per repo
+bin/harness usage --rules --by stance          # the same, per dimension=variant
+```
+
+Three groupings and no more: `rule`, the default, one line per registry id; `repo`, one line
+per repository directory name; `stance`, one line per `dimension=variant` in force. `--by
+model` is refused rather than quietly regrouped, since a session's hits belong to no one of its
+models.
+
+Two annotations come from the numbers alone, and their thresholds are `RULE_PROMOTE_SHARE` and
+`RULE_MIN_SESSIONS` in `bin/harness`. `promote?` marks a detector that hit in more than 30
+percent (`RULE_PROMOTE_SHARE = 0.30`) of the sessions in the window; `unobserved` marks one
+that hit in none of them. Neither is printed below 20 measured sessions
+(`RULE_MIN_SESSIONS = 20`), because a share over three sessions says little. Only a record
+carrying a `rules` map counts toward either, so the denominator is measured sessions and not
+rows.
+
+What each detector looks for, how a rename folds and why a rescanned session is excluded from
+the stance grouping are under [rule telemetry](#rule-telemetry) below. Running the measurement
+without the rest of the harness is [standalone measurement](standalone-measurement.md).
+
 ## What is recorded
 
 Every row names its `kind`: `session`, `subagent` or `worker`. A row written before the field
@@ -24,7 +53,8 @@ row carries `null`**: the version that ran a past session is not recoverable fro
 transcript, and stamping today's would make the whole history look like this release.
 
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
-`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`, `days`.
+`output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
+`days` and, when the row has any, `idless_records`.
 The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
@@ -32,7 +62,13 @@ API response is written as several transcript entries, so counting per line infl
 total — but those entries do not repeat one `usage` object. The early ones carry a partial
 streaming `output_tokens` and the last carries the response's true figure, so taking the first
 undercounts it. The field-wise maximum is the final figure, and a reordered or truncated tail
-cannot lower it. `subagents` counts `Agent` tool calls. The token totals **include the
+cannot lower it. A record that carries no message id is keyed on its `requestId` instead, which
+names one API call: the same call written into both a session file and a subagent file is one
+response, and a call whose other records do carry a message id joins their slot rather than
+opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
+deduplicated at all — it is summed as written, and `idless_records` counts how many such records
+the row's totals include, the session's own and those of the subagent files folded into them.
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;
@@ -77,7 +113,8 @@ field names that directory. `agent_id`, `agent_type` and `spawn_depth` come from
 than dropped. Then `model` — the id the agent's own transcript reports, most frequent across its
 assistant records, falling back to the alias the spawn asked for only when it recorded none, so
 a routed spawn and a direct one on the same model group under one name — `effort`, the four
-token fields and `tool_calls`. `tool_use_id` is
+token fields, `tool_calls` and, when the agent's transcript held any, `idless_records`: the
+records in this row's totals that neither a message id nor a request id identified. `tool_use_id` is
 the parent call this row belongs to, `requested_type` is the agent type that call asked for, and
 `rerouted` is the two disagreeing — the measure of how often a spawn hook moved a spawn. A
 requested type is kept only when it is a name the tool could have resolved; anything else is
@@ -86,8 +123,24 @@ role carries** — the same figures `brief-guard` writes into a brief — so an 
 subtraction on one row rather than a join against whatever the cost table says today. They are
 read from the table at the moment the row is written, not from the brief, which no scan can
 see; a role nothing prices, a table that will not build and a Codex subagent all record `null`,
-because a zero would say the spawn was budgeted nothing. These rows carry the same tokens a
-second time, attributed, which is why no grouping sums both them and their session.
+because a zero would say the spawn was budgeted nothing. `return_path` and
+`return_over_budget` measure the return this row's spawn handed back, joined to the parent's
+`Agent` call on the same `tool_use_id`: whether it named a path that existed under the worktree
+or the scratchpad at the moment the row was written (`"resolvable"`, `"unresolvable"`, or
+`"none"` for a return that named no path at all, which is a fact and not a failure), and
+whether its word count passed the cap its brief stated — the number beside the word `words` in
+the cap `rule-detectors` reads, or the 400-word default `brief-guard` appends to a brief that
+states none. A path counts when it is quoted, in a fence or in backticks, or when bare prose
+gives it a path's own shape: a root, a relative prefix, or an extension on its last segment, so
+`pass/fail` and `2026/09/22` are prose and a URL is nobody's file here. Both fields are `null`
+when the scan could not measure them: no parent call to join on, an empty return, an empty
+brief, a spawn whose `requested_type` carries its cap in its own definition, or a Codex row,
+whose runtime joins no return at all. A result the scan kept only the first 64 KB of records
+`return_measured: "truncated"` instead, because a word count over the head of a return is not a
+word count of the return. The match is a string match and the resolution an `os.path.exists`;
+no model judges the return here. These rows
+carry the same tokens a second time, attributed, which is why no grouping sums both them and
+their session.
 
 **`kind: "worker"`** — one row per completed `harness role run` worker, with the role name as
 `agent_type`. A worker is an isolated CLI session; its runtime reports what the run cost in the
@@ -164,6 +217,24 @@ reports only the agent's **last** response: measured at 3,143 output tokens agai
 actually spent. Each line names the agent type, what it spent and, when its row carries budgets,
 the larger of the two ratios against them, prefixed `over budget` past a `nudge_at` multiple.
 
+The first line that carries a figure is followed, once per session, by what the figures are:
+output tokens and tool calls summed from each agent's own transcript, which is not the task
+notification's `subagent_tokens`. Measured live, one agent's line said 31,121 output tokens
+beside a notification's `subagent_tokens 102398`; both were right about different things.
+
+An agent resumed with a follow-up message stops once per round, against one agent id and one
+transcript. Every round is fed a line — `gatherer finished round 2 at 800 output tokens and
+2 tool calls (cumulative)` — because the transcript is the agent's whole life and a later
+round's figure covers the earlier ones. It stays one subagent in the session count, and only
+the rise reaches the session totals.
+
+A resumed agent's stop can fire before that round's responses are flushed, and the transcript
+ends on the previous round's finished response either way — so nothing about the file says the
+round is incomplete. What says it is the figure: a sum that has not passed the one already
+reported is a round that has not landed. Such a round is re-summed at each following event and
+nothing is said about it meanwhile, rather than a line repeating the previous round's number;
+after three tries, or a transcript that has gone, it is dropped unsaid.
+
 That sum is capped at 8 MiB from the end of the agent's transcript and at four seconds, because
 it runs inside a hook's timeout. When a cap bites, the line says `(partial)`; when the sum could
 not be made at all, it says `spend unknown` rather than reporting the agent at zero. Either way
@@ -180,6 +251,11 @@ place and are summed at the next event. `spend unknown` therefore means a transc
 there; a transcript that is there and still holds no response says `spend not yet recorded`, and
 the figure it gains later reaches the session totals without the agent being named twice.
 
+`spend unknown` names the agent it is about — `unknown finished, spend unknown, no transcript
+found for agent a1b2c3` — and is fed once a session for that agent. It carries no figure and
+nothing will ever reconcile it, so repeating it turn after turn, which a session whose reader
+state was rebuilt used to do, only spends the orchestrator's context on a fact it has read.
+
 A synchronous return can also arrive before the agent's last response is on disk: one API
 response is written as several records, the early ones carrying a partial streaming count and
 the last one a `stop_reason`. So the return polls the transcript's tail for up to a second,
@@ -187,7 +263,23 @@ waiting for that record, and the line says `(so far)` when it never comes. Whate
 printed, the settled one the stop records afterwards raises the session totals — the agent is
 never named a second time, and the session total is never below the sum of the final figures.
 
-Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
+A prompt also carries one line about the session itself when its context has grown past a size
+the posture calls a full session: `usage-feed: session context 120,000 tokens, past the
+fresh-session threshold of 100,000 — finish the task, write the handoff, start a fresh session`.
+The size is the newest response's input tokens plus the prefix it read from the cache and the
+prefix it wrote into it, which is what every further turn re-reads and what a long session mostly
+costs; the turn line shows none of that.
+
+It is said once per threshold and not once per turn: a session that stays above one is silent
+until it reaches the next, and a resume — or a transcript whose identity changed, which makes the
+reader start over — reads the thresholds already said back out of the state file. A context that
+falls back under a threshold, which is what an in-place compaction does, arms that threshold
+again, because crossing it a second time is a crossing nobody has been told about. The line names
+the highest threshold newly crossed, never one already fed. A context no response has reported
+yet is no crossing, so nothing is said rather than a size of zero being invented. Like every
+other line here it is soft: nothing is blocked.
+
+Five settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
 number of its own:
 
 - `turn_feed: "off"` — nothing is injected anywhere and no file is written.
@@ -197,6 +289,10 @@ number of its own:
   ship this.
 - `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
   means never.
+- `session_nudge_at` — the context sizes, in whole tokens, smallest first and none repeating,
+  that the fresh-session line is said at. `frugal` ships 80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` an empty list, which
+  means never. Those figures are starting points chosen against a 200,000-token window, not
+  measured ones: the follow-up to #321 replaces them with sizes read out of the ledger.
 - `max_parallel` — the width the running-agent note measures against. `null`, which `max` ships,
   means the note never appears.
 
@@ -240,8 +336,9 @@ through role-run workers.
 ### The session registry
 
 One more directory sits beside the feed's, `~/.local/state/agent-harness/sessions/`, written by
-session start rather than by any measurement: one small file per session naming the agent
-definitions that session's registry held, which is what decides whether an unnamed spawn can be
+session start and by a spawn that learns of a reload rather than by any measurement: one small
+file per session naming the agent
+definitions that session's registry held, which is the floor under whether an unnamed spawn can be
 routed to a band worker — see [runtime controls](runtime-controls.md). It holds agent names and a
 timestamp, nothing about the work; the files are owner-only in an owner-only directory, swept
 after a fortnight of not being used, and removed by `harness uninstall`.
@@ -268,7 +365,8 @@ a context token.
 The file is **append-only**: an outcome is its own record, joined to its decision by
 `decision_id` when the report reads it, and no line is ever rewritten. `input` is the text the
 hook judged, capped at 2 KiB; `input_sha256` is over the **uncapped** text, so the cap loses
-evidence and never identity. No tool output and no assistant prose reaches either field.
+evidence and never identity. No tool output and no assistant prose reaches either field; the
+one field that holds prose is [the completion claim](#the-completion-claim), which is off.
 
 | point | the judgment | the outcome, when there is one |
 | --- | --- | --- |
@@ -278,12 +376,13 @@ evidence and never identity. No tool output and no assistant prose reaches eithe
 | `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
 | `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
 
-An approved Bash command is not logged. The harness answers the permission question on a small
+An approved Bash command is not *graded*. The harness answers the permission question on a small
 minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a
-prompt or a refusal is the judgment a label can grade. `not_run` is deliberately not called
-"denied": a user who refused, a user who interrupted the turn and a session that crashed all
-look the same from a hook, and naming one of them would put a label in the file that nobody
-measured.
+prompt or a refusal is the judgment a label can grade. A sample of the approvals is kept all the
+same, as [sampled allows](#sampled-allows) below, which carry no outcome. `not_run` is
+deliberately not called "denied": a user who refused, a user who interrupted the turn and a
+session that crashed all look the same from a hook, and naming one of them would put a label in
+the file that nobody measured.
 
 Both runtimes write, for the events both raise. Band routing happens on Claude Code alone, so
 Codex records no `tier-agent-spawns` row; `adapters/codex/capabilities.json` names that gap.
@@ -292,6 +391,84 @@ A write that fails is counted and swallowed — a log that can change a permissi
 worse than no log — and `telemetry.decisions: false` in `config.json` turns the whole thing off,
 after which no row, no file and no directory is written. See
 [telemetry.md](telemetry.md#the-decision-log-switch).
+
+### Sampled allows
+
+One Bash command in twenty that the harness **allowed** is written as a `grade-bash` row of its
+own:
+
+```json
+{"kind": "decision", "point": "grade-bash", "deterministic_answer": "allow", "sampled": true,
+ "sample_rate": 20, "input": "cargo test --release", "outcome": null}
+```
+
+They exist because the graded rows are all prompts: a check that may only tighten an allow into
+an ask has nothing to measure its false alarms against without the commands nobody was asked
+about. They are **negatives, not judgments** — `sampled: true`, never an outcome, passed by at
+SessionEnd rather than closed as `not_run`, and counted by `usage --by decision` on a
+`grade-bash (sampled)` line of their own so they cannot dilute the outcome rates of the graded
+rows.
+
+Only an allow the harness actually gave is sampled. A command it answered nothing about is the
+runtime's own to decide and may still be prompted on or refused, so it is no evidence of an
+allow and no row: that covers a grade-1 command under the `execute` stance, and every command
+on Codex, where a plain approval is dropped from the hook output and the client's own default
+stands. A confirmed command — one re-run with the confirmation marker after a prompt — is not
+sampled either; it belongs to the `ask` row that prompted it.
+
+Which commands are sampled is the **command text's own hash**, not a random draw, so the same
+corpus samples the same commands and a measurement over these rows is reproducible. That makes
+the sample one of **distinct commands, not of invocations**: a command in the sample is logged
+every time it runs and one outside it never is, so the row count says how often those particular
+commands ran and multiplying it by `sample_rate` estimates nothing. Read it as a corpus to
+replay a candidate check over, which is what it is for.
+
+The `input` of a sampled row is **redacted**, unlike the text of a prompt the user was shown:
+the value of every assignment and every credential flag, quoted or not (`FOO=…`, `--password=…`,
+`--token …`, `-p…`), every secret shape the [rule detectors](#rule-telemetry) match, and the home
+directory written `~` so no username reaches the row. `input_sha256` is over the **redacted**
+text on these rows and over the original on every other row: the hash of an original next to the
+redacted text would put a short secret within reach of a dictionary attack.
+
+`telemetry.allow_sample_rate` sets the rate and `0` stops it;
+[telemetry.md](telemetry.md#the-allowed-command-sample) has the switch, and `decisions: false`
+turns it off with everything else.
+
+### The completion claim
+
+One optional pair of fields is the exception, on a `stop-gate` row alone:
+
+```json
+{"kind": "decision", "point": "stop-gate", "deterministic_answer": "blocked",
+ "completion_claim": "…the suite is green and the change is ready to land.",
+ "completion_claim_sha256": "9f21…"}
+```
+
+`completion_claim` is the **last 2 KiB of the turn's final assistant message**, in bytes and cut
+back to a character boundary, read from the transcript the Stop event names because a Stop
+payload carries no assistant text of its own. It is the turn's own message: the scan stops at
+the user prompt that opened the turn, so a turn that ended in a tool call rather than a reply
+claims nothing instead of borrowing the previous turn's words. `completion_claim_sha256` is over
+the uncapped message, on the same rule as `input_sha256`. The two fields exist so that a stop
+claim can be read against the gate evidence sitting on the same row.
+
+It is **off by default** — `telemetry.completion_claim` in `config.json`,
+[telemetry.md](telemetry.md#the-completion-claim-switch) — and with it off the row is exactly
+the row above, with none of these fields present.
+
+With it on the row always says something. Where there is no claim to record, it carries
+`"completion_claim": null` and a `completion_claim_miss` naming why, and no hash:
+
+| `completion_claim_miss` | what happened |
+| --- | --- |
+| `no_transcript_path` | the Stop event named no file — the runtime's gap, not the session's |
+| `unreadable` | the file was named and could not be opened |
+| `oversized` | the file is past 256 MiB, which this hook will not seek into |
+| `no_claim` | the turn was read and ended without assistant prose |
+| `error` | the reader raised; the decision is still recorded |
+
+The read is the last 256 KiB of the file, so it costs the same on a transcript of any size — a
+claim older than that window reads as `no_claim` rather than as the wrong turn's words.
 
 ```sh
 bin/harness usage --by decision        # counts, outcome rates and the unlabelled share per point
@@ -317,6 +494,13 @@ a mean, so it prints three points on the curve; `unmeasured` counts the runs who
 reported no tool-call figure, which are named there rather than averaged in as a zero. A role
 with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
 second-largest of eight, and a budget re-seeded from it is a guess wearing a number.
+
+`path` and `over` are the returns themselves: of the returns that named a path, the share whose
+path resolved; and of the returns measured against a cap, the share that ran past it. A return
+that named no path is in neither figure, so a role whose returns are all one-line verdicts
+prints `-` for `path` rather than `0%`, which would read as a role that wrote paths and got
+them all wrong. A row written before the measurement existed, a Codex row and a return nothing
+could be joined to print `-` too.
 
 `--by day` reads a row's `days` slices when it carries them and falls back to its end date when
 it does not, so a session that ran for a fortnight is spread over the days it spent on. The
@@ -358,13 +542,14 @@ and a model whose price could not be confirmed from a primary source is absent r
 guessed. Override or extend it under `prices` in `config.json` — see
 [preferences.md](preferences.md).
 
-- **Ids resolve by longest prefix** after normalisation, which lower-cases, drops a cloud vendor
-  prefix and drops a context-window suffix. So `claude-haiku-4-5`,
-  `anthropic.claude-haiku-4-5-20251001-v1:0` and `claude-opus-5[1m]` all reach a family entry.
-  Long context is not a separate rate: Anthropic prices the full 1M-token window at the standard
-  rate for Claude 4.6 and later. The cost of prefix matching is that an unlisted variant of a
-  listed family inherits the family's rate even when it is priced differently; list it or
-  override it.
+- **Ids resolve by exact match** after normalisation, which lower-cases, drops a cloud vendor
+  prefix, drops a context-window suffix and drops a release suffix — a date stamp, a reseller's
+  `-v1:0`, an `@date`. So `claude-haiku-4-5`, `anthropic.claude-haiku-4-5-20251001-v1:0` and
+  `claude-opus-5[1m]` all reach one family entry. Long context is not a separate rate: Anthropic
+  prices the full 1M-token window at the standard rate for Claude 4.6 and later. Nothing
+  resolves by prefix: a variant the table does not name is unpriced, not billed at its family's
+  rate — `gpt-5.5-pro` is $30/$180 where `gpt-5.5` is $5/$30. To price one, add it to
+  [`policy/prices.json`](../policy/prices.json) or override it under `prices` in `config.json`.
 - **Cache writes are priced by TTL.** Anthropic charges 1.25x base input for a 5-minute write
   and 2x for a 1-hour one, and Claude Code reports the split under `cache_creation`, so a row
   records `cache_write_5m` and `cache_write_1h` beside its `cache_write` total and each tier is
@@ -393,7 +578,8 @@ guessed. Override or extend it under `prices` in `config.json` — see
   and a row marked `partial` are all counted in the `unpriced` footer and contribute nothing to
   the column. An understated dollar figure is worse than an absent one, because nothing on the
   line says it is short. A role-run worker whose row names a model alias rather than an id —
-  `opus`, `fable` — is unpriced for the same reason.
+  `opus`, `fable` — is unpriced for the same reason, and so is a variant of a listed family
+  that the price table does not name.
 - **A day slice holds tokens and no model**, so a multi-day session's cost is allocated across
   its days by each day's share of its tokens. For a single-day session, which is nearly all of
   them, the share is one and the allocation is exact; for a long one it is an allocation and not
@@ -432,7 +618,62 @@ show up in the only corpus it has been measured against: across 137 sessions on 
 hit rate was 97.0% at zero subagents, 97.2% at 1–6, 97.3% at 7–50 and 97.1% at 51 or more — so
 treat the sentence above as a thing to check in your own data rather than as an expectation.
 
+### Whether the prefix held
+
+`hit` says how much of the prompt was served from cache. It does not say whether the cached
+prefix survived the session, and that is the thing `primitives/rules/cache-hygiene.md` actually
+asks for: a mid-task change to the tool set, the MCP server list, the model or the effort dial
+turns the next turn's cache reads into cache writes, and the only visible symptom is a larger
+bill. `bin/harness usage --by prefix` reports the miss ratio per session:
+
+```
+miss = cache_write / (cache_read + cache_write)
+```
+
+The share of the prefix the provider had to re-write rather than serve, computed from the two
+fields every row already carries. No new hook, no new event, nothing recorded that was not
+recorded before. A low ratio is a session that kept one prefix; a high one is a session that
+bought its context again.
+
+**What the figure excludes: its subagents.** A Claude Code session row folds its subagents'
+tokens into its own, and every spawn writes a fresh prefix that shares nothing with its parent,
+so a session that held its context perfectly across six fan-outs would read as one that re-bought
+a quarter of it. The subagent rows' own `cache_read` and `cache_write` are subtracted from the
+session's before the ratio is taken, and the report's columns are headed `own_read` and
+`own_write` for that reason. A session whose `subagents` count is higher than the subagent rows
+found for it, or whose subtraction goes negative, reports `unknown`: the remainder would not be
+its prefix. A Codex session folds nothing in and nothing is subtracted.
+
+The report also names where the ratio stepped. A row's `days` slices carry the same cache
+fields and that day's turn count, so the ratio is recomputed per slice and the first turn of a
+slice that rose by twenty points or more is printed as `turn 7 (2026-09-19): 2% -> 80%`. A
+session that stepped twice reports the sharpest rise, not the first. A slice that cannot state a
+ratio breaks the chain rather than being compared through, so `before -> after` is always one
+slice against the slice before it. That is the finest index the ledger can support honestly:
+turn-level cache figures are not recorded, and inventing an event to record them was out of
+scope. A session with a single day of slices, or none, reports its ratio and no step.
+
+**A session that spawned anything reports no step at all**, printed as `not measurable
+(subagents)`. Its slices fold the same subagent tokens in per day, a subagent row carries no
+`days` map to subtract, and the only step those slices could show is the fan-out day.
+
+**It measures, it does not enforce.** Nothing denies, warns on or blocks a prefix change, here or
+anywhere else in the harness; the figure is retrospective and read-only, and what to do about a
+step is the session's call.
+
+A session whose rows carry no cache fields reports `unknown`, never zero, and so does every
+Codex session: that runtime reports a cached-read figure and no cache-write figure at all
+(`adapters/codex/capabilities.json`), so no ratio over its pair means anything. A zero would read
+as a perfectly held prefix, which is the opposite of what the row knows. On a runtime that does
+report writes, cached reads against zero writes are not unknown but the best case there is: a day
+that served its whole prefix. The footer counts the unknown sessions separately.
+
 ## Rule telemetry
+
+The engine underneath — the event schema, the shell decomposition, the registry and the six
+generic detectors — is [ruleprobe](https://github.com/JakeSelby/ruleprobe), vendored as a wheel
+in `lib/vendor` beside `tomlkit`; `claude/hooks/rule-detectors.py` is this repository's rule
+pack over it, holding the detectors that are about these rules and the opt-outs.
 
 The same pass that sums the tokens builds the event list `claude/hooks/rule-detectors.py`
 documents and runs every detector over it, so the record carries three more fields:
@@ -501,12 +742,13 @@ bin/harness usage --rules --by stance          # the same, per dimension=variant
 bin/harness usage --rescan --days 30 --rules   # backfill from the transcripts, then report
 ```
 
-`--rules` groups by rule, repo or stance; `--by model` is refused rather than quietly regrouped,
-since a session's hits belong to no one of its models. Every registry id gets a line, including
-the ones with no hit, and two annotations are printed
-from the numbers alone. `promote?` means the detector hit in more than 30 percent of the
-sessions in a window of at least 20; `unobserved` means it hit in none of at least 20. A window
-narrower than 20 sessions is annotated nothing, because a share over three sessions says little.
+The groupings and the two annotations are in [which rules fired](#which-rules-fired) above.
+Every registry id gets a line, including the ones with no hit, so an unobserved rule is visible
+rather than absent.
+
+Two shipped features this loop caught — a stance measured as never firing and a hook whose metric
+did not move — are written up with their figures and commands in
+[caught in the act](caught-in-the-act.md).
 
 Those two are the ends of one ladder. A rule that trips in most sessions is prose that failed:
 the agent read it and walked past it anyway, so it wants to be a hook, where the decision is

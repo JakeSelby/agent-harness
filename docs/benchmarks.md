@@ -18,7 +18,9 @@ python3 scripts/cost_bench.py static --write    # refresh benchmarks/static.json
 
 `benchmarks/static.json` is the committed figure for the last release. It records files, lines,
 characters, an estimated token count for the default stance selection and for the longest variant
-of every dimension, the five largest files, and what that many tokens cost per model.
+of every dimension, the five largest files, and what that many tokens cost per model. Its
+`scopes` block names the set each count is over, because the caps `harness lint` prints are
+over a narrower one.
 
 - **Tokens are an estimate:** characters divided by four. It is there to show the trend between
   versions with no tokenizer, network call or API key. It is not a billing figure.
@@ -27,8 +29,11 @@ of every dimension, the five largest files, and what that many tokens cost per m
 - **CI fails when the estimate grows more than 5% over the committed figure.** Trim the growth, or
   add an entry to `benchmarks/allow.json` naming `harness_version`, the new `est_tokens` and a
   `reason`. The entry stops matching as soon as the figure moves again.
-- **The line cap in `harness lint` is separate and unchanged.** The cap bounds the worst case in
-  lines; this tracks the default selection in tokens and dollars, version by version.
+- **The caps in `harness lint` are separate.** They bound the worst case — the longest variant of
+  every stance — in tokens and in lines, over instructions, rules and stances only; this tracks the
+  default selection, output styles and listings included, in tokens and dollars, version by
+  version. Both use the same characters-over-four estimate. Which cap binds, and why:
+  [how-it-works](how-it-works.md#context-discipline).
 
 ## Live replay
 
@@ -45,7 +50,16 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
 
 - **The arms differ by environment only.** Both get one command line: the same `--model`,
   `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network
-  access off. The bare arm adds `CLAUDE_CONFIG_DIR`, pointing at the empty profile.
+  access off. The bare arm adds `CLAUDE_CONFIG_DIR`, pointing at the empty profile. The fence
+  admits each arm's own config directory and `/tmp` for reading and writing, because the
+  repository's suite writes to both and a fence that admitted only the CLI's default would fail
+  the gate for whichever arm was moved to a bench profile.
+- **Each arm's fence is proved before anything is scored.** One capped `-p` run per arm runs
+  `bin/harness lint` under that arm's own fence and profile; an arm whose lint is not clean, or
+  whose run has a read refused, refuses the whole replay with exit 2 before any scored run
+  launches, and its cost counts against `--spend-cap`. The bar is lint rather than the full suite
+  because the suite is profile-dependent at older snapshot commits. Every scored row records
+  `preflight`. `--skip-preflight` bypasses the check and stamps the rows `skipped`.
 - **Every run starts in a throwaway snapshot outside the home directory**, launched with a scrubbed
   environment. A folder under the home directory inherits the user's instruction files through the
   parent-folder walk, which would put the harness into the bare arm. The snapshot holds one commit,
@@ -54,6 +68,18 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
   plan sign-in. Run order changes it, because a later run finds its prefix already cached, so each
   row also carries a cache-normalised cost that reprices every thread's first-turn cache reads as
   cache writes. It is empty when the CLI output does not carry per-turn usage.
+- **Beside it, `cache_miss_ratio`: how much of its prefix the run re-bought.**
+  `cache_write / (cache_read + cache_write)` summed over every turn the run opened, subagent
+  threads included, because a fan-out's fresh prefix is part of what the run cost. The
+  arithmetic is `harness usage --by prefix`'s, imported from that module rather than restated,
+  but the two are not the same number: the session figure subtracts a subagent's tokens, so a
+  run that fanned out reads higher here, by design. A candidate that buys fewer tokens by
+  re-writing its prefix more often is otherwise invisible in the history, so `history.jsonl` and
+  `history.md` carry each arm's mean of it beside the cache-normalised ratio. A run whose output
+  carries no per-turn cache figures, any one of whose turns reports usage without them, or whose
+  turns report neither reads nor writes, is `null` and is left out of the arm's mean; so is an
+  errored run, whose turns are not the spend it would have had. Never zero: zero is a run that
+  served its whole prefix.
 - **An errored run is an error, never a failure.** It sits outside both cost per passed task and
   the pass count, and is counted beside them. The per-run cap is soft, so the runner also stops
   before any launch that could take reported spend past `--spend-cap`.
@@ -63,6 +89,12 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
   85% of bare per passed task while passing no fewer than bare minus one, mean of reps.
 - **What is faked:** single-shot prompts stand in for interactive sessions, two of the four tasks
   are synthetic, and only the installed harness can be run; older tags are refused.
+
+**Status.** The live tier has produced one uncontaminated result: 1.052 on a four-task set, above
+the 0.85 threshold, so no cost claim is published. Two earlier figures in either direction were
+artifacts of the runner's sandbox and of a test-suite defect, both since fixed. Treat this tier as
+an instrument whose methodology is under review, not as a result; the static tier above is the
+figure to rely on today.
 
 ## Limits
 

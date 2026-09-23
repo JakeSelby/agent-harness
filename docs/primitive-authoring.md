@@ -39,6 +39,12 @@ source and full resolved behavior. Custom dimensions are optional until selected
 use lowercase letters, digits and hyphens. Duplicate dimension/variant definitions, unknown
 selections and path traversal are errors, not fallback behavior.
 
+A skill, role or workflow name defined in two roots is an error as well. `harness lint` names
+both sources and `harness sync` refuses before it writes anything, because a runtime resolves a
+duplicate name silently, first-wins. A project's own `.claude/agents/` or `.claude/skills/` name
+is not a duplicate: the project definition is meant to win, so sync reports the shadow as a
+notice and carries on.
+
 Optional `constraints.json` alongside `stances/` can reject incompatible choices:
 
 ```json
@@ -46,9 +52,26 @@ Optional `constraints.json` alongside `stances/` can reject incompatible choices
   "reason": "Direct feedback requires an active voice policy"}]}
 ```
 
-Each rule has a nonempty `when` selection and optional `requires` and `excludes` selections.
-All `when` entries must match to activate the rule; every requirement must match and no
-excluded choice may be selected. Validation runs before sync changes files.
+Each rule has a nonempty `when` selection, a one-sentence `reason`, and at least one of
+`requires`, `excludes` and `excludes_roles`. All `when` entries must match to activate the rule;
+every requirement must match and no excluded choice may be selected. Any other field is an
+authoring error rather than a key a later version might read.
+
+`excludes_roles` is the one condition that reads something other than the selection: the
+frontmatter of the shipped role contracts, with `allow` naming the roles a skill exempts by
+name. It is how the harness states in data that `delegation: tiered` refuses the frontier class
+while `designer` and `design-judge` are allowed to declare it:
+
+```json
+{"stances": [{"when": {"delegation": "tiered"},
+  "excludes_roles": {"tier": "frontier", "allow": ["designer", "design-judge"]},
+  "reason": "Only the design roles the delegation-tiering skill exempts may declare frontier"}]}
+```
+
+A violated constraint is a finding in `harness stances --json` (a `conflicts` array) and in
+`harness lint`, which evaluates the shipped constraints against `config.example.json`. It stays
+a hard error in the resolver, so `harness sync` refuses the selection rather than projecting a
+contradiction; validation runs before sync changes files.
 
 ## A cost variant with numbers in it
 
@@ -84,6 +107,43 @@ own class and effort whatever a row says, and takes the row's budgets.
 Unknown keys are ignored with a warning rather than an error, so a switch added in a later
 release never breaks a variant you wrote. Run `bin/harness stances --json` to see the resolved
 table, its `extends_chain`, each sidecar's path, and any warnings.
+
+## Import instructions you already have
+
+`bin/harness import path/to/CLAUDE.md` turns an existing instruction file into rules under an
+external primitive root, so adopting the harness does not mean discarding what a repository
+already tells its agents. It reads `CLAUDE.md`, `AGENTS.md`, `.cursorrules` and
+`.cursor/rules/*.mdc`; rulesync's `import` is the reference for the behaviour.
+
+Each top-level `##` section becomes `rules/<slug>.md` carrying the source path, the import date
+and the original heading as front matter. The prose above the first section becomes
+`rules/<name>-preamble.md`, a `@`-import in a `CLAUDE.md` is followed one level and imported as
+its own rule with its own `source:`, and a `.mdc` file's `description`, `globs` and
+`alwaysApply` are carried through unchanged. A `##` inside a fenced block is text, not a
+heading. Nothing is dropped: a heading that yields no identifier, a second section claiming a
+name already taken and a front-matter line that is not a field all land in one
+`rules/<name>-unsorted.md` with a note saying so.
+
+```sh
+bin/harness import ~/code/project/CLAUDE.md --dry-run   # the plan, then the sync projection
+bin/harness import ~/code/project/CLAUDE.md             # writes exactly that plan
+```
+
+The first run only prints — the rules it would write, then `harness sync --dry-run` for the root
+that would carry them — and a second run applies the plan it printed; a source that changed in
+between is printed again rather than written. Rules land under
+`~/.config/agent-harness/imported/<name>/` unless `--root` names another absolute directory,
+never under this repository's `primitives/`, and the root is added to `primitive_roots` only
+once the files exist. A root that carries no `stances/` is fine. Importing a file the ownership
+journal says the harness generated is refused with its record, and so is a skill, role or
+workflow name the new root would define twice, in sync's own words and before anything is
+written.
+
+Once the root is registered, `harness sync` projects it like any other: the imported rules are
+linked into `~/.claude/rules/harness-roots/<root>/` and rendered into the Codex `AGENTS.md`
+after this repository's own rules, and any skills the root carries are linked beside the shared
+ones. [The sync model](sync-model.md) covers the ordering, the drift reporting and what
+uninstall takes back.
 
 ## Contribute shared primitives
 

@@ -20,6 +20,8 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 GUARD = REPO / "claude" / "hooks" / "brief-guard.py"
 TIER = REPO / "claude" / "hooks" / "tier-agent-spawns.py"
@@ -96,7 +98,7 @@ class HookCase(unittest.TestCase):
                     stances={"delegation": "tiered", "cost": name})
 
     def env(self, extra=None):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         env.update(extra or {})
         return env
@@ -258,7 +260,8 @@ class OneRouterTests(HookCase):
         def patched(name):
             loaded = real(name)
             if name == "tier-agent-spawns":
-                def band_route(posture, models, cwd, table=None, session=None, announce=False):
+                def band_route(posture, models, cwd, table=None, session=None, announce=False,
+                               transcript=None):
                     asked.append(cwd)
                     return {"worker": "gatherer", "row": {}}, None
                 loaded.band_route = band_route

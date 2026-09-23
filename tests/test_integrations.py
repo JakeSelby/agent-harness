@@ -7,6 +7,8 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+
+from isolation import without_config_dir
 from unittest.mock import patch
 from test_harness import harness, REPO
 from harness_core import integrations as api
@@ -283,7 +285,7 @@ print(json.dumps({"contract_version": 1, "request_id": r["request_id"],
             api.viewer(self.root, self.cfg, self.root / "sessions", "replace-document", reference=opened["session_reference"])
 
     def test_cli_inspection_is_json_and_cannot_launch(self):
-        env = dict(os.environ, HARNESS_HOME=str(self.root))
+        env = dict(without_config_dir(), HARNESS_HOME=str(self.root))
         completed = subprocess.run([sys.executable, str(REPO / "bin/harness"), "integrations", "show", "--json"],
                                    env=env, capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)

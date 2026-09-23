@@ -100,14 +100,24 @@ class ResolutionTests(unittest.TestCase):
         rate = harness.price_for(TABLE, "test-model-20260921")
         self.assertEqual(rate["input"], 10.0)
 
-    def test_the_longest_prefix_wins_over_a_shorter_one(self):
+    def test_a_dated_variant_reaches_its_own_entry_not_a_shorter_one(self):
+        # Its date comes off and what is left is a listed id in its own right. Nothing here
+        # is a prefix match: `test-model-mini` prices because the table names it.
         self.assertEqual(harness.price_for(TABLE, "test-model-mini-20260921")["input"], 1.0)
 
     def test_a_bedrock_id_and_a_long_context_suffix_reach_the_same_entry(self):
         for name in ("anthropic.test-model-20260921-v1:0", "us.anthropic.test-model",
-                     "test-model[1m]", "Test-Model"):
+                     "test-model[1m]", "Test-Model", "test-model@20260921",
+                     "test-model-2026-09-21"):
             with self.subTest(model=name):
                 self.assertEqual(harness.price_for(TABLE, name)["input"], 10.0)
+
+    def test_an_unlisted_variant_of_a_listed_family_is_unpriced(self):
+        # A word after the family name is a different model at a different price. Charging it
+        # at its family's rate would present a known-low figure as a known one.
+        for name in ("test-model-pro", "test-model-mini-pro", "test-model-thinking"):
+            with self.subTest(model=name):
+                self.assertIsNone(harness.price_for(TABLE, name))
 
     def test_an_unknown_model_has_no_rate(self):
         self.assertIsNone(harness.price_for(TABLE, "some-other-model"))
@@ -125,6 +135,20 @@ class ResolutionTests(unittest.TestCase):
                                ("gpt-5.6-sol", 0.4), ("gpt-5.5", 0.5)):
             with self.subTest(model=name):
                 self.assertEqual(harness.price_for(table, name)["cache_read"], expected)
+
+    def test_a_premium_variant_of_a_shipped_family_is_unpriced_not_under_billed(self):
+        # The regression this file exists to hold: `gpt-5.5-pro` is $30/$180 where `gpt-5.5`
+        # is $5/$30, so a prefix rule would report a sixth of the real bill as if it were the
+        # bill. Unpriced until the provider's page is read and an entry is added here.
+        table = harness.load_prices({})
+        self.assertEqual(table["gpt-5.5"]["input"], 5.0)
+        self.assertIsNone(harness.price_for(table, "gpt-5.5-pro"))
+        self.assertIsNone(harness.price_for(table, "claude-opus-5-pro"))
+
+    def test_a_variant_prices_once_it_is_named_in_an_override(self):
+        table = harness.load_prices({"prices": {"gpt-5.5-pro": {
+            "input": 30.0, "output": 180.0, "cache_read": 3.0, "cache_write": 0.0}}})
+        self.assertEqual(harness.price_for(table, "gpt-5.5-pro")["output"], 180.0)
 
 
 class OverrideTests(unittest.TestCase):
@@ -497,6 +521,12 @@ class ReportTests(unittest.TestCase):
 
     def test_an_unpriced_run_is_counted_in_the_footer_and_adds_no_dollars(self):
         self.write(dict(ORACLE_SESSION, session_id="x", models=["mystery-model"]))
+        text = self.report()
+        self.assertIn("unpriced: 1 run(s)", text)
+        self.assertRegex(text, r"TOTAL.*\s0\.00\s*\n")
+
+    def test_an_unlisted_variant_is_counted_in_the_footer_rather_than_under_billed(self):
+        self.write(dict(ORACLE_SESSION, session_id="x", models=["gpt-5.5-pro"]))
         text = self.report()
         self.assertIn("unpriced: 1 run(s)", text)
         self.assertRegex(text, r"TOTAL.*\s0\.00\s*\n")

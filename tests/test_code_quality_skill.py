@@ -6,6 +6,7 @@ Run: python3 -m unittest discover tests
 import importlib.machinery
 import importlib.util
 import re
+import sys
 import unittest
 from pathlib import Path
 
@@ -17,7 +18,9 @@ loader.exec_module(harness)
 
 SKILL = REPO / "claude" / "skills" / "code-quality-instruments" / "SKILL.md"
 REQUIRED = REPO / "claude" / "stances" / "testing" / "required.md"
-BUDGET = 196
+
+sys.path.insert(0, str(REPO / "tests"))
+from context_budget import LINE_BUDGET, TOKEN_CAP, breakdown, measured  # noqa: E402
 
 
 def frontmatter(path):
@@ -69,8 +72,9 @@ class StancePointerTests(unittest.TestCase):
         self.assertIn("code-quality-instruments", REQUIRED.read_text(encoding="utf-8"))
 
     def test_the_pointer_did_not_blow_the_always_loaded_budget(self):
-        total, groups = harness.always_loaded_lines(REPO)
-        self.assertLessEqual(total, BUDGET, msg=f"{total} lines: {groups}")
+        lines, tokens = measured()
+        self.assertLessEqual(lines, LINE_BUDGET, msg=breakdown())
+        self.assertLessEqual(tokens, TOKEN_CAP, msg=breakdown())
 
     def test_the_reasoning_stayed_out_of_the_always_loaded_layer(self):
         """The table and the operating rules belong in the skill, not the stance."""

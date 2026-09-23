@@ -22,6 +22,8 @@ import time
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
 HOOK = REPO / "claude" / "hooks" / "usage-feed.py"
@@ -41,6 +43,10 @@ def load_feed():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+#: The one-off line naming what the feed's figures measure, read from the hook rather than copied.
+MEASURE = load_feed().MEASURE
 
 
 def assistant(mid, output, tools=(), sidechain=False):
@@ -98,7 +104,7 @@ class Fixture(unittest.TestCase):
         path.write_text(json.dumps(config))
 
     def env(self, **extra):
-        merged = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        merged = without_harness_vars()
         merged["HOME"] = str(self.home)
         merged.update(extra)
         return merged
@@ -196,7 +202,7 @@ class TurnLineTests(Fixture):
         self.agent("aaa", "gatherer", [("a1", 40, ())])
         self.stop("aaa")
         second = self.submit()
-        self.assertEqual(len(second), 1)
+        self.assertEqual(len(second), 2)  # the agent, then the measure line, once a session
         self.assertIn("gatherer finished at 40 output tokens", second[0])
         # And the line comes back the moment the turn moves on.
         append(self.transcript, [prompt(), assistant("m2", 12)])
@@ -425,7 +431,8 @@ class SubagentReturnTests(Fixture):
         self.agent("ccc", "planner", [("c1", 500, ("t1",))])
         self.stop("ccc")
         self.assertEqual(self.returned("ccc"),
-                         ["usage-feed: planner finished at 500 output tokens and 1 tool call"])
+                         ["usage-feed: planner finished at 500 output tokens and 1 tool call",
+                          MEASURE])
 
     def test_a_background_spawn_is_reported_at_the_next_prompt_exactly_once(self):
         self.agent("ddd", "gatherer", [("d1", 900, ("t1",))])
@@ -434,8 +441,9 @@ class SubagentReturnTests(Fixture):
         self.stop("ddd")
         append(self.transcript, [assistant("m8", 20)])
         first = self.submit()
-        self.assertEqual(len(first), 2)
+        self.assertEqual(len(first), 3)  # the turn, the agent, the measure line once
         self.assertIn("usage-feed: gatherer finished at 900 output tokens", first[1])
+        self.assertEqual(first[2], MEASURE)
         append(self.transcript, [assistant("m9", 10)])
         self.assertEqual(len(self.submit()), 1)  # the turn line moved on; nothing else to say
 
@@ -466,8 +474,9 @@ class SubagentReturnTests(Fixture):
             self.stop(name)
         append(self.transcript, [assistant("m1", 25)])
         lines = self.submit()
-        self.assertEqual(len(lines), 1 + 5 + 1)
-        self.assertEqual(lines[-1], "… and 2 more")
+        self.assertEqual(len(lines), 1 + 5 + 1 + 1)
+        self.assertEqual(lines[-2], "… and 2 more")
+        self.assertEqual(lines[-1], MEASURE)
 
     def test_a_stop_hook_loop_records_nothing(self):
         self.agent("aaa", "gatherer", [("a1", 300, ())])
@@ -676,8 +685,9 @@ class ModeTests(Fixture):
         self.stop("small")
         self.stop("large")
         lines = self.submit()
-        self.assertEqual(len(lines), 1)
+        self.assertEqual(len(lines), 2)  # the loud agent, then the measure line
         self.assertIn("over budget 2.0×", lines[0])
+        self.assertEqual(lines[1], MEASURE)
         self.assertNotIn("last turn", lines[0])
 
     def test_an_empty_nudge_list_under_thresholds_says_nothing(self):
@@ -750,7 +760,8 @@ class SafetyTests(Fixture):
                          [("stop", None, None)])
         append(self.transcript, [assistant("m1", 60)])
         lines = self.submit()
-        self.assertEqual(lines[1], "usage-feed: unknown finished, spend unknown")
+        self.assertEqual(lines[1], "usage-feed: unknown finished, spend unknown, "
+                                   "no transcript found for agent nowhere")
         self.assertTrue(lines[0].endswith("1 subagent (partial)"), lines[0])
 
     def test_a_malformed_state_file_starts_over_rather_than_failing(self):
@@ -944,8 +955,7 @@ class RegistrationTests(Fixture):
 
     def test_the_template_carries_no_feed_entry_a_sync_would_discard(self):
         template = json.loads((REPO / "claude" / "settings.template.json").read_text())
-        self.assertNotIn("UserPromptSubmit", template["hooks"])
-        self.assertNotIn("SubagentStop", template["hooks"])
+        self.assertNotIn("hooks", template)
         self.assertNotIn("usage-feed", json.dumps(template))
         self.assertNotIn("usage-feed", json.dumps(OWNERSHIP))
 

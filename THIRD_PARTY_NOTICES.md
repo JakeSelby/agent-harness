@@ -11,6 +11,14 @@ by achimala, MIT License. The upstream notice is preserved in
 `claude/skills/design-loop/ATTRIBUTION.md`. Modifications: the loop was rewritten for Claude
 Code skills, with rubrics, hard gates, escalation rules and asset-licensing gates added.
 
+## Vendored wheels
+
+`lib/vendor/` holds two unmodified MIT wheels: [tomlkit](https://github.com/python-poetry/tomlkit)
+0.15.1, which `lib/harness_core/reconcile.py` imports, and
+[ruleprobe](https://github.com/JakeSelby/ruleprobe) 0.1.0, the rule-measurement engine
+`claude/hooks/rule-detectors.py` imports. Their upstream notices are in `THIRD_PARTY_NOTICES`,
+and `third-party.json` records each one's version, artifact URL and SHA-256.
+
 ## Not included, on purpose
 
 The code of conduct is original text. The Contributor Covenant was not vendored because its

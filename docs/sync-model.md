@@ -10,6 +10,16 @@ generated role/command projections, personal identity and merged settings. Codex
 instructions and identity, shared skills, generated workflow skills and role TOML, hooks, and
 structurally merged TOML settings. Neither runtime requires the other's installation.
 
+Every root in `primitive_roots` is projected too, after this repository's own and in
+configuration order, with names sorted inside each root. A root's rules are linked into
+`~/.claude/rules/harness-roots/<root>/` and rendered into the Codex `AGENTS.md` behind a comment
+naming the root they came from; its skills are linked beside the repository's in both runtimes.
+The name-collision check runs across the repository and every root before anything is written,
+so no root can shadow another silently. The link manifest records the root each link came from,
+which is what lets `harness diff` name the root to fix and `harness uninstall` take back exactly
+what it adopted; a rule a root stops carrying has its link retired on the next sync. A root the
+configuration names but the disk does not carry is one warning and a skip, not a failed sync.
+
 Custom homes use `CLAUDE_CONFIG_DIR` and `CODEX_HOME`; the shared harness home can use
 `HARNESS_HOME`. Project/session overrides do not repoint global files. Native hook trust is
 separate from registration and from the harness's repository gate trust.

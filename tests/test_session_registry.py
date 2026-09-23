@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
 """The session registry: what a running session can actually resolve.
 
-Claude Code loads its agent registry when the session process starts and never reloads it, so
-a worker definition on disk is not evidence that a running session can spawn it. A reroute to
-a type the session cannot resolve fails the spawn outright, which is worse than not rerouting
-at all. The SessionStart policy records the names the registry held; the spawn hook — and the
-pricing hook that asks it where a spawn goes — reroutes only to a name in that record.
+A worker definition on disk is not evidence that a running session can spawn it: a reroute to a
+type the session cannot resolve fails the spawn outright, which is worse than not rerouting at
+all. The SessionStart policy records the names the registry held; the spawn hook — and the
+pricing hook that asks it where a spawn goes — reroutes only to a name in that record, or to one
+the runtime has since announced to that session (`test_agent_listing_delta.py`).
 
 Run: python3 -m unittest discover tests
 """
@@ -23,6 +23,8 @@ import time
 import unittest
 import unittest.mock
 from pathlib import Path
+
+from isolation import isolate_home, without_harness_vars
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
@@ -53,7 +55,7 @@ class RegistryCase(unittest.TestCase):
         (d / "config.json").write_text(json.dumps({"stances": {"delegation": "tiered"}}))
 
     def env(self, extra=None):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         env.update(extra or {})
         return env
@@ -393,7 +395,8 @@ class OlderSiblingTests(RegistryCase):
     routing.
     """
 
-    MISSING = ("session_agents", "note_once", "refresh_session_record")
+    MISSING = ("session_agents", "note_once", "refresh_session_record",
+               "transcript_agents", "session_announced", "remember_agents")
 
     def hook(self, path, name):
         spec = importlib.util.spec_from_file_location(name, str(path))
@@ -462,10 +465,7 @@ class UninstallTests(unittest.TestCase):
         self.home = Path(self.tmp.name)
         self._environ = dict(os.environ)
         self.addCleanup(lambda: (os.environ.clear(), os.environ.update(self._environ)))
-        for key in [k for k in os.environ if k.startswith("HARNESS_")]:
-            del os.environ[key]
-        os.environ["HOME"] = str(self.home)
-        os.environ["HARNESS_QUIET"] = "1"
+        isolate_home(self.home)
 
     def test_uninstall_removes_the_session_directory(self):
         state = self.home / ".local" / "state" / "agent-harness"

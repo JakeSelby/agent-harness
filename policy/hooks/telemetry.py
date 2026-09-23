@@ -44,8 +44,17 @@ SEVERITY_NUMBER = 9  # INFO, per the OTLP logs data model.
 # `native` is validated here and used by `harness sync`, never by this exporter: runtime
 # pass-through writes a runtime's own telemetry settings and sends nothing itself.
 KNOWN_KEYS = ("export", "endpoint", "headers_env", "headers_file", "labels", "native",
-              "decisions")
+              "decisions", "completion_claim", "allow_sample_rate")
+
+# The runtimes native pass-through can configure. `native` is `true` for all of them, `false`
+# for none, or the list of the ones it names: Codex takes header values only as literals in
+# `config.toml`, which the harness will not write, so a collector that authenticates can be
+# fed natively from Claude Code alone. See docs/telemetry.md.
+NATIVE_RUNTIMES = ("claude-code", "codex")
 DEFAULT_ENDPOINT = "http://localhost:4318"
+# The allowed-command sample, kept in step with `decisions.DEFAULT_SAMPLE_RATE`, which this
+# module does not import: validation here must not depend on a sibling hook being loadable.
+DEFAULT_SAMPLE_RATE = 20
 
 
 def home():
@@ -105,18 +114,47 @@ def settings(cfg=None, path=None):
     labels = block.get("labels") or {}
     if not isinstance(labels, dict) or any(not isinstance(v, (str, int, float, bool)) for v in labels.values()):
         raise ValueError("telemetry.labels must be an object of scalar values")
-    native = block.get("native", False)
-    if not isinstance(native, bool):
-        raise ValueError("telemetry.native must be true or false; got " + repr(native))
+    native = native_runtimes(block.get("native", False))
     # The local decision log, which never leaves the machine and is no part of `export`: see
     # `decisions.py`. Validated here because it is a `telemetry` key and an unknown key in that
     # block stops a sync; the exporter itself never reads it.
     decisions = block.get("decisions", True)
     if not isinstance(decisions, bool):
         raise ValueError("telemetry.decisions must be true or false; got " + repr(decisions))
+    # The completion claim on a stop-gate row, off by default: `decisions.claim_enabled`.
+    claim = block.get("completion_claim", False)
+    if not isinstance(claim, bool):
+        raise ValueError("telemetry.completion_claim must be true or false; got " + repr(claim))
+    # One in how many allowed Bash commands is kept as an ungraded negative:
+    # `decisions.sample_rate`, 20 by default, 0 for none.
+    rate = block.get("allow_sample_rate", DEFAULT_SAMPLE_RATE)
+    if isinstance(rate, bool) or not isinstance(rate, int) or rate < 0:
+        raise ValueError("telemetry.allow_sample_rate must be a whole number of commands, one "
+                         "of which is logged, or 0 for none; got " + repr(rate))
     return {"export": mode, "endpoint": endpoint.rstrip("/"), "headers_env": headers_env,
             "headers_file": headers_file, "labels": dict(labels), "native": native,
-            "decisions": decisions}
+            "decisions": decisions, "completion_claim": claim, "allow_sample_rate": rate}
+
+
+def native_runtimes(value):
+    """`telemetry.native` as the list of runtimes it names, in a stable order.
+
+    `true` is every runtime and `false` is none, so a config written before the key took a list
+    keeps its meaning. An unknown name is refused rather than ignored: a typo would otherwise
+    leave a runtime silently unconfigured with nothing said about it.
+    """
+    if isinstance(value, bool):
+        return list(NATIVE_RUNTIMES) if value else []
+    if not isinstance(value, (list, tuple)) or any(not isinstance(n, str) for n in value):
+        raise ValueError(
+            "telemetry.native must be true, false, or a list of runtime names ("
+            + ", ".join(NATIVE_RUNTIMES) + "); got " + repr(value))
+    unknown = sorted(set(value) - set(NATIVE_RUNTIMES))
+    if unknown:
+        raise ValueError(
+            "telemetry.native does not know the runtime " + ", ".join(repr(n) for n in unknown)
+            + "; the runtimes are " + ", ".join(NATIVE_RUNTIMES))
+    return [name for name in NATIVE_RUNTIMES if name in set(value)]
 
 
 def parse_headers(text):

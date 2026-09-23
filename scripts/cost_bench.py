@@ -27,8 +27,21 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from harness_core import cache_prefix  # noqa: E402  the ledger's miss ratio, one definition
+
 CHARS_PER_TOKEN = 4.0
 GROWTH_LIMIT = 0.05
+# What each counted group covers, carried in the written figure so a reader of the file alone
+# knows which set a number is over. The caps `harness lint` prints are a narrower set.
+SCOPES = {
+    "always_loaded": "claude/CLAUDE.md, claude/rules/, claude/output-styles/ and the stance "
+                     "variant config.example.json selects, for the default selection",
+    "listings": "one description line per agent, skill and command the session lists",
+    "worst_case_est_tokens": "the same files with the longest variant of every stance dimension",
+    "note": "`harness lint` counts a narrower set against its caps: instructions, rules and the "
+            "longest stance variant, with no output style and no listings",
+}
 STATIC = Path("benchmarks") / "static.json"
 ALLOW = Path("benchmarks") / "allow.json"
 TASKS = Path("benchmarks") / "tasks.json"
@@ -47,10 +60,34 @@ CHECK_TIMEOUT = 900
 KEPT_ENV = ("HOME", "USER", "PATH", "TERM")
 TOKEN_KINDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 MODEL_USAGE_KEYS = ("inputTokens", "outputTokens", "cacheCreationInputTokens", "cacheReadInputTokens")
-# Both arms get this fence: commands run sandboxed with no network and no credential reads.
-FENCE = {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
-                     "network": {"allowedDomains": [], "strictAllowlist": True},
-                     "filesystem": {"denyRead": ["~/.ssh", "~/.aws", "~/.config/gh"]}}}
+# Every arm is fenced the same way: no network, no credential reads. What differs is the profile
+# the fence admits, which is the arm's own; see `fence`.
+DENY_READ = ["~/.ssh", "~/.aws", "~/.config/gh"]
+DEFAULT_CONFIG_DIR = "~/.claude"
+# The sandbox matches resolved paths: on macOS `/tmp` is a link to `/private/tmp`, and a rule
+# naming the link does not admit the target. Admit both spellings, deduplicated.
+SCRATCH_DIRS = tuple(dict.fromkeys(["/tmp", os.path.realpath("/tmp")]))
+# The gate this repository's AGENTS.md names, run inside the fence and reported as its own last line.
+# The suite's own stdout is block-buffered under a pipe and lands after unittest's stderr summary,
+# so the last line of `2>&1` is noise, not the verdict. Filter to the verdict lines and judge the
+# tool's output directly rather than whatever the model chose to relay.
+# The bar the prompts set, and no more: lint under the arm's own fence. The full suite is
+# profile-dependent at every snapshot commit (`claude_dir()` lets CLAUDE_CONFIG_DIR override the
+# tests' isolation), so demanding it here measures the profile, not the harness.
+PREFLIGHT_PROMPT = "Run exactly this and reply with its output: `python3 bin/harness lint`"
+PREFLIGHT_CAP_USD = 0.25
+PREFLIGHT_TURNS = 3
+PREFLIGHT_RED = re.compile(r"PermissionError|Operation not permitted", re.M)
+INHERITED = "inherited"
+# What an arm actually loads: the always-on layer, the listed layer, and the personal file.
+CONFIG_GLOBS = ("CLAUDE.md", "CLAUDE.personal.md", "rules/**/*.md", "skills/*/SKILL.md",
+                "agents/*.md", "output-styles/*.md")
+SPAWN_TOOLS = ("Task", "Agent")
+# Diagnostic fields `parse_result` reads out of the stream; `backfill` derives the same ones.
+STREAM_FIELDS = ("first_call_cache_write", "tool_counts", "spawns", "hook_blocks",
+                 "cache_miss_ratio")
+RESULTS = "results.jsonl"
+ENRICHED = "results.enriched.jsonl"
 
 
 def _description(path):
@@ -119,6 +156,7 @@ def measure(root=ROOT):
         "schema_version": 1,
         "harness_version": version.read_text(encoding="utf-8").strip() if version.is_file() else "",
         "chars_per_token": CHARS_PER_TOKEN,
+        "scopes": SCOPES,
         "always_loaded": _sum(always),
         "listings": _sum(listings),
         "total": total,
@@ -203,18 +241,76 @@ def scrubbed_env(extra=None, base=None):
     return env
 
 
-def arm_env(arm, bare_config, stance_cost=None, base=None):
-    extra = {"CLAUDE_CONFIG_DIR": str(bare_config)} if arm == "bare" else {}
+def arm_env(arm, bare_config, stance_cost=None, base=None, harness_config=None):
+    """Each arm points at its own profile directory.
+
+    A profile is authenticated by its absolute path: the CLI stores the credential in the keychain
+    under `Claude Code-credentials-<sha256(config dir)[:8]>`, so a copied directory is not signed in
+    and cannot be made so by copying files. The harness profile is therefore one the owner signed
+    into once, never a copy of the bare one. With none named the harness arm inherits the live
+    `~/.claude` through HOME, which carries the owner's personal layer into the comparison."""
+    config = bare_config if arm == "bare" else harness_config
+    extra = {"CLAUDE_CONFIG_DIR": str(config)} if config else {}
     if stance_cost and arm != "bare":
         extra["HARNESS_STANCE_COST"] = stance_cost
     return scrubbed_env(extra, base)
 
 
-def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD):
-    """One command line for every arm: the arms differ by environment and by nothing else."""
+def config_label(config_dir, home=None):
+    """The config directory as a row records it: `inherited`, or the path with `$HOME` as `~`.
+
+    A profile normally sits under the home directory, and a literal home path in a row would be a
+    personal string in a file the repository's lint reads. The `~` form names the same directory."""
+    if not config_dir:
+        return INHERITED
+    text, prefix = str(config_dir), str(Path(home) if home else Path.home())
+    if text == prefix or text.startswith(prefix + os.sep):
+        return "~" + text[len(prefix):]
+    return text
+
+
+def config_fingerprint(config_dir, home=None):
+    """What an arm's instruction layer was, as sizes: `{sha, rules, skills, agents, personal_bytes}`.
+
+    The sha is over the sorted `(relative path, byte size)` pairs of CONFIG_GLOBS under the
+    directory, so two runs with the same sha loaded the same files at the same lengths. Sizes and
+    relative paths only: no content and no home-directory path reaches a row. `INHERITED` means the
+    arm launched with no CLAUDE_CONFIG_DIR and therefore read `$HOME/.claude`."""
+    root = Path(home or Path.home()) / ".claude" if config_dir in (None, "", INHERITED) \
+        else Path(config_dir).expanduser()
+    entries = set()
+    for pattern in CONFIG_GLOBS:
+        for path in root.glob(pattern):
+            if path.is_file():
+                entries.add((path.relative_to(root).as_posix(), path.stat().st_size))
+    listed = sorted(entries)
+    sha = hashlib.sha256("\n".join("%s %d" % pair for pair in listed).encode("utf-8")).hexdigest()[:8]
+    under = lambda folder: sum(1 for name, _ in listed if name.startswith(folder + "/"))
+    return {"sha": sha, "rules": under("rules"), "skills": under("skills"), "agents": under("agents"),
+            "personal_bytes": dict(listed).get("CLAUDE.personal.md", 0)}
+
+
+def fence(config_dir=None):
+    """The sandbox one arm runs under: no network, no credential reads, its own profile writable.
+
+    A fence that admits only the CLI's default `~/.claude` handicaps whichever arm was moved to a
+    bench profile, because this repository's own suite writes under the config directory and under
+    `/tmp`; the arm then fails its gate and spends turns on a block the runner imposed. Each arm
+    therefore gets its own directory, and the shared scratch directory, readable and writable.
+    `denyRead` is the same for every arm."""
+    admitted = [str(config_dir) if config_dir else DEFAULT_CONFIG_DIR] + list(SCRATCH_DIRS)
+    return {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+                        "network": {"allowedDomains": [], "strictAllowlist": True},
+                        "filesystem": {"denyRead": list(DENY_READ), "allowWrite": list(admitted),
+                                       "allowRead": list(admitted)}}}
+
+
+def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD, config_dir=None):
+    """One command line for every arm: the arms differ by environment and by their fence's
+    profile, which follows that environment, and by nothing else."""
     return [claude, "-p", prompt, "--model", model, "--output-format", "json", "--verbose",
             "--strict-mcp-config", "--no-session-persistence", "--max-budget-usd", "%g" % run_cap,
-            "--permission-mode", "acceptEdits", "--settings", json.dumps(FENCE)]
+            "--permission-mode", "acceptEdits", "--settings", json.dumps(fence(config_dir))]
 
 
 def _git(repo, *args):
@@ -256,10 +352,22 @@ def reaches(repo, sha):
 
 
 def parse_result(stdout):
-    """Cost, tokens and turns from the CLI's JSON. ValueError when there is no result to read.
+    """Cost, tokens, turns and the diagnostic fields, from the CLI's JSON. ValueError when there is
+    no result to read.
 
     With `--verbose` the output is every message, which also gives each thread's first turn; without
-    it the output is the result alone and the cache-normalised cost cannot be computed."""
+    it the output is the result alone and the cache-normalised cost cannot be computed.
+
+    `first_call_cache_write` is the standing prefix: the cache write of the first assistant message
+    carrying a usage block, which is what the session paid to put its instruction layer in the
+    cache, as against the run's total writes. `tool_counts` counts every `tool_use` content block
+    by name, and `spawns` is the subagent share of it.
+
+    `hook_blocks` is always None. Hook lifecycle events are the only place a Stop hook's `block`
+    decision appears in the stream, and this CLI emits them only under `--include-hook-events`,
+    which its own help says "only works with --output-format=stream-json"; the runner reads
+    `--output-format json`, so no run of it can carry a hook decision. Text in the transcript is
+    not a substitute: the block reason also appears in the prompt and in files the agent reads."""
     try:
         data = json.loads(stdout)
     except (TypeError, ValueError):
@@ -275,20 +383,56 @@ def parse_result(stdout):
                   for kind, key in zip(TOKEN_KINDS, MODEL_USAGE_KEYS)}
     else:
         tokens = {kind: int((result.get("usage") or {}).get(kind) or 0) for kind in TOKEN_KINDS}
-    first_turns, seen = [], set()
+    first_turns, seen, first_write, tools = [], set(), None, {}
+    cache = {"cache_read": 0, "cache_write": 0, "turns": 0, "known": True}
     for message in messages:
         if not isinstance(message, dict) or message.get("type") != "assistant":
             continue
         thread = message.get("parent_tool_use_id")
         body = message.get("message") or {}
-        if thread in seen or not isinstance(body.get("usage"), dict):
+        for block in body.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                name = str(block.get("name") or "")
+                tools[name] = tools.get(name, 0) + 1
+        if not isinstance(body.get("usage"), dict):
+            continue
+        if first_write is None:
+            first_write = int(body["usage"].get("cache_creation_input_tokens") or 0)
+        for field, key in (("cache_read", "cache_read_input_tokens"),
+                           ("cache_write", "cache_creation_input_tokens")):
+            if key not in body["usage"]:
+                cache["known"] = False  # one silent turn and the run's total is not its spend
+            cache[field] += int(body["usage"].get(key) or 0)
+        cache["turns"] += 1
+        if thread in seen:
             continue
         seen.add(thread)
         first_turns.append({"model": body.get("model") or "",
                             "cache_read": int(body["usage"].get("cache_read_input_tokens") or 0)})
     return {"cost_usd": float(result["total_cost_usd"]), "tokens": tokens,
             "turns": int(result.get("num_turns") or 0), "is_error": bool(result.get("is_error")),
-            "subtype": str(result.get("subtype") or ""), "first_turns": first_turns}
+            "subtype": str(result.get("subtype") or ""), "first_turns": first_turns,
+            "first_call_cache_write": first_write, "tool_counts": tools,
+            "spawns": sum(tools.get(name, 0) for name in SPAWN_TOOLS), "hook_blocks": None,
+            "cache_miss_ratio": run_miss_ratio(cache)}
+
+
+def run_miss_ratio(cache):
+    """The share of a run's prefix the provider re-wrote: `write / (read + write)`, or None.
+
+    The ledger's figure, taken from `harness_core.cache_prefix` so the replay and
+    `harness usage --by prefix` cannot drift apart. Unlike the ledger's, this one counts every
+    thread the run opened, subagents included: a fan-out writes a fresh prefix, and here that is
+    part of what the run cost rather than something to subtract.
+
+    None when the CLI output carried no per-turn usage at all, when a turn's usage block omits
+    either cache field, and when the turns it did carry report neither reads nor writes. Zero is
+    a run that served its whole prefix from cache, and a run that cannot say must never be read
+    as that one: a silent turn counted as two zeroes would be averaged in as a held prefix."""
+    if not cache["turns"] or not cache["known"]:
+        return None
+    ratio = cache_prefix.miss_ratio(cache, "")
+    return None if ratio is None else round(ratio, 4)
 
 
 def _rates(prices, model):
@@ -393,9 +537,16 @@ def schedule(tasks, reps):
 
 def run_one(task, rep, arm, opts, launch=subprocess.run):
     """One row. An errored run is `error: true` with `passed: null`; it is never a failure."""
+    env = arm_env(arm, opts["bare_config"], opts.get("stance_cost"), harness_config=opts.get("harness_config"))
+    config = env.get("CLAUDE_CONFIG_DIR")
     row = dict(opts["stamp"], task=task["id"], arm=arm, tag=opts["tag"], rep=rep, passed=None, error=False,
                error_kind="", cost_usd=None, cost_normalised_usd=None, turns=None, wall_seconds=None,
-               **{kind: None for kind in TOKEN_KINDS})
+               first_call_cache_write=None, tool_counts={}, spawns=None, hook_blocks=None,
+               cache_miss_ratio=None,
+               change_note=opts.get("change_note", ""), preflight=opts.get("preflight", "skipped"),
+               arm_config_dir=config_label(config, opts.get("home")),
+               arm_fingerprint=config_fingerprint(config, opts.get("home")),
+               fingerprint_source="launch", **{kind: None for kind in TOKEN_KINDS})
     workdir = Path(tempfile.mkdtemp(prefix="cost-replay-", dir=opts.get("tmp"))) / "repo"
     reason = unsafe_workdir(workdir, opts["home"])
     if reason:
@@ -405,8 +556,8 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
     try:
         snapshot(opts["repo"], task["parent_sha"], workdir)
         try:
-            done = launch(arm_command(opts["claude"], opts["model"], prompt_of(task), opts["run_cap"]),
-                          cwd=str(workdir), env=arm_env(arm, opts["bare_config"], opts.get("stance_cost")),
+            done = launch(arm_command(opts["claude"], opts["model"], prompt_of(task), opts["run_cap"], config),
+                          cwd=str(workdir), env=env,
                           timeout=RUN_TIMEOUT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           universal_newlines=True)
         except subprocess.TimeoutExpired:
@@ -421,9 +572,13 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
         except ValueError as exc:
             return dict(row, error=True, error_kind="exit %s: %s" % (done.returncode, exc))
         row.update(parsed["tokens"], cost_usd=parsed["cost_usd"], turns=parsed["turns"],
-                   cost_normalised_usd=normalised_cost(parsed["cost_usd"], parsed["first_turns"], opts["prices"]))
+                   cost_normalised_usd=normalised_cost(parsed["cost_usd"], parsed["first_turns"], opts["prices"]),
+                   **{field: parsed[field] for field in STREAM_FIELDS})
         if parsed["is_error"] or done.returncode:
-            return dict(row, error=True, error_kind=parsed["subtype"] or "exit %s" % done.returncode)
+            # The other stream fields diagnose an errored run; a miss ratio only describes one
+            # that finished, and an aborted run's turns are not the spend it would have had.
+            return dict(row, error=True, cache_miss_ratio=None,
+                        error_kind=parsed["subtype"] or "exit %s" % done.returncode)
         try:
             row["passed"] = bool(opts.get("scorer", score)(task, workdir, opts["repo"])[0])
         except Exception as exc:  # a check that cannot run says nothing about the agent's work
@@ -433,10 +588,103 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
         shutil.rmtree(str(workdir.parent), ignore_errors=True)  # removed, never reset
 
 
+def gate_output(stdout):
+    """Every tool result in a `-p` stream, joined: the gate's own output, not the model's relay."""
+    try:
+        data = json.loads(stdout)
+    except (TypeError, ValueError):
+        return ""
+    parts = []
+    for ev in data if isinstance(data, list) else [data]:
+        content = ((ev.get("message") or {}).get("content") if isinstance(ev, dict) else None) or []
+        for blk in content if isinstance(content, list) else []:
+            if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                text = blk.get("content")
+                parts.append(text if isinstance(text, str) else json.dumps(text))
+    return "\n".join(parts)
+
+
+def gate_passed(stdout):
+    """Green means lint reported no findings and nothing was refused. A suite verdict in the
+    output is ignored either way: it is not the bar, and on a bench profile it is red for reasons
+    that are not the arm's."""
+    out = gate_output(stdout)
+    return "lint: 0 finding(s)" in out and PREFLIGHT_RED.search(out) is None
+
+
+def reply_text(stdout):
+    """The final text of a `-p` run: the `result` field of the CLI's last result message, or ""."""
+    try:
+        data = json.loads(stdout)
+    except (TypeError, ValueError):
+        return ""
+    messages = data if isinstance(data, list) else [data]
+    texts = [m.get("result") for m in messages if isinstance(m, dict) and m.get("type") == "result"]
+    return str(texts[-1] or "").strip() if texts else ""
+
+
+def preflight(tasks, opts, launch=subprocess.run):
+    """([{arm, passed, reply, cost_usd}], spent). One gate run per arm before anything is scored.
+
+    The fence and the profile are the arm's own, so this asks the question the scored runs depend
+    on: can an agent in this arm make the repository's own gate pass at all? An arm that cannot
+    spends its turns on that instead of on the task, and the comparison measures the runner rather
+    than the harness. The reply is the gate's last line, so an arm passes when it ends in `OK`."""
+    checks, spent = [], 0.0
+    for arm in ARMS:
+        env = arm_env(arm, opts["bare_config"], opts.get("stance_cost"),
+                      harness_config=opts.get("harness_config"))
+        config = env.get("CLAUDE_CONFIG_DIR")
+        workdir = Path(tempfile.mkdtemp(prefix="cost-preflight-", dir=opts.get("tmp"))) / "repo"
+        reason = unsafe_workdir(workdir, opts["home"])
+        if reason:
+            shutil.rmtree(str(workdir.parent), ignore_errors=True)
+            raise SystemExit("cost-bench: refusing to run: " + reason)
+        try:
+            snapshot(opts["repo"], tasks[0]["parent_sha"], workdir)
+            command = arm_command(opts["claude"], opts["model"], PREFLIGHT_PROMPT, PREFLIGHT_CAP_USD,
+                                  config) + ["--max-turns", str(PREFLIGHT_TURNS)]
+            try:
+                done = launch(command, cwd=str(workdir), env=env, timeout=RUN_TIMEOUT,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            except subprocess.TimeoutExpired:
+                spent += PREFLIGHT_CAP_USD
+                checks.append({"arm": arm, "passed": False, "reply": "timeout", "cost_usd": None})
+                continue
+            if opts.get("raw"):
+                raw = Path(opts["raw"]); raw.mkdir(parents=True, exist_ok=True)
+                (raw / ("preflight-%s.json" % arm)).write_text(done.stdout or "", encoding="utf-8")
+            reply = reply_text(done.stdout)
+            try:
+                cost = parse_result(done.stdout)["cost_usd"]
+            except ValueError:
+                cost = None
+            spent += PREFLIGHT_CAP_USD if cost is None else cost
+            checks.append({"arm": arm, "passed": gate_passed(done.stdout), "reply": reply,
+                           "cost_usd": cost})
+        finally:
+            shutil.rmtree(str(workdir.parent), ignore_errors=True)
+    return checks, spent
+
+
 def replay(tasks, opts, launch=subprocess.run, out=None):
     """(rows, stopped). Stops before a launch that could take reported spend past the cap; the
-    per-run cap is soft, so a run with no readable cost is counted at the full run cap."""
+    per-run cap is soft, so a run with no readable cost is counted at the full run cap.
+
+    A red pre-flight refuses the whole replay with exit 2 before any scored run launches, since
+    spending on arms that cannot pass the gate buys a number nobody can read. Its own cost counts
+    against the same cumulative cap."""
     rows, spent = [], 0.0
+    if not opts.get("skip_preflight"):
+        checks, spent = preflight(tasks, opts, launch)
+        red = [c for c in checks if not c["passed"]]
+        for check in red:
+            print("cost-bench: the %s arm's gate is red under its own fence: %s"
+                  % (check["arm"], check["reply"] or "no reply"), file=sys.stderr)
+        if red:
+            print("cost-bench: refusing the replay; no scored run launched", file=sys.stderr)
+            raise SystemExit(2)
+        opts = dict(opts, preflight="passed")
     for task, rep, arm in schedule(tasks, opts["reps"]):
         if spent + opts["run_cap"] > opts["spend_cap"]:
             return rows, True
@@ -472,6 +720,41 @@ def summarise(rows, field="cost_usd"):
     return out
 
 
+def per_task(rows, field="cost_usd"):
+    """One cell per task: each arm's mean cost, the ratio between them, and each arm's spread.
+
+    Spread is max over min priced cost in the cell, so a cell whose two reps differ by half is
+    visible as 1.5 and the aggregate ratio above it is read with that in mind. None when the cell
+    holds fewer than two priced runs, because one run has no spread to report."""
+    out = {}
+    for task in sorted({r.get("task") or "" for r in rows}):
+        cell, reps = {}, set()
+        for arm in ARMS:
+            mine = [r for r in rows if (r.get("task") or "") == task and r["arm"] == arm]
+            reps.update(r["rep"] for r in mine)
+            costs = [r[field] for r in mine if not r["error"] and r.get(field) is not None]
+            cell[arm] = round(_mean(costs), 6) if costs else None
+            cell[arm + "_spread"] = round(max(costs) / min(costs), 4) if len(costs) > 1 and min(costs) else None
+        ratio = round(cell["harness"] / cell["bare"], 4) if cell["bare"] and cell["harness"] is not None else None
+        out[task] = dict(cell, ratio=ratio, n=len(reps))
+    return out
+
+
+def cache_miss(rows):
+    """Per arm: the mean of the per-run miss ratios, over the runs that reported one.
+
+    None rather than zero when no scored run in the arm reported a figure, matching the per-run
+    rule. It sits beside the cache-normalised ratio because the two answer different halves of
+    one question: the normalised cost says what the run would have cost with a cold prefix, and
+    this says how much of its prefix it actually re-bought."""
+    out = {}
+    for arm in ARMS:
+        known = [r["cache_miss_ratio"] for r in rows if r["arm"] == arm and not r["error"]
+                 and r.get("cache_miss_ratio") is not None]
+        out[arm] = round(_mean(known), 4) if known else None
+    return out
+
+
 def verdict(summary):
     """The publishable threshold, fixed before the run: at most 85% of bare per passed task, passing
     no fewer than bare minus one."""
@@ -486,21 +769,31 @@ def verdict(summary):
 
 
 def history_row(rows, series):
-    """One line for `history.jsonl`: a harness version against bare on the same day and model."""
+    """One line for `history.jsonl`: a harness version against bare on the same day and model.
+
+    It carries the per-task breakdown as well as the aggregate, because one task moving is the
+    usual shape of a regression and the aggregate alone cannot tell that from a broad one."""
     first = rows[0]
     reported, normalised = summarise(rows), summarise(rows, "cost_normalised_usd")
     ratio, status = verdict(reported)
-    return {"date": first["date"], "series": series, "harness_version": first["harness_version"],
+    return {"date": first["date"], "series": series, "bucket": first.get("bucket", ""),
+            "predicted_ratio": first.get("predicted_ratio"),
+            "harness_version": first["harness_version"],
             "harness_sha": first["harness_sha"], "tag": first["tag"], "model": first["model"],
             "cli_version": first["cli_version"], "reps": max(r["rep"] for r in rows), "runs": len(rows),
+            "change_note": first.get("change_note", ""), "per_task": per_task(rows),
             "bare": reported["bare"], "harness": reported["harness"], "ratio": ratio,
-            "ratio_cache_normalised": verdict(normalised)[0], "threshold": THRESHOLD, "status": status}
+            "ratio_cache_normalised": verdict(normalised)[0], "cache_miss": cache_miss(rows),
+            "threshold": THRESHOLD, "status": status}
 
 
 def upsert_history(path, row):
-    """Append, replacing an earlier line for the same version, commit, day and series."""
+    """Append, replacing an earlier line for the same version, commit, day, series and bucket.
+
+    The bucket is part of the key: a programme that changes one thing at a time measures several
+    buckets at one sha on one day, and without it each row would overwrite the last."""
     path = Path(path)
-    key = lambda r: (r["date"], r["series"], r["harness_version"], r["harness_sha"])
+    key = lambda r: (r["date"], r["series"], r["harness_version"], r["harness_sha"], r.get("bucket", ""))
     old = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] \
         if path.is_file() else []
     kept = [r for r in old if key(r) != key(row)] + [row]
@@ -510,19 +803,36 @@ def upsert_history(path, row):
 
 
 def render_history(rows):
+    """The ledger as text: the aggregate table, and under each of its lines the per-task detail.
+
+    The detail is indented plain text rather than more table rows, since a task line answers a
+    different question from the columns above it and would need none of them."""
     usd = lambda v: "n/a" if v is None else "%.3f" % v
     lines = ["# Cost per passed task, harness against bare Claude Code", "",
              "Dollars are list-price equivalents reported by the CLI, not money charged. Compare ratios"
              " across days, never dollars. A new series means the task set or the model changed.", "",
-             "| Date | Series | Harness | Model | Bare USD per pass | Harness USD per pass | Ratio |"
-             " Cache-normalised ratio | Passed, bare | Passed, harness | Errors | Threshold %.2f |" % THRESHOLD,
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+             "| Date | Series | Bucket | Harness | Model | Bare USD per pass | Harness USD per pass |"
+             " Ratio | Predicted | Cache-normalised ratio | Cache miss, bare | Cache miss, harness |"
+             " Passed, bare | Passed, harness | Errors | Threshold %.2f |" % THRESHOLD,
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+             " --- | --- |"]
     for r in rows:
-        lines.append("| %s | %s | %s @ %s | %s | %s | %s | %s | %s | %s | %s | %d | %s |" % (
-            r["date"], r["series"], r["harness_version"], r["harness_sha"][:7], r["model"],
-            usd(r["bare"]["cost_per_passed"]), usd(r["harness"]["cost_per_passed"]), usd(r["ratio"]),
-            usd(r["ratio_cache_normalised"]), usd(r["bare"]["passed"]), usd(r["harness"]["passed"]),
+        miss = r.get("cache_miss") or {}
+        lines.append("| %s | %s | %s | %s @ %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+                     " %d | %s |" % (
+            r["date"], r["series"], r.get("bucket") or "n/a", r["harness_version"], r["harness_sha"][:7],
+            r["model"], usd(r["bare"]["cost_per_passed"]), usd(r["harness"]["cost_per_passed"]),
+            usd(r["ratio"]), usd(r.get("predicted_ratio")), usd(r["ratio_cache_normalised"]),
+            usd(miss.get("bare")), usd(miss.get("harness")),
+            usd(r["bare"]["passed"]), usd(r["harness"]["passed"]),
             r["bare"]["errors"] + r["harness"]["errors"], r["status"]))
+        if r.get("change_note"):
+            lines.append("    note: %s" % r["change_note"])
+        for task, cell in sorted((r.get("per_task") or {}).items()):
+            lines.append("    %s: bare %s, harness %s, ratio %s, spread bare %s / harness %s, n %d"
+                         % (task or "n/a", usd(cell.get("bare")), usd(cell.get("harness")),
+                            usd(cell.get("ratio")), usd(cell.get("bare_spread")),
+                            usd(cell.get("harness_spread")), cell.get("n") or 0))
     return "\n".join(lines) + "\n"
 
 
@@ -534,6 +844,64 @@ def installed_harness(home):
         if (parent / "bin" / "harness").is_file():
             return parent
     return None
+
+
+def raw_path(raw_dir, row):
+    """Where `--raw` kept the CLI output for one row: the runner's `<task>-<arm>-<rep>.json`."""
+    return Path(raw_dir) / ("%s-%s-%s.json" % (row.get("task"), row.get("arm"), row.get("rep")))
+
+
+def backfill_rows(rows, raw_dir, config_dir=None, home=None):
+    """(enriched rows, missing raw files). The diagnostic fields, derived after the fact.
+
+    The launch environment is gone by now, so the fingerprint is of the directory named on the
+    command line and the row says `fingerprint_source: backfill`: it is the caller's claim about
+    which profile ran, not something the run recorded. A row whose raw output is missing or
+    unreadable keeps its stream fields empty rather than borrowing another row's."""
+    fingerprint = config_fingerprint(config_dir, home)
+    label = config_label(None if config_dir in (None, "", INHERITED) else config_dir, home)
+    out, missing = [], []
+    for row in rows:
+        new = dict(row, arm_config_dir=label, arm_fingerprint=fingerprint, fingerprint_source="backfill")
+        new.setdefault("change_note", "")
+        path = raw_path(raw_dir, row)
+        try:
+            parsed = parse_result(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            missing.append(path.name)
+            for field in STREAM_FIELDS:
+                new[field] = {} if field == "tool_counts" else None
+            out.append(new)
+            continue
+        new.update({field: parsed[field] for field in STREAM_FIELDS})
+        if new.get("error"):
+            new["cache_miss_ratio"] = None  # the same rule `run_one` applies to an errored run
+        out.append(new)
+    return out, missing
+
+
+def read_jsonl(path):
+    return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def write_jsonl(path, rows):
+    Path(path).write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows), encoding="utf-8")
+
+
+def cmd_backfill(args):
+    results = Path(args.results).expanduser() / RESULTS
+    if not results.is_file():
+        raise SystemExit("cost-bench: %s does not exist" % results)
+    config = Path(args.config_dir).expanduser() if args.config_dir else None
+    rows, missing = backfill_rows(read_jsonl(results), Path(args.raw).expanduser(), config)
+    write_jsonl(results.parent / ENRICHED, rows)
+    if args.in_place:
+        write_jsonl(results, rows)
+    for name in missing:
+        print("cost-bench: no raw output for %s" % name, file=sys.stderr)
+    print("enriched %d row(s), %d without raw output, into %s"
+          % (len(rows), len(missing), results.parent / ENRICHED))
+    return 1 if missing else 0
 
 
 def _text(command, **kwargs):
@@ -571,13 +939,24 @@ def cmd_replay(args):
                          "installed one with --harness-repo")
     version = (harness / "VERSION").read_text(encoding="utf-8").strip()
     table = json.loads((ROOT / "policy" / "prices.json").read_text(encoding="utf-8")).get("models", {})
-    series = hashlib.sha256(Path(args.tasks).read_bytes() + args.model.encode()).hexdigest()[:8]
+    harness_config = Path(args.harness_config).expanduser() if args.harness_config else None
+    if harness_config and not harness_config.is_dir():
+        raise SystemExit("cost-bench: the harness profile %s does not exist; sign in to it once, then "
+                         "sync the harness into it" % harness_config)
+    # The arm profile is part of what is being compared, so it rotates the series: a run whose
+    # harness arm carries the owner's personal layer is not comparable to one whose arm does not.
+    profile = b"|isolated" if harness_config else b"|inherited"
+    series = hashlib.sha256(Path(args.tasks).read_bytes() + args.model.encode()
+                            + profile).hexdigest()[:8]
     out = Path(args.out) if args.out else ROOT / "benchmarks" / version
     opts = {"repo": ROOT, "home": home, "claude": args.claude, "model": args.model, "tag": tags[0],
             "reps": args.reps, "run_cap": args.run_cap, "spend_cap": args.spend_cap, "prices": table,
-            "bare_config": bare, "stance_cost": args.stance_cost, "raw": args.raw, "tmp": args.tmp,
+            "bare_config": bare, "harness_config": harness_config, "stance_cost": args.stance_cost,
+            "raw": args.raw, "tmp": args.tmp, "change_note": args.change_note or "",
+            "skip_preflight": args.skip_preflight,
             "stamp": {"date": datetime.date.today().isoformat(), "model": args.model,
                       "cli_version": _text([args.claude, "--version"], env=scrubbed_env()),
+                      "bucket": args.bucket, "predicted_ratio": args.predicted_ratio,
                       "harness_version": version, "harness_sha": _text(["git", "-C", str(harness), "rev-parse", "HEAD"]),
                       "os": "%s %s" % (platform.system(), platform.release())}}
     plan = schedule(tasks, args.reps)
@@ -592,8 +971,10 @@ def cmd_replay(args):
     if stopped:
         print("cost-bench: stopped at the spend cap after %d of %d run(s)" % (len(rows), len(plan)), file=sys.stderr)
     if rows and len(tasks) == len(load_tasks(args.tasks)) and not stopped:
-        kept = upsert_history(ROOT / HISTORY, history_row(rows, series))
-        (ROOT / HISTORY_MD).write_text(render_history(kept), encoding="utf-8")
+        home_dir = Path(args.history_dir) if args.history_dir else ROOT / "benchmarks"
+        home_dir.mkdir(parents=True, exist_ok=True)
+        kept = upsert_history(home_dir / HISTORY.name, history_row(rows, series))
+        (home_dir / HISTORY_MD.name).write_text(render_history(kept), encoding="utf-8")
         print(json.dumps(kept[-1], indent=2))
     else:
         print("cost-bench: a partial set is not a history row; results are in %s" % out, file=sys.stderr)
@@ -617,16 +998,37 @@ def main(argv=None):
     run.add_argument("--spend-cap", type=float, default=SPEND_CAP_USD, help="stop before passing this")
     run.add_argument("--stance-cost", help="HARNESS_STANCE_COST for the harness arm")
     run.add_argument("--bare-config", default="~/.claude-bench-bare", help="the signed-in empty profile")
+    run.add_argument("--harness-config", help="the signed-in profile the harness is synced into; "
+                     "without it the harness arm inherits ~/.claude and the owner's personal layer")
+    run.add_argument("--bucket", default="", help="the one change this run measures, e.g. A; names the "
+                     "history row so several buckets can share a day and a commit")
+    run.add_argument("--predicted-ratio", type=float, help="the ratio the plan predicts for this bucket; "
+                     "stored beside the measured one so a miss is visible in the file")
+    run.add_argument("--history-dir", help="directory for history.jsonl and history.md; "
+                     "default benchmarks/")
+    run.add_argument("--change-note", default="", help="what changed since the last run of this "
+                     "bucket; stored on every row and on the history row")
     run.add_argument("--claude", default="claude", help="the CLI to launch")
     run.add_argument("--harness-repo", help="the installed harness checkout; default: follow ~/.claude")
     run.add_argument("--out", help="results directory; default benchmarks/<harness version>")
     run.add_argument("--raw", help="keep each run's raw CLI output here; never commit it")
     run.add_argument("--tmp", help="parent for the throwaway clones; must be outside the home directory")
     run.add_argument("--verify-tasks", action="store_true", help="prove every check; calls no model")
+    run.add_argument("--skip-preflight", action="store_true", help="do not run each arm's gate under "
+                     "its own fence first; rows then say preflight: skipped")
     run.add_argument("--dry-run", action="store_true", help="print the schedule and stop")
+    back = sub.add_parser("backfill", help="derive the diagnostic fields for rows already written")
+    back.add_argument("--results", required=True, help="directory holding %s" % RESULTS)
+    back.add_argument("--raw", required=True, help="directory of the runs' raw CLI output")
+    where = back.add_mutually_exclusive_group()
+    where.add_argument("--config-dir", help="the profile those runs used; its files are measured now")
+    where.add_argument("--inherited", action="store_true", help="those runs inherited ~/.claude (default)")
+    back.add_argument("--in-place", action="store_true", help="also rewrite %s" % RESULTS)
     args = parser.parse_args(argv)
     if args.command == "replay":
         return cmd_replay(args)
+    if args.command == "backfill":
+        return cmd_backfill(args)
     if args.check:
         errors = check(ROOT)
         for error in errors:

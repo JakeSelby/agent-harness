@@ -14,9 +14,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_config_dir
+
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "tier-agent-spawns.py"
-TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
 OWNERSHIP = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
 
 
@@ -52,7 +53,7 @@ class TierSpawnsTests(unittest.TestCase):
         self.transcript.write_text("\n".join(lines) + "\n")
 
     def run_hook(self, payload, env=None):
-        merged = dict(os.environ)
+        merged = without_config_dir()
         merged.pop("HARNESS_STANCE_DELEGATION", None)
         merged["HOME"] = str(self.home)
         merged.update(env or {})
@@ -246,15 +247,6 @@ class TierSpawnsTests(unittest.TestCase):
         for raw in ("not json", "{}", "", "[]", '{"tool_name":"Agent","tool_input":"x"}'):
             with self.subTest(raw=raw):
                 self.assertIsNone(self.run_hook(raw))
-
-    def test_settings_template_registers_the_hook(self):
-        entries = [
-            e for e in TEMPLATE["hooks"]["PreToolUse"]
-            if any("# harness:tier-spawns" in h["command"] for h in e["hooks"])
-        ]
-        self.assertEqual(len(entries), 1)
-        self.assertEqual(entries[0]["matcher"], "Agent")
-        self.assertIn("tier-agent-spawns.py", entries[0]["hooks"][0]["command"])
 
     def test_ownership_claims_the_hook_id(self):
         self.assertEqual(OWNERSHIP["claude"]["hook_ids"]["tier-spawns"],

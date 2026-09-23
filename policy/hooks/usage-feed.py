@@ -8,7 +8,7 @@ and says how many agents are running when that is past the posture's width. `Use
 reports the turn and every subagent that finished since the previous prompt — which is how a
 background spawn, whose `PostToolUse` fires at launch with no totals, is reported at all.
 
-Six facts shape the whole file:
+Seven facts shape the whole file:
 
 - **A tool response's token figure describes only the subagent's last response.** Measured on a
   live return: `tool_response.usage.output_tokens` said 3,143 against 10,575 actually spent over
@@ -37,13 +37,23 @@ Six facts shape the whole file:
   agent that event reports. The return also waits a bounded moment for the last response to
   finish being written, says `(so far)` when it never does, and the stop the journal brings later
   raises the session totals without the agent being announced a second time.
+- **A line is worth saying once.** `spend unknown` names its agent and is said once, because no
+  later event can put a figure on it and a session that repeats it teaches the orchestrator to
+  skip the feed. What the figures measure is said once too, before the first of them. An agent
+  resumed with a follow-up message, on the other hand, stops once per round against one agent id,
+  and each of those rounds is a completion the feed owes a line — cumulative, because one
+  transcript covers them all. Whether such a round has landed is not a question the transcript's
+  shape can answer: it ends on the previous round's finished response either way. So a later
+  round is settled by its figure passing the one already reported, and is re-summed at each
+  event, silently, until it does.
 - **Reads are bounded everywhere.** The parent transcript is read from a saved offset, trusted
   only while the inode and the hash of the first record still match, and from 8 MiB before the
   end on a cold start. The journal is read from its own saved offset, so a long session's totals
   can only grow. A subagent's transcript is capped by bytes and by the clock.
 
 No budget, threshold, model name or role name lives here: every number comes from the cost
-table, every switch from `switches.turn_feed`, `switches.nudge_at` and `switches.max_parallel`.
+table, every switch from `switches.turn_feed`, `switches.nudge_at`, `switches.session_nudge_at`
+and `switches.max_parallel`.
 A variant that sets none of them feeds nothing. Any failure at all emits nothing and exits 0,
 and no line the feed emits is ever a decision.
 """
@@ -66,9 +76,10 @@ HOOKS = Path(__file__).resolve().parent
 PREFIX = "usage-feed: "
 # A journal line is one `os.write`. Far under PIPE_BUF, which is what makes an append atomic.
 MAX_LINE = 4096
-# How many message ids stay open for a later line to raise. One API response is written as
-# several lines repeating its id, and a response whose id is evicted before its final, largest
-# figure arrives would be counted twice; a tail this long is far past that window.
+# How many message ids stay open for a later line to raise, newest kept and oldest evicted. One
+# API response is written as several lines repeating its id, and a response whose id is evicted
+# before its final, largest figure arrives would be counted twice; a tail this long is far past
+# that window.
 OPEN_TAIL = 64
 MAX_LISTED = 5
 # Stops waiting for a line, and ids whose spend is already in the totals. Both bound what one
@@ -196,7 +207,9 @@ def new_state():
             "previous_turn": {"output": 0, "tool_calls": 0},
             "subagents": {"output": 0, "tool_calls": 0, "count": 0, "unknown": 0},
             "journal_offset": 0, "running": {}, "pending": [], "counted": [],
-            "figures": {}, "unsummed": {}, "open": [], "pruned": 0, "said_turn": None}
+            "figures": {}, "unsummed": {}, "open": [], "pruned": 0, "said_turn": None,
+            "rounds": {}, "said_unknown": [], "said_measure": False,
+            "context": None, "said_nudge": []}
 
 
 def load_state(path):
@@ -234,9 +247,21 @@ def load_state(path):
         if not (isinstance(entry, list) and len(entry) == 2 and isinstance(entry[0], str)
                 and isinstance(entry[1], int) and not isinstance(entry[1], bool)):
             del state["unsummed"][agent]
-    for key in ("pending", "counted", "open"):
+    rounds = state.get("rounds")
+    state["rounds"] = rounds if isinstance(rounds, dict) else {}
+    for agent, value in list(state["rounds"].items()):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            del state["rounds"][agent]
+    state["said_measure"] = bool(state.get("said_measure"))
+    for key in ("pending", "counted", "open", "said_unknown", "said_nudge"):
         if not isinstance(state.get(key), list):
             state[key] = []
+    state["said_unknown"] = [v for v in state["said_unknown"] if isinstance(v, str)]
+    state["said_nudge"] = [v for v in state["said_nudge"]
+                           if isinstance(v, int) and not isinstance(v, bool) and v > 0]
+    size = state.get("context")
+    if not (isinstance(size, int) and not isinstance(size, bool) and size > 0):
+        state["context"] = None
     return state
 
 
@@ -244,6 +269,10 @@ def save_state(path, state):
     """Atomic and private. Called before the slow read as well as after it."""
     state["pending"] = state.get("pending", [])[-MAX_PENDING:]
     state["counted"] = state.get("counted", [])[-MAX_COUNTED:]
+    state["said_unknown"] = state.get("said_unknown", [])[-MAX_COUNTED:]
+    for stale in list(state.get("rounds", {}))[:max(0, len(state.get("rounds", {}))
+                                                    - MAX_COUNTED)]:
+        del state["rounds"][stale]
     for stale in list(state.get("unsummed", {}))[:max(0, len(state.get("unsummed", {}))
                                                       - MAX_PENDING)]:
         del state["unsummed"][stale]
@@ -367,6 +396,33 @@ def _slot(state, mid):
     return item
 
 
+def _whole(value):
+    """A token figure as a whole number, or 0. Nothing a transcript can hold raises out of here.
+
+    `OverflowError` is the one that matters: JSON admits `1e400`, Python reads it as an infinity,
+    and `int()` on that raises. A record is read once, the offset past it is saved, and an
+    uncaught raise there would silence the feed for the rest of the session.
+    """
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+#: What a response read, across the three fields it is reported in. They do not overlap:
+#: `input_tokens` is what was sent uncached, and the other two are the prefix read from the
+#: cache and the prefix written into it, so the context is their sum and not any one of them.
+CONTEXT_KEYS = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+
+
+def _context(usage):
+    """One response's context size. Zero when the fields are absent, which is not a size."""
+    total = 0
+    for key in CONTEXT_KEYS:
+        total += max(0, _whole(usage.get(key)))
+    return total
+
+
 def _apply(state, entry):
     """One transcript line against the running totals. Sidechain lines belong to a subagent."""
     if not isinstance(entry, dict) or entry.get("isSidechain"):
@@ -392,11 +448,14 @@ def _apply(state, entry):
     mid = message.get("id") if isinstance(message.get("id"), str) else ""
     usage = message.get("usage")
     usage = usage if isinstance(usage, dict) else {}
+    context = _context(usage)
+    if context:
+        # What the next response will re-read, as of the newest response on file. Not summed
+        # and not a maximum: a context that shrank because the session was compacted has
+        # shrunk, and the older, larger figure describes a session that no longer exists.
+        state["context"] = context
     slot = _slot(state, mid)
-    try:
-        output = int(usage.get("output_tokens") or 0)
-    except (TypeError, ValueError):
-        output = 0
+    output = _whole(usage.get("output_tokens"))
     if output > slot[1]:
         # Only the rise is added, so a partial streaming count followed by the true figure is
         # one message counted once at its largest.
@@ -466,11 +525,13 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
         if (state.get("inode") != inode or state.get("head") != head
                 or state["offset"] > size or size < state["size"]):
             # Compaction, a rotation, a replacement — of any size. What came before is unknowable
-            # about the transcript; what the journal recorded is still true and stays.
+            # about the transcript; what the journal recorded is still true and stays, and so is
+            # what has already been said. A reset that really did shrink the context re-arms the
+            # session nudge through the size itself, not by forgetting the line was fed.
             seen = state.get("inode") is not None
             kept = {key: state[key] for key in
                     ("journal_offset", "running", "pending", "counted", "figures", "unsummed",
-                     "subagents", "pruned")}
+                     "subagents", "pruned", "rounds", "said_unknown", "said_nudge")}
             state = dict(new_state(), **kept)
             state["inode"], state["head"] = inode, head
             state["offset"] = max(0, size - COLD_TAIL)
@@ -780,15 +841,27 @@ def to_settle(state, journal_file, payload, env, first=None):
     """
     items = [first] if first and first[0] else []
     seen = {agent for agent, _ in items}
+    for record in state.get("pending") or []:
+        agent_id = record.get("id")
+        if (not record.get("awaiting") or agent_id in seen
+                or record.get("tries", 0) >= UNSUMMED_TRIES):
+            continue
+        seen.add(agent_id)
+        items.append((agent_id, record_path(record, payload, env)))
     for agent_id, entry in (state.get("unsummed") or {}).items():
         if agent_id in seen or entry[1] >= UNSUMMED_TRIES:
             continue
         seen.add(agent_id)
         items.append((agent_id, expand(entry[0], env, agent_id) or agent_transcript(
             payload.get("transcript_path"), payload.get("session_id"), agent_id)))
+    rounds = dict(state.get("rounds") or {})
     for record in journal_records(journal_file, state.get("journal_offset", 0)):
         agent_id = record["id"]
-        if agent_id in seen or not needs_sum(record):
+        repeat = False
+        if record.get("t") == "stop":
+            rounds[agent_id] = rounds.get(agent_id, 0) + 1
+            repeat = rounds[agent_id] > 1
+        if agent_id in seen or not (needs_sum(record) or repeat):
             continue
         seen.add(agent_id)
         items.append((agent_id, record_path(record, payload, env)))
@@ -858,7 +931,11 @@ def ingest(state, journal_file, resolved=None):
             if record.get("t") != "stop":
                 continue
             state["running"].pop(agent_id, None)
-            if needs_sum(record):
+            round_number = bump_round(state, agent_id)
+            # A later round's stop is never taken at the figure it was journalled with. The
+            # transcript it was read from still ends on the previous round's finished response,
+            # so `summed` says final about a round whose own responses are not on disk yet.
+            if needs_sum(record) or round_number > 1:
                 apply_settled(record, resolved.get(agent_id))
             if agent_id in state["counted"]:
                 if agent_id in state["unsummed"] and record.get("output") is not None:
@@ -866,8 +943,17 @@ def ingest(state, journal_file, resolved=None):
                     # and the agent is not named again.
                     resolve_unknown(state, agent_id, figures_of(record))
                     del state["unsummed"][agent_id]
-                else:
+                elif round_number < 2:
                     reconcile(state, record)
+                if round_number > 1:
+                    open_round(state, record, round_number)
+                continue
+            if agent_id in (state.get("said_unknown") or []):
+                # The reader's record of this agent was lost, not the fact of it: it has been
+                # counted once and named once, and neither is owed a second time.
+                state["counted"].append(agent_id)
+                if has_figure(record):
+                    resolve_unknown(state, agent_id, figures_of(record))
                 continue
             state["counted"].append(agent_id)
             count(state, record)
@@ -887,6 +973,73 @@ def figures_of(record):
         except (TypeError, ValueError):
             out.append(0)
     return out
+
+
+def risen(record):
+    """Whether a later round's cumulative figure has passed the one already reported.
+
+    It is the only thing that says a resumed agent's round is on disk. The sum covers every
+    round the agent has run, and the transcript ends on a finished response either way, so a
+    total that has not moved is a round whose responses have not been flushed yet.
+    """
+    return has_figure(record) and figures_of(record)[0] > record.get("floor", 0)
+
+
+def open_round(state, record, round_number):
+    """One completion of a resumed agent: kept until its own spend has landed, then named.
+
+    Until it has, the record is re-summed at every event and nothing at all is said about it —
+    a line repeating the previous round's figure would be worse than a line a prompt later.
+    """
+    record["round"] = round_number
+    record["floor"] = (state["figures"].get(record.get("id")) or [0, 0])[0]
+    record["tries"] = 0
+    if risen(record):
+        reconcile(state, record)
+    else:
+        record["awaiting"] = True
+    state["pending"].append(record)
+
+
+def reconcile_rounds(state, resolved):
+    """Fold this event's sums into the later rounds whose own spend had not landed yet.
+
+    A round is accepted the moment its figure passes the one already reported, and is named from
+    the pending list like any other. A transcript that has gone, and a round that has had its
+    tries, are dropped: nothing was ever said about either, so nothing has to be taken back.
+    """
+    for record in list(state.get("pending") or []):
+        if not record.get("awaiting"):
+            continue
+        outcome = resolved.get(record.get("id"))
+        if isinstance(outcome, dict) and outcome["output"] > record.get("floor", 0):
+            apply_settled(record, outcome)
+            record.pop("awaiting", None)
+            reconcile(state, record)
+        elif outcome == ABSENT or record.get("tries", 0) >= UNSUMMED_TRIES:
+            state["pending"].remove(record)
+        elif outcome is not None:
+            record["tries"] = record.get("tries", 0) + 1
+
+
+def has_figure(record):
+    """Whether a stop carries a number at all. Null counts are a sum that could not be made."""
+    return not (record.get("output") is None and record.get("tool_calls") is None)
+
+
+def bump_round(state, agent_id):
+    """Which completion of this agent a journalled stop is, counting from one.
+
+    An agent resumed with a follow-up message stops once per round, against one agent id and one
+    transcript, so every round after the first was folded into the totals and never named: only
+    its first completion fed a line. The stop count is what tells a resumed round apart from the
+    settled copy of a round already reported — that one is still the same, first, stop.
+    """
+    rounds = state.setdefault("rounds", {})
+    number = rounds.get(agent_id)
+    number = number + 1 if isinstance(number, int) and not isinstance(number, bool) else 1
+    rounds[agent_id] = number
+    return number
 
 
 def count(state, record):
@@ -1003,6 +1156,14 @@ def settings(env):
     return table, mode, nudges, width
 
 
+def session_nudges(table):
+    """The context sizes the posture calls a full session, smallest first; empty means silent."""
+    switches = table.get("switches") if isinstance(table, dict) else None
+    switches = switches if isinstance(switches, dict) else {}
+    return sorted(v for v in switches.get("session_nudge_at") or []
+                  if isinstance(v, int) and not isinstance(v, bool) and v > 0)
+
+
 def budgets(row):
     """The row's two soft budgets, each only when it is a positive whole number."""
     if not isinstance(row, dict):
@@ -1016,7 +1177,7 @@ def budgets(row):
 
 
 def agent_line(agent_type, output, calls, row, nudges, partial=False, provisional=False,
-               not_yet=False):
+               not_yet=False, agent_id=None, round_number=1):
     """`(line, ratio)` for one finished subagent; ratio is None when there is nothing to compare.
 
     Null counts are what a sum that could not be computed leaves behind, and the line says so:
@@ -1027,17 +1188,29 @@ def agent_line(agent_type, output, calls, row, nudges, partial=False, provisiona
     half of the unit names that half, because `n / None` would read as a figure to act on.
     `provisional` is the figure of a response still being written: `(so far)`, never a number
     presented as exact. `(partial)` subsumes it — a sum that was cut short is the larger caveat.
+
+    `spend unknown` names the agent it is about, because it is the one line that carries no figure
+    to tell two of them apart: a session that emitted it once an hour and a session emitting it
+    every turn read identically until the id was in it.
+
+    A round past the first is one completion of a resumed agent, and its figure is its whole
+    transcript rather than that round alone, so the line says `(cumulative)`.
     """
     if output is None and calls is None:
         if not_yet:
             return PREFIX + agent_type + " finished, spend not yet recorded", None
-        return PREFIX + agent_type + " finished, spend unknown", None
-    text = (PREFIX + agent_type + " finished at " + plural(output or 0, "output token")
+        named = (", no transcript found for agent " + agent_id) if agent_id else ""
+        return PREFIX + agent_type + " finished, spend unknown" + named, None
+    text = (PREFIX + agent_type + " finished" + ("" if round_number < 2 else
+            " round " + "{:,}".format(round_number)) + " at " + plural(output or 0, "output token")
             + " and " + plural(calls or 0, "tool call"))
+    marks = ["cumulative"] if round_number > 1 else []
     if partial:
-        text += " (partial)"
+        marks.append("partial")
     elif provisional:
-        text += " (so far)"
+        marks.append("so far")
+    if marks:
+        text += " (" + ", ".join(marks) + ")"
     budget_out, budget_calls = budgets(row)
     ratios, halves = [], []
     if budget_out:
@@ -1090,6 +1263,39 @@ def turn_line(state):
     return text
 
 
+def session_line(state, thresholds):
+    """One line the first time the session's context passes a threshold, or None.
+
+    The turn line reports what a turn produced. What a long session costs is mostly the context
+    every further turn re-reads, which no figure in the feed shows, so this is the one line that
+    says continuing here is the expensive choice. It is soft: nothing is blocked.
+
+    Once per threshold, never once per turn. Every threshold at or below the current size is
+    marked said, so a session that stays above one is silent until it reaches the next, and a
+    resume reads the same marks out of the same state file. A threshold the context has since
+    fallen back under is unmarked, because a compaction that halved the session and an hour of
+    work that filled it again is a crossing the orchestrator has not been told about.
+
+    A size no transcript line has supplied yet is not a crossing: the line would name a
+    threshold nothing was measured against, and reporting the context of an unread transcript
+    as zero would be a lie either way.
+    """
+    size = state.get("context")
+    if not thresholds or not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        return None
+    said = state.setdefault("said_nudge", [])
+    said[:] = [level for level in said if level <= size]
+    fresh = [level for level in thresholds if size >= level and level not in said]
+    if not fresh:
+        return None
+    said.extend(fresh)
+    # The largest of the ones newly crossed, which is not the largest passed: a threshold
+    # already said is not news, and naming it would read as a line repeating itself.
+    return (PREFIX + "session context " + plural(size, "token") + ", past the fresh-session "
+            "threshold of " + "{:,}".format(fresh[-1]) + " — finish the task, write the "
+            "handoff, start a fresh session")
+
+
 def shows(mode, ratio, nudges):
     """Whether a subagent's line is worth a line. `thresholds` wants the smallest nudge met."""
     if mode == "every-turn":
@@ -1108,10 +1314,53 @@ def row_for(table, agent_type):
 
 
 def stop_line(table, nudges, record):
+    agent_id = record.get("id")
+    round_number = record.get("round")
     return agent_line(agent_name(record.get("type")), record.get("output"),
                       record.get("tool_calls"), row_for(table, record.get("type")), nudges,
                       bool(record.get("partial")), bool(record.get("so_far")),
-                      bool(record.get("not_yet")))
+                      bool(record.get("not_yet")),
+                      agent_id if isinstance(agent_id, str) else None,
+                      round_number if isinstance(round_number, int) else 1)
+
+
+def unknown_final(record):
+    """A stop whose spend nothing is going to recover: `spend unknown`, not `not yet recorded`."""
+    return not has_figure(record) and not record.get("not_yet")
+
+
+def said_unknown(state, record):
+    """Whether this agent's `spend unknown` has already been fed, so it is never fed twice.
+
+    The line carries no figure and cannot be reconciled, so nothing about the agent will ever
+    change it. Repeating it turn after turn — what a session whose reader state was rebuilt used
+    to do — spends the orchestrator's context on a fact it read the first time.
+    """
+    return unknown_final(record) and record.get("id") in (state.get("said_unknown") or [])
+
+
+def note_unknown(state, record):
+    """Remember a `spend unknown` that has just been fed, bounded like every other list here."""
+    if not unknown_final(record) or not isinstance(record.get("id"), str):
+        return
+    already = state.setdefault("said_unknown", [])
+    if record["id"] not in already:
+        already.append(record["id"])
+
+
+#: What the feed's numbers are, said once per session so they cannot be read as another measure.
+#: Reported live: one agent's line said 31,121 output tokens beside a task notification's
+#: `subagent_tokens 102398`, and both were right about different things.
+MEASURE = (PREFIX + "figures above are output tokens and tool calls summed from each agent's own "
+           "transcript — not the task notification's subagent_tokens, which is another measure.")
+
+
+def legend(state):
+    """The measure line, the first time this session feeds a figure, and never again."""
+    if state.get("said_measure"):
+        return None
+    state["said_measure"] = True
+    return MEASURE
 
 
 # --------------------------------------------------------------------------- the events
@@ -1165,6 +1414,18 @@ def on_subagent_event(payload, env, kind):
     return None
 
 
+def emit(state, lines, record, line):
+    """Add one subagent's line, unless it is a `spend unknown` this session has already said.
+
+    Returns whether the line carried a figure, which is what the measure line is owed to.
+    """
+    if said_unknown(state, record):
+        return False
+    note_unknown(state, record)
+    lines.append(line)
+    return has_figure(record)
+
+
 def refresh(state_file, journal_file, resolved):
     """The session's state with this event's sums folded in: the retries first, then the journal.
 
@@ -1175,6 +1436,7 @@ def refresh(state_file, journal_file, resolved):
     """
     state = load_state(state_file)
     reconcile_unsummed(state, resolved)
+    reconcile_rounds(state, resolved)
     return ingest(state, journal_file, resolved)
 
 
@@ -1226,14 +1488,15 @@ def on_agent_return(payload, env):
         if not held:
             return None
         state = refresh(state_file, journal_file, resolved)
-        lines = []
+        lines, figured = [], False
         if synchronous:
-            record = next((r for r in state["pending"] if r.get("id") == agent_id), None)
+            record = next((r for r in state["pending"]
+                           if r.get("id") == agent_id and not r.get("awaiting")), None)
             if record is not None:
                 line, ratio = stop_line(table, nudges, record)
                 if shows(mode, ratio, nudges):
                     state["pending"].remove(record)
-                    lines.append(line)
+                    figured = emit(state, lines, record, line)
             elif agent_id not in state["counted"]:
                 # The stop has not been journalled yet. Reporting it now means counting it now,
                 # so the journal's copy is skipped when it arrives. An outcome of `ABSENT` is
@@ -1246,16 +1509,20 @@ def on_agent_return(payload, env):
                     if fresh.get("not_yet"):
                         remember_unsummed(state, agent_id, redact(first[1], env))
                     state["running"].pop(agent_id, None)
-                    lines.append(line)
+                    figured = emit(state, lines, fresh, line)
         note = width_line(running_now(state), width)
         if note:
             lines.append(note)
+        if figured:
+            measure = legend(state)
+            if measure:
+                lines.append(measure)
         save_state(state_file, state)
         return lines or None
 
 
 def on_prompt(payload, env):
-    """The turn line, the width note, then the subagents that finished since the last prompt."""
+    """The turn line, the session nudge, the width note, then the subagents that have finished."""
     table, mode, nudges, width = settings(env)
     if mode == "off":
         return None
@@ -1278,22 +1545,37 @@ def on_prompt(payload, env):
             return None
         turn = turn_line(state) if mode == "every-turn" else None
         lines = [turn] if turn else []
+        # Not a subagent's line and not a figure to compare: it is said under `thresholds` too.
+        nudge = session_line(state, session_nudges(table))
+        if nudge:
+            lines.append(nudge)
         note = width_line(running_now(state), width)
         if note:
             lines.append(note)
         said = []
         for record in list(state["pending"]):
+            if record.get("awaiting"):
+                continue     # a resumed round whose own spend has not landed yet
             line, ratio = stop_line(table, nudges, record)
             if not shows(mode, ratio, nudges):
+                continue
+            if said_unknown(state, record):
+                # Nothing will ever put a figure on it and the orchestrator has read it once.
+                state["pending"].remove(record)
                 continue
             said.append((record, line))
         # Only the agents this turn actually names are retired. The cap bounds how much is said
         # at once, so the rest are named at the next prompt rather than dropped unsaid.
+        figured = False
         for record, line in said[:MAX_LISTED]:
             state["pending"].remove(record)
-            lines.append(line)
+            figured = emit(state, lines, record, line) or figured
         if len(said) > MAX_LISTED:
             lines.append("… and " + "{:,}".format(len(said) - MAX_LISTED) + " more")
+        if figured:
+            measure = legend(state)
+            if measure:
+                lines.append(measure)
         save_state(state_file, state)
     return lines or None
 

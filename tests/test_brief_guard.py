@@ -12,6 +12,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 HOOK = REPO / "claude" / "hooks" / "brief-guard.py"
 
@@ -38,7 +40,7 @@ class HookRun(unittest.TestCase):
         (d / "config.json").write_text(json.dumps({"stances": {"delegation": delegation}}))
 
     def run_hook(self, payload, env_extra=None):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         env.update(env_extra or {})
         out = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload),
@@ -125,7 +127,7 @@ class LeavesAlone(HookRun):
 class MalformedInput(HookRun):
     def test_garbage_does_not_raise(self):
         self.write_config("tiered")
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env["HOME"] = str(self.home)
         for payload in ("", "not json", "[]", '{"tool_name": "Agent", "tool_input": []}'):
             with self.subTest(payload=payload):
@@ -136,12 +138,6 @@ class MalformedInput(HookRun):
 
 
 class Registration(unittest.TestCase):
-    def test_registered_on_the_agent_event(self):
-        s = json.loads((REPO / "claude" / "settings.template.json").read_text())
-        cmds = [h["command"] for g in s["hooks"]["PreToolUse"]
-                if g.get("matcher") == "Agent" for h in g["hooks"]]
-        self.assertTrue(any("brief-guard.py # harness:brief-guard" in c for c in cmds), cmds)
-
     def test_declared_in_ownership(self):
         o = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
         entry = o["claude"]["hook_ids"].get("brief-guard")

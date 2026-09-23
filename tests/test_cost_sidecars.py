@@ -17,6 +17,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from isolation import without_harness_vars
+
 REPO = Path(__file__).resolve().parent.parent
 HOOKS = REPO / "claude" / "hooks"
 COST = REPO / "primitives" / "stances" / "cost"
@@ -485,7 +487,7 @@ class OffTheHotPath(unittest.TestCase):
                          "    return _real_table_for(*args, **kwargs)\n")
 
     def run_hook(self, name):
-        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_")}
+        env = without_harness_vars()
         env.update(HOME=str(self.home), HARNESS_TABLE_MARKER=str(self.marker))
         out = subprocess.run([sys.executable, str(self.hooks / name)],
                              input=json.dumps(self.PAYLOADS[name]), capture_output=True,

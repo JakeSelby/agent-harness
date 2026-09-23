@@ -30,9 +30,12 @@ What is recorded, and where it comes from, is [usage.md](usage.md).
 - `endpoint` is the base URL of **any OTLP/HTTP endpoint**; `/v1/logs` is appended. No vendor is
   required and none is named in the code.
 - `labels` are attributes added to every record — the place for an environment or a host name.
-- `native` asks each runtime to export **its own** telemetry to the same endpoint. Off by
+- `native` asks a runtime to export **its own** telemetry to the same endpoint. `true` is every
+  runtime, `false` is none, and a list — `["claude-code"]`, `["codex"]` — names the ones it
+  applies to; any other runtime name stops `harness sync` with the names it knows. Off by
   default, and a separate decision from `export`: see [Native pass-through](#native-pass-through)
-  before turning it on, because the runtimes attach identifiers the ledger does not.
+  before turning it on, because the runtimes attach identifiers the ledger does not, and because
+  only Claude Code can reach an endpoint that requires a header.
 
 `harness doctor` prints one line for this: the mode, the endpoint's scheme and host, and the
 **names** of the headers it resolved.
@@ -54,6 +57,48 @@ endpoint, whatever `export` is set to, and turning export on does not turn this 
 
 Unlike a ledger row, a decision row holds the text the hook judged — a command, or the head of
 a brief — capped at 2 KiB, which is the one reason to turn it off on a shared machine.
+
+## The allowed-command sample
+
+```json
+{ "telemetry": { "allow_sample_rate": 0 } }
+```
+
+`allow_sample_rate` is the one-in-how-many: **20 by default**, so one distinct command in twenty
+of those the harness allows is written to the decision log as an ungraded negative, and `0`
+writes none of them. [usage.md](usage.md#sampled-allows) describes the row, and why the sample
+is of distinct commands rather than of invocations.
+
+It is on because the graded rows are all prompts, and a check that may only turn an allow into
+an ask cannot be measured for false alarms against prompts alone. The sample is drawn from each
+command's own hash rather than from a random draw, so the same commands are sampled on every
+machine and a measurement over these rows is reproducible. Only an allow the harness itself
+gave is sampled, never a command it left to the runtime to answer. The text of a sampled row is redacted first —
+assignment values, credential flags, every secret shape the rule detectors match and the home
+directory as `~` — because it is text nobody was prompted about, and the row's hash is over the
+redacted text so nothing removed from it can be recovered; a graded row still holds the command
+as the user saw it.
+
+Set it to `0` on a machine where a log of commands nobody approved is unwelcome.
+`decisions: false` turns it off along with the rest of the log, and nothing here is exported:
+a decision row reaches no endpoint whatever `export` is set to.
+
+## The completion claim switch
+
+```json
+{ "telemetry": { "completion_claim": true } }
+```
+
+This one defaults to **off**. It adds `completion_claim` to a `stop-gate` decision row: the last
+2 KiB of the turn's final assistant message, read from the transcript at Stop, with the hash
+over the uncapped message — or a null claim beside the reason there is none.
+[usage.md](usage.md#the-completion-claim) describes the fields and the reasons. It is what lets
+a stop claim be read against the gate result sitting on the same row.
+
+It is off because it is the only place the decision log holds assistant prose, and that is a
+different thing to keep on a shared machine from a log of commands. `decisions: false` turns it
+off too, since there is no row to put it on. Nothing here is exported either: a decision row
+reaches no endpoint whatever `export` is set to.
 
 ## Credentials
 
@@ -163,6 +208,27 @@ and turning it on is a decision to read the two warnings below first.
                  "headers_file": "~/.config/agent-harness/otlp-headers", "native": true } }
 ```
 
+### Which runtimes can reach an authenticated endpoint
+
+**Claude Code can; Codex cannot.** Claude Code resolves its headers by running the
+`otelHeadersHelper` script at run time, so a collector that requires an `authorization` header —
+ClickStack takes a bare one — is reachable with no credential in any file. Codex takes header
+values in `config.toml` only as literals and offers no environment or command indirection for
+them, so the harness writes none; its native export needs an endpoint that accepts this machine
+unauthenticated, and against an authenticating collector every Codex session is rejected.
+
+Name the runtimes the endpoint can actually serve:
+
+```json
+{ "telemetry": { "export": "otlp", "endpoint": "https://collector.example:4318",
+                 "headers_file": "~/.config/agent-harness/otlp-headers",
+                 "native": ["claude-code"] } }
+```
+
+`sync` then leaves the Codex `[otel]` table exactly as it found it — restoring what was there
+before if a previous sync wrote one — and `["codex"]` likewise leaves `~/.claude/settings.json`
+untouched. `true` still means both, which is what an unauthenticated local collector wants.
+
 **Read this before pointing it at a hosted endpoint.** Both runtimes attach identifiers the
 ledger export never sends. Claude Code puts `user.email`, `user.account_uuid`, `user.account_id`,
 `user.id`, `organization.id` and `session.id` on its datapoints; its own switches trim some of
@@ -223,7 +289,8 @@ has no escape the runtimes agree on: it is left off the native labels, named in 
   reported**, in `sync` and in `doctor`. Remove it to let `sync` manage it. A key already holding
   exactly what the harness would write is taken over, since there is nothing to lose.
 - **`"native": false` puts back what each key held before**, and removes the rest. An empty
-  `"env": {}` can remain where the harness created the map; it is inert.
+  `"env": {}` can remain where the harness created the map; it is inert. Dropping one runtime
+  from the list is the same operation for that runtime alone and leaves the other in place.
 - `harness sync --dry-run` prints the pass-through lines only when the key is on.
 
 ## De-duplicating an at-least-once stream
@@ -322,7 +389,9 @@ does not change an existing file's mode.
 **Codex cannot use this backend through `sync`.** `[otel]` takes header values only as literals
 in `config.toml`, so there is no way to give Codex the key without writing it into a
 configuration file — see [Native pass-through](#native-pass-through), which states that gap and
-what it costs. Claude Code's native export is unaffected, and so is the ledger exporter.
+what it costs. Set `"native": ["claude-code"]` so `sync` writes no Codex `[otel]` table against
+a backend that would reject every request it makes. Claude Code's native export is unaffected,
+and so is the ledger exporter.
 
 Native Claude Code export also carries `user.email`, the account and organization ids and the
 session id on every datapoint. On a container bound to localhost that is your own machine
