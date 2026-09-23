@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A qualification round names two capability classes per target rather than one: an execution
+  class, `standard` by default, for the worker that runs the scripted cases and writes the
+  findings, and an assessment class, `strong` by default and a floor rather than a preference,
+  for the reader that assesses the observations. Now that ten of the eleven cases are scripts,
+  running them is reading JSON and writing a file, which is not work the strong tier is needed
+  for; assessing what they observed is, and the published procedure requires a reviewer. Both
+  classes are written into the evidence record and the round record, so the evidence says which
+  class produced an observation and which class read it, and either can be moved per target with
+  `--execution-class TARGET=CLASS`. Two pairs are refused before any client is launched: an
+  assessment class weaker than `strong`, and a cheap execution class that resolves to the
+  assessment class's own model, whether because the adapter table maps both to one identifier or
+  because it maps the cheap class not at all and an unmapped class resolves upward — in either
+  case the worker that produced the evidence would be its only reader. A class an adapter does
+  not map is disclosed in the record rather than guessed at. The resolution reads the adapter's
+  table and not a personal `tiers` override, because a round runs from a frozen clone. The
+  saving is the issue's estimate and not a measurement: 230K–590K output tokens per round, most
+  of it authoring rather than judgement (#338).
 - `docs/spikes/` records the measurements a decision was taken on, starting with the in-run budget
   nudge: whether a running subagent should be told mid-run how its spend compares with its soft
   budget. Measured on one machine's ledger, 2 of 89 budgeted subagent runs overran, the excess was

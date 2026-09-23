@@ -72,7 +72,7 @@ class RecordTests(unittest.TestCase):
             data = self.record()
         self.assertEqual(sorted(data), ["cases", "client", "client_version", "harness_version",
                                         "kind", "observations", "platform", "runtime_version",
-                                        "source_commit"])
+                                        "source_commit", "tier_routing"])
         catalog = MODULE.catalog()
         # A released catalog accepts evidence for its pinned qualification source, not for HEAD.
         source = compatibility.qualification_source(catalog)

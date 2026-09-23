@@ -244,7 +244,9 @@ class ProvisionedRoundTests(unittest.TestCase):
         self.assertRegex(self.provision.BMAD_INSTALLER, r"@\d+\.\d+\.\d+$")
 
     def test_a_target_argv_names_the_frozen_clones_own_runner(self):
-        argv = self.driver.target_argv("/round/clone", CLAUDE, "cheapest", "/round/out.json", True)
+        argv = self.driver.target_argv("/round/clone", CLAUDE, "cheapest", "/round/out.json", True,
+                                       {"execution_class": "standard",
+                                        "assessment_class": "strong"})
         self.assertIn("/round/clone/scripts/native_acceptance.py", argv)
         self.assertIn("--home-confirmed", argv)
 

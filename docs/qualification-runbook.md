@@ -55,6 +55,44 @@ nothing — a round collects every target's defects before any of them is fixed,
 in [releasing](releasing.md#freeze-the-qualification-branch) — and it exits non-zero unless every
 case of every target passed.
 
+## Which class executes, and which class reads
+
+A round carries two capability classes per target, not one. The **execution class**, `standard`
+by default, is the worker that runs the scripted cases, reads their JSON and writes the findings
+file. The **assessment class**, `strong` by default and a floor rather than a preference, is the
+reader that assesses the round's observations, which [what is supported](compatibility.md)
+requires of a reviewer. Both are written into the evidence record as `tier_routing` and into the
+round's `round.json`, so the record says which class produced an observation and which class read
+it.
+
+```sh
+python3 scripts/qualification_round.py --round ../round-v<version> \
+    --execution-class light --execution-class codex-cli-macos=standard
+```
+
+A bare class moves every target; `TARGET=CLASS` moves the one it names, so a Codex target can be
+executed at a different class from a Claude Code one in the same round. Later arguments win.
+
+The classes are resolved through the target runtime's `adapters/<runtime>/bindings.json`, the
+same table `harness tiers` checks; a personal `tiers.<runtime>` override in a user configuration
+is not applied, because a round runs from a frozen clone. Two refusals, both before any client is
+launched:
+
+- An assessment class weaker than `strong`. A cheaper tier may execute the cases; it does not
+  assess them.
+- A cheap execution class that resolves to the assessment class's own model — because the
+  adapter maps both classes to one identifier, or because it does not map the cheap class at all
+  and an unmapped class resolves upward. The executor would then be the only reader of the
+  evidence it produced.
+
+A class an adapter does not map at all is disclosed rather than guessed at: the worker inherits
+the session model and the record carries the note saying so.
+
+The saving this buys is the issue's estimate, not a measurement: workers ran 0.7×–1.8× their 82K
+output budget, so four targets cost 230K–590K output tokens per round, most of it authoring
+rather than judgement (#338). It is worth nothing without the scripted cases (#336): dropping the
+class on a worker that is still hand-driving the cases buys worse observations and more retries.
+
 ## Client surfaces
 
 Each surface names the environment variable that moves its whole configuration home, which is

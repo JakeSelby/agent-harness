@@ -64,7 +64,7 @@ class ProgressTests(unittest.TestCase):
         data = MODULE.build_record(MODULE.progress_lines(self.progress))
         self.assertEqual(sorted(data), ["cases", "client", "client_version", "harness_version",
                                         "kind", "observations", "platform", "runtime_version",
-                                        "source_commit"])
+                                        "source_commit", "tier_routing"])
         self.assertEqual(data["cases"], {CASES[0]: "passed"})
         self.assertEqual(data["observations"], ["A native session did " + CASES[0] + "."])
 

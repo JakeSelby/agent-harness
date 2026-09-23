@@ -31,6 +31,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from harness_core import qualification  # noqa: E402  the round's class routing, one definition
+
 VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
 TURN_TIMEOUT = 300
@@ -1559,7 +1562,7 @@ def probe(client, name, model, keep, confirmed=False):
 
 
 HEADER_KEYS = ("kind", "client", "harness_version", "runtime_version", "client_version",
-               "platform", "source_commit")
+               "platform", "source_commit", "tier_routing")
 
 
 def progress_path(client, out):
@@ -1629,10 +1632,23 @@ def selected(names):
     return chosen
 
 
-def plan(client, names, model, confirmed=False):
+def routing(client, execution=None, assessment=None):
+    """This target's class routing, refusing a pair that would make the executor its own reader."""
+    try:
+        return qualification.resolve(ROOT, CLIENTS[client]["runtime"],
+                                     execution or qualification.EXECUTION_DEFAULT,
+                                     assessment or qualification.ASSESSMENT_DEFAULT)
+    except ValueError as error:
+        raise SystemExit(str(error))
+
+
+def plan(client, names, model, confirmed=False, tier_routing=None):
     spec = CLIENTS[client]
+    tier_routing = tier_routing or routing(client)
     lines = ["plan: %s, model %s, one disposable %s per case, no client run"
-             % (client, model, spec["home_var"])]
+             % (client, model, spec["home_var"]),
+             "  tiers: " + qualification.describe(tier_routing)]
+    lines += ["  note: " + note for note in tier_routing.get("notes", [])]
     caveat = unobserved_note(client, confirmed)
     if caveat:
         lines.append("  note: " + caveat)
@@ -1642,8 +1658,10 @@ def plan(client, names, model, confirmed=False):
     return "\n".join(lines)
 
 
-def record(client, names, model, keep, runner=probe, progress=None, confirmed=False):
+def record(client, names, model, keep, runner=probe, progress=None, confirmed=False,
+           tier_routing=None):
     spec = CLIENTS[client]
+    tier_routing = tier_routing or routing(client)
     if git("status", "--porcelain"):
         raise SystemExit("the checkout must be clean: native evidence names a source commit")
     version = client_version(spec["command"])
@@ -1655,6 +1673,9 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=Fa
         "client_version": version,
         "platform": spec["platform"],
         "source_commit": git("rev-parse", "HEAD"),
+        # Which class executed these cases and which class must read what they observed. Kept in
+        # the per-case header so a resumed round cannot union lines two classes produced.
+        "tier_routing": tier_routing,
     }
     results = []
     for name in names:
@@ -1683,17 +1704,22 @@ def main(argv=None):
                         help="build the record from the durable log alone, running no client")
     parser.add_argument("--home-confirmed", action="store_true",
                         help="this surface's configuration home was compared against a hand run")
+    parser.add_argument("--execution-class", default=qualification.EXECUTION_DEFAULT,
+                        help="the capability class of the worker running the cases")
+    parser.add_argument("--assessment-class", default=qualification.ASSESSMENT_DEFAULT,
+                        help="the capability class of the reader assessing the observations")
     args = parser.parse_args(argv)
     names = selected(args.cases)
+    tier_routing = routing(args.client, args.execution_class, args.assessment_class)
     if args.dry_plan:
-        print(plan(args.client, names, args.model, args.home_confirmed))
+        print(plan(args.client, names, args.model, args.home_confirmed, tier_routing))
         return 0
     progress = args.progress or progress_path(args.client, args.out)
     if args.from_progress:
         data = build_record(progress_lines(progress))
     else:
         data = record(args.client, names, args.model, args.keep_home, progress=progress,
-                      confirmed=args.home_confirmed)
+                      confirmed=args.home_confirmed, tier_routing=tier_routing)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.write_text(rendered)
