@@ -79,11 +79,11 @@ contract are in `docs/bmad-governance.md`, which every BMad workflow loads.
   added or changed user-visible behaviour is a minor; `docs/compatibility-policy.md` decides a
   major. What a release must carry before it is tagged is the "Source and qualification" section
   of `docs/releasing.md`, which also holds the milestone close-and-open commands.
-- **After every merge run `/land`**, and after every tag work the seven surfaces below.
+- **After every merge run `/land`**, and after every tag work the five surfaces below.
 
 ## A release is not done at the tag
 
-A release has seven surfaces, and each one goes stale on its own. Work them in this order and
+A release has five surfaces, and each one goes stale on its own. Work them in this order and
 report each as done, skipped or unverified — never infer one from another. The procedure, the
 commands and the rollback are in `docs/releasing.md`; this list exists so none is forgotten.
 
@@ -95,19 +95,13 @@ commands and the rollback are in `docs/releasing.md`; this list exists so none i
 3. **Tag and GitHub release** — `scripts/release_preflight.py` clean in a fresh clone, then the
    annotated `v<version>` tag; confirm the release workflow ran, the release is published and
    `scripts/advance_stable.py --check` finds `stable` at the tag.
-4. **Reference site** — verify only. A separate repository vendors this one by tag and repins
-   itself hourly through its own workflow. Confirm the repin run, the deploy job that followed it,
-   and that the live `/manifest.json` names the version and the commit.
-5. **Personal-site card** — verify only. The card links the latest release rather than naming a
-   version, so a release needs no card change. Confirm both placements still resolve.
-6. **GitHub About** — description, topics and homepage must equal `product.json`. Run
+4. **GitHub About** — description, topics and homepage must equal `product.json`. Run
    `python3 scripts/sync_about.py --check` every release even when nothing changed, and say so.
-7. **Development resumes** — the first runtime-source change after a release makes the catalog
+5. **Development resumes** — the first runtime-source change after a release makes the catalog
    report drift by design; the next version needs a candidate opened before it can be qualified.
 
-No step here deploys by hand: steps 4 and 5 verify deployments the other repositories run
-themselves. Step 6 with `--apply` changes public repository metadata, so it needs its own
-explicit approval each time it is run.
+Step 4 with `--apply` changes public repository metadata, so it needs its own explicit approval
+each time it is run.
 
 ## Layout
 

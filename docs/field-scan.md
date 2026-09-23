@@ -1,6 +1,6 @@
 # Field scan: what the configuration-compiler field does, and where this harness sits
 
-**Read on 2026-09-21. Re-check by 2026-12-01.** One person's reading of a fast-moving field on one
+**Read on 2026-09-21, amended on 2026-09-23 (§4 and §6). Re-check by 2026-12-01.** One person's reading of a fast-moving field on one
 date. Release cadence among the projects below runs daily to weekly, so treat every "ships" and
 "does not ship" here as a dated observation, not a standing fact. The method, the sources and the
 raw claim ledger are in the research run under
@@ -83,13 +83,29 @@ For most people, most of the time:
   block) that fixes this leak" — to every insight. It runs the other direction from this
   repository (leak → suggested rule, rather than rule → did it fire), and it is credited here because
   the direction is the only difference.
+- **claude-md-doctor** ([agent-clinic/claude-md-doctor](https://github.com/agent-clinic/claude-md-doctor),
+  read 2026-09-23) measures what this repository measures, from the same Claude Code transcripts. At
+  each checkup the model decomposes CLAUDE.md into per-rule regex matchers, a standard-library script
+  replays them over the session history, and the model sample-verifies every fire before it counts.
+  The report gives each rule its opportunities, a compliance figure and a verdict, then sorts
+  violations by cause and proposes a hook for the rules worth enforcing. Rule to "did it fire" is the
+  same direction as this repository, and for one person's own CLAUDE.md it answers today what
+  `harness usage --rules` answers only for rules that carry a detector.
+- **RuleReceipt** ([rulereceipt/rulereceipt](https://github.com/rulereceipt/rulereceipt), read
+  2026-09-23) checks whether a Claude Code session followed its CLAUDE.md or AGENTS.md, with
+  deterministic checks over git commands and file operations and a quoted line of evidence for each
+  result. Rules that need judgment report UNCLEAR unless the user opts into a model grader with
+  their own key. It also writes a receipt file for CI and ships a pre-tool guard. It is
+  source-available rather than open source.
 - **superpowers** — sixteen per-runtime install sections and no breadth claim in its hero line at
   all, which is the opposite of the field's usual stretch.
 
 ## 5. What this repository took from the field
 
 - The **bounded uniqueness claim** in §6 exists because the eval and telemetry landscape was
-  checked rather than asserted; the unbounded "nobody measures" was false, and Burnd is why.
+  checked rather than asserted; the unbounded "nobody measures" was false, and Burnd is why. The
+  2026-09-23 amendment narrowed it again, because claude-md-doctor and RuleReceipt now bind a check
+  to each rule and report whether it was followed.
 - A **generated compatibility matrix** with a degradation table, on wshobson's model, replaces two
   hand-maintained authorities that had drifted apart (`compatibility/catalog.json` marked clients
   qualified while `adapters/*/capabilities.json` marked every stance unqualified).
@@ -109,9 +125,12 @@ Stated as narrowly as the evidence allows. Each line names the file that impleme
   deterministic detector over the agent's own transcript or carries a one-line reason nothing in a
   transcript can decide it; `check_detectors` in `bin/harness` fails the commit otherwise.
   `harness usage --rules` reports hit rate per rule, grouped by repository and by which preference
-  variant was selected. This is the only project I know of that binds a detector to each rule file,
-  fails lint on an unmeasured rule, and reports per-rule hit rate by repository and by preference
-  variant. It also exports the same ledger over OTLP to the observability stack you already run —
+  variant was selected. Binding a check to each rule and reporting whether it was followed is no
+  longer unique: claude-md-doctor and RuleReceipt both do it on Claude Code transcripts (§4). What I
+  did not find elsewhere, as of 2026-09-23, is the rest: a lint that refuses an unmeasured rule,
+  detectors committed as data and scored against a labelled corpus with a precision floor in CI,
+  per-rule rates grouped by preference variant, and the same measurement over Codex as well as
+  Claude Code. It also exports the same ledger over OTLP to the observability stack you already run —
   Langfuse, Phoenix and Opik all accept it — adding the one thing those platforms cannot see, which
   rule fired.
 - **An ownership journal for the files it manages.** `lib/harness_core/reconcile.py` records prior

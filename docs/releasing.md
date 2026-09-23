@@ -1,10 +1,12 @@
 # Coordinate a harness release and its public surfaces
 
-A release is a verified source tag plus reference and personal-site deployments identifying that
-release. A successful build is not native qualification. `scripts/release_preflight.py` refuses
-publication until every required client in the compatibility catalog carries native evidence.
-Every release follows the [compatibility policy](compatibility-policy.md); generated notes link it
-and state the migration review or exact versioned migration action.
+A release is a verified source tag and the GitHub release published from it. A successful build is
+not native qualification. `scripts/release_preflight.py` refuses publication until every required
+client in the compatibility catalog carries native evidence. Every release follows the
+[compatibility policy](compatibility-policy.md); generated notes link it and state the migration
+review or exact versioned migration action. The reference site at
+[agent-harness.jakeselby.com](https://agent-harness.jakeselby.com) follows releases from its own
+repository; nothing in this procedure deploys it.
 
 ## When a release is proposed, and what it is numbered
 
@@ -145,25 +147,10 @@ their defects; a fix landed between targets invalidates the targets already obse
 re-run of each. Land the collected fixes together on `main` afterwards, cut a new freeze commit,
 and re-qualify once.
 
-## Reference and personal site
-
-8. The reference site vendors this repository by tag and repins itself hourly through its own
-   workflow, so a release needs no hand repin. Confirm the repin run, the deploy job that followed
-   it, and that the live `/manifest.json` names both the version and the source commit. A skipped
-   deployment job is not a deployment; record the workflow run and distribution identity. When the
-   repin has to be made by hand, pin `vendor/agent-harness` to that exact tag, commit the gitlink,
-   run the site's CI commands (`npm ci`, `npm test`, `npm run build`, `node scripts/smoke.mjs`),
-   and from the harness checkout run
-   `python3 scripts/release_preflight.py --reference-repo <reference-checkout>`.
-9. The personal-site card links the latest release rather than naming a version, so a release needs
-   no card change. Confirm both placements still resolve. The shared card links to reference
-   compatibility facts and does not maintain its own inventory count or version claim.
-10. Set GitHub About description, topics and homepage from `product.json` (see below).
-   Verify production HTML, SEO/social metadata, compatibility statuses, search results, deep links,
-   install instructions, the exact release manifest and both personal-site card placements.
-   Record HTTP statuses and rendered inspection results; mark any unavailable check unverified.
-
 ## GitHub About
+
+8. Bring GitHub About's description, topics and homepage to `product.json` with the commands
+   below. Run the check every release, even when nothing changed, and record its result.
 
 `product.json` is the source of the landing copy, the README grid and the About panel.
 `scripts/sync_about.py` compares its `github_description` and `topics` with
@@ -189,14 +176,12 @@ then `git merge --ff-only origin/main`); a stale checkout once reverted the Abou
 
 ## Rollback
 
-Keep the previous harness tag, both site commits, reference gitlink and deployed artifact identity
-before publishing. A regression gets a revert PR and a new harness release; do not retarget the
-old tag, and leave `stable` where it is until that release advances it. Restore the reference
-site's previous immutable pin and deploy its rebuilt artifact;
-restore the personal site's previous card commit through its normal pipeline. Reconcile local
-configuration through its ownership journal, preserving conflicts and adopted backups. Verify
-live pages and release identity again. Infrastructure rollback is separate and must not be inferred
-from a static-content rollback.
+Keep the previous harness tag and the release artifact's identity before publishing. A regression
+gets a revert PR and a new harness release; do not retarget the old tag, and leave `stable` where it
+is until that release advances it. Restore GitHub About by running `scripts/sync_about.py --apply`
+from a checkout of the previous tag, with the owner's approval. Reconcile local configuration
+through its ownership journal, preserving conflicts and adopted backups. Verify release identity
+again.
 
 ## Release status
 
@@ -205,6 +190,4 @@ contract: it is admitted once a scripted qualification round agrees with a hand-
 0.11.1 remains the last release qualifying it. The VS Code surfaces and Codex Desktop are unqualified previews. The architecture-viewer
 integration is also a preview for a separately installed implementation, with no bundled viewer
 or distribution-clearance claim. The release is identified by the exact commit carrying the
-immutable `v0.13.0` tag. Reference and
-personal-site deployment status remains independently verifiable; never infer a deployment from
-a source merge or bypass the release preflight.
+immutable `v0.13.0` tag. Never bypass the release preflight.

@@ -131,24 +131,33 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    spawn a subagent that names no role, and confirm from the subagent's own transcript that it
    ran as the variant's default band worker at that row's model and effort, that its brief ends
    with the budget sentence, that the usage feed reported its spend against that budget, and that
-   `harness usage --rescan --by role` records the routed row. Confirm that a session already
-   running before the workers were installed is not rerouted and that its spawn still succeeds.
-   Then select a variant with the feed off, no default band and no budgets, and confirm that none
+   `harness usage --rescan --by role` records the routed row. Confirm that a session started
+   before the workers were installed keeps them out of its session record and that its spawn
+   still succeeds. A headless client runs each turn as its own process, so such a session is
+   continued by resuming it, and the resumed process loads the workers from disk and announces
+   them; its spawn may then route to the announced band worker, but never to one that neither its
+   record nor that announcement named. Then select a variant with the feed off, no default band and no budgets, and confirm that none
    of this occurs. On a runtime that does not route native spawns, verify the posture through an
    isolated role worker's model and effort and the budget sentence in a named role's brief, and
    record the feed as not applicable with that reason.
 9. Run a review layer of a framework named by a descriptor in `policy/integrations/` as a native
-   subagent that names no role, with the brief reworded as the client writes it, and confirm the
-   spawn is refused and the refusal names the framework, the layer and `harness role run <role>`.
-   Confirm the same layer run the routed way writes isolated worker state and returns findings,
-   and that a session with no worker state written is a failed case rather than a passed review.
-   Then the false positive: spawn ordinary work whose brief mentions review, a diff or findings
-   in passing, and one that edits the framework's own input roots, and confirm both run.
+   subagent that names no role, with the brief carrying the framework's own spawn text as its
+   workflow hands it to the client, and confirm the spawn is refused and the refusal names the
+   framework, the layer and `harness role run <role>`. Recognition is lexical: a brief the client
+   rewrites in its own words, keeping the layer's prompt file but none of the descriptor's phrases,
+   is not refused. Run that rewording as well and record what it did, as the observed limit of the
+   claim rather than as a pass or a failure. Confirm the same layer run the routed way writes
+   isolated worker state and returns findings, and that a session with no worker state written is a
+   failed case rather than a passed review. Then the false positive: spawn ordinary work whose
+   brief mentions review, a diff or findings in passing, and one that edits the framework's own
+   input roots, and confirm both run.
 
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
 `source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, `cases` and
 `invalidation_scope`, with the case values `passed`, `failed`, or
-`unverified`. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
+`unverified`. Each case observation opens with its case name and a colon, one per case in
+the record's sorted case order, so pairing never depends on position; a round-level note the
+round runner appends carries no case prefix. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
 client or harness version. Its full source commit must be an ancestor of the release with no
 subsequent change under the paths that invalidate this target. Set exact runtime/client versions before changing status to qualified.
 Each linked record must match the catalog's exact runtime version, client version and platform.

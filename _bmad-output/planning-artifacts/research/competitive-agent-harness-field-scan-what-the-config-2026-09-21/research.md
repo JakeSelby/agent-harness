@@ -171,3 +171,21 @@ Computed by `recon_kit.py staleness` from the claim ledger on 2026-09-21, with t
 - **2027-02-01 to 2027-03-01:** the trajectory and demand figures — commit counts, authorship, reacted issues, npm lag.
 
 **Earliest re-check: now, for the two issue quotes; otherwise 2026-12-01.** That date is this document's expiry for the field-scan page derived from it; a Refresh run on the same folder is the work order.
+
+## Amendment, 2026-09-23: two projects that measure rule compliance
+
+Added after the original run; the findings above are unchanged and dated 2026-09-21. A scan for
+ruleprobe's own planning on 2026-09-23 found two projects that the 2026-09-21 run did not cover,
+both measuring per-rule compliance from Claude Code transcripts. Each was read from its primary
+source on that date; digests are beside this file.
+
+- **claude-md-doctor**: the model writes per-rule matchers at each checkup, a deterministic script
+  replays them, and the model sample-verifies fires; per-rule opportunities, compliance and verdict.
+  MIT. [digest](digests/claude-md-doctor-2026-09-23.md)
+- **RuleReceipt**: deterministic checks over git commands and file operations, UNCLEAR otherwise
+  unless an opt-in model grader runs; source-available licence.
+  [digest](digests/rulereceipt-2026-09-23.md)
+
+Consequence: the §6 uniqueness claim in `docs/field-scan.md` is narrowed to the lint gate, the
+labelled corpus with a CI floor, per-variant grouping and the second runtime.
+

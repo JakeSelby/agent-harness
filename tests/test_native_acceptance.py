@@ -97,7 +97,7 @@ class RecordTests(unittest.TestCase):
         with patch.object(MODULE, "CASES", without):
             data = self.record()
         self.assertEqual(data["cases"]["migration-uninstall"], "unverified")
-        self.assertIn(MODULE.NOT_AUTOMATED, data["observations"])
+        self.assertIn("migration-uninstall: " + MODULE.NOT_AUTOMATED, data["observations"])
 
     def test_a_dirty_checkout_is_refused_before_any_client_runs(self):
         with patch.object(MODULE, "git", return_value=" M bin/harness"):

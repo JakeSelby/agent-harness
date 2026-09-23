@@ -309,6 +309,13 @@ development_status:
   ah-b076-the-runner-stamps-a-linux-record-from-the-target: ready-for-dev
   ah-b077-spawn-confinement-s-brief-never-makes-the-model: ready-for-dev
   ah-b078-a-round-without-model-runs-the-runner-default: ready-for-dev
+  ah-b079-a-hook-you-add-beside-the-harness-s-hooks-makes: ready-for-dev
+  ah-b080-a-native-evidence-record-pairs-its-observations: ready-for-dev
+  ah-b081-role-confinement-never-has-a-read-only-role: ready-for-dev
+  ah-b082-hook-composition-proves-composition-from: ready-for-dev
+  ah-b083-stance-switch-and-custom-stance-switch-only: ready-for-dev
+  ah-b084-spawn-confinement-checks-less-than-step-9-asks: ready-for-dev
+  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
@@ -344,6 +351,7 @@ development_status:
   ah-c047-reserve-bmad-ids-for-the-three-unmapped-v0-13-0: done
   ah-c051-docs-changelog-restore-five-unreleased-entries: done
   ah-c064-0-13-0-requires-only-the-two-claude-code-cli: ready-for-dev
+  ah-c065-keep-the-maintainer-s-own-sites-out-of-the: ready-for-dev
   ah-c066-release-0-13-0-fold-the-changelog-record-the: ready-for-dev
   ah-d001-docs-bmad-decide-the-builder-routing-follow-up: done
   ah-d003-decide-whether-the-credential-probe-names-the: done
@@ -432,6 +440,7 @@ development_status:
   ah-s223-spawn-confinement-observes-the-refusal-from-the: ready-for-dev
   ah-s224-scripted-cases-drive-the-cli-with-the-contract: ready-for-dev
   ah-s225-round-2-unverified-cases-observe-what-happened: ready-for-dev
+  ah-s226-docs-field-scan-credit-claude-md-doctor-and: ready-for-dev
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-t001-give-each-replay-arm-its-own-profile-and: done
   ah-t002-record-the-fields-a-cost-replay-regression-needs: done
@@ -441,3 +450,4 @@ development_status:
   ah-t006-replay-task-set-sits-below-the-harness-s-break: done
   ah-t007-replay-a-pinned-older-tag-into-a-temporary: done
   ah-t008-rule-recognize-spawn-a-new-chat-as-a-cloud-run: done
+  ah-t026-compatibility-step-8-says-a-resumed-session-is: ready-for-dev

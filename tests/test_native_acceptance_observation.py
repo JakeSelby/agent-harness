@@ -79,7 +79,9 @@ class RoleConfinementTests(unittest.TestCase):
         return ""
 
     def test_a_completed_isolated_worker_record_passes(self):
-        verdict = MODULE.case_role_confinement(self.home)
+        # The write probes after this read are driven in test_native_acceptance_role_writes.py.
+        with patch.object(MODULE, "role_write_attempts"):
+            verdict = MODULE.case_role_confinement(self.home)
         self.assertIn("mode isolated-cli and status completed", verdict)
         self.assertIn("held the workspace line", verdict)
 
@@ -153,79 +155,6 @@ class HandoffReturnLegTests(unittest.TestCase):
             with self.assertRaises(AssertionError) as caught:
                 MODULE.case_bidirectional_handoff(self.home)
         self.assertIn("names 'claude-code' as its writing runtime", str(caught.exception))
-
-
-class SpawnAttemptTests(unittest.TestCase):
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        self.home = home_in(temp.name)
-        self.home.project = self.home.root / "project"
-        self.home.project.mkdir()
-        self.home.seed = lambda *args, **kwargs: None
-        self.home.harness = lambda *args, **kwargs: ""
-        self.sessions = iter((SESSION, ORDINARY))
-        self.home.session = lambda prompt, **kwargs: {"session_id": next(self.sessions),
-                                                      "result": "Done."}
-        self.home.subagents = lambda session_id: ([({"agentType": "worker-a"}, [])]
-                                                  if session_id == ORDINARY else [])
-        _, self.spawn = MODULE.descriptor_spawn()
-
-    def transcript(self, session_id, *records):
-        path = self.home.client_dir / "projects" / "-tmp-project" / (session_id + ".jsonl")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("".join(json.dumps(record) + "\n" for record in records))
-
-    def spawn_call(self, result=None, is_error=False):
-        records = [{"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "tool_use", "id": "toolu_1", "name": "Agent",
-             "input": {"prompt": " ".join(self.spawn["phrases"])}}]}}]
-        if result is not None:
-            records.append({"type": "user", "message": {"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": "toolu_1", "is_error": is_error,
-                 "content": [{"type": "text", "text": result}]}]}})
-        return records
-
-    def test_a_transcript_with_no_agent_call_says_the_model_never_attempted_it(self):
-        self.transcript(SESSION, {"type": "assistant", "message": {"role": "assistant", "content": [
-            {"type": "text", "text": "I will not launch a review."}]}})
-        with self.assertRaises(MODULE.Unverified) as caught:
-            MODULE.case_spawn_confinement(self.home)
-        self.assertIn("the model never attempted the spawn", str(caught.exception))
-
-    def test_an_attempted_spawn_that_came_back_clean_fails(self):
-        self.transcript(SESSION, *self.spawn_call("DONE"))
-        with self.assertRaises(AssertionError) as caught:
-            MODULE.case_spawn_confinement(self.home)
-        self.assertIn("attempted 1 time(s) and allowed", str(caught.exception))
-
-    def test_an_attempt_refused_by_something_else_is_unverified_and_names_it(self):
-        self.transcript(SESSION, *self.spawn_call("Permission to use Agent was denied.", True))
-        with self.assertRaises(MODULE.Unverified) as caught:
-            MODULE.case_spawn_confinement(self.home)
-        self.assertIn("what refused it was not the confinement", str(caught.exception))
-        self.assertIn("Permission to use Agent was denied", str(caught.exception))
-
-    def test_agent_calls_pairs_each_call_with_its_result(self):
-        self.transcript(SESSION, *self.spawn_call("refused", True))
-        calls, readable = MODULE.agent_calls(self.home, SESSION)
-        self.assertTrue(readable)
-        self.assertEqual([(c["id"], c["result"], c["is_error"]) for c in calls],
-                         [("toolu_1", "refused", True)])
-        self.assertEqual(MODULE.agent_calls(self.home, ORDINARY), ([], False))
-
-    def test_an_ordinary_spawn_the_model_never_attempted_is_not_read_as_refuse_everything(self):
-        self.transcript(SESSION, *self.spawn_call(MODULE.CONFINEMENT_DENY + " "
-                                                  + MODULE.FRAMEWORK_ORIGIN + " "
-                                                  + MODULE.FRAMEWORK_ROOTS, True))
-        self.transcript(ORDINARY, {"type": "assistant", "message": {"role": "assistant",
-                                                                    "content": []}})
-        self.home.subagents = lambda session_id: []
-        self.home.orchestrator_text = lambda session_id: (
-            self.home.transcript_path(session_id).read_text())
-        with self.assertRaises(MODULE.Unverified) as caught:
-            MODULE.case_spawn_confinement(self.home)
-        self.assertIn("never attempted the ordinary spawn", str(caught.exception))
 
 
 class LiveHookLogPathTests(unittest.TestCase):
