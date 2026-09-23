@@ -8,12 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- The Remote Control sessions read asks for newest-first and checks that it got it. The request
-  now names a descending sort by `updated_at`, and a page that comes back in another order is
-  refused like a failed call, because under the fifty-row cap the rows an out-of-order page drops
-  are unknown rather than merely old — the session a host lost minutes ago is exactly the one
-  server order would hide. `harness remote-control status` and `doctor` say so in their
-  not-checked line (#526).
+- The Remote Control sessions read checks that its capped page arrived newest-first. The endpoint
+  takes no sort parameter, and its page is ordered by `last_event_at` rather than `updated_at`, so
+  the order is asserted on arrival and a page that is not descending is refused: under the
+  fifty-row cap the rows such a page dropped are unknown rather than merely old, and the session a
+  host lost minutes ago is exactly the one another order would hide. `harness remote-control
+  status` prints `not checked (page order unknown)` for a refusal, which no longer reads like an
+  account with nothing lost, and both it and `doctor` now say `in the newest 50` when the account
+  has more sessions than one page (#526).
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed
   family used to inherit that family's rate. Inheritance under-bills a premium variant by a
