@@ -34,6 +34,66 @@ All notable changes to this project are documented here. The format follows
   per target, because one surface agreeing with a hand run says nothing about another, and on an
   unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
   what is in question there is the reading, not the harness (#336).
+- `harness decisions eval` replays the labelled rows of the decision log through a question
+  pack and reports how closely the judgment tracked them, so a provider can be measured before
+  it is trusted. The evaluated set is the real log — the input a hook judged, the deterministic
+  answer it gave and the outcome the session later showed — replayed in `shadow` mode against a
+  recorded fixture, so an ordinary run opens no socket, writes no ledger row and needs no
+  credential. Question packs are versioned: a pack carries an id, a `major.minor.patch` version
+  and the hash of its content, is frozen at construction so nothing holding one can rewrite a
+  criterion between the hash being taken and the request being built, and the provider puts the
+  id and version on every ledger row beside the request hash. The dev and held-out split is
+  seeded by the hash of the decision point and the capped input a request actually carries,
+  rather than by `random` or by the row's hash of the uncapped text, so a re-run reproduces it,
+  new rows do not reshuffle the old ones, and one identical request cannot sit on both sides —
+  which is refused outright rather than reported. Thresholds are fitted per decision point on
+  the dev split and only the held-out block is evidence; there is no global default, because a
+  cutoff optimal on one workload does not transfer, and a point with no labelled dev case is
+  reported unfitted rather than given the shipped 0.8 as though it had been measured. The fit is
+  scored under the provider's own semantics — below the threshold the deterministic answer is
+  what is compared against the label, since that is what the harness would have done, and
+  scoring an abstention as a miss would drive every fit to the lowest confidence in the set. The
+  report names accuracy, the deterministic answer's own accuracy as the baseline to beat, how
+  many cases the provider could have changed at all, the confusion by label, agreement with the
+  deterministic answer, a calibration table over the confidence with its expected calibration
+  error and a bootstrap interval drawn from hashed indices, the flip rate over repeated passes,
+  tokens, cost per 1,000 decisions where a price was given, the returned model ids, and an
+  `unusable` block in which an unavailable call, an error and an abstention are each counted and
+  none is ever a pass. It carries no clock, no absolute path and no input text, so two runs over
+  one log are byte-identical and the file can be sent on. What the labels do not prove is in the report itself: `grade-bash`
+  records a row only where the harness asked or denied, `ran` is a user approving something they
+  were asked about rather than proof the prompt was unneeded, and `not_run` does not tell a
+  refusal from an interrupted turn. `--live` is the opt-in path and needs an explicit request
+  ceiling; `--budget-usd` needs a price beside it, because none is published here and a dollar
+  ceiling nobody can convert is not a ceiling; `--replay` and `--live` together are refused
+  rather than silently ordered; and a live run under an empty `governance.jev.state_fields` is
+  refused as pointless, since every request would then differ in nothing (#138).
+- The `jev` decision provider is opt-in per decision point, and sends only what a configuration
+  lists. `governance.jev.mode` sets a default and `governance.jev.modes.<point>` overrides it for
+  one of the points the decision ledger already names: `off` calls nothing, `shadow` calls and
+  writes the ledger row where neither the model nor the user sees it, `advise` adds the judgment
+  and says what acting on it would have done, and `act` may turn an `allow` into an `ask` and
+  nothing else. Every mode defaults to `off`, so a configuration written before this existed
+  makes no request, and an unknown mode, decision point or field is refused at
+  `harness config set` rather than at the first call. Two controls sit outside the modes:
+  `~/.local/state/agent-harness/jev-disabled` disables every call while it exists, read per
+  decision so the switch needs no restart or configuration change, and the allowlist
+  `governance.jev.state_fields` is empty by default and covers `command` and `summary` alone:
+  a file path, a prompt, an environment value, tool output or assistant prose has no field to go in
+  and is never built into a request. A listed field whose text matches one of the shared secret
+  shapes is dropped whole rather than masked, and free text is withheld entirely when that
+  pattern list cannot be loaded; redaction recognises the shapes it knows, which is why the
+  allowlist is two fields rather than a free vocabulary. The request timeout defaults to two
+  seconds inside the hook budget, and a request and token ceiling bound the session rather than
+  the process: a hook is a new process per event, so the counters are kept in the state directory
+  keyed by session id under the existing lock, and a spend file that cannot be read or written
+  leaves the in-process count standing rather than failing a decision. Each call writes one
+  ledger row carrying the mode, the judgment label, the severity level, the deterministic outcome
+  and the outcome acting on it would have reached, so a `shadow` answer can be compared against
+  the decision it did not change; labels only, never the state. Every failure path
+  still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
+  the allowlist, where the kill switch lives and whether a credential variable is set — by name,
+  never its value (#137).
 - One Bash command in twenty that the harness allows is now kept in the decision log as a
   sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
   the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
@@ -189,6 +249,7 @@ All notable changes to this project are documented here. The format follows
   dollars. A run whose CLI output carries no per-turn cache figures, or any one of whose turns
   reports its usage without them, is `null`, never zero, since zero is a run that held its whole
   prefix (#497).
+
 ### Changed
 
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
@@ -219,6 +280,30 @@ All notable changes to this project are documented here. The format follows
   the tests' fixtures, so the suite still launches no client, and `docs/releasing.md` records the
   comparison against a hand run that the first live round owes before this verdict is trusted
   (#404).
+- A `jev` decision provider answers the `decide`/`record`/`learn` contract over the network, in
+  the standard library alone, because the vendor SDK needs Python 3.10 and five packages where
+  this repository's floor is 3.9. It validates a question pack of `choice`, `boolean` and `score`
+  answers before anything is sent, refusing a `choice` question that offers no explicit `unknown`
+  option: the service cannot abstain, so a pack without one leaves a model that cannot answer no
+  way to say so but to guess. A request is bounded at 64k tokens, and its state plus the longest
+  question at 32k; a response that is malformed, incomplete or carries a field nobody asked for is
+  an error and never a judgment with the bad parts dropped; a budget of requests and tokens is
+  checked before each call and charged after it. A judgment may turn an `allow` into an `ask` and
+  may never widen a decision, and every path with no usable answer — no key, a timeout, an
+  exhausted budget, an unparseable body, an unexpected exception — returns the deterministic
+  provider's decision unchanged with the reason in `rule_matches`. Each call records the status,
+  the requested and returned model ids, the pack hash, the request hash, the usage and the latency
+  to the decision ledger, and never the state. Answers are not deterministic across identical
+  requests, so nothing here promises otherwise. The endpoint must be `https` and the opener holds
+  no handler for any other scheme, because a bearer key goes out with every request; a request is
+  charged to its budget as it is sent rather than when it succeeds, so a refusing endpoint cannot
+  be retried without limit; and `harness decide` suppresses the ledger row, because a reporting
+  command changes nothing. The client is inert unless a caller constructs it with `live=True`; the
+  opt-in configuration, per-decision-point modes and the sentinel file are #137. The endpoint, the
+  default model id, the token ceilings, the response shape and the HTTP status mapping are taken
+  from the vendor's documentation and have not been verified against the live service from this
+  repository, which is what the one opt-in live request in the acceptance criteria is for (#136).
+
 - The compatibility matrix carries a `tier restriction` row saying, per client surface, whether
   the delegation stance's model-tier ceiling is enforced, advisory or absent, and names the file
   behind each state. It is derived from a `tier_restriction` entry in

@@ -218,6 +218,11 @@
           "name": "Autonomy stances",
           "line": "Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.",
           "doc": "primitives/stances/autonomy"
+        },
+        {
+          "name": "Judgment stays local by default",
+          "line": "An external judgment provider is off at every decision point until you turn it on, sends only the fields you list, and one file switches every call off.",
+          "doc": "docs/runtime-controls.md"
         }
       ]
     }
