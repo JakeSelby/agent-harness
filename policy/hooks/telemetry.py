@@ -44,7 +44,7 @@ SEVERITY_NUMBER = 9  # INFO, per the OTLP logs data model.
 # `native` is validated here and used by `harness sync`, never by this exporter: runtime
 # pass-through writes a runtime's own telemetry settings and sends nothing itself.
 KNOWN_KEYS = ("export", "endpoint", "headers_env", "headers_file", "labels", "native",
-              "decisions")
+              "decisions", "completion_claim")
 
 # The runtimes native pass-through can configure. `native` is `true` for all of them, `false`
 # for none, or the list of the ones it names: Codex takes header values only as literals in
@@ -118,9 +118,13 @@ def settings(cfg=None, path=None):
     decisions = block.get("decisions", True)
     if not isinstance(decisions, bool):
         raise ValueError("telemetry.decisions must be true or false; got " + repr(decisions))
+    # The completion claim on a stop-gate row, off by default: `decisions.claim_enabled`.
+    claim = block.get("completion_claim", False)
+    if not isinstance(claim, bool):
+        raise ValueError("telemetry.completion_claim must be true or false; got " + repr(claim))
     return {"export": mode, "endpoint": endpoint.rstrip("/"), "headers_env": headers_env,
             "headers_file": headers_file, "labels": dict(labels), "native": native,
-            "decisions": decisions}
+            "decisions": decisions, "completion_claim": claim}
 
 
 def native_runtimes(value):

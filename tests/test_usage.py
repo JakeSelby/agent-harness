@@ -29,7 +29,6 @@ def _load(name, path):
 harness = _load("harness", REPO / "bin" / "harness")
 usage_log = _load("usage_log", REPO / "claude" / "hooks" / "usage-log.py")
 
-TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
 OWNERSHIP = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
 CFG = json.loads((REPO / "config.example.json").read_text())
 STAMPS = [time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 300 + i)) for i in range(5)]
@@ -551,14 +550,15 @@ class HookEntryTests(TempHome):
         self.assertLess(time.time() - start, 1.0)
 
     def test_registration_matches_the_ownership_contract(self):
-        entries = TEMPLATE["hooks"]["SessionEnd"]
-        commands = [h["command"] for e in entries for h in e["hooks"]]
-        self.assertTrue(any("# harness:usage-log" in c and "usage-log.py" in c for c in commands))
+        # The coordinator owns the event; the ownership entry still names the policy behind it.
+        template = harness.runtime_template()
+        commands = [h["command"] for e in template["hooks"]["SessionEnd"] for h in e["hooks"]]
+        self.assertTrue(any("# harness:runtime-sessionend" in c for c in commands))
         self.assertEqual(OWNERSHIP["claude"]["hook_ids"]["usage-log"],
                          {"event": "SessionEnd", "always": True})
-        merged = harness.merge_claude_settings({}, TEMPLATE, CFG)
-        self.assertIn("usage-log", harness.claude_projection(merged, TEMPLATE)["hooks"])
-        self.assertNotIn("SessionEnd", harness.strip_claude_settings(merged, TEMPLATE).get("hooks", {}))
+        merged = harness.merge_claude_settings({}, template, CFG)
+        self.assertIn("runtime-sessionend", harness.claude_projection(merged, template)["hooks"])
+        self.assertNotIn("SessionEnd", harness.strip_claude_settings(merged, template).get("hooks", {}))
 
 
 if __name__ == "__main__":

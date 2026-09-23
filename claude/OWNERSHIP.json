@@ -6,6 +6,7 @@
     "posture_keys": ["permissions.defaultMode"],
     "allow_rules": "every entry in settings.template.json permissions.allow, merged as a set; entries the user added are kept; an entry a previous template added and this one dropped is removed",
     "agents": "every file in claude/agents/, linked into ~/.claude/agents/",
+    "hook_ids_note": "Each id names a policy under policy/hooks/ and the lifecycle event it answers on. Registration is not per id: sync registers one coordinator command per event, so `stance`/`variant` say when a policy acts inside dispatch, never whether it is registered.",
     "hook_ids": {
       "readonly-bash": {"event": "PreToolUse", "always": true},
       "grade-bash": {"event": "PreToolUse", "always": true},

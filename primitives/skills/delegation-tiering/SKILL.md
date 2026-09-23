@@ -206,6 +206,32 @@ Injection surfaces include MCP tool descriptions, skill text and `CLAUDE.md` con
 page bodies. An attacker also controls needle position, and mid-document is exactly where cheap
 tiers degrade worst.
 
+## Why subagents do not message each other
+
+A peer channel looks free and is not. Every delivered message bills on the receiver as a typed
+prompt against its whole prefix, and it bills again on the sender when the reply lands, so one
+exchange is two orchestrator-sized turns that bought no new work. That matters because turn count,
+not model tier, is what the arithmetic above is sensitive to: the delegation win is compression
+ratio × remaining turns, and chatter inflates the denominator on both sides at once. The failure
+modes compound rather than cancel — a blocked agent waits on a reply whose status lags, dependents
+stall behind it, and a pair that starts talking tends to keep talking, which is why every runtime
+that ships messaging also ships rate limits, dedup and a bounded queue. Nobody has published a
+measurement of peer chat improving an outcome.
+
+What *is* measured is the shared-state problem underneath the wish to talk. Concurrent agent pull
+requests conflict at 41.7% across agents against 19.8% within one agent, over 33,596 PRs
+(arXiv 2607.04697, *AI Agent Pull Requests on GitHub: Frequency, Structure, and Merge Conflict
+Rates*). STORM mediates writes to a shared workspace instead of isolating them and beats a
+worktree baseline by 18.7 points on Commit0-Lite (arXiv 2605.20563, *Multi-agent Collaboration
+with State Management*). CoAgent's advisory concurrency protocol — the runtime informs, the agent
+repairs — moves a bash benchmark from 45/71 to 63/71 at 0.86× the cost (arXiv 2606.15376,
+*CoAgent: Concurrency Control for Multi-Agent Systems*). All three wins come from mediating writes
+at write time, none from agents conversing. So the harness spends its coordination budget on
+write-time mechanism — single-threaded writes, a worktree each, new files over shared ones — and
+routes a genuinely blocked builder back up to its caller, which costs one line in a report instead
+of a turn on each side. Session-to-session `SendMessage` between human-facing sessions is
+untouched by this; it crosses a human boundary, and there too a peer's message is never approval.
+
 ## Verification
 
 **Independence is consensus; up-classing is not.** Reviewers do better with a *different model
@@ -367,7 +393,10 @@ options in workflow scripts.
 the cost variant's default band worker under this stance, and left one tier below the session
 where nothing routes it. A default band is right for gathering and wrong for judgment, so a
 framework skill whose spawn is a reviewer names `reviewer` in its override instead of leaving the
-spawn bare; `docs/bmad.md` shows the pattern.
+spawn bare; `docs/bmad.md` shows the pattern. Whether that ceiling is a refusal or only a
+sentence depends on the client surface, and this skill does not repeat the answer: the
+`tier restriction` row in `docs/compatibility.md` is generated per runtime and names the
+mechanism behind each state.
 
 **A framework does not choose model or effort.** Planning frameworks hard-code lines such as
 "review subagents run at the session's capability" in step files their override contract cannot
