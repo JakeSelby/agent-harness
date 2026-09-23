@@ -19,19 +19,19 @@ is only the mechanics of a run.
 
 ## Provisioning the round
 
-A round needs a frozen clone of the commit it qualifies, somewhere to keep each target's record,
-and — only if it will run `bmad-workflow` — a BMad framework checkout. Provision all three once,
-outside the checkout:
+A round needs a frozen clone of the commit it qualifies and somewhere to keep each target's
+record. Provision both once, outside the checkout:
 
 ```sh
-python3 scripts/qualification_provision.py --out ../round-v<version> --bmad
-python3 scripts/qualification_provision.py --out ../round-v<version> --print-env
+python3 scripts/qualification_provision.py --out ../round-v<version>
 ```
 
 The clone is taken from this repository's own object store and is refused unless the tree is
-clean and the clone lands on the commit named. `--bmad` is the only step that reaches the
-network, and it runs the pinned installer from [bmad](bmad.md). Without it, `bmad-workflow`
-reports itself `unverified` rather than skipping: nothing was read, so nothing is claimed.
+clean and the clone lands on the commit named. No required case runs a framework workflow, so no
+case needs anything else. On a minor release, `--bmad` also installs a BMad framework checkout
+with the pinned installer from [bmad](bmad.md) for the optional integration suite in
+[releasing](releasing.md#source-and-qualification), which is run by hand; it is the only step that
+reaches the network, and `--print-env` prints the export that suite's operator needs.
 
 ## Running
 

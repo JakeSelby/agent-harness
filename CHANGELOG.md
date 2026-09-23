@@ -9,23 +9,23 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - Every required acceptance case now has a driver in `scripts/native_acceptance.py`, so
-  `--dry-plan` no longer says of any case that it is not automated yet. That includes
-  `spawn-confinement`, which #291 added to the required set: it spawns a framework's review work
-  with no `subagent_type` at all, carrying only the sentences the integration descriptor itself
-  declares — read from the descriptor rather than restated, so a driver cannot keep passing after
-  the descriptor stopped naming them — and reads the refusal beside an ordinary spawn that must
-  still run, because a guard that refuses everything would otherwise read as a pass. Ten of the
-  others were prose in an evidence record that a worker re-implemented by
-  hand each round, which is most of what a round's orchestrator tokens were spent on. Each new
-  case emits the observation string a reviewer assesses, and each returns `unverified` rather
-  than a pass when the behaviour it is about was not observed: a runtime that writes no subagent
-  record is a named gap, a model that declined a turn is not a control, a BMad framework checkout
-  that was not provisioned is a reason and never a skip. `gate-invalidation` delivers its Stop
+  `--dry-plan` no longer says of any case that it is not automated yet. Nine of them are new here;
+  most were prose in an evidence record that a worker re-implemented by hand each round, which is
+  where most of a round's orchestrator tokens went. They include `spawn-confinement`, which #291
+  added to the required set: it spawns a framework's review work with no `subagent_type` at all,
+  carrying only the sentences the integration descriptor itself declares — read from the
+  descriptor rather than restated, so a driver cannot keep passing after the descriptor stopped
+  naming them — and reads the refusal beside an ordinary spawn that must still run, because a
+  guard that refuses everything would otherwise read as a pass. Each new case emits the
+  observation string a reviewer assesses, and each returns `unverified` rather than a pass when
+  the behaviour it is about was not observed: a runtime that writes no subagent record is a named
+  gap, and a model that declined a turn is not a control. `gate-invalidation` delivers its Stop
   events to the runtime's own coordinator rather than paying for eleven client turns, and says so
   in its observation. The provisioning and driver that used to live only in each round's scratch
   copy are committed as `scripts/qualification_provision.py` and `scripts/qualification_round.py`;
-  the clone comes from this repository's own object store, and the pinned BMad installer is the
-  only step that reaches the network. The runner also gained a Codex configuration home — its own
+  the clone comes from this repository's own object store, and the pinned BMad installer, for the
+  optional integration suite a minor release runs by hand, is the only step that reaches the
+  network. The runner also gained a Codex configuration home — its own
   `CODEX_HOME`, the `codex exec --json` invocation and the rollout layout — derived from
   `adapters/codex/worker.py`, `policy/hooks/usage-log.py` and the documentation. No Codex round
   has been driven through it, so every Codex verdict is reported `unverified` with its
@@ -34,6 +34,28 @@ All notable changes to this project are documented here. The format follows
   per target, because one surface agreeing with a hand run says nothing about another, and on an
   unconfirmed surface an assertion that did not hold is `unverified` too rather than `failed`:
   what is in question there is the reading, not the harness (#336).
+- `harness integration check|apply <name>` is the surface for a declared framework integration.
+  It reads the template directory, the install destination, the presence probe and the skill
+  surface from `policy/integrations/<name>.json`, so the CLI holds no framework name, and the
+  session-start drift notice probes that descriptor's `detect` path instead of a directory
+  literal in the hook. Its `detect`, `templates`, `destination` and `skill_roots` must be
+  relative paths with no `..` segment, because `apply` writes under one of them.
+  `harness bmad check|apply` is kept as an alias, and installed override files are
+  unaffected either way (#349).
+
+- Every session row carries `raw_vs_deduped`, the measured size of the usage deduplication: the
+  per-line sum of the four token fields over the deduplicated total the row reports, taken over
+  the same records — the session's own and those of the subagent files folded into it. The
+  totals are corrected once per message id at that id's largest figure, and the raw sum used to
+  be discarded, so a session whose transcript repeated every response and one that repeated none
+  reported the same figure with no way to tell them apart. `harness usage` prints the
+  ratio for the window as a footer figure beside `unpriced` — each row's ratio weighted by the
+  deduplicated tokens it contributed to the columns above, so the figure is the window's raw sum
+  over its counted sum — and the OTLP export carries the row's own as a `raw_vs_deduped`
+  attribute. A Codex session row, whose runtime reports cumulative snapshots rather than a figure
+  per record, reads `unknown` rather than `1.0`, which would claim a measurement nobody made; a
+  subagent row, a worker row and a row written before this release carry no such key, which the
+  report reads as unknown and counts in the footer (#518).
 - `harness decisions eval` replays the labelled rows of the decision log through a question
   pack and reports how closely the judgment tracked them, so a provider can be measured before
   it is trusted. The evaluated set is the real log — the input a hook judged, the deterministic
@@ -117,6 +139,7 @@ All notable changes to this project are documented here. The format follows
   by naming it in `agentType`; the usage ledger does record every workflow agent, but those rows
   carry no tool use id, so the reroute join is empty for all of them. The record names the two
   changes the code needs. `docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md` (#540).
+
 - A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
   release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
   and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
@@ -252,6 +275,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
+  `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a
+  fixture recipe out of whatever `policy/integrations/` declares and drives the spawn hook with
+  it: a recipe layer is refused whether it is spawned unnamed, as a generic subagent or as a band
+  worker, the refusal offers exactly the descriptor's declared input roots as the isolated
+  worker's read roots, and one cheap turn confirms that an unnamed spawn still routes to the cost
+  variant's default band worker at that row's class and effort with the budget sentence, and that
+  a null variant rewrites nothing. The BMad run becomes an optional, non-gating suite run once per
+  minor release on one target, documented in `docs/bmad.md` and `docs/releasing.md`; the offline
+  template and surface tests stay in CI, because they are what catches an upstream rename. The
+  catalog now carries two limitations in place of one: that no framework's workflow is exercised
+  natively in a qualification round, and what descriptor-driven confinement still cannot
+  recognise. Generic task continuation moves off the framework page to
+  `docs/task-continuation.md`, and the framework-named asides in the design-loop skill, the
+  handoff workflow, the delegation-tiering skill and a spawn-hook test are gone (#349).
+
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
   single-coordinator for some time — a sync registers one command per lifecycle event and
   `runtime_template()` takes that registration from `lib/harness_core/lifecycle.py` — so the
@@ -333,14 +372,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- Four faults in the qualification scripts, each of which would have cost a paid round to find.
+- Three faults in the qualification scripts, each of which would have cost a paid round to find.
   The round's clone passed `--shared=false` to `git clone`, an option that takes no value, so
   every provision exited; `bidirectional-handoff` sent the same `--revision` twice expecting a
   refusal second, where `lib/harness_core/tasks.py` refuses only a revision that has been spent,
   and it sent the writing runtime as a contract field the same module rejects, so the case could
-  never have passed; `bmad-workflow` applied into the checkout every target shares and passed on
-  any declaration it found there, so a second target or a rerun passed having written nothing —
-  it now applies into its own copy and asserts this apply wrote one; and the round driver left a
+  never have passed; and the round driver left a
   previous target record in place, so a runner that exited before writing `--out` reported the
   older round's passes as this round's. A previous record is now moved aside first and an absent
   one is every case `unverified`, a target or smoke tier that runs past the deadline is recorded
@@ -358,6 +395,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The standing context every session loads is 1,005 estimated tokens smaller, 7,524 to 6,519 on
+  `scripts/cost_bench.py static`. The `scannable` output style keeps all nine of its rules and
+  loses the worked examples and the register table, 1,528 tokens to 862; the fifteen skill and
+  eleven agent descriptions lose their capability restatements and keep every condition and
+  literal user phrasing a session selects on, 2,326 tokens of listings to 1,980. Because a
+  description is the trigger mechanism, those phrases are now frozen in
+  `tests/test_description_trigger_phrases.py`, which fails when one is dropped rather than
+  reworded, and a new skill or role must declare its own. Before-and-after rows are in
+  `docs/benchmarks.md`; the third change the issue names, deferring action-gated rule text behind
+  the hooks that fire on the act, is framed as an unrun spike in
+  `docs/spikes/2026-09-22-deferred-rule-text.md` and nothing about it is implemented (#430).
 - `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
   and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
   native approval is the gate. The typed `build` reply was a convention no tooling could observe,
@@ -396,6 +444,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An assistant transcript record whose `message` is not an object is skipped rather than read as
+  one. Such a record holds no usage, no model and no content blocks, and reading it aborted the
+  scan of the whole transcript, so one malformed line cost the session its entire row; the
+  subagent reader beside it has always skipped the same shape (#518).
 - An assistant transcript record that carries no message id is deduplicated by its `requestId`
   rather than counted once per line. Every such record used to open a slot of its own, so a
   runtime or version that writes one id-less response several times — as the streaming lines of

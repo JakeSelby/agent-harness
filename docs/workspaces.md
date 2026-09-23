@@ -1,7 +1,7 @@
 # Workspaces
 
 This page describes Claude Code's workspace/session-store adapter. It does not merge Codex
-native history or memory. Use [shared task continuation](bmad.md) to carry work between runtimes.
+native history or memory. Use [shared task continuation](task-continuation.md) to carry work between runtimes.
 
 Nothing in the harness needs to be the root of a workspace. Everything installs at user level
 and loads in every session. This page is about multi-root VS Code workspaces in general,

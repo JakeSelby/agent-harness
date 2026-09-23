@@ -32,7 +32,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
-from harness_core import compatibility  # noqa: E402  (after ROOT, which locates the package)
+from harness_core import compatibility, frameworks  # noqa: E402  (after ROOT, which locates the package)
 
 VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
@@ -716,6 +716,89 @@ def case_cost_posture(home):
             % (len(rewritten), len(after), feed[-1]))
 
 
+def descriptor_recipe(descriptor):
+    """A fixture recipe: enough of a declared integration's own routed text to be recognised.
+
+    The case is generic on purpose — it reads whatever `policy/integrations/` declares — so a
+    release qualifies framework layering without running any framework's workflow.
+    """
+    spawn = descriptor["spawns"][0]
+    phrases = spawn.get("phrases", [])[: max(2, int(descriptor.get("corroboration", 2)))]
+    if len(phrases) < 2:
+        raise Unverified("the descriptor declares too few phrases to build a fixture recipe")
+    return (spawn["id"], spawn["role"], list(descriptor.get("input_roots", [])),
+            "You are reviewing the change in the assigned worktree. " + " ".join(phrases)
+            + " Return what you find as text in your final message.")
+
+
+def offered_roots(reason):
+    """The read roots a refusal offers, as a set.
+
+    Parsed rather than searched: one declared root is often a prefix of another, so a refusal
+    that offered only the longer one would still satisfy a containment check for the shorter.
+    """
+    return set(item.strip() for group in re.findall(r"read roots: (.*?)(?:\. |$)", reason)
+               for item in group.split(",") if item.strip())
+
+
+def hook_answer(home, prompt, subagent_type=None, session="framework-routing"):
+    """One real PreToolUse spawn event through the client's registered hook. No model turn."""
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": session,
+               "cwd": str(home.project),
+               "tool_input": {"prompt": prompt, "subagent_type": subagent_type}}
+    result = run([sys.executable, str(ROOT / "adapters" / "claude-code" / "hook.py")],
+                 env=home.env({"HARNESS_STANCE_DELEGATION": "tiered"}),
+                 input=json.dumps(payload))
+    if result.returncode:
+        raise Unverified("the spawn hook did not run: " + redact(result.stderr[-200:]))
+    try:
+        data = json.loads(result.stdout or "{}")
+    except ValueError:
+        raise Unverified("the spawn hook returned no JSON: " + redact(result.stdout[-200:]))
+    answer = data.get("hookSpecificOutput", {})
+    return answer.get("permissionDecision", ""), answer.get("permissionDecisionReason", "")
+
+
+def case_framework_spawn_routing(home):
+    # Validated first, and invalid ones skipped, because the spawn hook ignores a descriptor that
+    # does not validate: a case built on one would assert against a rule that is not in force.
+    usable = []
+    for path in sorted((ROOT / "policy" / "integrations").glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if data.get("spawns") and not frameworks.problems(data):
+            usable.append(data)
+    if not usable:
+        raise Unverified("no valid integration descriptor declares a spawn to build a recipe from")
+    descriptor = usable[0]
+    layer, role, roots, recipe = descriptor_recipe(descriptor)
+    home.seed(stances={"cost": "balanced", "delegation": "tiered"})
+    home.harness("sync")
+    for named_as in (None, "general-purpose", "worker-a"):
+        decision, why = hook_answer(home, recipe, named_as, "routing-" + str(named_as))
+        if decision != "deny":
+            raise AssertionError("a recipe layer spawned as %s was allowed, not confined"
+                                 % redact(named_as))
+        if ("harness role run " + role) not in why:
+            raise AssertionError("the refusal did not route %s to the constrained role: %s"
+                                 % (redact(named_as), redact(why)))
+        offered = offered_roots(why)
+        if offered != set(roots):
+            raise AssertionError("the refusal offered %s as read roots, not the descriptor's "
+                                 "declared input roots %s"
+                                 % (redact(sorted(offered)), redact(sorted(roots))))
+    posture = case_cost_posture(home)
+    return ("A fixture recipe built from the %s %s `%s` descriptor was refused at the spawn hook "
+            "whether it was spawned unnamed, as a generic subagent or as a band worker, each "
+            "refusal routed it to `harness role run %s` and offered exactly its declared input "
+            "roots (%s) as the isolated worker's read roots and no others. No framework workflow "
+            "was run. Beside that: %s"
+            % (descriptor["name"], descriptor["version"]["pinned"], layer, role,
+               ", ".join(roots), posture))
+
+
 MANUAL_MODE = "default"
 AUTO_MODE = "auto"
 ACK_KEY = "permissions_bypass_acknowledged"
@@ -1193,20 +1276,29 @@ def case_role_confinement(home):
 
 FRAMEWORK_ORIGIN = "which this installation runs as the constrained"
 FRAMEWORK_ROOTS = "needs the framework's input roots as read roots"
-DESCRIPTOR = ROOT / "policy" / "integrations" / "bmad.json"
+INTEGRATIONS = ROOT / "policy" / "integrations"
 
 
-def descriptor_spawn(spawn_id):
-    """One declared spawn of the BMad descriptor, read from the descriptor rather than restated.
+def descriptor_spawn(directory=INTEGRATIONS):
+    """The first declared spawn with phrases, of the first descriptor the spawn hook would load.
 
-    A driver that hard-codes the phrases would keep passing after the descriptor stopped naming
-    them, which is the one thing `spawn-confinement` exists to notice.
+    Read from `policy/integrations/` rather than restated, and naming no framework: a driver that
+    hard-codes the phrases would keep passing after the descriptor stopped naming them, which is
+    the one thing `spawn-confinement` exists to notice. A descriptor that does not validate is
+    skipped, because the hook ignores it and a case built on it would assert against no rule.
     """
-    data = json.loads(DESCRIPTOR.read_text())
-    for spawn in data.get("spawns", []):
-        if spawn.get("id") == spawn_id:
-            return data, spawn
-    raise Unverified("the BMad descriptor declares no %s spawn to classify against" % spawn_id)
+    for path in sorted(Path(directory).glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if not data.get("spawns") or frameworks.problems(data):
+            continue
+        for spawn in data["spawns"]:
+            if spawn.get("phrases"):
+                return data, spawn
+    raise Unverified("no valid integration descriptor declares a spawn with phrases to classify "
+                     "against")
 
 
 def framework_brief(spawn, corroboration):
@@ -1232,7 +1324,7 @@ def case_spawn_confinement(home):
     gap = native_only(home, "a native spawn's refusal and its subagent transcripts")
     if gap:
         raise Unverified(gap + ", so spawn confinement was not observed")
-    data, spawn = descriptor_spawn("code-review-layer")
+    data, spawn = descriptor_spawn()
     brief = framework_brief(spawn, int(data.get("corroboration") or 2))
     refused = home.session(brief)
     text = home.answer(refused) + home.orchestrator_text(refused["session_id"])
@@ -1393,85 +1485,6 @@ def case_gate_invalidation(home):
             "green hash recorded. The Stop events were delivered to this runtime's own coordinator "
             "rather than by that many client turns; every reading is the hook's own state record."
             % (first, counter, blocks, red_runs))
-
-
-BMAD_ENV = "HARNESS_ACCEPTANCE_BMAD"
-ROLE_DECLARATION = "harness-role:"
-
-
-def bmad_checkout():
-    """The BMad framework checkout an operator provisioned for this round, or None.
-
-    The runner installs no framework: `scripts/qualification_provision.py` does that once per
-    round, so a case never reaches the network and a missing checkout is `unverified` rather than
-    a silent skip.
-    """
-    value = os.environ.get(BMAD_ENV, "").strip()
-    return Path(value) if value and Path(value).is_dir() else None
-
-
-def layer_contents(repo):
-    """What each override template holds right now, so an apply that wrote nothing is visible.
-
-    The case runs against a copy of the provisioned checkout per target, because the provisioned
-    one is shared: a second target, or a rerun, would otherwise read the first target's apply and
-    pass having written nothing itself.
-    """
-    return {path.name: path.read_bytes()
-            for path in sorted((repo / "_bmad" / "custom").glob("*.user.toml"))}
-
-
-def layer_declarations(repo):
-    """Every applied review layer whose brief opens with a harness role declaration."""
-    found = {}
-    for path in sorted((repo / "_bmad" / "custom").glob("*.user.toml")):
-        text = path.read_text(errors="replace")
-        for match in re.finditer(r"harness-role:\s*([a-z-]+)", text):
-            found.setdefault(path.name, set()).add(match.group(1))
-    return found
-
-
-def case_bmad_workflow(home):
-    """docs/compatibility.md step 10, as the mechanism stands today.
-
-    This reads what `harness bmad apply` writes into a framework checkout and what
-    `harness bmad check` then reports. The confined review run the 0.11.1 round also made is not
-    driven here; #349 may replace this mechanism, and this case follows it when it does.
-    """
-    home.seed()
-    home.harness("sync")
-    provisioned = bmad_checkout()
-    if provisioned is None:
-        raise Unverified("no BMad framework checkout was provided in %s, so the applied review "
-                         "layers were never read; provision one with "
-                         "scripts/qualification_provision.py --bmad" % BMAD_ENV)
-    repo = home.root / "bmad"
-    shutil.copytree(str(provisioned), str(repo), symlinks=True)
-    before = layer_contents(repo)
-    applied = home.harness("bmad", "apply", str(repo))
-    declarations = layer_declarations(repo)
-    written = [name for name in declarations if before.get(name) != layer_contents(repo)[name]]
-    if not declarations:
-        raise AssertionError("harness bmad apply wrote no review layer carrying a %s declaration: "
-                             "%s" % (ROLE_DECLARATION, redact(applied[-300:])))
-    if not written:
-        raise AssertionError("every review layer carrying a %s declaration was already there "
-                             "before this apply, so this run wrote none of them: %s"
-                             % (ROLE_DECLARATION, redact(applied[-300:])))
-    checked = home.harness("bmad", "check", str(repo))
-    findings = re.search(r"bmad: (\d+) drift finding", checked)
-    if not findings:
-        raise Unverified("harness bmad check reported no drift count to read: "
-                         + redact(checked[-300:]))
-    if findings.group(1) != "0":
-        raise AssertionError("harness bmad check reported %s drift finding(s) after apply"
-                             % findings.group(1))
-    roles = sorted(set().union(*declarations.values()))
-    return ("After harness bmad apply into this target's own copy of the provisioned BMad "
-            "framework checkout, %s override template(s) carried a %s declaration naming %s, %s of "
-            "them written by this apply rather than already present, and harness bmad check "
-            "reported 0 drift findings. The confined review run itself is not driven here."
-            % (len(declarations), ROLE_DECLARATION, ", ".join(roles), len(written)))
 
 
 TASK_OBJECTIVE = "Append one marker line to progress.txt"
@@ -1657,6 +1670,9 @@ CASES = {
                       "supply a dimension this repository does not ship from an external "
                       "primitive root, read the client's reply under each variant, and refuse a "
                       "selection naming no variant"),
+    "framework-spawn-routing": (case_framework_spawn_routing,
+                               "drive the spawn hook with a fixture recipe built from a declared "
+                               "integration descriptor, then run the cost-posture turn"),
     "permission-controls": (case_permission_controls,
                             "sync the manual, unacknowledged bypass, acknowledged bypass and auto "
                             "postures, and read each one's synced permission mode and what a "
@@ -1679,9 +1695,6 @@ CASES = {
                           "trust a disposable repository with a gate that logs each run, and read "
                           "the hook's own state through reuse, invalidation, a bounded red block "
                           "and a gate that writes while it runs"),
-    "bmad-workflow": (case_bmad_workflow,
-                      "apply the override templates into the provisioned BMad framework checkout "
-                      "and read the role declarations and the drift count"),
     "bidirectional-handoff": (case_bidirectional_handoff,
                               "save one task record, read it back in a native session, refuse a "
                               "stale revision, and continue it from the other runtime"),

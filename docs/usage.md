@@ -54,7 +54,7 @@ transcript, and stamping today's would make the whole history look like this rel
 
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
-`days` and, when the row has any, `idless_records`.
+`days`, `raw_vs_deduped` and, when the row has any, `idless_records`.
 The source is the transcript
 Claude Code already writes under `~/.claude/projects/`. The worker streams it and sums the four
 token fields over assistant messages **once per message id, at that id's largest figure**: one
@@ -68,7 +68,22 @@ response, and a call whose other records do carry a message id joins their slot 
 opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
 deduplicated at all — it is summed as written, and `idless_records` counts how many such records
 the row's totals include, the session's own and those of the subagent files folded into them.
-A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls. The token totals **include the
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls.
+
+`raw_vs_deduped` is **the measured size of that inflation**: the per-line sum of the four token
+fields over the deduplicated total the row carries, across the same records — the session's own
+and those of the subagent files folded into it. `1.0` says the transcript held nothing to
+remove; `2.4` says counting every line would have billed this session for two and a half times
+what it spent. One ratio rather than one per field, because the fields are deduplicated by the
+same slots and the row already carries each of them for a reader who wants them apart. A Codex
+session row, whose runtime reports cumulative snapshots rather than a figure per record, carries
+the string `"unknown"` rather than `1.0`, which would claim a measurement nobody made. A
+subagent row, a worker row and a row written before this release carry **no such key at all**,
+and a reader — `harness usage` included — reads that absence as unknown for the same reason.
+The footer figure `harness usage` prints is the window's raw sum over its counted sum: each
+row's ratio weighted by the deduplicated tokens that row contributed to the columns above it,
+which under `--by day` are its in-window slices and not its whole total. The OTLP export carries
+a row's own value as the `raw_vs_deduped` attribute, and a row without the key exports none. The token totals **include the
 session's subagents**, because their tokens are the session's bill — counted once over one map
 of message ids, never as a sum of two files. Older Claude Code wrote a subagent's turns into
 the session file as sidechain lines and newer Claude Code writes them to the agent's own file;

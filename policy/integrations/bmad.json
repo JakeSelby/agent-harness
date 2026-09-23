@@ -6,7 +6,15 @@
   "version": {
     "pinned": "6.12.0",
     "surface": "_bmad/custom/*.user.toml",
-    "note": "The override templates in templates/bmad/custom/ carry this same pin; harness bmad check reports when an upstream release renames a key or a layer id."
+    "note": "The override templates in templates/bmad/custom/ carry this same pin; harness integration check bmad reports when an upstream release renames a key or a layer id."
+  },
+  "install": {
+    "detect": "_bmad",
+    "templates": "templates/bmad/custom",
+    "destination": "_bmad/custom",
+    "suffix": ".user.toml",
+    "skill_roots": [".agents/skills", ".claude/skills"],
+    "skill_surface": "customize.toml"
   },
   "input_roots": [
     "_bmad",

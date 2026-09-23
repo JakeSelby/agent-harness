@@ -1,6 +1,6 @@
 ---
 name: licensing-review
-description: Verify a third-party library, asset, model, font, dataset or copied snippet is safe to ship under the project's licensing stance, and record it correctly. Use before adding or upgrading any dependency, before downloading any asset, and before a release.
+description: Verify a third-party library, asset, model, font, dataset or copied snippet is safe to ship under the project's licensing stance, and record it. Use before adding or upgrading any dependency, before downloading any asset, and before a release.
 ---
 
 The always-on prohibitions live in the selected `licensing` stance. Resolve its shared source

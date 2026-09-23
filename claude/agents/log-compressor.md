@@ -1,6 +1,6 @@
 ---
 name: log-compressor
-description: Compress a test, build or CI log to its failures, its summary line and its exit status. Returns at most 150 words. Never a verdict — the caller reads the exit code, not your reading of it.
+description: Compress a test, build or CI log to its failures, its summary line and its exit status. Returns at most 150 words. Never a verdict — the caller reads the exit code.
 model: sonnet
 tools: Read, Grep
 effort: low

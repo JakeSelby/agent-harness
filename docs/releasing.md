@@ -32,9 +32,14 @@ change. What the release must carry before it can be tagged is the next section.
    [runbook](qualification-runbook.md) is the mechanics. The same hand comparison is owed once
    per case on its first live round. A Codex target reports `unverified` whatever it observed
    until `--home-confirmed` says its configuration home was compared against a hand run.
-2. Merge reviewed changes through the repository's PR gate. Keep stacked PR bases current without
+2. On a minor release, run the optional BMad integration suite once, on one target, before the
+   tag: the native four-layer review described in [BMad](bmad.md). It gates nothing — a red result
+   is an issue to file, not a blocked release — and its outcome is recorded in the release pull
+   request with the harness version, the framework version and the client it ran on. A patch
+   release skips it. No framework workflow is a `required_cases` entry.
+3. Merge reviewed changes through the repository's PR gate. Keep stacked PR bases current without
    overwriting other contributors' history. Preserve personal configuration and the live checkout.
-3. Set `VERSION`, `compatibility/catalog.json` and `compatibility/migration.json` to the same
+4. Set `VERSION`, `compatibility/catalog.json` and `compatibility/migration.json` to the same
    release. Record exact migration actions and recovery even when the only action is reviewing a
    dry run. Regenerate projections and release notes. Run the CI commands and the Python floor suite
    on committed HEAD; then run:
@@ -62,10 +67,10 @@ change. What the release must carry before it can be tagged is the next section.
    rollback, conflicts and uninstall. Store its JSON output with the candidate evidence. This is a
    filesystem/configuration lifecycle check; it does not qualify a native client.
 
-4. Tag the verified commit with the matching immutable `v<version>` tag and push that tag.
+5. Tag the verified commit with the matching immutable `v<version>` tag and push that tag.
    The release workflow repeats qualification and source gates before publishing. Never move an
    existing tag to repair a failed release; fix the source and use a new version.
-5. The workflow's `advance-stable` job, which cannot fail the run, fast-forwards the `stable`
+6. The workflow's `advance-stable` job, which cannot fail the run, fast-forwards the `stable`
    branch to the tag's commit, so `stable` is always the latest release while `main` is the trunk.
    Nothing else pushes to `stable`, and it never moves backward. Confirm it, and repair it from a
    checkout that has the tag if it is stale:
@@ -77,7 +82,7 @@ change. What the release must carry before it can be tagged is the next section.
 
    GitHub refuses a workflow token that moves a branch across a change to `.github/workflows/`,
    so a release that edits a workflow can need the second command run by hand.
-6. Close the released milestone and open the next one. This is a hand-run step rather than a
+7. Close the released milestone and open the next one. This is a hand-run step rather than a
    workflow job, so that a published release never depends on it. Read the milestone numbers,
    close the released one, and create the next if it does not exist:
 
@@ -130,7 +135,7 @@ and re-qualify once.
 
 ## Reference and personal site
 
-7. The reference site vendors this repository by tag and repins itself hourly through its own
+8. The reference site vendors this repository by tag and repins itself hourly through its own
    workflow, so a release needs no hand repin. Confirm the repin run, the deploy job that followed
    it, and that the live `/manifest.json` names both the version and the source commit. A skipped
    deployment job is not a deployment; record the workflow run and distribution identity. When the
@@ -138,10 +143,10 @@ and re-qualify once.
    run the site's CI commands (`npm ci`, `npm test`, `npm run build`, `node scripts/smoke.mjs`),
    and from the harness checkout run
    `python3 scripts/release_preflight.py --reference-repo <reference-checkout>`.
-8. The personal-site card links the latest release rather than naming a version, so a release needs
+9. The personal-site card links the latest release rather than naming a version, so a release needs
    no card change. Confirm both placements still resolve. The shared card links to reference
    compatibility facts and does not maintain its own inventory count or version claim.
-9. Set GitHub About description, topics and homepage from `product.json` (see below).
+10. Set GitHub About description, topics and homepage from `product.json` (see below).
    Verify production HTML, SEO/social metadata, compatibility statuses, search results, deep links,
    install instructions, the exact release manifest and both personal-site card placements.
    Record HTTP statuses and rendered inspection results; mark any unavailable check unverified.
