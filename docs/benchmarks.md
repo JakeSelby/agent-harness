@@ -59,7 +59,45 @@ run by hand on a release candidate and never in CI.
 python3 scripts/cost_bench.py replay --verify-tasks              # prove every check; calls no model
 python3 scripts/cost_bench.py replay --model <id> --dry-run      # print the schedule
 python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 arms x 2 reps
+python3 scripts/cost_bench.py replay --model <id> \
+    --tag v0.12.0 --tag v0.13.0 --harness-config ~/.claude-bench-harness   # two versions, one run
 ```
+
+- **`--tag` is what the harness arm runs, and it is repeatable.** `candidate`, the default, is the
+  harness installed at `~/.claude` as it stands. Any other value is a git ref of this repository:
+  it is checked out with its history intact, projected by its own `bin/harness sync` into a config
+  directory of its own, run as a whole schedule, and torn down before the next tag. Each tag
+  writes its own results file and its own history row, stamped with the version and commit of the
+  ref that ran. Every ref is resolved before the first launch, so a typo costs nothing, and
+  `--spend-cap` applies to each tag's schedule on its own.
+- **A tagged sync touches nothing of yours.** It runs with a temporary HOME as well as an explicit
+  `CLAUDE_CONFIG_DIR`, so it neither reads nor writes the profile you run under, and it renders no
+  identity or stance selection out of your `~/.config/agent-harness/config.json`: a tagged arm
+  loads that tag's defaults, which is the same question asked of every tag. A sync target that
+  resolves to your live profile, sits inside it, holds it (HOME or any ancestor) or is the bare
+  profile is refused. Because a profile's credential is keyed on its absolute path, a directory
+  made for the run is not signed in; name a signed-in `--harness-config` as the directory each
+  tag is synced into when the run is meant to spend. That profile must hold no harness files
+  already (a link counts only when it leads into a harness checkout or sits at a name the harness
+  manages; the CLI's own `debug/latest` does not), and it cannot serve `candidate` in the same
+  run, and none of the names the sync writes (`rules`, `skills`, `commands`, `agents`, `hooks`,
+  `output-styles`, `plans`, `CLAUDE.md`, `settings.json` and the rest) may be a link leading out
+  of it. After each tag's schedule, exception or interrupt included, the sync is taken back out
+  of it rather than the profile rolled back: exactly the links and files the sync's own manifest
+  and ownership records name are removed, a directory it made goes only once empty, and the one
+  file it rewrites in place, `settings.json`, is put back from a copy taken beforehand through an
+  atomic write. Nothing else is touched: a transcript another session wrote during the run stays,
+  and credential files are never copied, rewritten or deleted, whether they existed before or
+  the CLI created them mid-run, so a refreshed token stays refreshed and a fresh sign-in stays
+  signed in. Nothing in the profile is read but `settings.json`; a FIFO or an unreadable file
+  is listed by its stat and never opened. The records are read from where the harness at HEAD
+  writes them, so the profile itself is checked afterwards: if anything the sync could have
+  written is still there, or the records were empty, the run stops at that tag with the leftover
+  paths named, before another tag launches into a profile that would refuse it. If taking the
+  sync back fails, the copy is kept and its path printed. The refusals above are all decided
+  before the first launch of any tag; the copy-aside, checkout and sync run as each tag's turn
+  comes. The pinned checkout is admitted to the harness arm's fence for reading only, and a
+  pinned tag's results go in a folder named for it.
 
 - **The arms differ by environment only.** Both get one command line: the same `--model`,
   `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network
@@ -101,7 +139,8 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
   days, never dollars. The publishable threshold is fixed in the script: the harness costs at most
   85% of bare per passed task while passing no fewer than bare minus one, mean of reps.
 - **What is faked:** single-shot prompts stand in for interactive sessions, two of the four tasks
-  are synthetic, and only the installed harness can be run; older tags are refused.
+  are synthetic, and a tagged run measures the tag's default configuration rather than a
+  configured one.
 
 **Status.** The live tier has produced one uncontaminated result: 1.052 on a four-task set, above
 the 0.85 threshold, so no cost claim is published. Two earlier figures in either direction were
