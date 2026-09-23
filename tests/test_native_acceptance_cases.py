@@ -248,6 +248,38 @@ class BmadLayerTests(unittest.TestCase):
         self.assertNotEqual(MODULE.layer_contents(self.repo), before)
 
 
+class SpawnConfinementTests(unittest.TestCase):
+    """The case reads the integration descriptor rather than restating what it declares."""
+
+    def setUp(self):
+        self.data, self.spawn = MODULE.descriptor_spawn("code-review-layer")
+
+    def test_the_declared_spawn_comes_from_the_committed_descriptor(self):
+        self.assertTrue(MODULE.DESCRIPTOR.is_file())
+        self.assertEqual(self.spawn["role"], "reviewer")
+
+    def test_a_spawn_the_descriptor_does_not_declare_is_unverified(self):
+        with self.assertRaises(MODULE.Unverified) as caught:
+            MODULE.descriptor_spawn("no-such-spawn")
+        self.assertIn("no-such-spawn", str(caught.exception))
+
+    def test_the_brief_carries_the_descriptors_own_sentences_and_names_no_type(self):
+        brief = MODULE.framework_brief(self.spawn, self.data["corroboration"])
+        self.assertIn("no subagent_type", brief)
+        for phrase in self.spawn["phrases"][:self.data["corroboration"]]:
+            self.assertIn(phrase, brief)
+
+    def test_a_descriptor_with_too_few_phrases_to_corroborate_is_unverified(self):
+        with self.assertRaises(MODULE.Unverified) as caught:
+            MODULE.framework_brief({"id": "thin", "phrases": ["only one"]}, 3)
+        self.assertIn("corroboration", str(caught.exception))
+
+    def test_the_refusal_clauses_are_the_ones_the_harness_actually_writes(self):
+        source = (REPO / "lib" / "harness_core" / "frameworks.py").read_text()
+        self.assertIn(MODULE.FRAMEWORK_ORIGIN, source)
+        self.assertIn(MODULE.FRAMEWORK_ROOTS, source)
+
+
 class HandoffRevisionTests(unittest.TestCase):
     """The revision sequence the handoff case sends, against the rule that decides it.
 

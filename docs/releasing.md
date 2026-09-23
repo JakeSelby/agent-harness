@@ -99,7 +99,10 @@ target on that branch so `main` keeps merging without invalidating evidence. `ha
 prints the drift between the frozen commit and `origin/main` under the runtime source paths —
 `VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`, `config.example.json` —
 and `harness freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
-them, because one such change invalidates every target's evidence and costs the whole round again.
+them, because such a change costs part of the round again. How much of it is scoped per target: a
+change under one runtime's adapter directory invalidates only that runtime's targets, unless it
+touches a file shared code reads for every runtime, and a change to shared source invalidates them
+all. The carve-out and its limits are in [compatibility](compatibility.md).
 Return `state` to `open` after the tag. The evidence commit must stay an ancestor of the
 qualification source commit, which `evidence_errors` enforces, so a diverged release branch fails
 closed rather than publishing an unqualified source.

@@ -31,6 +31,9 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from harness_core import compatibility  # noqa: E402  (after ROOT, which locates the package)
+
 VERSION = (ROOT / "VERSION").read_text().strip()
 DEFAULT_MODEL = "haiku"
 TURN_TIMEOUT = 300
@@ -1188,6 +1191,78 @@ def case_role_confinement(home):
     return "; ".join(notes) + "."
 
 
+FRAMEWORK_ORIGIN = "which this installation runs as the constrained"
+FRAMEWORK_ROOTS = "needs the framework's input roots as read roots"
+DESCRIPTOR = ROOT / "policy" / "integrations" / "bmad.json"
+
+
+def descriptor_spawn(spawn_id):
+    """One declared spawn of the BMad descriptor, read from the descriptor rather than restated.
+
+    A driver that hard-codes the phrases would keep passing after the descriptor stopped naming
+    them, which is the one thing `spawn-confinement` exists to notice.
+    """
+    data = json.loads(DESCRIPTOR.read_text())
+    for spawn in data.get("spawns", []):
+        if spawn.get("id") == spawn_id:
+            return data, spawn
+    raise Unverified("the BMad descriptor declares no %s spawn to classify against" % spawn_id)
+
+
+def framework_brief(spawn, corroboration):
+    """A brief carrying enough of a declared spawn's own sentences to be recognised."""
+    phrases = list(spawn.get("phrases") or [])[:max(2, corroboration)]
+    if len(phrases) < corroboration:
+        raise Unverified("the descriptor's %s spawn declares %s phrase(s), fewer than the %s it "
+                         "asks for as corroboration" % (spawn["id"], len(phrases), corroboration))
+    return ("Use your Agent tool exactly once with no subagent_type and this prompt: "
+            + " ".join(phrases) + " Then report in one line what happened.")
+
+
+def case_spawn_confinement(home):
+    """docs/compatibility.md: a framework's review spawn is confined by what it carries (#291).
+
+    The point of the case is that dropping the role name does not drop the confinement, so the
+    spawn under test names no `subagent_type` at all and carries the descriptor's own sentences.
+    A false-positive check runs beside it: ordinary work must still spawn, or a guard that
+    refuses everything would read as a pass.
+    """
+    home.seed()
+    home.harness("sync")
+    gap = native_only(home, "a native spawn's refusal and its subagent transcripts")
+    if gap:
+        raise Unverified(gap + ", so spawn confinement was not observed")
+    data, spawn = descriptor_spawn("code-review-layer")
+    brief = framework_brief(spawn, int(data.get("corroboration") or 2))
+    refused = home.session(brief)
+    text = home.answer(refused) + home.orchestrator_text(refused["session_id"])
+    wrote = home.subagents(refused["session_id"])
+    if wrote:
+        raise AssertionError("an unnamed spawn carrying the descriptor's own %s sentences wrote "
+                             "%s subagent transcript(s)" % (spawn["id"], len(wrote)))
+    if CONFINEMENT_DENY not in text:
+        raise Unverified("the unnamed framework spawn wrote no subagent transcript, but the "
+                         "constrained-role refusal was not in what the client reported, so the "
+                         "classification itself was not observed")
+    notes = ["an Agent spawn naming no subagent_type, carrying only the descriptor's own %s "
+             "sentences, was refused with \"%s\" and wrote 0 subagent transcripts"
+             % (spawn["id"], CONFINEMENT_DENY)]
+    for clause, what in ((FRAMEWORK_ORIGIN, "what it recognised"),
+                         (FRAMEWORK_ROOTS, "the read roots that worker needs")):
+        if clause not in text:
+            raise AssertionError(observed(notes, "the refusal did not name %s" % what))
+    notes.append("and the refusal named both the framework work it recognised and the input roots "
+                 "the isolated worker needs")
+    ordinary = home.session(SPAWN_PROMPT)
+    if not home.subagents(ordinary["session_id"]):
+        raise AssertionError(observed(notes, "the false-positive check failed: an ordinary unnamed "
+                                      "spawn carrying none of the descriptor's sentences wrote no "
+                                      "subagent transcript either, so the guard refuses everything"))
+    notes.append("while an ordinary unnamed spawn in the same home still ran and wrote its own "
+                 "subagent transcript, so the guard classifies rather than refusing every spawn")
+    return "; ".join(notes) + "."
+
+
 GATE_REPO_FILES = {
     "AGENTS.md": "# probe\n\n## Gate\n\n```sh\npython3 gate.py\n```\n",
     "gate.py": ("import pathlib, sys\n"
@@ -1593,6 +1668,10 @@ CASES = {
                          "spawn a constrained role natively and read the refusal, then run the "
                          "same work as an isolated worker and refuse an artifact path above the "
                          "workspace"),
+    "spawn-confinement": (case_spawn_confinement,
+                          "spawn a framework's review work with no subagent_type at all, carrying "
+                          "only the descriptor's own sentences, and read the refusal beside an "
+                          "ordinary spawn that must still run"),
     "cost-posture": (case_cost_posture,
                      "sync a non-default cost variant, spawn an unnamed subagent in a new native "
                      "session, and read its meta record, brief, the usage feed and the usage rows"),
@@ -1733,6 +1812,17 @@ def build_record(items):
     return data
 
 
+def scoped(client, data):
+    """State the path set whose change invalidates this record, so a reviewer need not derive it.
+
+    The catalog grants the scope; a record that claims any other one is rejected. See
+    docs/compatibility.md.
+    """
+    entry = dict(CLIENTS[client], id=client)
+    data["invalidation_scope"] = compatibility.evidence_scope(catalog(), entry)
+    return data
+
+
 def selected(names):
     required = catalog()["required_cases"]
     if names in (None, "all"):
@@ -1777,8 +1867,8 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
                 else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
         append_case(progress, header, item)
         results.append(item)
-    return build_record(progress_lines(progress, header)
-                        or [dict(header, **item) for item in results])
+    return scoped(client, build_record(progress_lines(progress, header)
+                                      or [dict(header, **item) for item in results]))
 
 
 def main(argv=None):
@@ -1806,7 +1896,7 @@ def main(argv=None):
         return 0
     progress = args.progress or progress_path(args.client, args.out)
     if args.from_progress:
-        data = build_record(progress_lines(progress))
+        data = scoped(args.client, build_record(progress_lines(progress)))
     else:
         data = record(args.client, names, args.model, args.keep_home, progress=progress,
                       confirmed=args.home_confirmed)
