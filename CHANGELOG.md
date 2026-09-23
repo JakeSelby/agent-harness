@@ -301,6 +301,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The stop gate releases a turn after eight consecutive red blocks in each session, even when
+  another session is stopping in the same checkout. It kept one count per checkout and reset it
+  whenever a different session stopped, so a Remote Control host session and an interactive one
+  in the same checkout zeroed each other's count and the gate never let either go. The count is
+  now kept per session, and a session silent for a day is forgotten (#611).
+
 - `scripts/cost_bench.py replay --tag` no longer counts the CLI's own synced skill packs
   under `skills/synced/` as leftovers of a tag's sync, so a run with two tags into one named
   profile reaches its second tag instead of stopping after the first (#649).

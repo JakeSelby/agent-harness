@@ -15,6 +15,7 @@ Hooks assist workflow policy; they are not a substitute for the runtime sandbox.
 The stop gate hashes HEAD, staged and unstaged binary differences, untracked file contents,
 repository identity, and gate definition. Commands share a shell so `cd` and `export` persist.
 A gate that changes the tree, times out, or exhausts its retry budget is unverified, never green.
+The retry budget is counted per session, so sessions sharing a checkout do not reset each other.
 Unexpected gate errors block. State writes are atomic.
 
 Constrained roles use [isolated CLI workers](role-workers.md), with shared role/stance resolution

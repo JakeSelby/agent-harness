@@ -85,6 +85,9 @@ class StopGateTests(unittest.TestCase):
         self.assertEqual(len(files), 1)
         return json.loads(files[0].read_text())
 
+    def blocks(self, session="s1"):
+        return self.state()["sessions"].get(session, {}).get("blocks", 0)
+
     def test_a_repo_without_a_gate_block_is_untouched(self):
         self.write_gate(heading=None)
         out = self.run_hook()
@@ -106,8 +109,7 @@ class StopGateTests(unittest.TestCase):
         self.assertEqual(out.stdout.strip(), "")
         recorded = self.state()
         self.assertTrue(recorded["green_hash"])
-        self.assertEqual(recorded["blocks"], 0)
-        self.assertEqual(recorded["session_id"], "s1")
+        self.assertEqual(recorded["sessions"], {})
 
     def test_the_gate_block_is_read_from_claude_md_when_agents_md_is_absent(self):
         self.write_gate("exit 1", name="CLAUDE.md")
@@ -123,7 +125,7 @@ class StopGateTests(unittest.TestCase):
         self.assertIn("exit 4", decision["reason"])
         self.assertIn("exited 4", decision["reason"])
         self.assertIn("boom", decision["reason"])
-        self.assertEqual(self.state()["blocks"], 1)
+        self.assertEqual(self.blocks(), 1)
 
     def test_stop_hook_active_does_not_short_circuit_the_gate(self):
         self.write_gate("exit 1")
@@ -169,23 +171,65 @@ class StopGateTests(unittest.TestCase):
         for expected in range(1, 8):
             out = self.run_hook()
             self.assertEqual(json.loads(out.stdout)["decision"], "block")
-            self.assertEqual(self.state()["blocks"], expected)
+            self.assertEqual(self.blocks(), expected)
         out = self.run_hook()
         self.assertEqual(out.returncode, 0)
         self.assertEqual(out.stdout.strip(), "")
         self.assertIn("stop-gate:", out.stderr)
-        self.assertEqual(self.state()["blocks"], 0)
+        self.assertEqual(self.blocks(), 0)
 
-    def test_a_new_session_restarts_the_count(self):
+    def test_a_new_session_starts_its_own_count(self):
         self.write_gate("exit 1")
         self.run_hook(session="s1")
         self.run_hook(session="s1")
-        self.assertEqual(self.state()["blocks"], 2)
+        self.assertEqual(self.blocks("s1"), 2)
         out = self.run_hook(session="s2")
         self.assertEqual(json.loads(out.stdout)["decision"], "block")
-        recorded = self.state()
-        self.assertEqual(recorded["blocks"], 1)
-        self.assertEqual(recorded["session_id"], "s2")
+        self.assertEqual(self.blocks("s2"), 1)
+        self.assertEqual(self.blocks("s1"), 2)
+
+    def test_interleaved_sessions_each_reach_the_release(self):
+        # Two sessions stopping in one checkout used to reset each other's count forever.
+        self.write_gate("exit 1")
+        for expected in range(1, 8):
+            for session in ("host", "local"):
+                out = self.run_hook(session=session)
+                self.assertEqual(json.loads(out.stdout)["decision"], "block")
+                self.assertEqual(self.blocks(session), expected)
+        for session in ("host", "local"):
+            out = self.run_hook(session=session)
+            self.assertEqual(out.stdout.strip(), "", session)
+            self.assertIn("released after 8 blocks", out.stderr)
+            self.assertEqual(self.blocks(session), 0)
+        self.assertEqual(self.state()["sessions"], {})
+
+    def test_a_release_leaves_other_sessions_counts_alone(self):
+        self.write_gate("exit 1")
+        self.run_hook(session="other")
+        for _ in range(8):
+            self.run_hook(session="s1")
+        self.assertEqual(self.blocks("s1"), 0)
+        self.assertEqual(self.blocks("other"), 1)
+
+    def test_a_green_run_clears_every_sessions_count(self):
+        self.write_gate('test -f "%s"' % self.counter)
+        self.run_hook(session="s1")
+        self.run_hook(session="s2")
+        self.counter.write_text("")
+        self.run_hook(session="s1")
+        self.assertEqual(self.state()["sessions"], {})
+
+    def test_a_session_silent_past_the_stale_window_is_pruned(self):
+        self.write_gate("exit 1")
+        self.run_hook(session="s1")
+        path = self.state_files()[0]
+        recorded = json.loads(path.read_text())
+        recorded["sessions"]["gone"] = {"blocks": 7, "seen": 0}
+        recorded["sessions"]["junk"] = "not an entry"
+        path.write_text(json.dumps(recorded))
+        self.run_hook(session="s1")
+        self.assertEqual(set(self.state()["sessions"]), {"s1"})
+        self.assertEqual(self.blocks("s1"), 2)
 
     def test_an_untrusted_folder_never_runs_the_gate(self):
         self.write_gate('echo run >> "%s"' % self.counter, "exit 1")
