@@ -247,7 +247,23 @@ waiting for that record, and the line says `(so far)` when it never comes. Whate
 printed, the settled one the stop records afterwards raises the session totals — the agent is
 never named a second time, and the session total is never below the sum of the final figures.
 
-Four settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
+A prompt also carries one line about the session itself when its context has grown past a size
+the posture calls a full session: `usage-feed: session context 120,000 tokens, past the
+fresh-session threshold of 100,000 — finish the task, write the handoff, start a fresh session`.
+The size is the newest response's input tokens plus the prefix it read from the cache and the
+prefix it wrote into it, which is what every further turn re-reads and what a long session mostly
+costs; the turn line shows none of that.
+
+It is said once per threshold and not once per turn: a session that stays above one is silent
+until it reaches the next, and a resume — or a transcript whose identity changed, which makes the
+reader start over — reads the thresholds already said back out of the state file. A context that
+falls back under a threshold, which is what an in-place compaction does, arms that threshold
+again, because crossing it a second time is a crossing nobody has been told about. The line names
+the highest threshold newly crossed, never one already fed. A context no response has reported
+yet is no crossing, so nothing is said rather than a size of zero being invented. Like every
+other line here it is soft: nothing is blocked.
+
+Five settings in the active `cost` variant's sidecar govern all of it, and the hook holds no
 number of its own:
 
 - `turn_feed: "off"` — nothing is injected anywhere and no file is written.
@@ -257,6 +273,10 @@ number of its own:
   ship this.
 - `nudge_at` — the multiples that mark a return as over budget. An empty list, which `max` ships,
   means never.
+- `session_nudge_at` — the context sizes, in whole tokens, smallest first and none repeating,
+  that the fresh-session line is said at. `frugal` ships 80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` an empty list, which
+  means never. Those figures are starting points chosen against a 200,000-token window, not
+  measured ones: the follow-up to #321 replaces them with sizes read out of the ledger.
 - `max_parallel` — the width the running-agent note measures against. `null`, which `max` ships,
   means the note never appears.
 

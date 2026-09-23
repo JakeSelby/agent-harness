@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The usage feed tells the orchestrator when its own session has grown past the posture's
+  fresh-session threshold. A long session's cost is mostly the context every further turn
+  re-reads, and the turn line, which reports output tokens, showed none of it. A new
+  `session_nudge_at` switch in the cost sidecar lists context sizes in whole tokens, resolved
+  over `extends` like every other switch; on `UserPromptSubmit` the feed reads the newest
+  response's input tokens plus its cached prefix and, at a crossing, adds one line naming the size,
+  the threshold and the advice to finish the task, write the handoff and start fresh. It is said
+  once per threshold rather than once per turn: the thresholds already said are kept in the
+  session's state file, and survive the reader starting over on a transcript whose identity
+  changed, so a resume does not repeat them. A context that falls back under a threshold, which
+  is what an in-place compaction does, arms that threshold again. Nothing is blocked. `frugal` ships
+  80,000 and 120,000, `balanced` 120,000 and 160,000, and `max` nothing at all; those are
+  starting points chosen against a 200,000-token window rather than measured figures, and the
+  follow-up to this issue replaces them with sizes read out of the ledger. Codex raises no
+  `UserPromptSubmit` event and declares the nudge uncovered (#321).
 - `docs/spikes/` records the measurements a decision was taken on, starting with the in-run budget
   nudge: whether a running subagent should be told mid-run how its spend compares with its soft
   budget. Measured on one machine's ledger, 2 of 89 budgeted subagent runs overran, the excess was
