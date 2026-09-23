@@ -517,6 +517,8 @@ def write_manifest(manifest):
         if not path.exists():
             write_text_atomic(path, render_artifact(item))
     write_text_atomic(map_path, json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    # Derived from the map and the story files just written, so the two never drift apart.
+    write_sprint_status(manifest)
 
 
 MANIFEST_ITEM_KEYS = (
@@ -559,7 +561,9 @@ def frontmatter_value(text, key):
         return MISSING
 
 
-def audit_manifest(manifest=None):
+def audit_manifest(manifest=None, sprint_status=False):
+    """Local findings; `sprint_status` adds the derived file's drift, which only the audit command
+    checks, because reserve and new run this as a precondition and regenerate the file themselves."""
     manifest = manifest or load_manifest()
     errors = []
     if manifest.get("schema_version") not in {1, 2}:
@@ -637,6 +641,8 @@ def audit_manifest(manifest=None):
     for path in artifact_dir.glob("AH-*.md"):
         if path not in expected_paths:
             errors.append("unreferenced artifact {}".format(path.relative_to(ROOT)))
+    if sprint_status:
+        errors.extend(sprint_status_findings(manifest))
     return errors
 
 
@@ -994,6 +1000,8 @@ def upgrade(manifest, ids=None, check=False):
                 )
             ) from error
         raise
+    if writes:
+        write_sprint_status(manifest)
     return report
 
 
@@ -1078,7 +1086,12 @@ def depth_findings(manifest, issue_number):
     item = next((entry for entry in manifest["items"] if entry["github_number"] == issue_number), None)
     if item is None:
         return ["#{}: no BMad ID; run reserve".format(issue_number)], []
-    label = "{} #{}".format(item["bmad_id"], issue_number)
+    return item_depth_findings(item)
+
+
+def item_depth_findings(item):
+    """The depth check for one mapped item; returns (findings, notices)."""
+    label = "{} #{}".format(item["bmad_id"], item["github_number"])
     path = ROOT / item["artifact_path"]
     if not path.is_file():
         return ["{}: missing artifact {}".format(label, item["artifact_path"])], []
@@ -1350,6 +1363,150 @@ def collision_report(kind, sequence, used, claimed, unreadable):
     return "\n".join(lines), floor
 
 
+SPRINT_STATUS_RELATIVE_PATH = "_bmad-output/implementation-artifacts/sprint-status.yaml"
+SPRINT_STATUS_COMMAND = "python3 scripts/bmad_issue_sync.py sprint-status"
+SLUG_LENGTH = 48
+
+
+def sprint_key(item):
+    """`<id>-<title slug>`, the slug cut at a word boundary so keys stay readable."""
+    slug = re.sub(r"[^a-z0-9]+", "-", item["title"].lower()).strip("-")
+    if len(slug) > SLUG_LENGTH:
+        cut = slug.rfind("-", 0, SLUG_LENGTH + 1)
+        slug = slug[:cut if cut > 0 else SLUG_LENGTH].strip("-")
+    return "{}-{}".format(item["bmad_id"].lower(), slug) if slug else item["bmad_id"].lower()
+
+
+def story_state(item):
+    """(ready, updated) for one item's story file; a missing or malformed file is simply not ready."""
+    path = ROOT / item["artifact_path"]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False, None
+    updated = frontmatter_value(text, "updated")
+    updated = updated if isinstance(updated, str) else None
+    try:
+        typed = artifact_layout(item, text) is not None
+    except RuntimeError:
+        return False, updated
+    return typed and not item_depth_findings(item)[0], updated
+
+
+def render_sprint_status(manifest):
+    """BMad's sprint-status.yaml, derived from the map and the story files; see docs/bmad.md.
+
+    `generated` is the newest date the map or a story file records, never the clock, so an
+    unchanged corpus renders byte for byte the same.
+    """
+    items = sorted(manifest["items"], key=lambda value: value["bmad_id"])
+    by_id = {item["bmad_id"]: item for item in items}
+    status = {}
+    dates = [manifest["generated_at"]] if isinstance(manifest.get("generated_at"), str) else []
+    for item in items:
+        ready, updated = story_state(item)
+        if updated:
+            dates.append(updated)
+        if item["lifecycle"] == "completed":
+            status[item["bmad_id"]] = "done"
+        elif ready:
+            status[item["bmad_id"]] = "ready-for-dev"
+        else:
+            status[item["bmad_id"]] = "backlog"
+
+    def epic_of(item):
+        # The nearest epic above the item; a story's own tasks sit in the story's epic block.
+        seen = {item["bmad_id"]}
+        parent = by_id.get(item["parent_bmad_id"])
+        while parent is not None and parent["type"] != "epic" and parent["bmad_id"] not in seen:
+            seen.add(parent["bmad_id"])
+            parent = by_id.get(parent["parent_bmad_id"])
+        return parent["bmad_id"] if parent is not None and parent["type"] == "epic" else None
+
+    members = defaultdict(list)
+    sub_epics = defaultdict(list)
+    for item in items:
+        if item["type"] == "epic":
+            parent = epic_of(item)
+            if parent is not None:
+                sub_epics[parent].append(item["bmad_id"])
+        else:
+            members[epic_of(item)].append(item)
+
+    def epic_status(bmad_id, visiting):
+        children = [status[item["bmad_id"]] for item in members[bmad_id]]
+        for child in sub_epics[bmad_id]:
+            if child not in visiting:
+                children.append(epic_status(child, visiting | {child}))
+        if not children:
+            return "done" if by_id[bmad_id]["lifecycle"] == "completed" else "backlog"
+        if all(value == "done" for value in children):
+            return "done"
+        if any(value in {"done", "ready-for-dev", "in-progress"} for value in children):
+            return "in-progress"
+        return "backlog"
+
+    lines = [
+        "# Derived from _bmad-output/issue-map.json and the story files. Do not edit by hand;",
+        "# regenerate with: {}".format(SPRINT_STATUS_COMMAND),
+        "# done: the issue is closed. ready-for-dev: open, with a typed story that passes the depth",
+        "# check. backlog: any other open item. An epic is done when every child is done, and",
+        "# in-progress when any child is done or ready.",
+        "",
+        "generated: {}".format(max(dates) if dates else "unknown"),
+        "project: {}".format(manifest["repository"].rsplit("/", 1)[-1]),
+        "project_key: AH",
+        "tracking_system: github-issues",
+        'story_location: "_bmad-output/implementation-artifacts"',
+        "",
+        "development_status:",
+    ]
+    blocks = []
+    for item in items:
+        if item["type"] == "epic":
+            block = ["  {}: {}".format(sprint_key(item), epic_status(item["bmad_id"], {item["bmad_id"]}))]
+            block += ["  {}: {}".format(sprint_key(child), status[child["bmad_id"]]) for child in members[item["bmad_id"]]]
+            blocks.append(block)
+    if members[None]:
+        block = ["  # Items with no epic"]
+        block += ["  {}: {}".format(sprint_key(child), status[child["bmad_id"]]) for child in members[None]]
+        blocks.append(block)
+    for index, block in enumerate(blocks):
+        if index:
+            lines.append("")
+        lines.extend(block)
+    if not blocks:
+        lines[-1] = "development_status: {}"
+    return "\n".join(lines) + "\n"
+
+
+def write_sprint_status(manifest):
+    """Write the derived file when its render changed; returns whether it wrote."""
+    path = ROOT / SPRINT_STATUS_RELATIVE_PATH
+    rendered = render_sprint_status(manifest)
+    try:
+        if read_exact(path) == rendered:
+            return False
+    except FileNotFoundError:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(path, rendered)
+    return True
+
+
+def sprint_status_findings(manifest):
+    """One finding when the committed file is missing or differs from a fresh render."""
+    path = ROOT / SPRINT_STATUS_RELATIVE_PATH
+    try:
+        current = read_exact(path)
+    except FileNotFoundError:
+        return ["{} is missing; run {}".format(SPRINT_STATUS_RELATIVE_PATH, SPRINT_STATUS_COMMAND)]
+    if current != render_sprint_status(manifest):
+        return ["{} differs from the issue map and story files; run {}".format(
+            SPRINT_STATUS_RELATIVE_PATH, SPRINT_STATUS_COMMAND
+        )]
+    return []
+
+
 def reserve(manifest, repo, issue_number, kind, parent_number, advance=False):
     if any(item["github_number"] == issue_number for item in manifest["items"]):
         raise RuntimeError("issue #{} already has a BMad ID".format(issue_number))
@@ -1462,6 +1619,8 @@ def main(argv=None):
     upgrade_parser.add_argument("--id", action="append", dest="ids", metavar="BMAD_ID", help="repeatable; default all")
     upgrade_parser.add_argument("--check", action="store_true", help="report what would convert, writing nothing")
     subparsers.add_parser("refresh")
+    sprint_parser = subparsers.add_parser("sprint-status", help="render the derived sprint-status.yaml")
+    sprint_parser.add_argument("--check", action="store_true", help="exit 1 when the file is stale, writing nothing")
     subparsers.add_parser("plan")
     subparsers.add_parser("apply")
     reserve_parser = subparsers.add_parser("reserve")
@@ -1514,8 +1673,17 @@ def main(argv=None):
             "; nothing written" if refused and not args.check else "",
         ))
         return 1 if refused else 0
+    if args.command == "sprint-status":
+        if args.check:
+            findings = sprint_status_findings(manifest)
+            for finding in findings:
+                print(finding)
+            return 1 if findings else 0
+        wrote = write_sprint_status(manifest)
+        print("sprint-status: {} {}".format(SPRINT_STATUS_RELATIVE_PATH, "written" if wrote else "unchanged"))
+        return 0
     if args.command == "audit":
-        errors = audit_manifest(manifest)
+        errors = audit_manifest(manifest, sprint_status=True)
         notices = []
         if args.live and errors:
             notices.append("live comparison skipped until the local findings below are fixed")

@@ -137,6 +137,30 @@ it was found. Rebasing onto the branch that took them is the usual answer; `--ad
 instead and says which IDs it leaves permanently unused. Heads `git ls-remote` advertises that this
 clone holds no object for are reported, so an incomplete survey is never read as a clean one.
 
+### Sprint status
+
+BMad's sprint and build workflows read `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+Here it is rendered from the map and the story files, never edited, so it cannot drift from
+GitHub:
+
+```sh
+python3 scripts/bmad_issue_sync.py sprint-status
+python3 scripts/bmad_issue_sync.py sprint-status --check
+```
+
+Each epic is listed by BMad ID, followed by the items whose nearest epic ancestor it is, in BMad ID
+order; items under no epic close the file. A key is the lower-case ID and a slug of the title. A
+completed item is `done`; an active item whose story is typed and passes the depth check is
+`ready-for-dev`; any other active item is `backlog`. An epic, counting its child epics, is `done`
+when every child is done, `in-progress` when any is done or ready, and otherwise `backlog`; an
+epic with no children follows its own state. `generated` is the newest date the map or a story
+records, not the clock, so an unchanged corpus renders byte for byte the same.
+
+`new`, `reserve`, `refresh`, `bootstrap` and `upgrade` regenerate the file whenever they write,
+and `audit` fails while it differs from a fresh render. Filling a story can move it to
+`ready-for-dev`, so run `sprint-status` in the same change. Two branches that both regenerate it
+conflict on merge; resolve by rerunning the command rather than editing either side.
+
 ### Live verification
 
 ```sh
