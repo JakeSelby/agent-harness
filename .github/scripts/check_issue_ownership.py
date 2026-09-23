@@ -6,6 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pull_number import pull_number  # noqa: E402
+
 ISSUE_MAP = Path(__file__).resolve().parents[2] / '_bmad-output' / 'issue-map.json'
 
 
@@ -78,7 +81,7 @@ def main():
         if page.get('errors'):
             raise ValueError('GitHub returned errors; ownership is unknown.')
         pulls.extend(page['data']['repository']['pullRequests']['nodes'])
-    issue = validate(pulls, int(os.environ['PR_NUMBER']), repository)
+    issue = validate(pulls, pull_number(), repository)
     bmad_id = require_mapping(issue, ISSUE_MAP)
     print('Issue ownership verified: #{} ({})'.format(issue, bmad_id))
 

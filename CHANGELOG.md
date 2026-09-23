@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Where the qualification targets run and how each is provisioned is now written down, because a
+  release session had to rediscover it every time. `docs/compatibility.md` names the binary
+  source, the login and the host for each of the four CLI targets: every round to date ran on one
+  Mac, Codex on macOS is the binary bundled in the ChatGPT desktop app logged in with a ChatGPT
+  session, and both Linux targets run in a container on that Mac built from the new
+  `scripts/linux-target.Dockerfile`, which pins both clients. The runbook's new target-hosts
+  section gives the commands in order. The smoke tier's `credentials` check now takes
+  `--targets`, which a qualification round passes through, and fails at once, naming the target,
+  when a client is off `PATH`, the Codex login is missing or the Docker daemon a Linux target
+  needs does not answer; with no targets named it checks what this host can run and reports a
+  macOS target on a Linux host as skipped. The runbook also records that the acceptance runner
+  does not yet carry a Codex session login into its disposable home, so Codex evidence can only
+  be produced by hand until it does. (#408)
 - `scripts/cost_bench.py replay --tag` runs a pinned git ref of this repository, and is repeatable,
   so `--tag v0.12.0 --tag v0.13.0 --model <id>` measures two harness versions against bare in one
   invocation and writes a history row for each, labelled with the version and commit of the ref it
@@ -245,6 +258,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Remote Control hosts managed by `harness remote-control` now reuse their environment across a
+  restart. Claude Code 2.1.280 reads the folder's bridge pointer only when `createSessionInDir`
+  is on, and every host was launched with `--no-create-session-in-dir`, so each restart
+  registered a fresh environment and each `SIGTERM` archived the host's sessions. The flag is
+  gone; heal's pointer rewrite keeps 2.1.280's two `parkedProjectThreadSessionIds` keys; `install`
+  on a changed agent adopts the running host's environment, writing the pointer and stopping the
+  host with `SIGKILL` so its archive path never runs; `heal` re-queues this Mac's disconnected
+  sessions through `bridge/reconnect`, at most once per session every ten minutes; and a
+  `remote_control.folders` entry may be an object with its own `spawn` and `env`, so each
+  workspace root gets a host that loads its own `CLAUDE.md`, skills and hooks (#603).
+
+- The `delegation` stance, the shared role descriptions and the refusal a native `gatherer` or
+  `reviewer` spawn receives now carry one sentence word for word: a read-only role runs through
+  `harness role run <role>`, because confinement is read roots and return shape rather than the
+  absence of write tools, which is also why `builder` is exempt and spawns natively. A session
+  that followed the stance used to spend a refused call discovering a rule none of the three
+  texts stated, and the refusal's reason for exempting the write-capable role was nowhere. A test
+  holds the three copies together, so the sentence cannot drift in one of them (#304).
+
 - The credential probe answers for a variable holding something that is not a path, where asking
   the filesystem about it used to raise and carry the value into the error's own message — a
   service account document pasted into `GOOGLE_APPLICATION_CREDENTIALS` printed its private key.
@@ -320,6 +352,17 @@ All notable changes to this project are documented here. The format follows
   prefix (#497).
 
 ### Changed
+
+- Pull requests to `main` land through a merge queue, and changelog entries after 0.13.0 are
+  one fragment file per change under `changelog.d/`. Every pull request workflow also runs on
+  `merge_group`, and the issue-ownership and landing-copy checks read the queued pull request's
+  number from the queue branch, since a queued entry whose checks never report stalls the queue.
+  `scripts/release_notes.py --changelog <version>` assembles the fragments into a version section
+  in a stable order, and `bin/harness lint` fails a branch that changes `bin/`, `lib/`,
+  `adapters/`, `primitives/`, `policy/`, `docs/` or `scripts/` without a fragment or a
+  `<number>.none.md` waiver. Every branch used to edit the same Unreleased section, so any two in
+  flight conflicted there, and the up-to-date requirement cost a rebase and a full CI rerun per
+  landing. (#337)
 
 - A release no longer runs a third-party framework's own workflow. `bmad-workflow` leaves
   `required_cases` and is replaced by `framework-spawn-routing`, a generic case that builds a

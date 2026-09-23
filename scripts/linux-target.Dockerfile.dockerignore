@@ -1,0 +1,2 @@
+# The build copies nothing from its context; send none of it to the daemon.
+*

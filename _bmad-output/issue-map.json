@@ -4317,6 +4317,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B060",
+      "github_number": 603,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/603",
+      "title": "fix(remote-control): hosts never reuse their environment, so restarts archive sessions",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B060.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-T008",
       "github_number": 607,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/607",
