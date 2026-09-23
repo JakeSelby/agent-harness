@@ -204,6 +204,10 @@ def record_session(data):
                 narrowed.pop("agents", None)
             else:
                 narrowed["agents"] = sorted(set(known) & set(on_disk))
+            # What a reload announced is narrowed the same way: a definition that has left the
+            # disk is one a new process would not have loaded either.
+            if isinstance(narrowed.get("announced"), list):
+                narrowed["announced"] = sorted(set(narrowed["announced"]) & set(on_disk))
             module.write_session_record(session, narrowed)
     module.prune_session_records(keep=session if isinstance(session, str) else None)
 

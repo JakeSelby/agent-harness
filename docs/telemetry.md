@@ -58,6 +58,23 @@ endpoint, whatever `export` is set to, and turning export on does not turn this 
 Unlike a ledger row, a decision row holds the text the hook judged — a command, or the head of
 a brief — capped at 2 KiB, which is the one reason to turn it off on a shared machine.
 
+## The completion claim switch
+
+```json
+{ "telemetry": { "completion_claim": true } }
+```
+
+This one defaults to **off**. It adds `completion_claim` to a `stop-gate` decision row: the last
+2 KiB of the turn's final assistant message, read from the transcript at Stop, with the hash
+over the uncapped message — or a null claim beside the reason there is none.
+[usage.md](usage.md#the-completion-claim) describes the fields and the reasons. It is what lets
+a stop claim be read against the gate result sitting on the same row.
+
+It is off because it is the only place the decision log holds assistant prose, and that is a
+different thing to keep on a shared machine from a log of commands. `decisions: false` turns it
+off too, since there is no row to put it on. Nothing here is exported either: a decision row
+reaches no endpoint whatever `export` is set to.
+
 ## Credentials
 
 Headers are read from the named environment variable or the named file and from nowhere else. A

@@ -1,0 +1,191 @@
+{
+  "entries": [
+    {
+      "action_class": "coding.shell_exec",
+      "context": {
+        "command": "python3 -m unittest discover -s tests"
+      },
+      "counterparty": "repo:agent-harness/main",
+      "grade": 1,
+      "name": "proceed",
+      "request_hash": "875dcca7dc666fd5c120da543decfe124a2f69d9f7b5a68a213bccb7a4722e98",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.03,
+              "proceed": 0.94,
+              "unknown": 0.03
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "none",
+            "probabilities": {
+              "high": 0.025,
+              "low": 0.025,
+              "moderate": 0.025,
+              "none": 0.9,
+              "severe": 0.025
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "action_class": "coding.git_push",
+      "context": {
+        "command": "git push --force origin main"
+      },
+      "counterparty": "repo:agent-harness/main",
+      "grade": 3,
+      "name": "confirm",
+      "request_hash": "de6b12275483c9dc4813f9d5329ae75babb72d3a6e72b81f32388e3628e968cc",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.97,
+              "proceed": 0.015,
+              "unknown": 0.015
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "severe",
+            "probabilities": {
+              "high": 0.03,
+              "low": 0.03,
+              "moderate": 0.03,
+              "none": 0.03,
+              "severe": 0.88
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "action_class": "coding.file_write",
+      "context": {
+        "summary": "rewrite of a file nobody named"
+      },
+      "counterparty": "repo:agent-harness/main",
+      "grade": 2,
+      "name": "unknown",
+      "request_hash": "36129d096ca0d86dd321374b5b3649aea6764d2f8407ea94311b82e9c2ad9f49",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "unknown",
+            "probabilities": {
+              "confirm": 0.045,
+              "proceed": 0.045,
+              "unknown": 0.91
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "moderate",
+            "probabilities": {
+              "high": 0.035,
+              "low": 0.035,
+              "moderate": 0.86,
+              "none": 0.035,
+              "severe": 0.035
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "action_class": "coding.deploy",
+      "context": {
+        "command": "./deploy.sh production"
+      },
+      "counterparty": "repo:agent-harness/main",
+      "grade": 3,
+      "name": "hesitant",
+      "request_hash": "e7e6cb7410450ca17ed8d395ed13c21149bd2f63e26d94e05671c7b61c8fac36",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.55,
+              "proceed": 0.225,
+              "unknown": 0.225
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "high",
+            "probabilities": {
+              "high": 0.84,
+              "low": 0.04,
+              "moderate": 0.04,
+              "none": 0.04,
+              "severe": 0.04
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "action_class": "coding.git_commit",
+      "context": {
+        "command": "git commit -m 'x'"
+      },
+      "counterparty": "repo:agent-harness/main",
+      "grade": 2,
+      "name": "malformed",
+      "request_hash": "89304e97116207b2ab0cbe07d8e4016bad805e18b16c0f3d959e7876bb368368",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.05,
+              "proceed": 0.9,
+              "unknown": 0.05
+            },
+            "type": "choice"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 1
+        }
+      }
+    }
+  ],
+  "model": "jev-1.13.0",
+  "pack_hash": "304ec46bdfbb7ad2dcddd94f55339b5eb5da84fc73c2d80d1c7d15529a1c9de1",
+  "source": "hand-authored to the documented response shape; no live request"
+}

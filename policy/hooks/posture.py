@@ -37,6 +37,11 @@ SESSION_TTL_DAYS = 14
 SESSION_ID_MAX = 128
 # How stale a record may get before a spawn that read it moves its mtime out of the sweep's way.
 SESSION_REFRESH_SECONDS = 86400
+# The transcript attachment a session writes when the set of types it resolves changes, and how
+# much of the transcript's tail is read to find one. A reload is announced in the turn it is
+# noticed, so it is at the end of the file, and a bounded read keeps a spawn hook's cost flat.
+AGENT_LISTING = "agent_listing_delta"
+TRANSCRIPT_TAIL_BYTES = 256 * 1024
 # The user-config key naming tool-name globs plan mode may use, and the postures under which a
 # widened plan-mode authority is what the user already asked for everywhere else.
 PLAN_TOOLS_KEY = "plan_allow_tools"
@@ -114,6 +119,60 @@ def installed_agents(env=None):
         return []
 
 
+def transcript_agents(transcript_path, limit=TRANSCRIPT_TAIL_BYTES):
+    """The types a reload announced to this session after it started, or None when none did.
+
+    Claude Code attaches an `agent_listing_delta` record to the transcript whenever the set of
+    types it can resolve changes: one with `isInitial` true at session start, and one more each
+    time the watcher picks a definition up. A later record is the runtime's own statement that
+    this session resolves the names it adds, which no directory listing can give — a headless
+    session reloads nothing and writes no later record, so this answers for the session that
+    asked rather than for the machine. Measured in `docs/spikes/2026-09-22-registry-reload.md`.
+
+    Only the tail is read, so a long session costs what a short one does, and a listing that
+    has fallen out of it reads as None: unknown, which routes nothing.
+    """
+    if not transcript_path:
+        return None
+    try:
+        with open(str(transcript_path), "rb") as stream:
+            try:
+                stream.seek(-limit, os.SEEK_END)
+            except OSError:
+                stream.seek(0)
+            tail = stream.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    names = None
+    # One record per line, so only `\n` ends one: a body holding a line separator of its own
+    # must not be read as two half-records.
+    for line in tail.split("\n"):
+        if AGENT_LISTING not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict) or record.get("type") != "attachment" or record.get("isSidechain"):
+            continue
+        listing = record.get("attachment")
+        if not isinstance(listing, dict) or listing.get("type") != AGENT_LISTING:
+            continue
+        if listing.get("isInitial"):
+            # A listing a session starts from replaces everything before it, exactly as a
+            # `startup` replaces the record: what an earlier session resolved is not this one's.
+            names = None
+            continue
+        names = set() if names is None else names
+        for key, apply in (("addedTypes", names.add), ("removedTypes", names.discard)):
+            value = listing.get(key)
+            if isinstance(value, list):
+                for name in value:
+                    if isinstance(name, str):
+                        apply(name)
+    return sorted(names) if names is not None else None
+
+
 def state_dir(env=None):
     return home(env) / ".local" / "state" / "agent-harness"
 
@@ -121,12 +180,12 @@ def state_dir(env=None):
 def sessions_dir(env=None):
     """The session registry: one record per session, written when its process started.
 
-    Claude Code loads its agent registry once, when the session process starts, and does not
-    reload it. So a definition on disk is not evidence that a running session can resolve the
-    type it names — a session that began before `harness sync` installed the band workers
-    cannot spawn one, and rerouting to it turns a spawn that would have worked into one that
-    fails. The SessionStart policy writes what the registry held; the spawn hook reroutes only
-    to a name it finds there.
+    A definition on disk is not evidence that a running session can resolve the type it names:
+    an interactive session picks one up seconds after it appears, a headless one never does,
+    and rerouting to a type the session cannot resolve turns a spawn that would have worked
+    into one that fails. The SessionStart policy writes what the registry held; the spawn hook
+    reroutes to a name it finds there, or to one `transcript_agents` shows the session was
+    later told about.
     """
     return state_dir(env) / "sessions"
 
@@ -189,6 +248,30 @@ def session_agents(session_id, env=None):
     record = read_session_record(session_id, env)
     names = record.get("agents") if record else None
     return [name for name in names if isinstance(name, str)] if isinstance(names, list) else None
+
+
+def session_announced(session_id, env=None):
+    """The types a reload told this session about on an earlier spawn; `[]` when none did."""
+    record = read_session_record(session_id, env)
+    names = record.get("announced") if record else None
+    return [name for name in names if isinstance(name, str)] if isinstance(names, list) else []
+
+
+def remember_agents(session_id, names, env=None):
+    """Keep what a reload announced, so routing outlives the transcript tail. `True` when written.
+
+    The transcript is where an announcement is discovered and the read of it is bounded, so a
+    long session pushes the delta out of the tail; routing that switched off there would be the
+    same defect again on a slower clock. The remembered set is replaced rather than merged,
+    because the reader's answer already accounts for every `removedTypes` in the tail, and a
+    merge would reinstate a worker the session has been told it no longer resolves.
+    """
+    wanted = sorted({name for name in names if isinstance(name, str)}) if names else []
+    record = read_session_record(session_id, env)
+    record = {} if record is None else record
+    if record.get("announced") == wanted:
+        return False
+    return write_session_record(session_id, dict(record, announced=wanted, at=int(time.time())), env)
 
 
 def refresh_session_record(session_id, env=None, older_than=SESSION_REFRESH_SECONDS):
@@ -316,6 +399,28 @@ def _number(value, low, high, integer=False):
     return low <= value <= high
 
 
+def _sizes(value):
+    """None when `value` is a usable list of context sizes, else the rule it breaks.
+
+    Specific, where every other switch reports "an unusable value", because this one is a list:
+    an author told eight numbers are unusable has to find which, against a rule written nowhere.
+    """
+    if not isinstance(value, list):
+        return "is a list of whole positive token counts, smallest first"
+    if len(value) > MAX_NUDGES:
+        return "has " + str(len(value)) + " entries and at most " + str(MAX_NUDGES) + " are read"
+    previous = None
+    for item in value:
+        shown = json.dumps(item, default=str)
+        if not (_number(item, 0, MAX_BUDGET, integer=True) and item > 0):
+            return "entry " + shown + " is not a whole positive token count"
+        if previous is not None and item <= previous:
+            return ("entry " + shown + " does not follow " + json.dumps(previous) +
+                    "; the sizes ascend and none repeats")
+        previous = item
+    return None
+
+
 def validate_sidecar(data, roles=None):
     """`(usable copy, findings)` for one sidecar object; every finding drops the value it names.
 
@@ -361,6 +466,14 @@ def validate_sidecar(data, roles=None):
         elif key == "nudge_at":
             ok = (isinstance(value, list) and len(value) <= MAX_NUDGES
                   and all(_number(v, 0, MAX_MULTIPLIER) and v > 0 for v in value))
+        elif key == "session_nudge_at":
+            # Context sizes, not multiples: whole tokens, because that is what a transcript
+            # counts in and a fractional token is a number nobody measured.
+            problem = _sizes(value)
+            if problem:
+                findings.append("switch 'session_nudge_at' " + problem)
+                continue
+            ok = True
         else:
             findings.append("unknown switch '" + key + "'")
             continue

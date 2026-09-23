@@ -228,11 +228,18 @@ for yourself unless the user asks. The `grade-bash` hook enforces the stance: it
 shell command 0–3 and gates at grade 3 under `execute`, 2 and up under `confirm-writes`, 1 and up
 under `ask`; [`grade-bash.py`](../claude/hooks/grade-bash.py) documents the grades and the modes.
 
-**Plan ceremony.** `review-card` makes plan mode feel like a design review: the approach in chat, a
-link to the plan file, an explicit build gate, then autonomous implementation. The card is a review
-document before it is an execution document — length below it is free, length above it is the
-defect — and a hook validates it on every write. Skip the ceremony only if the user explicitly asks
-for a quick plan or says to just exit plan mode. `light` drops the file and the validator but keeps
+**Plan ceremony.** `review-card` makes plan mode the review surface: `/plan` asks to enter it,
+writes the card into the file plan mode designates, posts the approach in chat and finishes at
+`ExitPlanMode`, so the pane renders the plan and the native approval is the gate. Approval is
+also when the naming happens: `/plan` renames the runtime-generated file to a topic slug and hands
+`/build` that path — which is why `/build` never searches for a plan, and why the builder is what
+commits the file, into the worktree the pull request comes from. Where there is no plan mode —
+Codex, and any plan written outside `/plan` — the file is named for the topic, opened for the
+reviewer and closed with the typed build line instead. Either way, autonomous implementation
+follows approval. The card is a review document before it is an execution document — length
+below it is free, length above it is the defect — and a hook validates it on every write,
+whatever the runtime named the file. Skip the ceremony only if the user explicitly asks for a
+quick plan or says to just exit plan mode. `light` drops the file and the validator but keeps
 the explicit go-ahead.
 
 **Build versus buy.** The user has heard the maintenance-burden argument and rejects its premise:
