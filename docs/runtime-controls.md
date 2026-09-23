@@ -138,10 +138,10 @@ answer can be compared against the decision it did not change. Labels only: neve
 switch: while that file exists every mode reads `off`, with no configuration change and no
 restart, because the sentinel is read per decision rather than at construction.
 `governance.jev.sentinel` moves it, absolute or resolved against the state directory, never
-against the working directory. The kill switch is read per decision rather than at
-construction, so a session that was running when the file appeared stops calling, and starts
-again when it is removed, without a restart. A live request also needs a key in the environment; without
-one the call fails open to the deterministic answer like any other failure.
+against the working directory. A session that was running when the file appeared stops calling,
+and starts again when it is removed, with no restart and no edit. A live request also needs a
+key in the environment; without one the call fails open to the deterministic answer like any
+other failure.
 
 **What may leave.** `governance.jev.state_fields` is an allowlist, empty by default, over
 exactly two fields: `command` and `summary`. Everything else in a caller's context — a file

@@ -90,6 +90,7 @@ All notable changes to this project are documented here. The format follows
   still fails open to the deterministic decision, and `harness doctor` prints the mode per point,
   the allowlist, where the kill switch lives and whether a credential variable is set — by name,
   never its value (#137).
+
 - One Bash command in twenty that the harness allows is now kept in the decision log as a
   sampled negative: a `grade-bash` row with `deterministic_answer: allow`, `sampled: true` and
   the `sample_rate` it was drawn at. The graded rows are all prompts, so a check that may only
