@@ -314,6 +314,8 @@ development_status:
   ah-b081-role-confinement-never-has-a-read-only-role: ready-for-dev
   ah-b082-hook-composition-proves-composition-from: ready-for-dev
   ah-b083-stance-switch-and-custom-stance-switch-only: ready-for-dev
+  ah-b084-spawn-confinement-checks-less-than-step-9-asks: ready-for-dev
+  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
