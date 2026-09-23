@@ -4304,6 +4304,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-T007",
+      "github_number": 599,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/599",
+      "title": "Replay a pinned older tag into a temporary config directory, not only the installed candidate",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T007.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-T008",
       "github_number": 607,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/607",
