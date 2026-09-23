@@ -289,7 +289,7 @@ class RoundTests(unittest.TestCase):
             ROUND.routing(TARGETS, None, [CLAUDE + "=light"])
 
     def test_the_target_invocation_names_both_classes(self):
-        argv = ROUND.target_argv("/clone", CLAUDE, "cheapest", "/tmp/out.json", False,
+        argv = ROUND.target_argv("/clone", CLAUDE, "cheapest", "/tmp/out.json", [],
                                  {"execution_class": "light", "assessment_class": "strong"})
         self.assertEqual(argv[argv.index("--execution-class") + 1], "light")
         self.assertEqual(argv[argv.index("--assessment-class") + 1], "strong")
@@ -310,7 +310,7 @@ class RoundTests(unittest.TestCase):
                 return type("Done", (), {"returncode": 0})()
 
             with patch.object(ROUND.subprocess, "run", side_effect=fake_run):
-                result = ROUND.run_round(round_dir, [CLAUDE], "cheapest", True)
+                result = ROUND.run_round(round_dir, [CLAUDE], "cheapest", [CLAUDE])
         self.assertEqual(result["tier_routing"][CLAUDE]["execution_class"], "standard")
         self.assertEqual(result["tier_routing"][CLAUDE]["assessment_class"], "strong")
 

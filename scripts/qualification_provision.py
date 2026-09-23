@@ -18,9 +18,9 @@ rather than a floating version.
 import argparse
 import json
 import re
+import shlex
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +30,9 @@ VERSION = (ROOT / "VERSION").read_text().strip()
 BMAD_INSTALLER = "bmad-method" "@6.12.0"
 BMAD_MODULES = "bmm,gds"
 CLONE = "clone"
+# Written into a clone this script made, and checked before one is ever removed: a directory
+# somebody else put at that path is refused rather than deleted.
+CLONE_MARKER = ".harness-round-clone"
 RECORDS = "records"
 BMAD = "bmad"
 BMAD_ENV = "HARNESS_ACCEPTANCE_BMAD"
@@ -62,8 +65,14 @@ def clone(out, commit):
     """
     target = out / CLONE
     if target.exists():
+        if not (target / CLONE_MARKER).is_file():
+            raise SystemExit("%s exists and was not created by this script; move it aside first"
+                             % target)
         shutil.rmtree(str(target))
-    result = run(["git", "clone", "--quiet", "--no-hardlinks", "--shared=false", str(ROOT),
+    # `--no-shared` is the spelling git accepts: the option takes no value, so passing one makes
+    # every clone exit 129. A shared object store would also give the clone the same fate as the
+    # checkout being worked in, which is the reason the flag is here at all.
+    result = run(["git", "clone", "--quiet", "--no-hardlinks", "--no-shared", str(ROOT),
                   str(target)])
     if result.returncode:
         raise SystemExit("could not clone this checkout: " + result.stderr.strip()[-300:])
@@ -74,6 +83,7 @@ def clone(out, commit):
     at = git("rev-parse", "HEAD", repo=target).stdout.strip()
     if at != commit:
         raise SystemExit("the clone is at %s, not the commit asked for" % at)
+    (target / CLONE_MARKER).write_text(commit + "\n")
     return target
 
 
@@ -121,6 +131,26 @@ def environment(report):
     return {BMAD_ENV: report["bmad"]} if report.get("bmad") else {}
 
 
+def inside_this_repository(path):
+    """Whether `path` resolves inside any checkout or worktree of this repository.
+
+    A round directory there would be removed by a clean tree check, or worse be committed. The
+    test is the git object store both paths share, so a sibling worktree of this repository is
+    refused exactly as the checkout itself is, and an unrelated repository elsewhere is not.
+    """
+    mine = git("rev-parse", "--git-common-dir").stdout.strip()
+    if not mine:
+        return False
+    mine = (ROOT / mine).resolve()
+    for candidate in [path] + list(path.parents):
+        if not (candidate / ".git").exists():
+            continue
+        common = run(["git", "-C", str(candidate), "rev-parse", "--git-common-dir"]).stdout.strip()
+        if common and (candidate / common).resolve() == mine:
+            return True
+    return False
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, required=True,
@@ -132,14 +162,14 @@ def main(argv=None):
                         help="print the exports a round needs, one per line, and provision nothing")
     args = parser.parse_args(argv)
     out = args.out.expanduser().resolve()
-    if ROOT == out or ROOT in out.parents:
-        raise SystemExit("the round directory must be outside this checkout")
+    if inside_this_repository(out):
+        raise SystemExit("the round directory must be outside every checkout of this repository")
     if args.print_env:
         existing = out / "provision.json"
         if not existing.is_file():
             raise SystemExit("no provision record at %s; provision the round first" % existing)
         for key, value in sorted(environment(json.loads(existing.read_text())).items()):
-            print("export %s=%s" % (key, value))
+            print("export %s=%s" % (key, shlex.quote(str(value))))
         return 0
     if not clean():
         raise SystemExit("the checkout must be clean: a round's evidence names a source commit")

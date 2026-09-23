@@ -83,9 +83,6 @@ CLIENTS = {
     "codex-cli-linux": {"runtime": "codex", "platform": "linux", "command": "codex",
                         "home_var": "CODEX_HOME", "home_dir": ".codex", "observed": False},
 }
-CLIENTS_BY_RUNTIME = {}
-for _id, _spec in sorted(CLIENTS.items()):
-    CLIENTS_BY_RUNTIME.setdefault(_spec["runtime"], _spec)
 UNOBSERVED_HOME = ("this runner's %s configuration home has not been confirmed against a live "
                    "round, so its reading of a %s client is derived from adapters/%s and the "
                    "documentation rather than observed; qualify the first round by hand and pass "
@@ -348,6 +345,30 @@ def codex_answer(events):
     return said[-1] if said else ""
 
 
+# A refused call on this runtime's event stream. `codex exec` reports an approval it did not get
+# as a rejected or denied decision on the call's own event rather than as a list beside the
+# result, which is the Claude Code shape `permission_denials` names; both are read here so a
+# posture case judges a Codex turn the same way it judges a Claude Code one. Derived from the
+# event shapes `adapters/codex/worker.py` parses, and unconfirmed against a live client.
+CODEX_REFUSALS = ("rejected", "denied", "refused", "not_approved", "abort")
+
+
+def codex_denials(events):
+    """Every call this turn asked for and did not get, read from the run's own event stream."""
+    denials = []
+    for event in events:
+        for scope in (event, event.get("msg"), event.get("item"), event.get("payload")):
+            if not isinstance(scope, dict):
+                continue
+            decision = str(scope.get("decision") or scope.get("status") or "").lower()
+            kind = str(scope.get("type", "")).lower()
+            if any(word in decision for word in CODEX_REFUSALS) or "rejected" in kind:
+                denials.append({"tool_name": scope.get("tool_name") or scope.get("command")
+                                or kind or "unnamed call", "decision": decision or kind})
+                break
+    return denials
+
+
 class CodexHome(Home):
     """A disposable `CODEX_HOME`, driven headlessly and read from its own rollout files.
 
@@ -377,8 +398,11 @@ class CodexHome(Home):
         if not events:
             raise Unverified("the client returned no event stream: "
                              + redact(result.stdout[-200:] + result.stderr[-200:]))
+        if result.returncode:
+            raise Unverified("the client exited %s on a turn that wrote %s event(s): %s"
+                             % (result.returncode, len(events), redact(result.stderr[-200:])))
         return {"result": codex_answer(events), "session_id": self.thread_id(events),
-                "permission_denials": [], "events": events}
+                "permission_denials": codex_denials(events), "events": events}
 
     def thread_id(self, events):
         for event in events:
@@ -911,12 +935,28 @@ def stance_link(home, name):
     return home.client_dir / "rules" / "harness-stances" / (name + ".md")
 
 
-def link_target(path):
-    """The variant filename a resolved stance link points at, or ``""`` when it is not a link."""
+def link_target(path, variants=()):
+    """Which variant is resolved at `path`, whether it was linked there or copied there.
+
+    A runtime that copies the selected variant instead of linking it resolves exactly the same
+    selection, so reading only `readlink` would make every copying surface report `""` and the
+    check would hold vacuously. Given the candidate variant files, a copy is named by its bytes.
+    """
     try:
         return Path(os.readlink(str(path))).name
     except OSError:
+        pass
+    try:
+        body = Path(path).read_bytes()
+    except OSError:
         return ""
+    for variant in variants:
+        try:
+            if Path(variant).read_bytes() == body:
+                return Path(variant).name
+        except OSError:
+            continue
+    return ""
 
 
 def select(home, dimension, variant, expected=0):
@@ -996,20 +1036,21 @@ def case_custom_stance(home):
         raise Unverified("the client did not obey the custom dimension under both selections "
                          "(plain reply %s, tagged reply %s), so no custom stance was observed"
                          % (redact(plain[-80:]), redact(tagged[-80:])))
-    before = link_target(stance_link(home, "proof"))
+    variants = [root / "plain.md", root / "tagged.md"]
+    before = link_target(stance_link(home, "proof"), variants)
     warning = select(home, "proof", "nonesuch", expected=1)
     if MISSING_VARIANT not in warning:
         raise AssertionError("a selection naming no variant was not refused by name: "
                              + redact(warning[-300:]))
-    after = link_target(stance_link(home, "proof"))
+    after = link_target(stance_link(home, "proof"), variants)
     if before and after != before:
         raise AssertionError("the refused selection moved the resolved proof link %s -> %s"
                              % (before, after or "<not a link>"))
     return ("A custom proof dimension supplied from an external primitive root appeared in harness "
             "stances --json after sync, and the native client's reply ended PLAIN under proof=plain "
             "and TAGGED under proof=tagged; selecting a variant that does not exist made harness "
-            "sync exit 1 with \"%s\" and left the previously resolved link at %s."
-            % (MISSING_VARIANT, before or "<not a link on this runtime>"))
+            "sync exit 1 with \"%s\" and left the previously resolved variant at %s."
+            % (MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
 
 
 # The log path is written into the script rather than read from the environment: a hook the
@@ -1022,7 +1063,9 @@ sys.exit(0)
 HOOK_SENTINEL = "compose.txt"
 HOOK_PROMPT = ("Run exactly this command with your Bash tool: touch ./%s — then reply with the "
                "single word DONE and nothing else." % HOOK_SENTINEL)
-GRADE_DENY = "autonomy=ask"
+# Text only the grade-bash hook writes: `autonomy=ask` alone appears in the stance
+# prose the model can see and could be echoed back without any hook having decided.
+GRADE_DENY = "grade-bash hook, autonomy="
 
 
 def user_hook_entries(settings, script):
@@ -1295,6 +1338,17 @@ def bmad_checkout():
     return Path(value) if value and Path(value).is_dir() else None
 
 
+def layer_contents(repo):
+    """What each override template holds right now, so an apply that wrote nothing is visible.
+
+    The case runs against a copy of the provisioned checkout per target, because the provisioned
+    one is shared: a second target, or a rerun, would otherwise read the first target's apply and
+    pass having written nothing itself.
+    """
+    return {path.name: path.read_bytes()
+            for path in sorted((repo / "_bmad" / "custom").glob("*.user.toml"))}
+
+
 def layer_declarations(repo):
     """Every applied review layer whose brief opens with a harness role declaration."""
     found = {}
@@ -1314,16 +1368,24 @@ def case_bmad_workflow(home):
     """
     home.seed()
     home.harness("sync")
-    repo = bmad_checkout()
-    if repo is None:
+    provisioned = bmad_checkout()
+    if provisioned is None:
         raise Unverified("no BMad framework checkout was provided in %s, so the applied review "
                          "layers were never read; provision one with "
                          "scripts/qualification_provision.py --bmad" % BMAD_ENV)
+    repo = home.root / "bmad"
+    shutil.copytree(str(provisioned), str(repo), symlinks=True)
+    before = layer_contents(repo)
     applied = home.harness("bmad", "apply", str(repo))
     declarations = layer_declarations(repo)
+    written = [name for name in declarations if before.get(name) != layer_contents(repo)[name]]
     if not declarations:
         raise AssertionError("harness bmad apply wrote no review layer carrying a %s declaration: "
                              "%s" % (ROLE_DECLARATION, redact(applied[-300:])))
+    if not written:
+        raise AssertionError("every review layer carrying a %s declaration was already there "
+                             "before this apply, so this run wrote none of them: %s"
+                             % (ROLE_DECLARATION, redact(applied[-300:])))
     checked = home.harness("bmad", "check", str(repo))
     findings = re.search(r"bmad: (\d+) drift finding", checked)
     if not findings:
@@ -1333,10 +1395,11 @@ def case_bmad_workflow(home):
         raise AssertionError("harness bmad check reported %s drift finding(s) after apply"
                              % findings.group(1))
     roles = sorted(set().union(*declarations.values()))
-    return ("After harness bmad apply into the provisioned BMad framework checkout, %s override "
-            "template(s) carried a %s declaration naming %s, and harness bmad check reported 0 "
-            "drift findings. The confined review run itself is not driven here."
-            % (len(declarations), ROLE_DECLARATION, ", ".join(roles)))
+    return ("After harness bmad apply into this target's own copy of the provisioned BMad "
+            "framework checkout, %s override template(s) carried a %s declaration naming %s, %s of "
+            "them written by this apply rather than already present, and harness bmad check "
+            "reported 0 drift findings. The confined review run itself is not driven here."
+            % (len(declarations), ROLE_DECLARATION, ", ".join(roles), len(written)))
 
 
 TASK_OBJECTIVE = "Append one marker line to progress.txt"
@@ -1354,8 +1417,23 @@ def task_repo(home):
     return repo
 
 
-def task_contract(runtime):
-    return json.dumps({"objective": TASK_OBJECTIVE, "runtime": runtime,
+def task_revision(repo):
+    """The revision the task record stands at, or ``None`` when there is no readable record.
+
+    `lib/harness_core/tasks.py` refuses a writer whose `--revision` is not the current one and
+    writes the next: a save against a spent revision is the refusal, and against the current one
+    it is the next revision. Both readings in this case are that rule.
+    """
+    try:
+        return json.loads((repo / ".agent-harness" / "task.json").read_text()).get("revision")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def task_contract():
+    # The writing runtime is `--runtime` on the command, not a contract field: `tasks.FIELDS`
+    # refuses a payload carrying one.
+    return json.dumps({"objective": TASK_OBJECTIVE,
                        "next_steps": ["Append the line %s to progress.txt" % CLAUDE_MARKER],
                        "verification": {"status": "passed"}})
 
@@ -1370,7 +1448,7 @@ def case_bidirectional_handoff(home):
     home.harness("sync")
     repo = task_repo(home)
     saved = home.harness("task", "save", "--runtime", home.runtime, "--revision", "0",
-                         "--input", task_contract(home.runtime), cwd=repo)
+                         "--input", task_contract(), cwd=repo)
     record = repo / ".agent-harness" / "task.json"
     if not record.exists():
         raise Unverified("harness task save wrote no task record to hand over: "
@@ -1384,29 +1462,41 @@ def case_bidirectional_handoff(home):
         raise AssertionError("the reading session reported the caller's own verification status "
                              "rather than unverified: " + redact(answer[-200:]))
     marked = CLAUDE_MARKER in (repo / "progress.txt").read_text(errors="replace")
-    notes = ["a %s save at revision 0 wrote the record, and a native session read it, reported the "
+    notes = ["a %s save at revision 0 wrote revision 1, and a native session read it, reported the "
              "objective and reported the verification status as unverified with the caller's "
              "reported passed retained as evidence only" % home.runtime,
              "its first next step was %s" % ("carried out" if marked else "not carried out")]
-    stale = home.harness("task", "save", "--runtime", home.runtime, "--revision", "1",
-                         "--input", task_contract(home.runtime), expected=1, cwd=repo)
-    if STALE_SAVE not in stale:
-        raise AssertionError(observed(notes, "a second save against a spent revision was not "
-                                      "refused by name: " + redact(stale[-200:])))
-    notes.append("repeating the same --revision 1 save exited 1 with \"%s\"" % STALE_SAVE)
     other = "codex" if home.runtime != "codex" else "claude-code"
-    if not shutil.which(CLIENTS_BY_RUNTIME.get(other, {}).get("command", other)):
-        raise Unverified(observed(notes, "the %s client is not on PATH in this environment, so the "
-                                  "return leg of the handoff was not observed" % other))
-    crossed = home.harness("task", "save", "--runtime", other, "--revision", "1",
-                           "--input", task_contract(other), cwd=repo)
+    home.harness("task", "save", "--runtime", other, "--revision", "1",
+                 "--input", task_contract(), cwd=repo)
+    if task_revision(repo) != 2:
+        raise Unverified(observed(notes, "a --runtime %s save against revision 1 did not produce "
+                                  "revision 2, so there was no cross-runtime record to read back"
+                                  % other))
     back = home.answer(home.session(HANDOFF_PROMPT, tools=("Bash", "Read")))
     if other not in back:
-        raise Unverified(observed(notes, "a %s-written record was saved (%s) but the reading "
-                                  "session did not name it, so the return leg was not observed"
-                                  % (other, redact(crossed[-120:]))))
-    notes.append("a --runtime %s save then produced the next revision and a native %s session read "
-                 "that record back and named the writing runtime" % (other, home.runtime))
+        raise Unverified(observed(notes, "a %s-written record was saved at revision 2 but the "
+                                  "reading session did not name the writing runtime, so the "
+                                  "return leg was not observed" % other))
+    notes.append("a --runtime %s save against revision 1 then produced revision 2 and a native %s "
+                 "session read that record back and named the writing runtime; the %s client's own "
+                 "native turn is that target's own round and was not run here"
+                 % (other, home.runtime, other))
+    # The record now stands at revision 2, so revision 1 is spent: `tasks.save` refuses a writer
+    # whose expected revision is not the current one, which is the rule this sequence follows.
+    stale = home.harness("task", "save", "--runtime", other, "--revision", "1",
+                         "--input", task_contract(), expected=1, cwd=repo)
+    if STALE_SAVE not in stale:
+        raise AssertionError(observed(notes, "a second save against the spent revision 1 was not "
+                                      "refused by name: " + redact(stale[-200:])))
+    notes.append("repeating that --revision 1 save against the now-current revision 2 exited 1 "
+                 "with \"%s\"" % STALE_SAVE)
+    (repo / "progress.txt").write_text("edited after the handoff\n")
+    shown = home.harness("task", "show", cwd=repo)
+    if "stale" not in shown:
+        raise AssertionError(observed(notes, "an edit after the handoff left harness task show "
+                                      "reporting a current record: " + redact(shown[-200:])))
+    notes.append("and after an unrelated edit harness task show reported the record stale")
     return "; ".join(notes) + "."
 
 
@@ -1525,15 +1615,36 @@ CASES = {
 }
 
 
+def confirmed_targets(value):
+    """The client surfaces an operator named as hand-compared, as a set of ids.
+
+    Confirmation is per target and never global: one surface compared against a hand run says
+    nothing about another, and `True` for every surface at once is exactly the claim this flag
+    exists to stop anyone making by accident.
+    """
+    if not value:
+        return frozenset()
+    if isinstance(value, bool):
+        raise SystemExit("--home-confirmed names one client; there is no confirmation of every "
+                         "surface at once")
+    if isinstance(value, str):
+        value = [value]
+    names = frozenset(str(name).strip() for name in value if str(name).strip())
+    unknown = sorted(name for name in names if name not in CLIENTS)
+    if unknown:
+        raise SystemExit("unknown client to confirm: " + ", ".join(unknown))
+    return names
+
+
 def unobserved_note(client, confirmed):
     """Why a verdict from this client surface is not yet trusted, or ``""``."""
     spec = CLIENTS[client]
-    if spec.get("observed") or confirmed:
+    if spec.get("observed") or client in confirmed_targets(confirmed):
         return ""
     return UNOBSERVED_HOME % (spec["home_var"], spec["runtime"], spec["runtime"])
 
 
-def probe(client, name, model, keep, confirmed=False):
+def probe(client, name, model, keep, confirmed=()):
     """Run one case and return its result, observation and the home it used.
 
     A surface whose configuration home this runner has never been run against cannot turn an
@@ -1551,7 +1662,11 @@ def probe(client, name, model, keep, confirmed=False):
                                       [home.root]),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     except AssertionError as error:
-        return {"case": name, "result": "failed", "observation": redact(error, [home.root]),
+        # On an unconfirmed surface the reading itself is in question, so an assertion that did
+        # not hold is not yet a defect in the harness: it is `unverified` with what was read.
+        return {"case": name, "result": "unverified" if caveat else "failed",
+                "observation": redact(observed([str(error)], caveat) if caveat else error,
+                                      [home.root]),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     except Exception as error:  # An unobserved case is unverified, never a pass.
         reason = "%s: %s" % (type(error).__name__, error) if not isinstance(error, Unverified) else str(error)
@@ -1685,7 +1800,7 @@ def routing(client, execution=None, assessment=None):
         raise SystemExit(str(error))
 
 
-def plan(client, names, model, confirmed=False, tier_routing=None):
+def plan(client, names, model, confirmed=(), tier_routing=None):
     spec = CLIENTS[client]
     tier_routing = tier_routing or routing(client)
     lines = ["plan: %s, model %s, one disposable %s per case, no client run"
@@ -1701,7 +1816,7 @@ def plan(client, names, model, confirmed=False, tier_routing=None):
     return "\n".join(lines)
 
 
-def record(client, names, model, keep, runner=probe, progress=None, confirmed=False,
+def record(client, names, model, keep, runner=probe, progress=None, confirmed=(),
            tier_routing=None):
     spec = CLIENTS[client]
     tier_routing = tier_routing or routing(client)
@@ -1746,8 +1861,9 @@ def main(argv=None):
                         help="durable per-case log appended as each case finishes")
     parser.add_argument("--from-progress", action="store_true",
                         help="build the record from the durable log alone, running no client")
-    parser.add_argument("--home-confirmed", action="store_true",
-                        help="this surface's configuration home was compared against a hand run")
+    parser.add_argument("--home-confirmed", action="append", default=[], metavar="CLIENT",
+                        help="a client whose configuration home was compared against a hand run; "
+                             "repeat for each, and never for a surface nobody compared")
     parser.add_argument("--execution-class", default=qualification.EXECUTION_DEFAULT,
                         help="the capability class of the worker running the cases")
     parser.add_argument("--assessment-class", default=qualification.ASSESSMENT_DEFAULT,
