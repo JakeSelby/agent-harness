@@ -599,6 +599,22 @@ class UndoSyncTests(unittest.TestCase):
             self.assertFalse((profile / "CLAUDE.md").exists())
             self.assertFalse((profile / "env.json").exists())
 
+    def test_the_clis_synced_skill_packs_are_neither_leftovers_nor_removed(self):
+        """The CLI writes its own skill packs under `skills/synced/<id>/` during a session, a
+        harness-managed top-level name; they are the run's, not the sync's."""
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = harness_repo(Path(tmp) / "repo")
+            profile = signed_in_profile(Path(tmp) / "bench-harness")
+            pack = profile / "skills" / "synced" / "391a07eb_bc8a6e16" / "docx"
+            before = BENCH.profile_listing(profile)
+            with BENCH.synced_tag(repo, "v1", config_dir=str(profile)):
+                pack.mkdir(parents=True)
+                (pack / "SKILL.md").write_text("the CLI's own", encoding="utf-8")
+                (pack.parent / ".staging").write_text("", encoding="utf-8")
+            self.assertEqual((pack / "SKILL.md").read_text(encoding="utf-8"), "the CLI's own")
+            self.assertTrue((pack.parent / ".staging").is_file())
+            self.assertFalse((profile / "rules").exists())
+            self.assertEqual(BENCH.sync_leftovers(profile, before), [])
     def test_a_sync_that_records_nothing_stops_the_run_after_its_tag_with_the_leftovers_named(self):
         """The records are read from where HEAD's harness writes them; a tag that recorded
         elsewhere leaves the undo blind, and the profile itself is the check."""
