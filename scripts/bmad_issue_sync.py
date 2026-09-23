@@ -324,15 +324,47 @@ def render_artifact(item):
 def sync_layout(text):
     """Where the tool-owned head ends: None for a legacy stub, else the offset just past the end marker.
 
-    Raises when the markers are missing, duplicated or out of order, because rewriting the head of
-    such a file could swallow text its owner wrote.
+    A file is typed only when the first non-blank line after its H1 is the begin marker; the block
+    ends at the first end marker after it. Markers elsewhere in the body are ordinary text. The head
+    region runs from the H1 to the first `## ` line: a begin there with no end before that line, or
+    two begins there, is refused, because rewriting such a head could swallow its owner's text.
     """
-    begins, ends = text.count(SYNC_BEGIN), text.count(SYNC_END)
-    if begins == 0 and ends == 0:
+    lines = text.splitlines(True)
+    index = 0
+    if lines and lines[0].rstrip("\r\n") == "---":
+        index = next((i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---"), len(lines)) + 1
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+    if index >= len(lines) or not lines[index].startswith("# "):
         return None
-    if begins != 1 or ends != 1 or text.index(SYNC_BEGIN) > text.index(SYNC_END):
+    offset = sum(len(line) for line in lines[:index + 1])
+    head = []
+    for line in lines[index + 1:]:
+        if line.startswith("## "):
+            break
+        head.append((offset, line.rstrip("\r\n")))
+        offset += len(line)
+    begins = [position for position, (_, line) in enumerate(head) if line == SYNC_BEGIN]
+    if not begins:
+        return None
+    first = next(position for position, (_, line) in enumerate(head) if line.strip())
+    if len(begins) > 1 or begins[0] != first:
         raise RuntimeError("bmad-sync markers are missing or duplicated")
-    return text.index(SYNC_END) + len(SYNC_END)
+    for start, line in head[first + 1:]:
+        if line == SYNC_END:
+            return start + len(SYNC_END)
+    raise RuntimeError("bmad-sync markers are missing or duplicated")
+
+
+def newline_of(text):
+    """The file's own line ending, so a rewrite never mixes styles."""
+    end = text.find("\n")
+    return "\r\n" if end > 0 and text[end - 1] == "\r" else "\n"
+
+
+def with_newlines(text, newline):
+    """Convert text rendered with LF endings to `newline`."""
+    return text if newline == "\n" else text.replace("\n", newline)
 
 
 def read_exact(path):
@@ -341,12 +373,19 @@ def read_exact(path):
 
 
 def write_text_atomic(path, text):
-    """Replace a file in one step, so an interrupted run never leaves half of one behind."""
+    """Replace a file in one step, keeping its mode, so an interrupted run never leaves half of one behind."""
     path = Path(path)
+    try:
+        mode = path.stat().st_mode & 0o7777
+    except FileNotFoundError:
+        mode = 0o644
     handle, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=".{}.".format(path.name))
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="") as stream:
             stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
         os.replace(temporary, str(path))
     except BaseException:
         if os.path.exists(temporary):
@@ -373,8 +412,23 @@ def write_manifest(manifest):
     write_text_atomic(map_path, json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 
 
+MANIFEST_ITEM_KEYS = (
+    "bmad_id", "github_number", "github_url", "title", "type", "native_type", "artifact_path",
+    "parent_bmad_id", "parent_github_number", "lifecycle", "provenance",
+)
+
+
 def load_manifest():
-    return json.loads((ROOT / "_bmad-output" / "issue-map.json").read_text(encoding="utf-8"))
+    """Read the issue map, refusing one whose shape would fail later as a bare KeyError."""
+    manifest = json.loads((ROOT / "_bmad-output" / "issue-map.json").read_text(encoding="utf-8"))
+    try:
+        manifest["repository"]
+        for index, item in enumerate(manifest["items"]):
+            for key in MANIFEST_ITEM_KEYS:
+                item[key]
+    except (KeyError, TypeError, IndexError) as error:
+        raise ValueError("issue map is malformed ({!r}); fix it before running this tool".format(error))
+    return manifest
 
 
 def frontmatter_value(text, key):
@@ -682,6 +736,11 @@ def strip_updated(value):
     return re.sub(r"(?m)^updated: .*$", "updated:", value)
 
 
+def is_unamended_legacy_stub(item, text):
+    """Compare in LF, so a checkout with core.autocrlf behaves like any other."""
+    return strip_updated(text.replace("\r\n", "\n")) == strip_updated(render_legacy_stub(item))
+
+
 def refresh(manifest, live_issues):
     """Copy GitHub's title and open/closed state into the manifest and its artifacts.
 
@@ -709,9 +768,9 @@ def refresh(manifest, live_issues):
         except RuntimeError:
             malformed.append(item["bmad_id"])
             continue
-        if head_end is None and strip_updated(text) != strip_updated(render_legacy_stub(item)):
+        if head_end is None and not is_unamended_legacy_stub(item, text):
             amended.append(item["bmad_id"])
-        drifted.append((item, issue, None if head_end is None else text[head_end:]))
+        drifted.append((item, issue, newline_of(text), None if head_end is None else text[head_end:]))
     # Refuse before the first write: a half-applied refresh fails the audit that refresh requires.
     if malformed:
         raise RuntimeError(
@@ -723,18 +782,18 @@ def refresh(manifest, live_issues):
                 ", ".join(amended)
             )
         )
-    for item, issue, body in drifted:
+    for item, issue, newline, body in drifted:
         item["title"] = issue["title"]
         item["lifecycle"] = live_lifecycle(issue)
         parent = by_number[live_parent(issue)] if adoptable_parent(item, issue, by_number) else None
         if parent:
             item["parent_github_number"] = parent["github_number"]
             item["parent_bmad_id"] = parent["bmad_id"]
-        text = render_legacy_stub(item) if body is None else render_head(item) + body
-        write_text_atomic(ROOT / item["artifact_path"], text)
+        rendered = render_legacy_stub(item) if body is None else render_head(item)
+        write_text_atomic(ROOT / item["artifact_path"], with_newlines(rendered, newline) + (body or ""))
     if drifted:
         write_manifest(manifest)
-    return [item["bmad_id"] for item, _, _ in drifted]
+    return [item["bmad_id"] for item, _, _, _ in drifted]
 
 
 def upgrade_text(item, text):
@@ -749,14 +808,18 @@ def upgrade_text(item, text):
             return "current", None, "already in the typed format"
     except RuntimeError as error:
         return "refuse", None, str(error)
+    newline = newline_of(text)
     stub = render_legacy_stub(item)
-    tail = stub[stub.rindex("\n", 0, len(stub) - 1) + 1:]
+    tail = with_newlines(stub[stub.rindex("\n", 0, len(stub) - 1) + 1:], newline)
     cut = text.find(tail)
-    if cut < 0 or strip_updated(text[:cut + len(tail)]) != strip_updated(stub):
+    if cut < 0 or not is_unamended_legacy_stub(item, text[:cut + len(tail)]):
         return "refuse", None, "the stub differs from the rendered legacy stub; convert it by hand"
     # Everything after the rendered stub is someone's writing, typically `## Amendment` sections.
     carried = text[cut + len(tail):]
-    converted = render_artifact(item) + ("" if not carried or carried.startswith("\n") else "\n") + carried
+    skeleton = with_newlines(render_artifact(item), newline)
+    if carried and not carried.startswith(("\n", "\r\n")):
+        skeleton += newline
+    converted = skeleton + carried
     if sync_layout(converted) is None:
         return "refuse", None, "conversion did not produce the managed block"
     for key in ("bmad_id", "type", "title", "lifecycle", "provenance", "github_issue",
@@ -764,12 +827,16 @@ def upgrade_text(item, text):
         if frontmatter_value(converted, key) != frontmatter_value(text, key):
             return "refuse", None, "conversion would change the frontmatter field {}".format(key)
     return "convert", converted, "converts without loss" + (
-        ", carrying {} line(s) verbatim".format(len(carried.strip("\n").splitlines())) if carried.strip() else ""
+        ", carrying {} line(s) verbatim".format(len(carried.strip("\r\n").splitlines())) if carried.strip() else ""
     )
 
 
 def upgrade(manifest, ids=None, check=False):
-    """Convert legacy stubs to typed skeletons, all or none; returns [(bmad_id, status, reason)]."""
+    """Convert legacy stubs to typed skeletons, all or none; returns [(bmad_id, status, reason)].
+
+    Every conversion is computed before the first write, and a failed write restores the files
+    already written from their originals.
+    """
     items = manifest["items"]
     if ids:
         known = {item["bmad_id"] for item in items}
@@ -781,43 +848,79 @@ def upgrade(manifest, ids=None, check=False):
     writes = []
     for item in items:
         path = ROOT / item["artifact_path"]
-        status, converted, reason = upgrade_text(item, read_exact(path))
+        original = read_exact(path)
+        status, converted, reason = upgrade_text(item, original)
         report.append((item["bmad_id"], status, reason))
         if status == "convert":
-            writes.append((path, converted))
+            writes.append((path, converted, original))
     if check or any(status == "refuse" for _, status, _ in report):
         return report
-    for path, converted in writes:
-        write_text_atomic(path, converted)
+    written = []
+    try:
+        for path, converted, original in writes:
+            write_text_atomic(path, converted)
+            written.append((path, original))
+    except BaseException:
+        for path, original in reversed(written):
+            write_text_atomic(path, original)
+        raise
     return report
 
 
+def comment_state(line, in_comment):
+    """Whether an HTML comment is still open at the end of `line`."""
+    position = 0
+    while True:
+        if in_comment:
+            end = line.find("-->", position)
+            if end < 0:
+                return True
+            in_comment, position = False, end + 3
+        else:
+            start = line.find("<!--", position)
+            if start < 0:
+                return False
+            in_comment, position = True, start + 4
+
+
 def markdown_sections(body):
-    """Map each H2 heading in `body` to its text, ignoring headings inside fenced code."""
+    """Map each H2 heading in `body` to the list of its sections' text.
+
+    Headings inside fenced code or an HTML comment are text. Any H1 or H2 ends a section.
+    """
     sections = defaultdict(list)
     current = None
     fence = None
+    in_comment = False
     for line in body.splitlines():
-        marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
-        if marker:
-            if fence is None:
-                fence = marker.group(1)
-            elif marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
+        if fence is not None:
+            closing = re.match(r"^ {0,3}(`{3,}|~{3,})[ \t]*$", line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence):
                 fence = None
-        heading = None if fence else re.match(r"^## +(.+?)\s*#*\s*$", line)
-        if heading:
-            current = heading.group(1).strip().casefold()
-            sections[current]
+            if current is not None:
+                current.append(line)
             continue
+        if not in_comment:
+            opening = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+            if opening and not (opening.group(1)[0] == "`" and "`" in opening.group(2)):
+                fence = opening.group(1)
+            heading = None if fence else re.match(r"^ {0,3}(#{1,2})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$", line)
+            if heading:
+                current = None
+                if len(heading.group(1)) == 2:
+                    current = []
+                    sections[(heading.group(2) or "").strip().casefold()].append(current)
+                continue
+        in_comment = comment_state(line, in_comment)
         if current is not None:
-            sections[current].append(line)
-    return {name: "\n".join(lines) for name, lines in sections.items()}
+            current.append(line)
+    return {name: ["\n".join(lines) for lines in found] for name, found in sections.items()}
 
 
 def section_filled(text):
-    """Content remains once HTML comments and sub-headings are taken out."""
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
-    text = re.sub(r"(?m)^\s{0,3}#{3,6}(\s.*)?$", "", text)
+    """Content remains once HTML comments, an unclosed one included, and sub-headings are taken out."""
+    text = re.sub(r"<!--.*?(-->|\Z)", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^ {0,3}#{3,6}([ \t].*)?$", "", text)
     return bool(text.strip())
 
 
@@ -843,11 +946,16 @@ def depth_findings(manifest, issue_number):
     sections = markdown_sections(text[head_end:])
     findings = []
     for name in REQUIRED[item["type"]]:
-        content = sections.get(name.casefold())
-        if content is None:
-            findings.append("{}: required {} section '{}' is missing".format(label, item["type"], name))
-        elif not section_filled(content):
-            findings.append("{}: required {} section '{}' is unfilled".format(label, item["type"], name))
+        found = sections.get(name.casefold())
+        problem = None
+        if not found:
+            problem = "is missing"
+        elif len(found) > 1:
+            problem = "is a duplicate section"
+        elif not section_filled(found[0]):
+            problem = "is unfilled"
+        if problem:
+            findings.append("{}: required {} section '{}' {}".format(label, item["type"], name, problem))
     return findings, []
 
 
@@ -1312,8 +1420,6 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
-        # A malformed manifest surfaces as KeyError or TypeError; report it rather than a traceback.
-        print("bmad issue sync: {!r}".format(error) if isinstance(error, (KeyError, TypeError))
-              else "bmad issue sync: {}".format(error), file=sys.stderr)
+    except (OSError, RuntimeError, ValueError) as error:
+        print("bmad issue sync: {}".format(error), file=sys.stderr)
         sys.exit(1)

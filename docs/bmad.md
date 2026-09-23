@@ -87,11 +87,14 @@ managed block between `<!-- bmad-sync:begin -->` and `<!-- bmad-sync:end -->` ho
 link, the parent, the state and the line that splits authority: the issue carries the summary,
 discussion and acceptance evidence, and the file carries the design. Those three parts belong to the
 tool. Everything after the end marker belongs to the people and agents who write the story, and the
-tool never rewrites it.
+tool never rewrites it. The block counts only where it opens, on the first non-blank line after
+the H1, and it closes at the first end marker after that. The markers quoted anywhere else, in prose
+or in a code fence, are ordinary text.
 
 Each template section holds a placeholder, `<!-- fill: what goes here -->`. A section counts as
-filled when text remains once HTML comments and `###` sub-headings are taken out. These sections
-must be filled:
+filled when text remains once HTML comments, an unclosed one included, and `###` to `######`
+sub-headings are taken out; any `#` or `##` heading outside a comment or fence ends a section, and
+a required heading that appears twice is a finding. These sections must be filled:
 
 - **story:** Story, Acceptance criteria, Design, Tasks, Dev notes
 - **bug:** Reproduction, Root cause, Acceptance criteria, Design, Dev notes
@@ -114,9 +117,10 @@ corpus never blocks an unrelated pull request.
 A file without the managed markers is a legacy stub from before typed templates. The depth check
 passes it with a notice, and `refresh` keeps rendering it the old way. `upgrade` converts stubs to
 their kind's skeleton, carrying every byte after the old stub, such as `## Amendment` sections,
-over verbatim at the end of the file. It refuses a stub that differs from the one the tool
-rendered, converts all the selected files or none, leaves a file already in the typed format alone,
-and with `--check` reports without writing. It is applied batch by batch, together with the
+over verbatim at the end of the file, in the file's own line endings. It refuses a stub that
+differs from the one the tool rendered, converts all the selected files or none, restoring any it
+already wrote when a write fails, leaves a file already in the typed format alone, and with
+`--check` reports without writing. It is applied batch by batch, together with the
 enrichment, so a skeleton full of placeholders never lands on `main` on its own.
 
 Because `next_ids` lives in the map, it knows only what this checkout has seen. Before allocating,

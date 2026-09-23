@@ -106,7 +106,7 @@ class RenderingTests(unittest.TestCase):
                 sections = sync.markdown_sections(body)
                 for name in sync.REQUIRED[kind]:
                     self.assertIn(name.casefold(), sections)
-                    self.assertIn("<!-- fill: ", sections[name.casefold()])
+                    self.assertIn("<!-- fill: ", sections[name.casefold()][0])
 
     def test_frontmatter_keeps_the_nine_audited_fields_and_updated(self):
         text = sync.render_artifact(item_for("story"))
@@ -156,9 +156,9 @@ class MarkerTests(TempRoot):
         good = sync.render_artifact(item)
         broken = {
             "missing end": good.replace(sync.SYNC_END, ""),
-            "missing begin": good.replace(sync.SYNC_BEGIN, ""),
+            "begin in the head region twice": good.replace(sync.SYNC_BEGIN, sync.SYNC_BEGIN + "\n" + sync.SYNC_BEGIN),
             "duplicated begin": good.replace(sync.SYNC_END, sync.SYNC_BEGIN + "\n" + sync.SYNC_END),
-            "duplicated block": good + "\n" + sync.SYNC_BEGIN + "\n" + sync.SYNC_END + "\n",
+            "begin not first after the H1": good.replace(sync.SYNC_BEGIN, "Prose.\n\n" + sync.SYNC_BEGIN),
             "reversed": good.replace(sync.SYNC_BEGIN, "@@").replace(sync.SYNC_END, sync.SYNC_BEGIN).replace(
                 "@@", sync.SYNC_END
             ),
@@ -179,6 +179,14 @@ class MarkerTests(TempRoot):
 
     def test_a_file_with_no_markers_is_a_legacy_stub(self):
         self.assertIsNone(sync.sync_layout(sync.render_legacy_stub(item_for("story"))))
+
+    def test_an_end_marker_alone_in_the_head_leaves_the_file_legacy(self):
+        text = sync.render_artifact(item_for("story")).replace(sync.SYNC_BEGIN, "")
+        self.assertIsNone(sync.sync_layout(text))
+
+    def test_the_block_ends_at_the_first_end_marker(self):
+        text = sync.render_artifact(item_for("story"))
+        self.assertEqual(sync.sync_layout(text), text.index(sync.SYNC_END) + len(sync.SYNC_END))
 
 
 class UpgradeTests(TempRoot):
@@ -271,6 +279,24 @@ class RealCorpusTests(unittest.TestCase):
         refused = [(bmad_id, reason) for bmad_id, status, reason in report if status == "refuse"]
         self.assertEqual(refused, [])
         self.assertEqual(len(report), len(manifest["items"]))
+
+    def test_each_conversion_carries_the_original_tail_byte_for_byte(self):
+        last_line = "planning context rather than duplicate the issue.\n"
+        carried_any = 0
+        for item in sync.load_manifest()["items"]:
+            original = (REPO / item["artifact_path"]).read_bytes().decode("utf-8")
+            status, converted, _ = sync.upgrade_text(item, original)
+            if status == "current":
+                continue
+            with self.subTest(item["bmad_id"]):
+                self.assertEqual(status, "convert")
+                tail = original[original.index(last_line) + len(last_line):]
+                skeleton = sync.render_artifact(item)
+                if tail and not tail.startswith("\n"):
+                    skeleton += "\n"
+                self.assertEqual(converted, skeleton + tail)
+                carried_any += bool(tail)
+        self.assertGreaterEqual(carried_any, 2)
 
 
 class DepthTests(TempRoot):
@@ -381,12 +407,14 @@ class CliBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             tool = copy_tool(Path(temp))
             (Path(temp) / "_bmad-output" / "issue-map.json").write_text(
-                json.dumps({"items": [{"bmad_id": "AH-S001"}]}), encoding="utf-8"
+                json.dumps({"repository": "owner/repo", "items": [{"bmad_id": "AH-S001"}]}), encoding="utf-8"
             )
-            result = subprocess.run([sys.executable, str(tool), "audit"], capture_output=True, text=True)
+            result = subprocess.run(
+                [sys.executable, str(tool), "audit"], capture_output=True, text=True, timeout=60
+            )
         self.assertEqual(result.returncode, 1)
         self.assertNotIn("Traceback", result.stderr)
-        self.assertIn("bmad issue sync: KeyError", result.stderr)
+        self.assertIn("bmad issue sync: issue map is malformed (KeyError('github_number'", result.stderr)
 
 
 class OwnershipWiringTests(unittest.TestCase):
@@ -447,6 +475,172 @@ class OwnershipWiringTests(unittest.TestCase):
     def test_main_fails_when_the_story_is_not_ready(self):
         with self.assertRaisesRegex(ValueError, "not ready"):
             self.run_main({"PR_NUMBER": "7"}, ValueError("The story for delivery issue #10 is not ready"))
+
+
+QUOTED = (
+    "\n## Amendment \u2014 quoting the markers\n\n"
+    "The managed block is written as {begin} … {end} in prose.\n\n"
+    "```text\n{begin}\n{begin}\n{end}\n## Not a heading\n```\n"
+).format(begin=sync.SYNC_BEGIN, end=sync.SYNC_END)
+
+
+class QuotedMarkerTests(TempRoot):
+    def setUp(self):
+        super().setUp()
+        self.item = item_for("story")
+        self.manifest = manifest_for([self.item])
+        self.live = [{"number": 1, "title": "renamed", "state": "open", "parent_issue_url": None}]
+
+    def test_a_legacy_stub_that_quotes_the_markers_stays_legacy(self):
+        path = self.write(self.item, sync.render_legacy_stub(self.item) + QUOTED)
+        self.assertIsNone(sync.sync_layout(path.read_text(encoding="utf-8")))
+        self.assertEqual(sync.audit_manifest(self.manifest), [])
+        findings, notices = sync.depth_findings(self.manifest, 1)
+        self.assertEqual(findings, [])
+        self.assertIn("legacy stub", notices[0])
+        with self.assertRaisesRegex(RuntimeError, "carries amendments.*AH-S001"):
+            sync.refresh(self.manifest, self.live)
+        self.assertEqual(sync.upgrade(self.manifest)[0][1], "convert")
+        after = path.read_bytes().decode("utf-8")
+        self.assertTrue(after.endswith(QUOTED))
+        self.assertEqual(sync.upgrade(self.manifest)[0][1], "current")
+
+    def test_a_typed_file_that_quotes_the_markers_keeps_them_as_body_text(self):
+        text = sync.render_artifact(self.item)
+        head_end = sync.sync_layout(text)
+        body = fill(text[head_end:]) + QUOTED
+        path = self.write(self.item, text[:head_end] + body)
+        self.assertEqual(sync.audit_manifest(self.manifest), [])
+        self.assertEqual(sync.depth_findings(self.manifest, 1), ([], []))
+        self.assertEqual(sync.upgrade(self.manifest, check=True)[0][1], "current")
+        with mock.patch.object(sync, "write_manifest"):
+            self.assertEqual(sync.refresh(self.manifest, self.live), ["AH-S001"])
+        after = path.read_bytes().decode("utf-8")
+        self.assertEqual(after[sync.sync_layout(after):], body)
+        self.assertIn("# AH-S001 \u2014 renamed", after)
+
+
+class NewlineTests(TempRoot):
+    def setUp(self):
+        super().setUp()
+        self.item = item_for("bug", 8)
+        self.manifest = manifest_for([self.item])
+        self.live = [{"number": 8, "title": "renamed", "state": "closed", "parent_issue_url": None}]
+
+    def crlf(self, text):
+        return text.replace("\n", "\r\n")
+
+    def assert_crlf_only(self, raw):
+        self.assertNotIn(b"\n", raw.replace(b"\r\n", b""))
+
+    def test_a_crlf_legacy_stub_refreshes_as_before(self):
+        path = self.write(self.item, self.crlf(sync.render_legacy_stub(self.item)))
+        with mock.patch.object(sync, "write_manifest"):
+            self.assertEqual(sync.refresh(self.manifest, self.live), ["AH-B008"])
+        raw = path.read_bytes()
+        self.assert_crlf_only(raw)
+        self.assertEqual(raw.decode("utf-8"), self.crlf(sync.render_legacy_stub(self.item)))
+
+    def test_a_crlf_legacy_stub_upgrades_with_its_amendment_verbatim(self):
+        amendment = self.crlf(AMENDMENT)
+        path = self.write(self.item, self.crlf(sync.render_legacy_stub(self.item)) + amendment)
+        self.assertEqual(sync.upgrade(self.manifest, check=True)[0][1], "convert")
+        sync.upgrade(self.manifest)
+        raw = path.read_bytes()
+        self.assert_crlf_only(raw)
+        self.assertEqual(raw.decode("utf-8"), self.crlf(sync.render_artifact(self.item)) + amendment)
+
+    def test_a_crlf_typed_file_refreshes_without_mixed_endings(self):
+        text = self.crlf(fill(sync.render_artifact(self.item)))
+        path = self.write(self.item, text)
+        body = text[sync.sync_layout(text):]
+        with mock.patch.object(sync, "write_manifest"):
+            self.assertEqual(sync.refresh(self.manifest, self.live), ["AH-B008"])
+        raw = path.read_bytes()
+        self.assert_crlf_only(raw)
+        after = raw.decode("utf-8")
+        self.assertEqual(after[sync.sync_layout(after):], body)
+        self.assertIn("- **State:** completed\r\n", after)
+
+
+class UpgradeRollbackTests(TempRoot):
+    def test_a_failed_write_restores_the_files_already_written(self):
+        items = [item_for("story", 1), item_for("story", 2), item_for("story", 3)]
+        manifest = manifest_for(items)
+        originals = {}
+        for item in items:
+            originals[self.write(item, sync.render_legacy_stub(item))] = sync.render_legacy_stub(item)
+        real = sync.write_text_atomic
+        calls = []
+
+        def flaky(path, text):
+            calls.append(path)
+            if len(calls) == 2:
+                raise OSError("disk full")
+            real(path, text)
+
+        with mock.patch.object(sync, "write_text_atomic", side_effect=flaky):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                sync.upgrade(manifest)
+        for path, original in originals.items():
+            self.assertEqual(path.read_bytes().decode("utf-8"), original)
+        self.assertEqual(calls[2], calls[0])
+
+
+class AtomicWriteTests(unittest.TestCase):
+    def test_mode_is_kept_and_new_files_are_world_readable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            existing = Path(temp) / "existing.md"
+            existing.write_text("old", encoding="utf-8")
+            os.chmod(str(existing), 0o664)
+            sync.write_text_atomic(existing, "new")
+            fresh = Path(temp) / "fresh.md"
+            sync.write_text_atomic(fresh, "new")
+            self.assertEqual(existing.stat().st_mode & 0o777, 0o664)
+            self.assertEqual(fresh.stat().st_mode & 0o777, 0o644)
+            self.assertEqual(existing.read_text(encoding="utf-8"), "new")
+            self.assertEqual(sorted(path.name for path in Path(temp).iterdir()), ["existing.md", "fresh.md"])
+
+
+class SectionParsingTests(TempRoot):
+    def body_findings(self, kind, body):
+        item = item_for(kind)
+        text = sync.render_artifact(item)
+        self.write(item, text[:sync.sync_layout(text)] + body)
+        return sync.depth_findings(manifest_for([item]), 1)[0]
+
+    def test_an_unclosed_comment_swallows_the_rest_of_its_section(self):
+        findings = self.body_findings("task", "\n\n## Goal\nDone.\n## Acceptance criteria\n<!-- fill: old\n## Tasks\n-->\n")
+        self.assertEqual(findings, [
+            "AH-T001 #1: required task section 'Acceptance criteria' is unfilled",
+            "AH-T001 #1: required task section 'Tasks' is missing",
+        ])
+
+    def test_an_unclosed_comment_at_the_end_is_still_a_comment(self):
+        findings = self.body_findings("task", "\n\n## Goal\nDone.\n## Acceptance criteria\nDone.\n## Tasks\n<!-- fill: never closed\n")
+        self.assertEqual(findings, ["AH-T001 #1: required task section 'Tasks' is unfilled"])
+
+    def test_an_h1_ends_a_section(self):
+        findings = self.body_findings("task", "\n\n## Goal\n\n# Appendix\n\nText.\n## Acceptance criteria\nDone.\n## Tasks\nDone.\n")
+        self.assertEqual(findings, ["AH-T001 #1: required task section 'Goal' is unfilled"])
+
+    def test_a_required_heading_twice_is_a_duplicate(self):
+        findings = self.body_findings("task", "\n\n## Goal\nA.\n## Goal\nB.\n## Acceptance criteria\nDone.\n## Tasks\nDone.\n")
+        self.assertEqual(findings, ["AH-T001 #1: required task section 'Goal' is a duplicate section"])
+
+    def test_fences_close_only_on_a_matching_bare_fence(self):
+        body = (
+            "\n\n## Goal\nDone.\n"
+            "````text\n```\n~~~~\n```` not a close\n## Acceptance criteria\n````\n"
+            "## Tasks\nDone.\n"
+        )
+        self.assertEqual(self.body_findings("task", body), [
+            "AH-T001 #1: required task section 'Acceptance criteria' is missing",
+        ])
+
+    def test_a_backtick_info_string_with_a_backtick_is_not_a_fence(self):
+        body = "\n\n## Goal\n``` not`a fence\n## Acceptance criteria\nDone.\n## Tasks\nDone.\n"
+        self.assertEqual(self.body_findings("task", body), [])
 
 
 if __name__ == "__main__":
