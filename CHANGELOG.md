@@ -297,6 +297,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `scripts/cost_bench.py replay --tag` no longer counts the CLI's own synced skill packs
+  under `skills/synced/` as leftovers of a tag's sync, so a run with two tags into one named
+  profile reaches its second tag instead of stopping after the first (#649).
+
 - `harness lint` no longer reads untracked files under `.agent-harness/`. That directory stays
   unignored so a handoff can read its plans, so any session's local note naming a project outside
   `docs/` turned the lint red, and the stop gate with it, for every other session in the same
