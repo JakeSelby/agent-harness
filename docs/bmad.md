@@ -139,6 +139,31 @@ existed during the original delivery.
   paths to ordinary issues and PRs. Public documentation and planning artifacts may identify BMad
   deliberately, and issues may link to their public story artifacts.
 
+## Spawn confinement is enforced, not requested
+
+The override templates ask each review layer to run itself through `harness role run`. That is a
+request in a prompt: a client that paraphrases the brief and names no role used to walk past a
+spawn guard that only read the name the model wrote (#291).
+
+So the framework declares itself, in `policy/integrations/bmad.json`, and the spawn hook
+classifies against that descriptor instead. A descriptor names the framework, the release it was
+read from, the layer-to-role mapping, the input roots a confined worker needs, and how a spawn is
+recognised: an **identifier** only the framework's own text carries — one of its layer names as
+the spawn's type, or a path to one of its prompt files — or `corroboration` of its characteristic
+**phrases**. One identifier is enough; one phrase is never enough, which is what keeps an ordinary
+brief that mentions a review, a diff or findings from being refused. Input roots are declaration
+only: `_bmad/` names the framework but appears in any brief about editing it.
+
+A recognised spawn is refused with the same isolated-worker instruction a named role's spawn gets,
+the refusal names the framework and the layer, and it is remembered for the session, so the same
+work reworded is refused again. The `harness-role:` line the templates carry is an optimisation on
+top: it is read by the marker guard, which requires it on a line of its own, and a descriptor must
+not restate it as loose text.
+
+Another framework becomes a tenant by adding its own descriptor file; nothing in the hook is
+BMad-specific. Keep `version.pinned` equal to the release the repository installs — a mapping read
+from another release names layers that are not there.
+
 ## Shared roles and explicit installation
 
 `templates/bmad/custom/` names harness roles: `builder`, `reviewer`, and `spec-reviewer`.

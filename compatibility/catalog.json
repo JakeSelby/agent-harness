@@ -14,7 +14,8 @@
     "gate-invalidation",
     "bmad-workflow",
     "bidirectional-handoff",
-    "migration-uninstall"
+    "migration-uninstall",
+    "spawn-confinement"
   ],
   "clients": [
     {
@@ -129,6 +130,7 @@
     "On Codex, output-filter rewrites are never applied: a rewrite travels only with an allow, and the filtered commands are not auto-allowed. Tracked in #292.",
     "Under Codex auto permissions an isolated role worker launched from inside a sandboxed turn has no network access and stalls until its deadline; it completes under an acknowledged bypass. Tracked in #293.",
     "harness sync links user-level stance selections only; a HARNESS_STANCE_ variable or a project selection changes what harness stances and the hooks resolve, not the linked stance text. Tracked in #276 and #294.",
-    "The 0.11.1 spawn guards refuse a constrained role's brief re-issued verbatim under another name, or carrying a `harness-role:` line; a client that paraphrases the brief and names no role is not caught, so BMad review confinement still depends on the client following the routed instructions. Tracked in #291 and #300."
+    "The 0.11.1 spawn guards refuse a constrained role's brief re-issued verbatim under another name, or carrying a `harness-role:` line; a client that paraphrases the brief and names no role is not caught, so BMad review confinement still depends on the client following the routed instructions. Tracked in #291 and #300.",
+    "From 0.13.0 the spawn hook classifies a spawn against the declared integration descriptors in policy/integrations/, so a BMad review layer is refused whatever the client named it; the two entries above describe 0.11.1 through 0.12.0 and stop applying at that release. What remains: a spawn is recognised only when it carries one of the descriptor's identifiers or enough of its wording, so a brief rewritten with none of either, for a framework or a release no descriptor covers, still runs unconfined. Tracked in #291."
   ]
 }

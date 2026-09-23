@@ -45,7 +45,7 @@ Hooks handle the few things that should be deterministic. Everything else stays 
 
 - [Graded shell commands](claude/hooks/grade-bash.py): Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.
 - [Stop gate](claude/hooks/stop-gate.py): The turn doesn't end while your repo's own gate is red.
-- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code being written.
+- [Fresh-context review](claude/agents/reviewer.md): Scope is checked against the ask, then quality, by agents that never saw the code, and a framework's own review spawns are held to that whatever they call themselves.
 - [Secrets and personal data](primitives/rules/secrets.md): Lint catches tokens, keys and personal strings before they're committed.
 - [Untrusted tool output](claude/hooks/neutralize-tool-output.py): Text that comes back from a tool is data, never instructions.
 - [Sandboxing](docs/sandboxing.md): Fence the filesystem and network before you leave a loop unattended.

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "bmad",
+  "name": "BMad Method",
+  "doc": "docs/bmad.md",
+  "version": {
+    "pinned": "6.12.0",
+    "surface": "_bmad/custom/*.user.toml",
+    "note": "The override templates in templates/bmad/custom/ carry this same pin; harness bmad check reports when an upstream release renames a key or a layer id."
+  },
+  "input_roots": [
+    "_bmad",
+    "_bmad-output",
+    ".agents/skills",
+    ".claude/skills"
+  ],
+  "corroboration": 2,
+  "spawns": [
+    {
+      "id": "code-review-layer",
+      "role": "reviewer",
+      "agents": [
+        "blind-hunter",
+        "edge-case-hunter",
+        "verification-gap",
+        "adversarial-general",
+        "bmad-review-adversarial-general",
+        "bmad-review-edge-case-hunter",
+        "bmad-review-verification-gap"
+      ],
+      "identifiers": [
+        "review-prompts/edge-case-hunter.md",
+        "review-prompts/verification-gap.md",
+        "review-prompts/blind-hunter.md",
+        "review-prompts/adversarial-general.md"
+      ],
+      "phrases": [
+        "unified diff",
+        "content under review",
+        "list of findings",
+        "hunt for what is missing",
+        "do not spawn subagents of your own",
+        "findings as text in your final message"
+      ]
+    },
+    {
+      "id": "acceptance-auditor",
+      "role": "spec-reviewer",
+      "agents": [
+        "acceptance-auditor",
+        "bmad-review-acceptance-auditor"
+      ],
+      "identifiers": [],
+      "phrases": [
+        "judge the diff against the spec only",
+        "acceptance criteria the diff and its tests do not prove",
+        "what the spec asks for that it does not do"
+      ]
+    }
+  ]
+}

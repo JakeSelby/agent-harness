@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
+  release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
+  and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
+  hook now classifies a native spawn against those descriptors instead of trusting the
+  `subagent_type` the model wrote, so a review layer re-issued as an unnamed subagent is refused
+  with the same isolated-worker instruction a named `reviewer` spawn gets, and the `harness-role:`
+  line in a routed brief goes back to being an optimisation rather than the thing confinement
+  depends on. Recognition needs either an identifier only the framework's own text carries or two
+  of its characteristic phrases, so a brief that merely mentions a review, a diff or findings still
+  runs. Every classified refusal is now remembered for the session, which was the gap that let a
+  refused layer come back reworded. `spawn-confinement` joins the required qualification cases,
+  with a false-positive check, and the catalog records what a descriptor still cannot recognise
+  (#291).
+
 ### Changed
 
 - The delegation rule now states that subagents never message a peer, and the builder role says

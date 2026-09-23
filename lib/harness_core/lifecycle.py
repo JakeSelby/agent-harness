@@ -169,10 +169,12 @@ def role_instruction(runtime, name, fields):
             + (" " + OFFLINE_NOTE[name] if name in OFFLINE_NOTE else ""))
 
 
-def role_deny(runtime, name, fields):
+def role_deny(runtime, name, fields, origin=None):
+    """The refusal a constrained role's spawn gets. `origin` says what the harness recognised."""
+    reason = ("This constrained harness role requires an isolated worker. "
+              + role_instruction(runtime, name, fields))
     return {"hookSpecificOutput": {"permissionDecision": "deny",
-            "permissionDecisionReason": "This constrained harness role requires an isolated worker. "
-            + role_instruction(runtime, name, fields)}}
+            "permissionDecisionReason": origin + " " + reason if origin else reason}}
 
 
 def marker_role(prompt):
@@ -188,6 +190,30 @@ def marker_role(prompt):
         if fields is not None:
             return name, fields
     return None
+
+
+def framework_role(runtime, session_id, prompt, subagent_type):
+    """The refusal a declared integration's spawn gets, or None when this call is not one.
+
+    The classification is the descriptor's, not the model's: `subagent_type` is one signal among
+    several and carries no more weight than the rest. See `frameworks.py`.
+    """
+    try:
+        from . import frameworks
+        match = frameworks.classify(prompt, subagent_type)
+    except Exception:
+        return None
+    if match is None:
+        return None
+    name = match["role"]
+    fields = constrained_role(name)
+    if fields is None:
+        return None
+    module = decisions()
+    if module is not None:
+        module.record("framework-spawn", "deny", fingerprint(prompt),
+                      {"session_id": session_id}, runtime)
+    return name, role_deny(runtime, name, fields, frameworks.origin(match))
 
 
 def fingerprint(prompt):
@@ -408,18 +434,24 @@ def dispatch(runtime, payload):
             if fields is not None:
                 results.append(role_deny(runtime, role_name, fields))
             # Refusing the named spawn only moves the work: the same brief comes back with the role
-            # name dropped, and nothing sees it. So the refusal is remembered for the session, and a
-            # brief that declares its own role is refused however it is spawned. Neither guard runs
-            # where the stance already denies every spawn.
+            # name dropped, and nothing sees it. So a spawn is classified by what it carries as well
+            # as by what it called itself — a `harness-role:` line, then a declared framework
+            # integration's own mapping — and every refusal is remembered for the session, so the
+            # next rewording of the same work is refused too. None of this runs where the stance
+            # already denies every spawn.
             if delegation != "off":
+                session = event.get("session_id")
                 if fields is not None:
-                    remember_denial(event.get("session_id"), role_name, prompt)
+                    remember_denial(session, role_name, prompt)
                 else:
                     marked = marker_role(prompt)
-                    if marked is not None:
-                        results.append(role_deny(runtime, marked[0], marked[1]))
+                    classified = ((marked[0], role_deny(runtime, marked[0], marked[1])) if marked
+                                  else framework_role(runtime, session, prompt, role_name))
+                    if classified is not None:
+                        results.append(classified[1])
+                        remember_denial(session, classified[0], prompt)
                     else:
-                        evaded = evasion_deny(runtime, event.get("session_id"), prompt)
+                        evaded = evasion_deny(runtime, session, prompt)
                         if evaded is not None:
                             results.append(evaded)
             if delegation == "off":
