@@ -366,8 +366,9 @@ def bypass_verdict(wrote, data, mode):
     mode in force and no denial recorded, the model declined the turn on its own judgement —
     about one run in five — which is not a permission control and must never read as `failed`.
 
-    Returns the case result and its reason; the reason is `""` only for a pass. The
-    `permission-controls` case has no driver yet, and this is the classification it must use.
+    Returns the case result and its reason; the reason is `""` only for a pass. This is the
+    classification `case_permission_controls` judges the acknowledged-bypass turn by, and the
+    mode it passes is the one the client reported for that turn where the client reported one.
     """
     if wrote:
         return "passed", ""
@@ -500,12 +501,46 @@ def turn_outcome(wrote, data):
 
 
 def posture_turn(home):
-    """Ask for one sentinel write under whatever posture is synced; return outcome and result."""
+    """Ask for one sentinel write under whatever posture is synced; return outcome and result.
+
+    No tool is pre-approved: `--allowedTools Bash` approves the call before the posture is ever
+    consulted, so the manual posture could record no denial and a completed bypass turn would say
+    nothing about the mode. The probe turn is the same one the fixtures were recorded from.
+    """
     sentinel = home.project / SENTINEL
     if sentinel.exists():
         sentinel.unlink()
-    data = home.session(SENTINEL_PROMPT, tools=("Bash",))
+    data = home.session(SENTINEL_PROMPT, tools=())
     return turn_outcome(sentinel.exists(), data), data
+
+
+REPORTED_MODE = re.compile(r'"permissionMode"\s*:\s*"([A-Za-z]+)"')
+
+
+def turn_mode(home, data):
+    """The permission mode the client itself reported for a turn, or `""` if it reported none.
+
+    The client records the mode on the turn's own record, which is evidence about the turn rather
+    than about the settings file the sync wrote and the case has already read separately.
+    """
+    reported = data.get("permission_mode") or data.get("permissionMode")
+    if reported:
+        return str(reported)
+    found = REPORTED_MODE.findall(home.orchestrator_text(str(data.get("session_id", ""))))
+    return found[-1] if found else ""
+
+
+def mode_clause(reported):
+    """How the mode behind a posture's reading was learned, claiming no more than was read."""
+    if reported:
+        return "the client itself reported permission mode %s for that turn" % reported
+    return ("the client reported no permission mode for that turn, so the mode named here is the "
+            "one the sync wrote into its settings")
+
+
+def observed(notes, reason):
+    """Keep what earlier postures did in front of the reason a later one was not observed."""
+    return "; ".join(list(notes) + [reason]) if notes else reason
 
 
 def sync_posture(home, value, acknowledged=None, expected=0):
@@ -524,10 +559,12 @@ def case_permission_controls(home):
     """Exercise manual, auto and acknowledged bypass postures against native restrictions.
 
     docs/compatibility.md step 3. Each posture is read twice: in the mode `harness sync` wrote
-    into the client's own settings, and in what the client then did with a one-command write. The
-    acknowledged bypass is judged by `bypass_verdict`, so a model declining that turn on its own
-    judgement is `unverified` rather than a block, and an unacknowledged bypass must be refused by
-    the sync and leave the mode where it was.
+    into the client's own settings, and in what the client then did with a one-command write that
+    pre-approves no tool. The acknowledged bypass is judged by `bypass_verdict` against the mode
+    the client reported for that turn, so a model declining it on its own judgement is
+    `unverified` rather than a block, and an unacknowledged bypass must be refused by the sync and
+    leave the mode where it was. Each posture's reading is kept as it is made, so a later posture
+    that cannot be observed reports what the earlier ones did rather than erasing them.
 
     The first live round after this driver lands is compared against the hand-run result for the
     same target before its verdict is trusted (docs/releasing.md, source and qualification).
@@ -539,6 +576,7 @@ def case_permission_controls(home):
     if home.permission_mode() != MANUAL_MODE:
         raise AssertionError("permissions=manual synced permission mode %s, not %s"
                              % (home.permission_mode() or "<unset>", MANUAL_MODE))
+    notes = []
     manual, manual_data = posture_turn(home)
     if manual == COMPLETED:
         raise AssertionError("the manual posture wrote %s with no approval given" % SENTINEL)
@@ -546,36 +584,48 @@ def case_permission_controls(home):
         raise Unverified("the model declined the manual-posture turn on its own judgement: the "
                          "turn recorded no permission denial, so no native restriction was "
                          "observed under permission mode %s" % MANUAL_MODE)
+    notes.append("permissions=manual synced permission mode %s and the client refused the write, "
+                 "recording %s permission denial(s) with %s absent, and %s"
+                 % (MANUAL_MODE, len(permission_denials(manual_data)), SENTINEL,
+                    mode_clause(turn_mode(home, manual_data))))
     warning = sync_posture(home, "bypass", expected=1)
     if ACK_KEY not in warning:
-        raise AssertionError("an unacknowledged permissions=bypass sync was refused without "
-                             "naming %s: %s" % (ACK_KEY, redact(warning[-200:])))
+        raise AssertionError(observed(notes, "an unacknowledged permissions=bypass sync was "
+                                      "refused without naming %s: %s"
+                                      % (ACK_KEY, redact(warning[-200:]))))
     if home.permission_mode() != MANUAL_MODE:
-        raise AssertionError("the refused sync still moved the permission mode to "
-                             + (home.permission_mode() or "<unset>"))
+        raise AssertionError(observed(notes, "the refused sync still moved the permission mode to "
+                                      + (home.permission_mode() or "<unset>")))
+    notes.append("permissions=bypass was refused by the sync until %s was set, and the refused "
+                 "sync left the mode at %s" % (ACK_KEY, MANUAL_MODE))
     sync_posture(home, "bypass", acknowledged=True)
     if home.permission_mode() != BYPASS_MODE:
         raise AssertionError("an acknowledged permissions=bypass synced permission mode %s, not %s"
                              % (home.permission_mode() or "<unset>", BYPASS_MODE))
     bypass, bypass_data = posture_turn(home)
-    result, reason = bypass_verdict(bypass == COMPLETED, bypass_data, home.permission_mode())
+    reported = turn_mode(home, bypass_data)
+    result, reason = bypass_verdict(bypass == COMPLETED, bypass_data,
+                                    reported or home.permission_mode())
     if result == "failed":
-        raise AssertionError(reason)
+        raise AssertionError(observed(notes, reason))
     if result != "passed":
-        raise Unverified(reason)
+        raise Unverified(observed(notes, reason))
+    notes.append("the acknowledged bypass synced %s and the same write completed, judged from the "
+                 "turn's own denials and mode rather than from the file alone, and %s"
+                 % (BYPASS_MODE, mode_clause(reported)))
     sync_posture(home, "auto")
     if home.permission_mode() != AUTO_MODE:
-        raise AssertionError("permissions=auto synced permission mode %s, not %s"
-                             % (home.permission_mode() or "<unset>", AUTO_MODE))
-    auto, auto_data = posture_turn(home)
-    return ("permissions=manual synced permission mode %s and the client refused the write, "
-            "recording %s permission denial(s) with %s absent; permissions=bypass was refused by "
-            "the sync until %s was set and the refused sync left the mode at %s; the acknowledged "
-            "bypass synced %s and the same write completed, classified from the turn's own "
-            "denials and mode rather than from the file alone; permissions=auto synced %s, where "
-            "the write was %s with %s permission denial(s) recorded."
-            % (MANUAL_MODE, len(permission_denials(manual_data)), SENTINEL, ACK_KEY, MANUAL_MODE,
-               BYPASS_MODE, AUTO_MODE, auto, len(permission_denials(auto_data))))
+        raise AssertionError(observed(notes, "permissions=auto synced permission mode %s, not %s"
+                                      % (home.permission_mode() or "<unset>", AUTO_MODE)))
+    try:
+        auto, auto_data = posture_turn(home)
+    except Unverified as error:
+        raise Unverified(observed(notes, str(error)))
+    notes.append("permissions=auto synced %s, where the write was %s with %s permission denial(s) "
+                 "recorded, and %s"
+                 % (AUTO_MODE, auto, len(permission_denials(auto_data)),
+                    mode_clause(turn_mode(home, auto_data))))
+    return "; ".join(notes) + "."
 
 
 CASES = {
