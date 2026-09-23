@@ -427,8 +427,9 @@ CREDENTIAL_NAMES = (".credentials.json", ".claude.json")
 # afterwards rather than trusting the record.
 SYNC_STATE = Path(".local") / "state" / "agent-harness"
 # What the CLI and the owner's other sessions write into a profile during a run, left alone by
-# the undo and not counted as the sync's when the profile is checked afterwards.
-RUN_WRITES = ("projects", "todos", "plans", "history.jsonl")
+# the undo and not counted as the sync's when the profile is checked afterwards. `skills/synced`
+# is the CLI's own skill packs, which it writes under a harness-managed name.
+RUN_WRITES = ("projects", "todos", "plans", "history.jsonl", "skills/synced")
 
 
 def is_credential(rel):
@@ -559,7 +560,11 @@ def profile_listing(root):
 
 
 def _run_write(rel):
-    return is_credential(rel) or rel in RUN_WRITES or rel.startswith(tuple(n + "/" for n in RUN_WRITES))
+    """A credential, one of RUN_WRITES, anything under one, or a directory that only exists to
+    hold one (`skills` above `skills/synced`): the run's, never the sync's."""
+    roots = tuple(n + "/" for n in RUN_WRITES)
+    return (is_credential(rel) or rel in RUN_WRITES or rel.startswith(roots)
+            or any(root.startswith(rel + "/") for root in roots))
 
 
 def sync_leftovers(config, before):

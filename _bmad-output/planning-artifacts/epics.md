@@ -16,12 +16,13 @@ inputDocuments:
 
 This map breaks the 2026-09-23 PRD into epics. Each epic is a GitHub issue with a BMad ID, and each
 story is a GitHub issue whose story file under `../implementation-artifacts/` carries its design. The
-map replaces the 2026-09-19 program list, and its history is in git. It is regenerated from
-`../issue-map.json` whenever the tree changes.
+map replaces the 2026-09-19 program list, and its history is in git. It is kept in step with
+`../issue-map.json`: a change that moves the tree updates this file in the same pull request.
 
 How to read it:
 - **Epics** carry their milestone window, their goal and the requirements they cover.
-- **Stories** are listed under their GitHub parent, with their state.
+- **Stories** are listed under their GitHub parent, with their state: open, done, or not planned (closed
+  without delivery). A story's own child issues are nested under it.
 - **Completed work with no epic** is listed by issue range at the end. It is history, and it keeps its
   record in its story file.
 - **Issues held by #529** have no BMad ID yet, and join the map when that pull request merges: #428, #429,
@@ -55,12 +56,36 @@ How to read it:
 - **Covers:** FR-1, FR-3 to FR-8, FR-10 to FR-12
 - **Stories:**
   - AH-S027 [#94](https://github.com/JakeSelby/agent-harness/issues/94): Unify primitive contracts, custom stances and runtime projections (done)
+    - AH-S067 [#163](https://github.com/JakeSelby/agent-harness/issues/163): Unify policy sources and personal stance switches (done)
+    - AH-S072 [#168](https://github.com/JakeSelby/agent-harness/issues/168): Keep session choices out of global projections (done)
+    - AH-S075 [#171](https://github.com/JakeSelby/agent-harness/issues/171): Align plan storage and qualify native guidance (done)
   - AH-S028 [#95](https://github.com/JakeSelby/agent-harness/issues/95): Repair installation, configuration ownership and reversible migration (done)
+    - AH-S068 [#164](https://github.com/JakeSelby/agent-harness/issues/164): Reconcile both runtimes with reversible ownership (done)
+    - AH-S074 [#170](https://github.com/JakeSelby/agent-harness/issues/170): Preserve recovery intent and redirected user links (done)
   - AH-S029 [#96](https://github.com/JakeSelby/agent-harness/issues/96): Deliver runtime policy enforcement, roles, gates and observability (done)
+    - AH-S069 [#165](https://github.com/JakeSelby/agent-harness/issues/165): Compose shared lifecycle policies for both adapters (done)
+    - AH-S077 [#173](https://github.com/JakeSelby/agent-harness/issues/173): Inspect hooks for both managed runtimes (done)
+    - AH-S081 [#177](https://github.com/JakeSelby/agent-harness/issues/177): Isolate constrained shared role workers (done)
+    - AH-B006 [#181](https://github.com/JakeSelby/agent-harness/issues/181): Preserve plan feedback for native Codex multi-file patch results (done)
   - AH-S030 [#97](https://github.com/JakeSelby/agent-harness/issues/97): Integrate BMad and preserve task context across Claude and Codex (done)
+    - AH-S070 [#166](https://github.com/JakeSelby/agent-harness/issues/166): Share task continuation and semantic BMad roles (done)
+    - AH-S078 [#174](https://github.com/JakeSelby/agent-harness/issues/174): Detect missing review dependencies and divergent mirrors (done)
+    - AH-S079 [#175](https://github.com/JakeSelby/agent-harness/issues/175): Invalidate handoffs when shared artifacts change (done)
+    - AH-S080 [#176](https://github.com/JakeSelby/agent-harness/issues/176): Use shared authority and label runtime coverage (done)
+    - AH-S083 [#179](https://github.com/JakeSelby/agent-harness/issues/179): Clarify explicit installation and shim recovery (done)
+    - AH-S084 [#180](https://github.com/JakeSelby/agent-harness/issues/180): Honor workflow findings contracts (done)
   - AH-S031 [#98](https://github.com/JakeSelby/agent-harness/issues/98): Qualify native clients and publish a versioned compatibility catalog (done)
+    - AH-S071 [#167](https://github.com/JakeSelby/agent-harness/issues/167): Require native evidence for support claims (done)
+    - AH-S082 [#178](https://github.com/JakeSelby/agent-harness/issues/178): Reject contradictory qualification evidence (done)
+    - AH-S086 [#185](https://github.com/JakeSelby/agent-harness/issues/185): Qualify native Codex CLI on macOS and Linux for 0.9.0 (done)
+    - AH-S087 [#187](https://github.com/JakeSelby/agent-harness/issues/187): Qualify Claude Code clients for 0.9.0 (done)
+    - AH-S088 [#188](https://github.com/JakeSelby/agent-harness/issues/188): Qualify Codex VS Code and desktop for 0.9.0 (done)
+    - AH-B007 [#200](https://github.com/JakeSelby/agent-harness/issues/200): Preserve released qualification while blocking changed source (done)
   - AH-S032 [#99](https://github.com/JakeSelby/agent-harness/issues/99): Reposition product messaging around personal stances and shared primitives (done)
+    - AH-S073 [#169](https://github.com/JakeSelby/agent-harness/issues/169): Lead with user-aligned primitives and personal stances (done)
+    - AH-S085 [#183](https://github.com/JakeSelby/agent-harness/issues/183): Improve root README for first-time developer adoption (done)
   - AH-S033 [#100](https://github.com/JakeSelby/agent-harness/issues/100): Coordinate the verified release, metadata and website deployments (done)
+    - AH-S076 [#172](https://github.com/JakeSelby/agent-harness/issues/172): Gate coordinated publication on native qualification (done)
   - AH-E005 [#206](https://github.com/JakeSelby/agent-harness/issues/206): Ship a defensible v1.0.0 stable release (open)
 
 ### AH-E002: Complete the harness stance and settings contract ([#116](https://github.com/JakeSelby/agent-harness/issues/116), open)
@@ -106,19 +131,19 @@ How to read it:
   - AH-S052 [#139](https://github.com/JakeSelby/agent-harness/issues/139): Jev: Add Jev diagnostics and decision telemetry (done)
   - AH-S053 [#140](https://github.com/JakeSelby/agent-harness/issues/140): Jev: Connect Jev checks to shared Claude Code and Codex runtime events (open)
   - AH-SP001 [#141](https://github.com/JakeSelby/agent-harness/issues/141): Jev: Verify stop claims against gate evidence (open)
-  - AH-S054 [#142](https://github.com/JakeSelby/agent-harness/issues/142): Jev: Check response manner and explicit local constraints (done)
+  - AH-S054 [#142](https://github.com/JakeSelby/agent-harness/issues/142): Jev: Check response manner and explicit local constraints (not planned)
   - AH-S055 [#143](https://github.com/JakeSelby/agent-harness/issues/143): Jev: Rank bounded skill and context shortlists (open)
-  - AH-S056 [#144](https://github.com/JakeSelby/agent-harness/issues/144): Jev: Flag repeated attempts and repeated questions in bounded exchanges (done)
+  - AH-S056 [#144](https://github.com/JakeSelby/agent-harness/issues/144): Jev: Flag repeated attempts and repeated questions in bounded exchanges (not planned)
   - AH-S057 [#145](https://github.com/JakeSelby/agent-harness/issues/145): Jev: Recommend delegation roles from bounded briefs (open)
-  - AH-SP002 [#146](https://github.com/JakeSelby/agent-harness/issues/146): Jev: Evaluate advisory action-risk and tool-output screening with Jev (done)
+  - AH-SP002 [#146](https://github.com/JakeSelby/agent-harness/issues/146): Jev: Evaluate advisory action-risk and tool-output screening with Jev (not planned)
   - AH-S058 [#147](https://github.com/JakeSelby/agent-harness/issues/147): Jev: Document and release the optional Jev adapter (open)
   - AH-S061 [#156](https://github.com/JakeSelby/agent-harness/issues/156): Jev: Check delegation-brief quality (open)
   - AH-S062 [#157](https://github.com/JakeSelby/agent-harness/issues/157): Jev: Check subagent return compliance (open)
-  - AH-S063 [#158](https://github.com/JakeSelby/agent-harness/issues/158): Jev: Check review-card usefulness (done)
-  - AH-SP003 [#159](https://github.com/JakeSelby/agent-harness/issues/159): Jev: Evaluate short source-to-output fidelity (done)
-  - AH-S064 [#160](https://github.com/JakeSelby/agent-harness/issues/160): Jev: Check review-finding actionability (done)
-  - AH-S065 [#161](https://github.com/JakeSelby/agent-harness/issues/161): Jev: Check internal consistency of short handoffs (done)
-  - AH-S066 [#162](https://github.com/JakeSelby/agent-harness/issues/162): Jev: Check whether progress updates add information (done)
+  - AH-S063 [#158](https://github.com/JakeSelby/agent-harness/issues/158): Jev: Check review-card usefulness (not planned)
+  - AH-SP003 [#159](https://github.com/JakeSelby/agent-harness/issues/159): Jev: Evaluate short source-to-output fidelity (not planned)
+  - AH-S064 [#160](https://github.com/JakeSelby/agent-harness/issues/160): Jev: Check review-finding actionability (not planned)
+  - AH-S065 [#161](https://github.com/JakeSelby/agent-harness/issues/161): Jev: Check internal consistency of short handoffs (not planned)
+  - AH-S066 [#162](https://github.com/JakeSelby/agent-harness/issues/162): Jev: Check whether progress updates add information (not planned)
   - AH-S140 [#372](https://github.com/JakeSelby/agent-harness/issues/372): Jev: Gate the ask band of command grading, tighten-only (open)
   - AH-SP005 [#373](https://github.com/JakeSelby/agent-harness/issues/373): Jev: Evaluate deletion-only compaction against task success (open)
   - AH-SP006 [#374](https://github.com/JakeSelby/agent-harness/issues/374): Jev: Evaluate a typed same-work check for evasion_deny (open)
@@ -259,23 +284,24 @@ How to read it:
 - **Stories:**
   - AH-T009 [#617](https://github.com/JakeSelby/agent-harness/issues/617): Promote existing research into BMad research artifacts (done)
   - AH-T010 [#618](https://github.com/JakeSelby/agent-harness/issues/618): Re-baseline the product brief and PRD (done)
-  - AH-T011 [#619](https://github.com/JakeSelby/agent-harness/issues/619): Re-baseline the UX specification and architecture spine (open)
+  - AH-T011 [#619](https://github.com/JakeSelby/agent-harness/issues/619): Re-baseline the UX specification and architecture spine (done)
   - AH-S206 [#620](https://github.com/JakeSelby/agent-harness/issues/620): Rich story files: typed templates, managed issue block, lossless upgrade, depth check (done)
   - AH-S207 [#621](https://github.com/JakeSelby/agent-harness/issues/621): Repo rule: route every operation through BMad and keep its corpus current (done)
-  - AH-T012 [#622](https://github.com/JakeSelby/agent-harness/issues/622): Re-derive epics and reparent the open issue tree (open)
+  - AH-T012 [#622](https://github.com/JakeSelby/agent-harness/issues/622): Re-derive epics and reparent the open issue tree (done)
   - AH-S208 [#623](https://github.com/JakeSelby/agent-harness/issues/623): Implementation readiness and a derived sprint status (open)
-  - AH-T014 [#652](https://github.com/JakeSelby/agent-harness/issues/652): Enrich story files: the seventeen epics and the re-baseline tree (open)
-  - AH-T015 [#653](https://github.com/JakeSelby/agent-harness/issues/653): Enrich story files: the stance and settings contract (#116) (open)
-  - AH-T016 [#654](https://github.com/JakeSelby/agent-harness/issues/654): Enrich story files: close the loop and the decision layer (#135) (open)
-  - AH-T017 [#655](https://github.com/JakeSelby/agent-harness/issues/655): Enrich story files: the selection model, measurement and architecture conformance (#552, #632, #636) (open)
-  - AH-T018 [#656](https://github.com/JakeSelby/agent-harness/issues/656): Enrich story files: qualification, guardrails and traceability (#633, #634, #635) (open)
-  - AH-T019 [#657](https://github.com/JakeSelby/agent-harness/issues/657): Enrich story files: the provider-agnostic rebuild, BMad commit, v1 and client graduation (#93, #189, #206, #216) (open)
-  - AH-T020 [#658](https://github.com/JakeSelby/agent-harness/issues/658): Enrich story files: adoption and the 0.13 adoption epics (#212, #442, #443, #444) (open)
-  - AH-T021 [#659](https://github.com/JakeSelby/agent-harness/issues/659): Enrich story files: delivered work without an epic, issues #1 to #120 (open)
-  - AH-T022 [#660](https://github.com/JakeSelby/agent-harness/issues/660): Enrich story files: delivered work without an epic, issues #121 to #300 (open)
-  - AH-T023 [#661](https://github.com/JakeSelby/agent-harness/issues/661): Enrich story files: delivered work without an epic, issues #301 to #360 (open)
-  - AH-T024 [#662](https://github.com/JakeSelby/agent-harness/issues/662): Enrich story files: delivered work without an epic, issues #361 to #420 (open)
-  - AH-T025 [#663](https://github.com/JakeSelby/agent-harness/issues/663): Enrich story files: delivered work without an epic, issues #421 onward (open)
+  - AH-T014 [#652](https://github.com/JakeSelby/agent-harness/issues/652): Enrich story files: the seventeen epics and the re-baseline tree (done)
+  - AH-T015 [#653](https://github.com/JakeSelby/agent-harness/issues/653): Enrich story files: the stance and settings contract (#116) (done)
+  - AH-T016 [#654](https://github.com/JakeSelby/agent-harness/issues/654): Enrich story files: close the loop and the decision layer (#135) (done)
+  - AH-T017 [#655](https://github.com/JakeSelby/agent-harness/issues/655): Enrich story files: the selection model, measurement and architecture conformance (#552, #632, #636) (done)
+  - AH-T018 [#656](https://github.com/JakeSelby/agent-harness/issues/656): Enrich story files: qualification, guardrails and traceability (#633, #634, #635) (done)
+  - AH-T019 [#657](https://github.com/JakeSelby/agent-harness/issues/657): Enrich story files: the provider-agnostic rebuild, BMad commit, v1 and client graduation (#93, #189, #206, #216) (done)
+  - AH-T020 [#658](https://github.com/JakeSelby/agent-harness/issues/658): Enrich story files: adoption and the 0.13 adoption epics (#212, #442, #443, #444) (done)
+  - AH-T021 [#659](https://github.com/JakeSelby/agent-harness/issues/659): Enrich story files: delivered work without an epic, issues #1 to #120 (done)
+  - AH-T022 [#660](https://github.com/JakeSelby/agent-harness/issues/660): Enrich story files: delivered work without an epic, issues #121 to #300 (done)
+  - AH-T023 [#661](https://github.com/JakeSelby/agent-harness/issues/661): Enrich story files: delivered work without an epic, issues #301 to #360 (done)
+  - AH-T024 [#662](https://github.com/JakeSelby/agent-harness/issues/662): Enrich story files: delivered work without an epic, issues #361 to #420 (done)
+  - AH-T025 [#663](https://github.com/JakeSelby/agent-harness/issues/663): Enrich story files: delivered work without an epic, issues #421 onward (done)
+  - AH-B071 [#666](https://github.com/JakeSelby/agent-harness/issues/666): The real-corpus upgrade test fails once the last amended stub is upgraded (done)
 
 ### AH-E013: Measurement: the cost benchmark, detector precision and the evaluation pyramid ([#632](https://github.com/JakeSelby/agent-harness/issues/632), open)
 
@@ -296,7 +322,7 @@ How to read it:
   - AH-C043 [#533](https://github.com/JakeSelby/agent-harness/issues/533): Qualify the required CLI targets and restore the release floor (open)
   - AH-D008 [#582](https://github.com/JakeSelby/agent-harness/issues/582): Decide whether qualification evidence is invalidated per case (#333 part 1b) (open)
   - AH-S214 [#612](https://github.com/JakeSelby/agent-harness/issues/612): Acceptance runner: use the Codex session login in its disposable home (open)
-  - AH-C056 [#627](https://github.com/JakeSelby/agent-harness/issues/627): Open the 0.13.0 candidate (open)
+  - AH-C052 [#627](https://github.com/JakeSelby/agent-harness/issues/627): Open the 0.13.0 candidate (done)
   - AH-T013 [#638](https://github.com/JakeSelby/agent-harness/issues/638): Amend the 0.12.0 release notes with the work merged between #465 and #494 (open)
   - AH-S209 [#639](https://github.com/JakeSelby/agent-harness/issues/639): Compatibility catalog: an explicit waiver for a release with no required target (open)
   - AH-C053 [#640](https://github.com/JakeSelby/agent-harness/issues/640): CI: check the Python 3.9 floor on every pull request (open)
@@ -315,9 +341,9 @@ How to read it:
   - AH-B068 [#538](https://github.com/JakeSelby/agent-harness/issues/538): Hide an installed Codex client from the reviewer-key detection test (open)
   - AH-S217 [#576](https://github.com/JakeSelby/agent-harness/issues/576): Guard the Workflow tool launch: log it, honour delegation off, refuse constrained roles in agentType (open)
   - AH-S216 [#577](https://github.com/JakeSelby/agent-harness/issues/577): harness usage: separate workflow rows and stop pricing them against a confined role budget (open)
-  - AH-B067 [#611](https://github.com/JakeSelby/agent-harness/issues/611): stop-gate: interleaved sessions in one checkout reset each other's block count, so the gate never releases (open)
+  - AH-B067 [#611](https://github.com/JakeSelby/agent-harness/issues/611): stop-gate: interleaved sessions in one checkout reset each other's block count, so the gate never releases (done)
   - AH-B064 [#641](https://github.com/JakeSelby/agent-harness/issues/641): Plugin channel: constrained roles install unconfined, and the manifest version lags VERSION (open)
-  - AH-B066 [#650](https://github.com/JakeSelby/agent-harness/issues/650): sync --dry-run words its summary lines as if it had applied the changes (open)
+  - AH-B070 [#650](https://github.com/JakeSelby/agent-harness/issues/650): sync --dry-run words its summary lines as if it had applied the changes (open)
 
 ### AH-E016: Harden BMad traceability for many sessions filing at once ([#635](https://github.com/JakeSelby/agent-harness/issues/635), open)
 
@@ -457,6 +483,7 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-S122 [#332](https://github.com/JakeSelby/agent-harness/issues/332): Freeze qualification on a release branch, and fix no defect mid-round
 - AH-S123 [#333](https://github.com/JakeSelby/agent-harness/issues/333): Scope evidence invalidation by target, then decide on scoping it by case
 - AH-S124 [#334](https://github.com/JakeSelby/agent-harness/issues/334): Add a pre-qualification smoke tier that spends no model turns
+  - AH-S143 [#401](https://github.com/JakeSelby/agent-harness/issues/401): Land the documentation-link check and the credential probe from the smoke tier
 - AH-S125 [#335](https://github.com/JakeSelby/agent-harness/issues/335): Cut the cost of the bmad-workflow qualification case
 - AH-S126 [#336](https://github.com/JakeSelby/agent-harness/issues/336): Commit the qualification case scripts, drive Codex in the runner, automate all eleven cases
 - AH-S127 [#337](https://github.com/JakeSelby/agent-harness/issues/337): Stop sequential CI waits and changelog conflicts: merge queue and changelog fragments
@@ -500,7 +527,7 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-D004 [#417](https://github.com/JakeSelby/agent-harness/issues/417): Decide whether repeated agent pairs get an amortized return schema, and whether fan-outs get a shared workspace
 - AH-C030 [#418](https://github.com/JakeSelby/agent-harness/issues/418): Reserve BMad IDs for the traceability-gap issues
 
-### Issues #421 onward (28)
+### Issues #421 onward (30)
 
 - AH-C032 [#422](https://github.com/JakeSelby/agent-harness/issues/422): Reserve BMad IDs for the traceability close-out issues
 - AH-C033 [#424](https://github.com/JakeSelby/agent-harness/issues/424): Reserve BMad IDs for the comms-gap issues filed into v0.12.0
@@ -530,3 +557,5 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-B062 [#606](https://github.com/JakeSelby/agent-harness/issues/606): test(codex): make the no-client detection test hermetic against an installed client
 - AH-T008 [#607](https://github.com/JakeSelby/agent-harness/issues/607): Rule: recognize "spawn a new chat" as a cloud-run request
 - AH-C051 [#625](https://github.com/JakeSelby/agent-harness/issues/625): docs(changelog): restore five Unreleased entries the #598 merge dropped
+- AH-B066 [#649](https://github.com/JakeSelby/agent-harness/issues/649): Replay counts the CLI's synced skill packs as sync leftovers and stops after the first tag
+- AH-S218 [#672](https://github.com/JakeSelby/agent-harness/issues/672): Pass CLAUDE_CODE_OAUTH_TOKEN into the disposable home so a subscription can run a Claude Code round

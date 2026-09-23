@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "harness_version": "0.12.0",
+  "harness_version": "0.13.0",
   "chars_per_token": 4.0,
   "scopes": {
     "always_loaded": "claude/CLAUDE.md, claude/rules/, claude/output-styles/ and the stance variant config.example.json selects, for the default selection",
@@ -10,33 +10,38 @@
   },
   "always_loaded": {
     "files": 21,
-    "lines": 343,
-    "chars": 20673,
-    "est_tokens": 5168
+    "lines": 272,
+    "chars": 18718,
+    "est_tokens": 4680
   },
   "listings": {
     "files": 33,
     "lines": 33,
-    "chars": 9303,
-    "est_tokens": 2326
+    "chars": 8285,
+    "est_tokens": 2071
   },
   "total": {
     "files": 54,
-    "lines": 376,
-    "chars": 29976,
-    "est_tokens": 7494
+    "lines": 305,
+    "chars": 27003,
+    "est_tokens": 6751
   },
-  "worst_case_est_tokens": 7553,
+  "worst_case_est_tokens": 6802,
   "largest": [
     {
       "path": "claude/output-styles/scannable.md",
-      "lines": 131,
-      "chars": 6061
+      "lines": 56,
+      "chars": 3426
     },
     {
       "path": "claude/rules/working-style.md",
-      "lines": 19,
-      "chars": 1562
+      "lines": 22,
+      "chars": 1856
+    },
+    {
+      "path": "claude/rules/delegation.md",
+      "lines": 12,
+      "chars": 1025
     },
     {
       "path": "claude/rules/transcript-hygiene.md",
@@ -44,44 +49,39 @@
       "chars": 972
     },
     {
-      "path": "claude/rules/delegation.md",
+      "path": "claude/stances/delegation/tiered.md",
       "lines": 12,
-      "chars": 907
-    },
-    {
-      "path": "claude/rules/secrets.md",
-      "lines": 13,
-      "chars": 887
+      "chars": 905
     }
   ],
   "usd": {
     "claude-fable-5": {
-      "session_start": 0.093675,
-      "later_turn": 0.007494
+      "session_start": 0.084388,
+      "later_turn": 0.006751
     },
     "claude-fable-5-1": {
-      "session_start": 0.093675,
-      "later_turn": 0.001873
+      "session_start": 0.084388,
+      "later_turn": 0.001688
     },
     "claude-haiku-4-5": {
-      "session_start": 0.009368,
-      "later_turn": 0.000749
+      "session_start": 0.008439,
+      "later_turn": 0.000675
     },
     "claude-opus-4-6": {
-      "session_start": 0.046837,
-      "later_turn": 0.003747
+      "session_start": 0.042194,
+      "later_turn": 0.003376
     },
     "claude-opus-4-8": {
-      "session_start": 0.046837,
-      "later_turn": 0.003747
+      "session_start": 0.042194,
+      "later_turn": 0.003376
     },
     "claude-opus-5": {
-      "session_start": 0.046837,
-      "later_turn": 0.003747
+      "session_start": 0.042194,
+      "later_turn": 0.003376
     },
     "claude-sonnet-5": {
-      "session_start": 0.018735,
-      "later_turn": 0.001499
+      "session_start": 0.016878,
+      "later_turn": 0.00135
     }
   }
 }

@@ -1,8 +1,7 @@
 {
   "schema_version": 1,
-  "harness_version": "0.12.0",
-  "release_state": "released",
-  "qualification_source_commit": "b0768269aca6594f4ba282e06c2a3bc11cfd42f9",
+  "harness_version": "0.13.0",
+  "release_state": "candidate",
   "required_cases": [
     "installation",
     "stance-switch",
@@ -40,7 +39,7 @@
       "client": "cli",
       "platform": "macos",
       "status": "unqualified",
-      "required_for_release": false,
+      "required_for_release": true,
       "evidence": []
     },
     {
@@ -60,7 +59,7 @@
       "client": "cli",
       "platform": "linux",
       "status": "unqualified",
-      "required_for_release": false,
+      "required_for_release": true,
       "evidence": []
     },
     {
@@ -81,7 +80,7 @@
       "client": "cli",
       "platform": "macos",
       "status": "unqualified",
-      "required_for_release": false,
+      "required_for_release": true,
       "evidence": []
     },
     {

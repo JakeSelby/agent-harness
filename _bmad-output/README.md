@@ -3,10 +3,10 @@
 This directory is the public product and delivery record. Start with the
 [product brief](planning-artifacts/product-briefs/brief-agent-harness-2026-09-23/brief.md), then read
 the [requirements](planning-artifacts/prds/prd-agent-harness-2026-09-23/prd.md),
-[developer experience](planning-artifacts/ux-designs/ux-agent-harness-2026-09-19/EXPERIENCE.md),
-and [architecture spine](planning-artifacts/architecture-spines/architecture-agent-harness-2026-09-19/ARCHITECTURE-SPINE.md).
+[developer experience](planning-artifacts/ux-designs/ux-agent-harness-2026-09-23/EXPERIENCE.md),
+and [architecture spine](planning-artifacts/architecture-spines/architecture-agent-harness-2026-09-23/ARCHITECTURE-SPINE.md).
 The [epic map](planning-artifacts/epics.md) owns program coverage, the
-[decision ledger](planning-artifacts/decisions.md) preserves product calls, and the
+[decision ledger](planning-artifacts/decisions.md) preserves the 2026-09-19 product calls (superseded by the spine and the PRD addendum), and the
 [readiness report](planning-artifacts/implementation-readiness.md) states what remains before v1.
 The [v1 release plan](planning-artifacts/v1-release-plan.md) is the approved gate sequence and ends
 with the authoritative story-to-requirement mapping.

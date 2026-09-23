@@ -5,9 +5,9 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 18,
-    "story": 218,
+    "story": 219,
     "task": 26,
-    "bug": 70,
+    "bug": 72,
     "chore": 57,
     "spike": 10,
     "decision": 9
@@ -4456,7 +4456,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B067.md",
       "parent_bmad_id": "AH-E015",
       "parent_github_number": 634,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4521,7 +4521,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T011.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4560,7 +4560,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T012.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4590,16 +4590,16 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-C056",
+      "bmad_id": "AH-C052",
       "github_number": 627,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/627",
       "title": "Open the 0.13.0 candidate",
       "type": "chore",
       "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C056.md",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C052.md",
       "parent_bmad_id": "AH-E014",
       "parent_github_number": 633,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4812,12 +4812,25 @@
     },
     {
       "bmad_id": "AH-B066",
+      "github_number": 649,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/649",
+      "title": "Replay counts the CLI's synced skill packs as sync leftovers and stops after the first tag",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B066.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B070",
       "github_number": 650,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/650",
       "title": "sync --dry-run words its summary lines as if it had applied the changes",
       "type": "bug",
       "native_type": "Bug",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-B066.md",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B070.md",
       "parent_bmad_id": "AH-E015",
       "parent_github_number": 634,
       "lifecycle": "active",
@@ -4833,7 +4846,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T014.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4846,7 +4859,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T015.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4859,7 +4872,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T016.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4872,7 +4885,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T017.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4885,7 +4898,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T018.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4898,7 +4911,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T019.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4911,7 +4924,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T020.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4924,7 +4937,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T021.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4937,7 +4950,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T022.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4950,7 +4963,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T023.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4963,7 +4976,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T024.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4976,7 +4989,33 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T025.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B071",
+      "github_number": 666,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/666",
+      "title": "The real-corpus upgrade test fails once the last amended stub is upgraded",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B071.md",
+      "parent_bmad_id": "AH-E012",
+      "parent_github_number": 616,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S218",
+      "github_number": 672,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/672",
+      "title": "Pass CLAUDE_CODE_OAUTH_TOKEN into the disposable home so a subscription can run a Claude Code round",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S218.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
       "provenance": "authored"
     }
   ]

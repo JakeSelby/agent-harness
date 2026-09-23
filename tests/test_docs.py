@@ -41,7 +41,8 @@ class ReadmeTests(unittest.TestCase):
     def test_status_and_native_evidence_limits_are_visible(self):
         prose = " ".join(README.split())
         self.assertIn("**Release status:**", prose)
-        self.assertIn("`0.12.0` is the current release, and it ships with no native", prose)
+        self.assertIn("`0.13.0` is a release candidate", prose)
+        self.assertIn("four required Claude Code and Codex CLI targets", prose)
         # The page must name the last qualified release rather than leave a reader to infer one.
         self.assertIn("`0.11.1` remains the last release qualified", prose)
         self.assertNotIn("**Qualified:**", prose)
