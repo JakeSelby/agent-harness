@@ -8,15 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- An assistant transcript record that carries no message id is deduplicated by a surrogate key
-  rather than counted once per line. Every such record used to open its own slot, so a runtime
-  or version that writes one id-less response several times inflated the session total without
-  any bound. The key is the record's `requestId` where the transcript carries one, and its
-  timestamp, model and `usage` object where it does not, both scoped to the file the line came
-  from, so a repeat of one response collapses while two different responses and the same line
-  seen in two files stay apart. Session and subagent rows now carry `idless_records`, the number
-  of id-less records the row was built from, so a reader can tell a row keyed on message ids
-  from one whose dedup was inferred (#519).
+- An assistant transcript record that carries no message id is deduplicated by its `requestId`
+  rather than counted once per line. Every such record used to open a slot of its own, so a
+  runtime or version that writes one id-less response several times — as the streaming lines of
+  one API call — inflated the session total and its turn count without any bound. A request id
+  names one call, so it deduplicates unscoped by file: the same call written into both a session
+  file and a subagent file is one response, and a call whose other records do carry a message id
+  joins their slot, in whichever order the files are read, instead of being billed twice. A
+  record with neither id is unknown rather than a duplicate and is left undeduplicated; session
+  and subagent rows carry `idless_records` counting how many such records their totals include,
+  the session's own and those of the subagent files folded into them, so a row without the field
+  is known to have been deduplicated whole. Rows from transcripts whose records all carry message
+  ids are unchanged (#519).
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed
   family used to inherit that family's rate. Inheritance under-bills a premium variant by a

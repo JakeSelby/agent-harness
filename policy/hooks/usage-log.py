@@ -182,22 +182,55 @@ def _result_text(content, tool_name):
     return text[:MAX_RESULT_TEXT]
 
 
-def idless_key(source, entry, message):
-    """The key an assistant record with no message id is counted under.
+def merge_slot(per_message, old_key, new_key):
+    """Fold one slot into another field-wise, the way `record_usage` keeps a figure.
 
-    Keyed per line, a runtime that writes one id-less response twice is billed for it twice,
-    with no bound on the error. `requestId` names the API call whenever the transcript carries
-    one; where it does not, the timestamp, the model and the `usage` object itself stand in for
-    it, so a repeat of one record collapses onto it while two different responses stay apart.
-    `source` names the file, because a line with no id cannot be matched across files.
+    Used when a request id that had opened a slot of its own turns out to name a message id,
+    which happens whenever the id-bearing records of a call are read after its id-less ones.
     """
-    request = entry.get("requestId")
-    if isinstance(request, str) and request.strip():
-        return ("request", source, request.strip())
-    usage = message.get("usage")
-    fingerprint = json.dumps(usage, sort_keys=True, default=str) if isinstance(usage, dict) else ""
-    return ("idless", source, entry.get("timestamp") or "",
-            message.get("model") or "", fingerprint)
+    slot = per_message.pop(old_key, None)
+    if slot is None:
+        return
+    target = per_message.get(new_key)
+    if target is None:
+        per_message[new_key] = slot
+        return
+    for name in ("day", "model"):
+        if slot.get(name) and not target.get(name):
+            target[name] = slot[name]
+    for name in [field for field, _ in FIELDS] + [field for field, _ in CACHE_TIERS]:
+        value = slot.get(name) or 0
+        if value > (target.get(name) or 0):
+            target[name] = value
+
+
+def usage_key(links, maps, mid, request_id):
+    """The slot an assistant record's usage is counted under, and the slot that key replaces.
+
+    A message id is the key, as ever. A record with no id but a `requestId` keys on that
+    instead, unscoped by file: the id names one API call, so the same call written into both a
+    session file and a subagent file is one response, and a call whose other records do carry a
+    message id joins their slot rather than opening a second one. `links` remembers which key a
+    request id resolved to, and `maps` are the slot maps to fold a superseded slot into, because
+    the files are not read in the order they were written. A record with neither id is unknown
+    rather than a duplicate, so it is not deduplicated at all and the caller counts it.
+    """
+    request_id = request_id.strip() if isinstance(request_id, str) else ""
+    if not mid and not request_id:
+        return None, None
+    if not request_id:
+        return mid, None
+    linked = links.get(request_id)
+    key = mid or linked or ("request", request_id)
+    superseded = None
+    # Only a slot this function opened is ever folded away; two message ids under one request
+    # id are two messages, whatever the runtime meant by it.
+    if isinstance(linked, tuple) and linked != key:
+        superseded = linked
+        for per_message in maps:
+            merge_slot(per_message, linked, key)
+    links[request_id] = key
+    return key, superseded
 
 
 def record_usage(per_message, key, usage, day="", model=""):
@@ -378,7 +411,7 @@ def note_model(counts, name, order):
     counts[name] = (hits + 1, order)
 
 
-def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
+def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, links=None):
     """One `kind: "subagent"` row from one `agent-<id>.jsonl`, or None when it holds no turn.
 
     The sibling `agent-<id>.meta.json` names the agent type and the spawn depth; the transcript
@@ -400,6 +433,8 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
     bites, the row carries `partial: True` and its totals are of the part that was read.
     """
     per_message, idless = {}, 0
+    links = {} if links is None else links
+    maps = [per_message] if shared is None else [per_message, shared]
     partial = False
     try:
         meta = json.loads(path.with_name(path.stem + ".meta.json").read_text(encoding="utf-8"))
@@ -462,12 +497,19 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
                 tools.add(key)
                 calls += 1
             usage = message.get("usage") or {}
-            key = mid if mid else idless_key(str(path), entry, message)
-            if not mid:
+            key, superseded = usage_key(links, maps, mid, entry.get("requestId"))
+            if key is None:
+                # Nothing identifies this record, so nothing may be merged into it. Its key
+                # names the file and the line, as it always has, and it is counted as unknown.
                 idless += 1
+                key = ("line", str(path), idless)
             record_usage(per_message, key, usage, stamp[:10], message.get("model") or "")
             if shared is not None:
                 record_usage(shared, key, usage, stamp[:10], message.get("model") or "")
+            # A slot folded into another keeps the turn it was already counted for.
+            if superseded is not None and superseded in seen:
+                seen.discard(superseded)
+                seen.add(key)
             if key in seen:
                 continue
             seen.add(key)
@@ -492,6 +534,8 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None):
            "turns": turns, "started": started, "ended": ended}
     if partial:
         row["partial"] = True
+    # Records this row's totals include that nothing identified — neither a message id nor a
+    # request id — so a reader can tell a row that was deduplicated from one that could not be.
     if idless:
         row["idless_records"] = idless
     row.update(budget_fields(row["agent_type"]))
@@ -530,7 +574,7 @@ def mark_reroutes(agents, requested):
             row["rerouted"] = asked != ran and not (asked in UNNAMED_TYPES and ran in UNNAMED_TYPES)
 
 
-def agent_rows(transcript, session_id="", shared=None, version=None):
+def agent_rows(transcript, session_id="", shared=None, version=None, links=None):
     """Every subagent row belonging to one session transcript, by path.
 
     Claude Code writes each subagent to `<session>/subagents/agent-<id>.jsonl` beside the
@@ -546,7 +590,7 @@ def agent_rows(transcript, session_id="", shared=None, version=None):
     except OSError:
         return rows
     for file in files:
-        row = _agent_row(file, shared, version=version)
+        row = _agent_row(file, shared, version=version, links=links)
         if row:
             row["session_id"] = session_id or path.stem
             rows.append(row)
@@ -555,9 +599,10 @@ def agent_rows(transcript, session_id="", shared=None, version=None):
 
 def scan_all(transcript, session_id="", cwd="", prior=None, rescan=False):
     """Every row one transcript yields: the session first, then one row per subagent."""
-    shared = {}
-    agents = agent_rows(transcript, session_id, shared, version=stamped_version(rescan))
-    record = scan(transcript, session_id, cwd, prior, rescan, agents=agents, shared=shared)
+    shared, links = {}, {}
+    agents = agent_rows(transcript, session_id, shared, version=stamped_version(rescan), links=links)
+    record = scan(transcript, session_id, cwd, prior, rescan, agents=agents, shared=shared,
+                  links=links)
     if record is None:
         return []
     if record.get("runtime") != "claude-code":
@@ -568,7 +613,8 @@ def scan_all(transcript, session_id="", cwd="", prior=None, rescan=False):
     return [record] + agents
 
 
-def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=None, shared=None):
+def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=None, shared=None,
+         links=None):
     """One record from one transcript, or None when there is nothing worth recording.
 
     `prior` is the record this session already has, when there is one; `rescan` says the read
@@ -583,6 +629,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     for every delegated token twice if the two were added.
     """
     per_message = {} if shared is None else shared
+    links = {} if links is None else links
     idless = 0
     models, agent_calls, seen, requested = [], set(), set(), {}
     started = ended = branch = ""
@@ -600,7 +647,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         if '"session_meta"' in first:
             return scan_codex(transcript, session_id, cwd, prior, rescan)
         if agents is None:
-            agents = agent_rows(transcript, session_id, per_message, version=stamped_version(rescan))
+            agents = agent_rows(transcript, session_id, per_message,
+                                version=stamped_version(rescan), links=links)
         for line in handle:
             try:
                 entry = json.loads(line)
@@ -683,9 +731,13 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             # The same repetition is why the token sums are taken once per message id, not once
             # per line, and at that id's largest figure rather than its first: the early lines
             # of one response carry a partial streaming count.
-            key = mid if mid else idless_key("session", entry, message)
-            if not mid:
+            key, superseded = usage_key(links, [per_message], mid, entry.get("requestId"))
+            if key is None:
+                # Nothing identifies this record, so nothing may be merged into it. Its key
+                # names the line it came from, and it is counted as unknown rather than
+                # silently deduplicated against a record it may have nothing to do with.
                 idless += 1
+                key = ("line", "session", idless)
             record_usage(per_message, key, message.get("usage") or {}, stamp[:10], model or "")
             # Claude Code writes the effort in force on every assistant record, as `effort` and
             # again as `perTurnEffort`; a sidechain line carries the subagent's, not this
@@ -694,6 +746,10 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 chosen = entry.get("effort") or entry.get("perTurnEffort")
                 if isinstance(chosen, str) and chosen.strip():
                     efforts.setdefault(mid, chosen.strip())
+            # A slot folded into another keeps the turn it was already counted for.
+            if superseded is not None and superseded in seen:
+                seen.discard(superseded)
+                seen.add(key)
             if key in seen:
                 continue
             seen.add(key)
@@ -731,10 +787,12 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             record[name] = totals[name]
     record["subagents"] = max(len(agents), len(agent_calls))
     record["turns"] = turns
-    # How much of this row rests on a surrogate key rather than on a message id, so a reader
-    # can tell a clean row from one whose dedup was inferred.
-    if idless:
-        record["idless_records"] = idless
+    # Every record these totals include that nothing identified — neither a message id nor a
+    # request id — this session's own and those of the subagent files folded into it, since
+    # the totals include both. A row without the key was deduplicated whole.
+    unknown = idless + sum(int(row.get("idless_records") or 0) for row in agents or [])
+    if unknown:
+        record["idless_records"] = unknown
     weights = {}
     for mid, chosen in efforts.items():
         weights[chosen] = weights.get(chosen, 0) + ((per_message.get(mid) or {}).get("output") or 0)
