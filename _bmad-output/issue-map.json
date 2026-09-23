@@ -7,7 +7,7 @@
     "epic": 18,
     "story": 226,
     "task": 26,
-    "bug": 79,
+    "bug": 80,
     "chore": 66,
     "spike": 10,
     "decision": 12
@@ -5331,6 +5331,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-C065",
+      "github_number": 719,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/719",
+      "title": "Keep the maintainer's own sites out of the release instructions",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C065.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B078",
       "github_number": 721,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/721",
@@ -5344,13 +5357,13 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-C065",
-      "github_number": 719,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/719",
-      "title": "Keep the maintainer's own sites out of the release instructions",
-      "type": "chore",
-      "native_type": "Task",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-C065.md",
+      "bmad_id": "AH-B079",
+      "github_number": 725,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/725",
+      "title": "A hook you add beside the harness's hooks makes sync report a conflict",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B079.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

@@ -2,6 +2,7 @@
 import contextlib
 import json
 import os
+import re
 import sys
 import tempfile
 from copy import deepcopy
@@ -75,6 +76,84 @@ def assign(document, keys, item):
         node[keys[-1]] = item["value"]
     else:
         node.pop(keys[-1], None)
+
+
+# Hook scripts earlier releases registered by name, before commands carried a marker.
+HARNESS_HOOK_BASENAMES = [
+    "validate-plan-card.py", "allow-readonly-bash.py", "harness-session.py",
+    "neutralize-tool-output.py",
+]
+
+
+def _commands(entry):
+    """The command strings of a hook entry; anything malformed has none, so it is the user's."""
+    hooks = entry.get("hooks") if isinstance(entry, dict) else None
+    if not isinstance(hooks, list):
+        return []
+    return [str(hook.get("command", "")) for hook in hooks if isinstance(hook, dict)]
+
+
+def hook_marker(entry):
+    for command in _commands(entry):
+        match = re.search(r"# harness:([a-z0-9-]+)", command)
+        if match:
+            return match.group(1)
+    return None
+
+
+def is_harness_hook_entry(entry):
+    """An entry the harness registered: it carries a `# harness:` marker, or runs one of the
+    legacy scripts by name as a whole path component, so `my-harness-session.py` is not one."""
+    if hook_marker(entry):
+        return True
+    return any(re.search(r"(?:^|[\s/'\"])" + re.escape(name) + r"(?:$|[\s'\"])", command)
+               for command in _commands(entry) for name in HARNESS_HOOK_BASENAMES)
+
+
+# A hook event's list is shared: the harness registers its entries beside the user's own.
+# A record marked with one of these owns only the entries its predicate recognizes, so a
+# user's hook is neither a conflict at sync, nor drift, nor removed at uninstall.
+HOOK_ENTRIES = "harness-hooks"
+ENTRY_OWNERS = {HOOK_ENTRIES: is_harness_hook_entry}
+
+
+def entries_of(keys, record):
+    """The entry owner of a record. Journals written before owners were recorded name none, and
+    their hook event lists were shared all the same, so the key's shape decides for them."""
+    if record.get("entries"):
+        return record["entries"]
+    return HOOK_ENTRIES if len(keys) == 2 and keys[0] == "hooks" else None
+
+
+def owned_part(item, entries):
+    """The part of a looked-up value a record owns: all of it, or its own entries in a list.
+    For a shared list an absent value owns nothing, the same as a list of only user entries."""
+    owner = ENTRY_OWNERS.get(entries)
+    if owner is None:
+        return item
+    if not item["present"]:
+        return {"present": True, "value": []}
+    if not isinstance(item["value"], list):
+        return item
+    return {"present": True, "value": [entry for entry in item["value"] if owner(entry)]}
+
+
+def user_changed(live, record, entries=None):
+    """True when what the record owns is neither what was applied nor what was being applied."""
+    mine = owned_part(live, entries)
+    return mine != owned_part(record["applied"], entries) and (
+        "pending_from" not in record or mine != owned_part(record["pending_from"], entries))
+
+
+def restored(live, record, entries=None):
+    """What uninstall leaves: the prior value, or the user's own entries of a shared list."""
+    owner = ENTRY_OWNERS.get(entries)
+    if owner is None or not live["present"] or not isinstance(live["value"], list):
+        return record["prior"]
+    rest = [entry for entry in live["value"] if not owner(entry)]
+    if rest or record["prior"]["present"]:
+        return {"present": True, "value": rest}
+    return {"present": False, "value": None}
 
 
 class Store:
@@ -156,7 +235,9 @@ class Store:
         if rendered != text or str(path) not in self.data["files"]:
             self._write(path, rendered, record)
 
-    def json(self, path, desired, owned_paths):
+    def json(self, path, desired, owned_paths, hook_lists=()):
+        """Apply owned fields. An owned path also in `hook_lists` holds a hook event's list, of
+        which the harness owns only its own entries; `desired` must already carry the user's."""
         path = Path(path)
         if path.is_symlink():
             self.conflicts.append(str(path) + ": configuration symlink is not managed")
@@ -164,15 +245,19 @@ class Store:
         current = json.loads(path.read_text()) if path.exists() else {}
         document = deepcopy(current)
         record = self.data["files"].get(str(path), {"kind": "json", "keys": {}, "created": not path.exists()})
+        shared = {json.dumps(keys) for keys in hook_lists}
         for keys in owned_paths:
             name = json.dumps(keys)
+            entries = HOOK_ENTRIES if name in shared else None
             live, wanted = lookup(current, keys), lookup(desired, keys)
             old = record["keys"].get(name)
-            if old and live != old["applied"] and ("pending_from" not in old or live != old["pending_from"]):
+            if old and user_changed(live, old, entries):
                 self.conflicts.append(str(path) + ": owned field changed: " + ".".join(keys))
                 continue
             record["keys"][name] = {"prior": old["prior"] if old else live,
                                     "applied": wanted, "pending_from": live}
+            if entries:
+                record["keys"][name]["entries"] = entries
             assign(document, keys, wanted)
         if document != current or str(path) not in self.data["files"]:
             self._write(path, json.dumps(document, indent=2) + "\n", record)
@@ -220,7 +305,9 @@ class Store:
                 try:
                     doc = json.loads(current)
                     for key, value in record["keys"].items():
-                        if lookup(doc, json.loads(key)) != value["applied"]:
+                        keys = json.loads(key)
+                        entries = entries_of(keys, value)
+                        if owned_part(lookup(doc, keys), entries) != owned_part(value["applied"], entries):
                             findings.append("modified owned field: " + name + ":" + key)
                 except Exception:
                     findings.append("invalid managed JSON: " + name)
@@ -260,11 +347,12 @@ class Store:
                 for key, values in record["keys"].items():
                     keys = json.loads(key)
                     live = lookup(doc, keys)
-                    if live != values["applied"] and ("pending_from" not in values or live != values["pending_from"]):
+                    entries = entries_of(keys, values)
+                    if user_changed(live, values, entries):
                         self.conflicts.append(name + ": user changes preserved for " + key)
                         remaining[key] = values
                         continue
-                    assign(doc, keys, values["prior"])
+                    assign(doc, keys, restored(live, values, entries))
                 if not self.dry:
                     atomic_text(path, json.dumps(doc, indent=2) + "\n")
                 if remaining:
