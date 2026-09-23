@@ -31,6 +31,7 @@ evaluation cannot send a field the user never allowed a hook to send.
 """
 import hashlib
 import json
+import os
 from typing import Any, Dict, List, Optional
 
 from .. import decision
@@ -45,14 +46,25 @@ HELDOUT = "heldout"
 SPLITS = (DEV, HELDOUT)
 # Half and half. A held-out half of a log this size is small, and a smaller one would make the
 # only number anybody should quote the noisier of the two.
-DEV_SHARE = 50
+DEV_SHARE = 0.5
 
-# What a recorded outcome says about the judgment that preceded it. Anything else is unlabelled
-# and is counted as such: a label this module invented would be a number nobody measured.
-OUTCOME_LABELS = {"ran": PROCEED, "not_run": CONFIRM}
-# The deterministic answers that mean "a person was put in the loop". `deny` is stronger than a
-# confirmation, but on this axis — asked versus not asked — the two agree.
-DETERMINISTIC_CONFIRM = ("ask", "deny")
+# What a recorded outcome says about the judgment that preceded it, per point, in the
+# vocabulary each hook actually writes. Anything else is unlabelled and is counted as such: a
+# label this module invented would be a number nobody measured. `untrusted`, `timeout` and
+# `unverified` are stop-gate rows where the gate never produced a verdict, so they say nothing
+# about the judgment either way.
+OUTCOME_LABELS = {
+    "grade-bash": {"ran": PROCEED, "not_run": CONFIRM},
+    "stop-gate": {"passed": PROCEED, "failed": CONFIRM},
+}
+# The deterministic answers, per point, that mean "the turn was stopped". `deny` is stronger
+# than a confirmation, but on this axis — interrupted or not — it agrees with `ask`.
+DETERMINISTIC_CONFIRM = {
+    "grade-bash": ("ask", "deny"),
+    "stop-gate": ("blocked",),
+    "evasion-deny": ("deny",),
+    "brief-guard": ("cap", "budget", "cap+budget"),
+}
 
 # The decision log records the text a hook judged and not an action class, so the replay
 # derives one per point. `grade-bash` is a shell command; the rest judge a turn or a brief,
@@ -63,6 +75,9 @@ POINT_ACTIONS = {"grade-bash": "coding.shell_exec", "stop-gate": "coding.shell_e
 DEFAULT_ACTION = "coding.shell_exec"
 # "an unknown grade is judged as 1", the same reading the pack's own grade scale states.
 DEFAULT_GRADE = 1
+
+# Source keys whose value is a path and is reduced to its file name before it is written.
+PATH_FIELDS = ("log", "replay")
 
 CALIBRATION_BINS = 10
 BOOTSTRAP_RESAMPLES = 200
@@ -75,35 +90,54 @@ class EvalError(ValueError):
 # ------------------------------------------------------------------ the split
 
 
-def split_for(content_hash: str, dev_share: int = DEV_SHARE) -> str:
+def content_key(point: str, text: str) -> str:
+    """The identity a case is split by: the point and the text a request would actually carry.
+
+    Not the row's `input_sha256`. That hash is over the uncapped command, and the replay builds
+    its request from the capped `input` the row holds, so two rows that differ only past the
+    2 KiB cap share one request and would otherwise land on opposite sides of the split — the
+    same request in dev and in held-out, which is the leak a held-out set exists to prevent.
+    """
+    return hashlib.sha256((str(point) + "\x00" + str(text)).encode("utf-8", "replace")).hexdigest()
+
+
+def split_for(content_hash: str, dev_share: float = DEV_SHARE) -> str:
     """`dev` or `heldout`, from the content hash alone. No clock, no `random`, no order."""
     if not isinstance(content_hash, str) or len(content_hash) < 8:
         raise EvalError("a split needs a content hash to be seeded by")
-    return DEV if int(content_hash[:8], 16) % 100 < dev_share else HELDOUT
+    if isinstance(dev_share, bool) or not isinstance(dev_share, (int, float)) \
+            or not 0 < dev_share < 1:
+        raise EvalError("the dev share is a fraction strictly between zero and one, not "
+                        + repr(dev_share))
+    return DEV if int(content_hash[:8], 16) % 10000 < dev_share * 10000 else HELDOUT
 
 
 class _Stream:
-    """A small LCG seeded from a digest, for the bootstrap below.
+    """Indices drawn from a digest, for the bootstrap below.
 
     `random` is seeded from the clock unless a caller remembers not to let it be, and a report
-    that moves between runs is not the evidence this command exists to produce. The constants
-    are Numerical Recipes' 32-bit LCG; the sample is an index, so its quality only has to be
-    uniform over a few hundred cases.
+    that moves between runs is not the evidence this command exists to produce. A hash per draw
+    rather than a linear congruential generator: an LCG modulo 2**32 has a low bit of period 2
+    and a low nibble of period 16, so `state % n` for a power-of-two `n` walks the indices in a
+    cycle and every resample comes out a permutation of the sample — a bootstrap that resamples
+    nothing and reports an interval of width zero.
     """
 
     def __init__(self, seed: str):
-        self.state = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16)
+        self.seed = seed
+        self.count = 0
 
     def below(self, ceiling: int) -> int:
-        self.state = (1664525 * self.state + 1013904223) % (2 ** 32)
-        return self.state % max(ceiling, 1)
+        self.count += 1
+        digest = hashlib.sha256((self.seed + ":" + str(self.count)).encode("utf-8")).hexdigest()
+        return int(digest[:16], 16) % max(ceiling, 1)
 
 
 # ------------------------------------------------------------------ cases
 
 
 def cases_from_rows(rows: List[Dict[str, Any]], point: Optional[str] = None,
-                    dev_share: int = DEV_SHARE) -> List[Dict[str, Any]]:
+                    dev_share: float = DEV_SHARE) -> List[Dict[str, Any]]:
     """Every joined decision row that can be replayed, as a case. Oldest first.
 
     A row with no input text cannot be replayed at all and is dropped; a row whose outcome is
@@ -120,17 +154,34 @@ def cases_from_rows(rows: List[Dict[str, Any]], point: Optional[str] = None,
         text = row.get("input")
         if not isinstance(text, str) or not text.strip():
             continue
-        content = row.get("input_sha256")
-        if not isinstance(content, str) or len(content) < 8:
-            content = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+        content = content_key(name, text)
         out.append({
             "point": name, "input": text, "content_hash": content,
             "split": split_for(content, dev_share),
             "deterministic_answer": row.get("deterministic_answer"),
-            "label": OUTCOME_LABELS.get(str(row.get("outcome") or "")),
+            "label": OUTCOME_LABELS.get(name, {}).get(str(row.get("outcome") or "")),
             "action_class": POINT_ACTIONS.get(name, DEFAULT_ACTION),
         })
     return out
+
+
+def check_no_leak(results: List[Dict[str, Any]]) -> None:
+    """Raise unless every request hash sits on one side of the split.
+
+    The split key is built to make this impossible, so a failure here is the key and the request
+    having drifted apart rather than a bad log — and a held-out number measured on a request the
+    threshold was fitted against is worth nothing, so it is a refusal and not a warning.
+    """
+    sides = {}
+    for result in results:
+        key = result.get("request_hash")
+        if key is None:
+            continue
+        sides.setdefault(key, set()).add(result["split"])
+    leaked = sorted(key for key, seen in sides.items() if len(seen) > 1)
+    if leaked:
+        raise EvalError("request " + leaked[0][:12] + " is in both the dev and the held-out "
+                        "set; the split key and the request no longer agree")
 
 
 def case_state(case: Dict[str, Any], allowlist: controls.Controls,
@@ -151,7 +202,9 @@ def shadow_controls(state_fields=controls.STATE_FIELDS, configured: bool = False
 
     `shadow` is the only mode an evaluation may run under: it is the mode whose answer reaches
     the ledger and neither the model nor the user, which is what makes a measurement a
-    measurement rather than a change of behaviour on a live machine.
+    measurement rather than a change of behaviour on a live machine. `judge` checks the modes
+    these carry rather than what `mode_for` resolves to, because `mode_for` reads the kill
+    switch and a replay makes no request for a kill switch to stop.
     """
     return controls.Controls(default_mode="shadow",
                              modes=dict((point, "shadow") for point in controls.POINTS),
@@ -169,9 +222,10 @@ def judge(cases: List[Dict[str, Any]], client, pack: packs.Pack,
     The status is recomputed here at each candidate instead.
     """
     allowlist = shadow_controls() if allowlist is None else allowlist
-    if allowlist.mode_for("grade-bash") != "shadow":
-        raise EvalError("an evaluation runs in shadow mode; these controls resolve to "
-                        + allowlist.mode_for("grade-bash"))
+    configured = set([allowlist.default_mode]) | set(allowlist.modes.values())
+    if configured != set(["shadow"]):
+        raise EvalError("an evaluation runs in shadow mode; these controls name "
+                        + ", ".join(sorted(configured)))
     questions = pack.questions
     out = []
     with decision.events_suppressed():
@@ -192,36 +246,56 @@ def judge(cases: List[Dict[str, Any]], client, pack: packs.Pack,
 # ------------------------------------------------------------------ metrics
 
 
-def predict(result: Dict[str, Any], threshold: float) -> Optional[str]:
-    """What acting on this judgment at `threshold` would have done, or None with no judgment.
+def deterministic_of(result: Dict[str, Any]) -> str:
+    """The deterministic answer on this row, as `confirm` or `proceed`."""
+    confirming = DETERMINISTIC_CONFIRM.get(str(result.get("point") or ""), ())
+    return CONFIRM if result.get("deterministic_answer") in confirming else PROCEED
 
-    `abstain` is `unknown` or an answer below the threshold, which the provider reads the same
-    way: the deterministic answer stands. It is never a pass.
+
+def used_judgment(result: Dict[str, Any], threshold: float) -> bool:
+    """Whether the judgment answers at this threshold, or the deterministic answer does.
+
+    `unknown`, a confidence below the threshold and no judgment at all are the same thing to the
+    provider: the deterministic decision stands. This is the line the fit has to score against.
+    Scoring an abstention as a miss would make every threshold above the lowest confidence look
+    worse than it is, and drive the fit to the floor whatever the answers said.
+    """
+    judgment, confidence = result.get("judgment"), result.get("confidence")
+    return (judgment is not None and judgment != jev.UNKNOWN
+            and confidence is not None and confidence >= threshold)
+
+
+def effective_answer(result: Dict[str, Any], threshold: float) -> str:
+    """What the harness would have answered with this judgment at this threshold."""
+    return result["judgment"] if used_judgment(result, threshold) else deterministic_of(result)
+
+
+def predict(result: Dict[str, Any], threshold: float) -> Optional[str]:
+    """The judgment's own call, or `abstain` where the deterministic answer takes over.
+
+    The judgment-level view, for reading how often the provider had anything to say at all.
+    `effective_answer` is what is scored.
     """
     judgment, confidence = result.get("judgment"), result.get("confidence")
     if judgment is None or confidence is None:
         return None
-    if judgment == jev.UNKNOWN or confidence < threshold:
-        return ABSTAIN
-    return judgment
+    return judgment if used_judgment(result, threshold) else ABSTAIN
 
 
 def _counted(results, threshold):
-    correct = 0
-    agreed = 0
+    """`(correct, agreed, confusion)` over the labelled results, under provider semantics."""
+    correct = agreed = 0
     confusion = {}
     for result in results:
-        call = predict(result, threshold)
         label = result.get("label")
-        if label:
-            row = confusion.setdefault(label, {})
-            key = call if call is not None else "no_judgment"
-            row[key] = row.get(key, 0) + 1
-            if call == label:
-                correct += 1
-        deterministic = (CONFIRM if result.get("deterministic_answer") in DETERMINISTIC_CONFIRM
-                         else PROCEED)
-        if call == deterministic:
+        if not label:
+            continue
+        answer = effective_answer(result, threshold)
+        row = confusion.setdefault(label, {})
+        row[answer] = row.get(answer, 0) + 1
+        if answer == label:
+            correct += 1
+        if answer == deterministic_of(result):
             agreed += 1
     return correct, agreed, confusion
 
@@ -229,15 +303,18 @@ def _counted(results, threshold):
 def fit_threshold(results: List[Dict[str, Any]]) -> Optional[float]:
     """The threshold with the best accuracy on these results, or None when none can be fitted.
 
-    Candidates are the confidences actually observed, so the sweep only ever tries a cutoff that
-    changes an answer. Ties go to the higher threshold: two cutoffs that score the same on this
-    split are not equally good, and the one that overrides fewer deterministic answers is the
-    one whose mistakes are cheaper.
+    Scored under provider semantics through `effective_answer`: below the threshold the
+    deterministic answer is what is compared against the label, because that is what the harness
+    would have done. Candidates are the confidences actually observed, so the sweep only ever
+    tries a cutoff that changes an answer. Ties go to the higher threshold: two cutoffs that
+    score the same on this split are not equally good, and the one that overrides fewer
+    deterministic answers is the one whose mistakes are cheaper.
     """
-    labelled = [r for r in results if r.get("label") and r.get("confidence") is not None]
-    if not labelled:
+    labelled = [r for r in results if r.get("label")]
+    if not labelled or not any(r.get("confidence") is not None for r in labelled):
         return None
-    candidates = sorted(set([0.0] + [round(float(r["confidence"]), 6) for r in labelled]))
+    candidates = sorted(set([0.0] + [round(float(r["confidence"]), 6) for r in labelled
+                                     if r.get("confidence") is not None]))
     best = None
     for threshold in candidates:
         correct = _counted(labelled, threshold)[0]
@@ -337,7 +414,8 @@ def metrics(results: List[Dict[str, Any]], threshold: Optional[float],
     two apart.
     """
     labelled = [r for r in results if r.get("label")]
-    judged = [r for r in labelled if r.get("judgment") is not None]
+    judged = [r for r in labelled
+              if threshold is not None and used_judgment(r, threshold)]
     correct, agreed, confusion = (_counted(labelled, threshold) if threshold is not None
                                   else (0, 0, {}))
     tokens = [r["usage"]["input_tokens"] for r in results
@@ -354,17 +432,27 @@ def metrics(results: List[Dict[str, Any]], threshold: Optional[float],
         "accuracy": (round(correct / float(len(labelled)), 4)
                      if threshold is not None and labelled else None),
         "accuracy_judged": (round(sum(1 for r in judged
-                                      if predict(r, threshold) == r["label"]) / float(len(judged)),
-                                  4)
+                                      if effective_answer(r, threshold) == r["label"])
+                                  / float(len(judged)), 4)
                             if threshold is not None and judged else None),
-        "agreement_deterministic": (round(agreed / float(len(results)), 4)
-                                    if threshold is not None and results else None),
+        "agreement_deterministic": (round(agreed / float(len(labelled)), 4)
+                                    if threshold is not None and labelled else None),
+        # The baseline the issue asks for: what the deterministic answer alone scores on the
+        # same labels. A judgment that does not beat this is not worth a request.
+        "deterministic_accuracy": (round(sum(1 for r in labelled
+                                             if deterministic_of(r) == r["label"])
+                                         / float(len(labelled)), 4) if labelled else None),
+        # How many labelled cases the provider could have changed at all: it may tighten an
+        # allow into an ask and may never widen one, so a row the hook already asked about is
+        # one the judgment cannot move whatever it says.
+        "provider_could_change": sum(1 for r in labelled if deterministic_of(r) == PROCEED),
         "confusion": confusion,
         "calibration": calibration(results, bins),
         "unusable": {
             "unavailable": sum(1 for r in results if r.get("status") == "unavailable"),
             "error": sum(1 for r in results if r.get("status") == "error"),
-            "abstained": sum(1 for r in results if r.get("judgment") == jev.UNKNOWN),
+            "abstained": sum(1 for r in results
+                             if threshold is None or not used_judgment(r, threshold)),
             "errors_seen": sorted(set(str(r["error"]) for r in results if r.get("error"))),
         },
         "input_tokens": sum(tokens), "output_tokens": sum(output),
@@ -402,7 +490,7 @@ def flip_rate(passes: List[List[Dict[str, Any]]]) -> Dict[str, Any]:
 
 
 def report(rows: List[Dict[str, Any]], client, pack: Optional[packs.Pack] = None,
-           point: Optional[str] = None, dev_share: int = DEV_SHARE,
+           point: Optional[str] = None, dev_share: float = DEV_SHARE,
            bins: int = CALIBRATION_BINS, repeats: int = 1,
            allowlist: Optional[controls.Controls] = None,
            budget: Optional[jev.Budget] = None,
@@ -410,11 +498,15 @@ def report(rows: List[Dict[str, Any]], client, pack: Optional[packs.Pack] = None
            source: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The whole evaluation as a JSON-safe dict. Carries no clock, so a re-run is byte-identical.
 
-    Per point: the threshold fitted on `dev`, then that threshold's metrics on `dev` and on
-    `heldout`. A point with no labelled dev case is reported with a null threshold and null
-    rates — unfitted is a finding, and a global default dressed up as a measurement is not.
+    Per point: the threshold fitted on `dev`, then that threshold's metrics on both splits.
+    Only the held-out block is evidence of anything; the dev block is in the file so a reader
+    can see how far the fitted split flatters the fit, and is labelled as the fitted one. A
+    point with no labelled dev case is reported with a null threshold and null rates —
+    unfitted is a finding, and a global default dressed up as a measurement is not.
     """
     pack = packs.get(packs.DECISION_ID) if pack is None else pack
+    if isinstance(bins, bool) or not isinstance(bins, int) or bins < 1:
+        raise EvalError("the calibration needs at least one bin, not " + repr(bins))
     cases = cases_from_rows(rows, point, dev_share)
     if not cases:
         raise EvalError("no replayable decision rows" + (" at " + point if point else "")
@@ -422,6 +514,7 @@ def report(rows: List[Dict[str, Any]], client, pack: Optional[packs.Pack] = None
     passes = [judge(cases, client, pack, allowlist, budget=budget)
               for _ in range(max(int(repeats), 1))]
     results = passes[0]
+    check_no_leak(results)
     timed = getattr(client, "name", "") != jev.ReplayClient.name
     points = {}
     for name in sorted(set(r["point"] for r in results)):
@@ -433,6 +526,7 @@ def report(rows: List[Dict[str, Any]], client, pack: Optional[packs.Pack] = None
             "action_class": POINT_ACTIONS.get(name, DEFAULT_ACTION),
             "threshold": threshold,
             "threshold_fitted_on": DEV if threshold is not None else None,
+            "evidence_split": HELDOUT,
             "unfitted_reason": None if threshold is not None else
                                "no labelled case on the dev split",
             DEV: metrics(dev, threshold, bins, usd_per_mtok, timed),
@@ -440,10 +534,16 @@ def report(rows: List[Dict[str, Any]], client, pack: Optional[packs.Pack] = None
         }
     return {
         "pack": pack.identity(),
+        # File names only. A report is an artifact somebody sends on, and an absolute path
+        # carries the home directory it was produced under into it.
         "source": dict({"rows": len(rows), "cases": len(cases),
                         "labelled": sum(1 for c in cases if c["label"]),
-                        "point": point or "(all)"}, **(source or {})),
-        "split": {"dev_share": dev_share, "seed": "input_sha256", "method": "content hash"},
+                        "point": point or "(all)"},
+                       **dict((name, os.path.basename(str(value))
+                               if name in PATH_FIELDS else value)
+                              for name, value in (source or {}).items())),
+        "split": {"dev_share": dev_share, "seed": "point and capped input",
+                  "method": "content hash"},
         "flip": flip_rate(passes),
         "points": points,
         "caveats": list(CAVEATS),
@@ -467,8 +567,9 @@ CAVEATS = (
 def render(data: Dict[str, Any], split: str = HELDOUT) -> List[str]:
     """The report as lines, for a terminal. The file is the artifact; this is the glance.
 
-    `split` chooses which side the rates are read off; the file always carries both, because a
-    run that wrote only the split it was asked for could not be checked for overfitting later.
+    Held-out by default, and the only side that is evidence. `split="dev"` prints the fitted
+    side with a line saying so, because a rate on the split a threshold was chosen on measures
+    the choosing and not the provider; the file carries both either way.
     """
     split = split if split in SPLITS else HELDOUT
     pack = data["pack"]
@@ -476,19 +577,24 @@ def render(data: Dict[str, Any], split: str = HELDOUT) -> List[str]:
              + " (" + pack["pack_hash"][:12] + ")",
              "cases " + str(data["source"]["cases"]) + ", labelled "
              + str(data["source"]["labelled"]) + ", split "
-             + str(data["split"]["dev_share"]) + "/" + str(100 - data["split"]["dev_share"])
+             + ("%g/%g" % (data["split"]["dev_share"] * 100,
+                           100 - data["split"]["dev_share"] * 100))
              + " by " + data["split"]["seed"] + "; rates on " + split]
-    head = ("%-20s%10s%9s%9s%9s%8s" % ("point", "threshold", "accuracy", "agree", "ece",
-                                       "unusbl"))
+    if split == DEV:
+        lines.append("dev is the split every threshold was fitted on; it is not evidence of "
+                     "how this pack generalises")
+    head = ("%-20s%10s%9s%11s%9s%9s%8s" % ("point", "threshold", "accuracy", "baseline",
+                                           "agree", "ece", "unusbl"))
     lines += [head, "-" * len(head)]
     for name in sorted(data["points"]):
         block = data["points"][name]
         shown = block[split]
         unusable = sum(v for k, v in shown["unusable"].items() if isinstance(v, int))
-        lines.append("%-20s%10s%9s%9s%9s%8d" % (
+        lines.append("%-20s%10s%9s%11s%9s%9s%8d" % (
             name[:20],
             "-" if block["threshold"] is None else "%.3f" % block["threshold"],
-            _cell(shown["accuracy"]), _cell(shown["agreement_deterministic"]),
+            _cell(shown["accuracy"]), _cell(shown["deterministic_accuracy"]),
+            _cell(shown["agreement_deterministic"]),
             _cell(shown["calibration"]["ece"]), unusable))
     if data["flip"]["rate"] is not None:
         lines.append("flip rate over %d passes: %.3f" % (data["flip"]["passes"],

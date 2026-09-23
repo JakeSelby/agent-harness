@@ -14,13 +14,16 @@ Run: python3 -m unittest discover tests
 """
 import hashlib
 import json
+import os
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from isolation import without_harness_vars
+from isolation import isolate_home, without_harness_vars
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
@@ -58,7 +61,38 @@ def report(**kwargs):
     return evaluation.report(joined(), client(), **kwargs)
 
 
-class PackTests(unittest.TestCase):
+def fake(label=None, judgment=None, confidence=None, answer="ask", point="grade-bash",
+         status="ok", error=None, seed=0):
+    """One judged result, for the metric arithmetic. Shaped as `judge` returns them."""
+    return {"point": point, "label": label, "judgment": judgment, "confidence": confidence,
+            "deterministic_answer": answer, "status": status, "error": error,
+            "content_hash": hashlib.sha256(str(seed).encode()).hexdigest(),
+            "split": evaluation.DEV, "request_hash": "%064x" % seed}
+
+
+class IsolatedHome(unittest.TestCase):
+    """A temporary HOME for every test, so nothing reads the developer's state directory.
+
+    The kill switch, the config and the decision ledger all resolve from `HOME`, and a
+    developer with the sentinel in place would otherwise see different results from CI.
+    """
+
+    def setUp(self):
+        self.saved = dict(os.environ)
+        self.tmp = tempfile.mkdtemp()
+        isolate_home(self.tmp)
+        os.environ["HARNESS_HOME"] = self.tmp
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.saved)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def ledger(self):
+        return Path(self.tmp) / ".local" / "state" / "agent-harness" / "decisions.jsonl"
+
+
+class PackTests(IsolatedHome):
     def test_a_pack_carries_an_id_a_version_and_the_hash_of_its_content(self):
         pack = packs.get(packs.DECISION_ID)
         self.assertEqual(pack.pack_id, "decision")
@@ -108,7 +142,7 @@ class PackTests(unittest.TestCase):
         self.assertEqual(provider.pack_identity["pack_id"], "decision")
 
 
-class SplitTests(unittest.TestCase):
+class SplitTests(IsolatedHome):
     def test_the_split_is_a_function_of_the_content_and_nothing_else(self):
         seen = set(evaluation.split_for("a" * 64) for _ in range(20))
         self.assertEqual(len(seen), 1)
@@ -119,8 +153,31 @@ class SplitTests(unittest.TestCase):
         sides = [evaluation.split_for(h) for h in hashes]
         self.assertIn(evaluation.DEV, sides)
         self.assertIn(evaluation.HELDOUT, sides)
-        everything = [evaluation.split_for(h, 100) for h in hashes]
-        self.assertEqual(set(everything), set([evaluation.DEV]))
+        mostly = [evaluation.split_for(h, 0.99) for h in hashes]
+        self.assertGreater(mostly.count(evaluation.DEV), 380)
+
+    def test_a_share_that_is_not_a_fraction_is_refused(self):
+        for share in (0, 1, 50, -0.5, True):
+            with self.assertRaises(evaluation.EvalError):
+                evaluation.split_for("a" * 64, share)
+
+    def test_two_rows_that_differ_only_past_the_cap_share_a_side(self):
+        """The split keys on the text the request carries, so one request is never in both."""
+        capped = "rm -rf " + "x" * 64
+        rows = [{"kind": "decision", "decision_id": "a", "point": "grade-bash",
+                 "input": capped, "input_sha256": "a" * 64,
+                 "deterministic_answer": "ask", "outcome": "ran"},
+                {"kind": "decision", "decision_id": "b", "point": "grade-bash",
+                 "input": capped, "input_sha256": "f" * 64,
+                 "deterministic_answer": "ask", "outcome": "not_run"}]
+        cases = evaluation.cases_from_rows(rows)
+        self.assertEqual(cases[0]["split"], cases[1]["split"])
+        self.assertEqual(cases[0]["content_hash"], cases[1]["content_hash"])
+
+    def test_one_request_on_both_sides_is_refused_rather_than_measured(self):
+        leaked = [fake(seed=1), dict(fake(seed=1), split=evaluation.HELDOUT)]
+        with self.assertRaises(evaluation.EvalError):
+            evaluation.check_no_leak(leaked)
 
     def test_a_case_keeps_its_side_when_the_log_grows(self):
         first = dict((c["content_hash"], c["split"])
@@ -130,10 +187,13 @@ class SplitTests(unittest.TestCase):
         for content, side in again.items():
             self.assertEqual(first[content], side)
 
-    def test_a_row_with_no_content_hash_is_split_by_its_text(self):
+    def test_the_row_hash_is_ignored_and_the_request_text_is_keyed_instead(self):
         row = {"kind": "decision", "decision_id": "x", "point": "grade-bash",
-               "input": "rm -rf /tmp/x", "deterministic_answer": "ask", "outcome": "ran"}
+               "input": "rm -rf /tmp/x", "input_sha256": "0" * 64,
+               "deterministic_answer": "ask", "outcome": "ran"}
         case = evaluation.cases_from_rows([row])[0]
+        self.assertEqual(case["content_hash"],
+                         evaluation.content_key("grade-bash", "rm -rf /tmp/x"))
         self.assertEqual(case["split"], evaluation.split_for(case["content_hash"]))
 
     def test_the_report_is_written_without_a_clock_so_two_runs_are_identical(self):
@@ -141,7 +201,7 @@ class SplitTests(unittest.TestCase):
                          json.dumps(report(), sort_keys=True))
 
 
-class CaseTests(unittest.TestCase):
+class CaseTests(IsolatedHome):
     def test_the_recorded_set_is_at_least_a_dozen_rows(self):
         cases = evaluation.cases_from_rows(joined())
         self.assertGreaterEqual(len(cases), 12)
@@ -172,7 +232,7 @@ class CaseTests(unittest.TestCase):
         self.assertIn("command", wide)
 
 
-class JudgingTests(unittest.TestCase):
+class JudgingTests(IsolatedHome):
     def test_an_evaluation_will_not_run_outside_shadow_mode(self):
         acting = controls.Controls.acting()
         with self.assertRaises(evaluation.EvalError):
@@ -188,11 +248,38 @@ class JudgingTests(unittest.TestCase):
         self.assertTrue(any(r["confidence"] < jev.DEFAULT_THRESHOLD for r in confident))
 
     def test_replaying_writes_no_ledger_row(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "decisions.jsonl"
-            evaluation.judge(evaluation.cases_from_rows(joined()), client(),
-                             packs.get(packs.DECISION_ID))
-            self.assertFalse(target.exists())
+        """The ledger resolves from the isolated HOME, so its absence is the assertion."""
+        self.assertEqual(decision.ledger_path(), self.ledger())
+        evaluation.judge(evaluation.cases_from_rows(joined()), client(),
+                         packs.get(packs.DECISION_ID))
+        self.assertFalse(self.ledger().exists())
+
+    def test_a_replay_opens_no_socket_even_with_a_key_in_the_environment(self):
+        os.environ["JEV_API_KEY"] = "not-a-key"
+        opened = []
+
+        def refuse(*args, **kwargs):
+            opened.append(args)
+            raise AssertionError("a replay opened a socket")
+
+        saved = socket.socket
+        socket.socket = refuse
+        try:
+            results = evaluation.judge(evaluation.cases_from_rows(joined()), client(),
+                                       packs.get(packs.DECISION_ID))
+        finally:
+            socket.socket = saved
+        self.assertEqual(opened, [])
+        self.assertTrue(any(r["judgment"] for r in results))
+
+    def test_a_kill_switch_does_not_stop_a_replay(self):
+        """It gates requests, and a replay makes none; the modes are what `judge` checks."""
+        sentinel = Path(self.tmp) / ".local" / "state" / "agent-harness" / "jev-disabled"
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.write_text("", encoding="utf-8")
+        results = evaluation.judge(evaluation.cases_from_rows(joined()), client(),
+                                   packs.get(packs.DECISION_ID))
+        self.assertTrue(any(r["judgment"] for r in results))
 
     def test_a_budget_ceiling_stops_the_run_rather_than_the_machine(self):
         budget = jev.Budget(max_requests=2)
@@ -202,7 +289,7 @@ class JudgingTests(unittest.TestCase):
                          len(results) - 2)
 
 
-class MetricTests(unittest.TestCase):
+class MetricTests(IsolatedHome):
     def test_a_threshold_is_fitted_per_point_and_never_defaulted(self):
         data = report()
         self.assertEqual(set(data["points"]), set(["grade-bash", "stop-gate"]))
@@ -210,61 +297,102 @@ class MetricTests(unittest.TestCase):
         self.assertNotIn(jev.DEFAULT_THRESHOLD, thresholds)
         for block in data["points"].values():
             self.assertEqual(block["threshold_fitted_on"], evaluation.DEV)
+            self.assertEqual(block["evidence_split"], evaluation.HELDOUT)
+
+    def test_a_higher_threshold_can_score_better_and_the_fit_finds_it(self):
+        """Below the threshold the deterministic answer stands, so abstaining can be right.
+
+        Four cases the deterministic hook got right and the judgment gets wrong, each at a low
+        confidence, and one the judgment gets right at a high one. A fit that scored an
+        abstention as a miss would sink to the lowest confidence in the set; the right answer
+        is a cutoff above the four.
+        """
+        results = [fake(label="confirm", judgment="proceed", confidence=0.4 + n / 100.0,
+                        answer="ask", seed=n) for n in range(4)]
+        results.append(fake(label="proceed", judgment="proceed", confidence=0.95,
+                            answer="ask", seed=9))
+        threshold = evaluation.fit_threshold(results)
+        self.assertGreater(threshold, 0.43)
+        self.assertLessEqual(threshold, 0.95)
+        self.assertEqual(evaluation.metrics(results, threshold)["accuracy"], 1.0)
+        self.assertLess(evaluation.metrics(results, 0.0)["accuracy"], 1.0)
+
+    def test_held_out_labels_cannot_move_the_fitted_threshold(self):
+        dev = [fake(label="confirm", judgment="proceed", confidence=0.5, seed=n)
+               for n in range(3)]
+        dev.append(fake(label="proceed", judgment="proceed", confidence=0.9, seed=8))
+        fitted = evaluation.fit_threshold(dev)
+        held = [dict(fake(label="proceed", judgment="proceed", confidence=0.2, seed=50 + n),
+                     split=evaluation.HELDOUT) for n in range(20)]
+        self.assertEqual(evaluation.fit_threshold(dev), fitted)
+        self.assertNotEqual(evaluation.fit_threshold(dev + held), fitted)
 
     def test_a_point_with_no_labelled_dev_case_is_reported_unfitted(self):
         self.assertIsNone(evaluation.fit_threshold([]))
         self.assertIsNone(evaluation.fit_threshold([{"label": "confirm", "confidence": None}]))
 
-    def test_an_error_and_an_abstention_are_never_passes(self):
-        results = [{"label": "confirm", "judgment": None, "confidence": None,
-                    "status": "error", "error": "bad", "content_hash": "a" * 64,
-                    "deterministic_answer": "ask"},
-                   {"label": "confirm", "judgment": jev.UNKNOWN, "confidence": 0.99,
-                    "status": "ok", "error": None, "content_hash": "b" * 64,
-                    "deterministic_answer": "ask"}]
+    def test_an_error_and_an_abstention_fall_back_and_are_counted_as_such(self):
+        """Neither is a pass on its own: what is scored is the deterministic answer they leave."""
+        results = [fake(label="proceed", status="error", error="bad", answer="ask", seed=1),
+                   fake(label="proceed", judgment=jev.UNKNOWN, confidence=0.99, answer="ask",
+                        seed=2)]
         block = evaluation.metrics(results, 0.5)
         self.assertEqual(block["accuracy"], 0.0)
         self.assertEqual(block["unusable"]["error"], 1)
-        self.assertEqual(block["unusable"]["abstained"], 1)
+        self.assertEqual(block["unusable"]["abstained"], 2)
         self.assertEqual(evaluation.predict(results[1], 0.5), evaluation.ABSTAIN)
+        self.assertEqual(evaluation.effective_answer(results[1], 0.5), evaluation.CONFIRM)
 
     def test_a_confident_wrong_answer_lowers_the_accuracy_it_should(self):
-        block = evaluation.metrics(
-            [{"label": "proceed", "judgment": "confirm", "confidence": 0.99, "status": "ok",
-              "content_hash": "c" * 64, "deterministic_answer": "ask", "error": None}], 0.5)
+        block = evaluation.metrics([fake(label="proceed", judgment="confirm", confidence=0.99,
+                                         seed=3)], 0.5)
         self.assertEqual(block["accuracy"], 0.0)
         self.assertEqual(block["confusion"], {"proceed": {"confirm": 1}})
 
-    def test_agreement_with_the_deterministic_answer_is_its_own_number(self):
-        results = [{"label": "proceed", "judgment": "confirm", "confidence": 0.99,
-                    "status": "ok", "content_hash": "d" * 64, "deterministic_answer": "ask",
-                    "error": None}]
+    def test_agreement_is_taken_over_the_labelled_cases_and_not_over_all_of_them(self):
+        results = [fake(label="proceed", judgment="confirm", confidence=0.99, seed=4),
+                   fake(judgment="confirm", confidence=0.99, seed=5)]
         block = evaluation.metrics(results, 0.5)
+        self.assertEqual(block["labelled"], 1)
         self.assertEqual(block["agreement_deterministic"], 1.0)
         self.assertEqual(block["accuracy"], 0.0)
+        self.assertEqual(block["deterministic_accuracy"], 0.0)
 
     def test_the_calibration_figure_is_zero_when_confidence_tracks_accuracy(self):
-        results = [{"label": "confirm" if n < 9 else "proceed", "judgment": "confirm",
-                    "confidence": 0.9, "status": "ok", "content_hash": hashlib.sha256(str(n).encode()).hexdigest(),
-                    "deterministic_answer": "ask", "error": None} for n in range(10)]
+        results = [fake(label="confirm" if n < 9 else "proceed", judgment="confirm",
+                        confidence=0.9, seed=n) for n in range(10)]
         figure = evaluation.calibration(results)
         self.assertEqual(figure["ece"], 0.0)
         self.assertEqual(figure["cases"], 10)
 
     def test_the_calibration_figure_finds_a_model_that_is_sure_and_wrong(self):
-        results = [{"label": "proceed", "judgment": "confirm", "confidence": 0.95,
-                    "status": "ok", "content_hash": hashlib.sha256(str(n).encode()).hexdigest(), "deterministic_answer": "ask",
-                    "error": None} for n in range(10)]
+        results = [fake(label="proceed", judgment="confirm", confidence=0.95, seed=n)
+                   for n in range(10)]
         self.assertAlmostEqual(evaluation.calibration(results)["ece"], 0.95, places=2)
 
     def test_the_interval_is_seeded_by_the_cases_and_repeats(self):
-        results = [{"label": "confirm" if n % 3 else "proceed", "judgment": "confirm",
-                    "confidence": 0.7 + n / 100.0, "status": "ok", "content_hash": hashlib.sha256(str(n).encode()).hexdigest(),
-                    "deterministic_answer": "ask", "error": None} for n in range(20)]
+        results = [fake(label="confirm" if n % 3 else "proceed", judgment="confirm",
+                        confidence=0.7 + n / 100.0, seed=n) for n in range(20)]
         first = evaluation.calibration(results)["ci95"]
         self.assertEqual(first, evaluation.calibration(list(reversed(results)))["ci95"])
         self.assertLessEqual(first[0], evaluation.calibration(results)["ece"])
         self.assertGreaterEqual(first[1], evaluation.calibration(results)["ece"])
+
+    def test_the_resamples_are_draws_and_not_permutations_at_a_power_of_two(self):
+        """An LCG modulo a power of two walks the indices in a cycle and resamples nothing."""
+        stream = evaluation._Stream("seed")
+        permutations = 0
+        for _ in range(50):
+            draw = [stream.below(16) for _ in range(16)]
+            if len(set(draw)) == 16:
+                permutations += 1
+        self.assertLess(permutations, 5)
+
+    def test_the_interval_over_sixteen_cases_is_not_degenerate(self):
+        results = [fake(label="confirm" if n % 4 else "proceed", judgment="confirm",
+                        confidence=0.6 + n / 50.0, seed=n) for n in range(16)]
+        low, high = evaluation.calibration(results)["ci95"]
+        self.assertLess(low, high)
 
     def test_one_pass_has_no_flip_rate_to_report(self):
         self.assertIsNone(evaluation.flip_rate([[]])["rate"])
@@ -284,7 +412,7 @@ class MetricTests(unittest.TestCase):
     def test_the_report_names_the_pack_the_split_and_the_caveats(self):
         data = report()
         self.assertEqual(data["pack"]["pack_version"], "1.0.0")
-        self.assertEqual(data["split"]["seed"], "input_sha256")
+        self.assertEqual(data["split"]["seed"], "point and capped input")
         self.assertTrue(any("not_run" in line for line in data["caveats"]))
         held = data["points"]["grade-bash"]["heldout"]
         # A replay's latency is this runner's and is reported as unmeasured, not as a number
@@ -298,75 +426,106 @@ class MetricTests(unittest.TestCase):
         with self.assertRaises(evaluation.EvalError):
             evaluation.report([], client())
 
+    def test_a_calibration_with_no_bins_is_a_refusal(self):
+        with self.assertRaises(evaluation.EvalError):
+            report(bins=0)
 
-class CommandTests(unittest.TestCase):
-    def run_eval(self, *args, **kwargs):
+    def test_the_report_carries_no_input_text_and_no_absolute_path(self):
+        """It is an artifact somebody sends on; a command and a home directory are not in it."""
+        data = evaluation.report(joined(), client(),
+                                 source={"log": str(LOG), "replay": str(RESPONSES),
+                                         "client": "replay"})
+        written = json.dumps(data, sort_keys=True)
+        self.assertEqual(data["source"]["log"], "decisions.jsonl")
+        self.assertEqual(data["source"]["replay"], "responses.json")
+        self.assertNotIn(str(REPO), written)
+        self.assertNotIn(os.sep + os.sep.join(["Users"]), written)
+        for case in evaluation.cases_from_rows(joined()):
+            self.assertNotIn(case["input"], written)
+
+
+class CommandTests(IsolatedHome):
+    """`decisions eval` end to end. The isolated HOME is what the state directory resolves to."""
+
+    def run_eval(self, *args):
         env = without_harness_vars()
-        env.update({"HOME": kwargs["home"], "HARNESS_HOME": kwargs["home"]})
+        env.update({"HOME": self.tmp, "HARNESS_HOME": self.tmp})
         return subprocess.run([sys.executable, str(REPO / "bin" / "harness"), "decisions",
                                "eval"] + list(args), capture_output=True, text=True,
-                              cwd=kwargs["home"], env=env)
+                              cwd=self.tmp, env=env)
 
     def test_a_replay_run_writes_the_report_the_doc_describes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "report.json"
-            done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES),
-                                 "--out", str(out), home=tmp)
-            self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertIn("pack decision" + packs.SEPARATOR + "1.0.0", done.stdout)
-            data = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual(set(data["points"]), set(["grade-bash", "stop-gate"]))
-            self.assertEqual(data["source"]["client"], "replay")
-            for block in data["points"].values():
-                self.assertIn(evaluation.DEV, block)
-                self.assertIn(evaluation.HELDOUT, block)
+        out = Path(self.tmp) / "report.json"
+        done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES), "--out", str(out))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("pack decision" + packs.SEPARATOR + "1.0.0", done.stdout)
+        data = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(set(data["points"]), set(["grade-bash", "stop-gate"]))
+        self.assertEqual(data["source"]["client"], "replay")
+        for block in data["points"].values():
+            self.assertIn(evaluation.DEV, block)
+            self.assertIn(evaluation.HELDOUT, block)
 
-    def test_the_printed_split_is_chosen_and_the_file_still_holds_both(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "report.json"
-            done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES), "--out",
-                                 str(out), "--split", "dev", "--point", "grade-bash", home=tmp)
-            self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertIn("rates on dev", done.stdout)
-            data = json.loads(out.read_text(encoding="utf-8"))
-            self.assertEqual(set(data["points"]), set(["grade-bash"]))
-            self.assertIsNotNone(data["points"]["grade-bash"]["heldout"]["cases"])
+    def test_the_default_report_lands_in_the_state_directory(self):
+        done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        written = Path(self.tmp) / ".local" / "state" / "agent-harness" / "jev-eval.json"
+        self.assertTrue(written.exists(), done.stdout)
+        self.assertFalse(self.ledger().exists(), "an evaluation wrote to the ledger")
+
+    def test_the_fitted_split_is_printed_only_with_a_warning(self):
+        out = Path(self.tmp) / "report.json"
+        done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES), "--out", str(out),
+                             "--split", "dev", "--point", "grade-bash")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("rates on dev", done.stdout)
+        self.assertIn("not evidence", done.stdout)
+        data = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(set(data["points"]), set(["grade-bash"]))
+        self.assertIsNotNone(data["points"]["grade-bash"]["heldout"]["cases"])
 
     def test_a_run_with_neither_a_replay_nor_live_is_refused(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            done = self.run_eval("--log", str(LOG), home=tmp)
-            self.assertNotEqual(done.returncode, 0)
-            self.assertIn("--replay", done.stderr + done.stdout)
+        done = self.run_eval("--log", str(LOG))
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("--replay", done.stderr + done.stdout)
+
+    def test_a_replay_and_a_live_run_together_are_refused(self):
+        done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES), "--live",
+                             "--max-requests", "5")
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("name one", done.stderr + done.stdout)
 
     def test_a_live_run_without_a_ceiling_is_refused_before_anything_is_sent(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            done = self.run_eval("--log", str(LOG), "--live", home=tmp)
-            self.assertNotEqual(done.returncode, 0)
-            self.assertIn("--max-requests", done.stderr + done.stdout)
+        done = self.run_eval("--log", str(LOG), "--live")
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("--max-requests", done.stderr + done.stdout)
+
+    def test_a_live_run_with_an_empty_allowlist_is_refused_as_pointless(self):
+        """Every request would carry the same four base fields, so the run would measure one."""
+        done = self.run_eval("--log", str(LOG), "--live", "--max-requests", "5")
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("state_fields", done.stderr + done.stdout)
 
     def test_a_dollar_budget_with_no_price_is_refused_rather_than_guessed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            done = self.run_eval("--log", str(LOG), "--live", "--max-requests", "5",
-                                 "--budget-usd", "1.0", home=tmp)
-            self.assertNotEqual(done.returncode, 0)
-            self.assertIn("--usd-per-mtok", done.stderr + done.stdout)
+        done = self.run_eval("--log", str(LOG), "--live", "--max-requests", "5",
+                             "--budget-usd", "1.0")
+        self.assertEqual(done.returncode, 1, done.stdout)
+        self.assertIn("--usd-per-mtok", done.stderr + done.stdout)
+
+    def test_a_bin_count_and_a_dev_share_that_cannot_be_honoured_are_refused(self):
+        for args in (["--bins", "0"], ["--dev-share", "0"], ["--dev-share", "1"],
+                     ["--dev-share", "50"]):
+            done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES), *args)
+            self.assertEqual(done.returncode, 1, done.stdout)
 
     def test_an_unknown_pack_version_names_the_ones_that_exist(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES),
-                                 "--pack", "decision:2.0.0", home=tmp)
-            self.assertEqual(done.returncode, 1)
-            self.assertIn("1.0.0", done.stderr)
-
-    def test_a_replay_run_leaves_no_ledger_row_behind(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self.run_eval("--log", str(LOG), "--replay", str(RESPONSES),
-                          "--out", str(Path(tmp) / "r.json"), home=tmp)
-            ledger = Path(tmp) / ".local" / "state" / "agent-harness" / "decisions.jsonl"
-            self.assertFalse(ledger.exists(), "an evaluation wrote to the ledger")
+        done = self.run_eval("--log", str(LOG), "--replay", str(RESPONSES),
+                             "--pack", "decision:2.0.0")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("1.0.0", done.stderr)
 
 
-class FixtureTests(unittest.TestCase):
+class FixtureTests(IsolatedHome):
     def test_every_recorded_response_still_keys_to_a_request_this_code_builds(self):
         """The generator's output and the pack have not drifted apart."""
         recorded = json.loads(RESPONSES.read_text(encoding="utf-8"))

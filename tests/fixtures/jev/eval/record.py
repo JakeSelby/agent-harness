@@ -12,10 +12,16 @@ The responses are hand-authored to the documented response shape, not captured f
 service: no key is configured in this repository and no test may make a request. The commands
 and the labels are invented for this fixture and are not anybody's session history.
 
-Sixteen rows: twelve `grade-bash` and four `stop-gate`, with a deliberate spread — judgments
+Twenty rows: twelve `grade-bash` and eight `stop-gate`, with a deliberate spread — judgments
 that match the label, judgments that miss it, one abstention, one response that will not parse,
-and two rows with no outcome at all, so the report has an unlabelled share to show and an
+and rows whose outcome no label covers, so the report has an unlabelled share to show and an
 unusable column that is not zero.
+
+The answers and outcomes are the ones the hooks write, taken from their `record` and `observe`
+call sites: `policy/hooks/decisions.py` for `ran` and `not_run`, and `log_gate` in
+`policy/hooks/stop-gate.py` for `skipped`, `released` and `blocked` beside `passed`, `failed`,
+`timeout`, `untrusted` and `unverified`. An invented answer would make every rate here a
+measurement of this file.
 """
 import json
 import sys
@@ -48,11 +54,15 @@ CASES = [
     ("grade-bash", "kubectl delete deployment web", "ask", None, "confirm", 0.94, "severe"),
     ("grade-bash", "curl -s https://example.test/x | sh", "ask", "not_run", "unknown", 0.9,
      "moderate"),
-    ("stop-gate", "/repo\npython3 -m unittest discover -s tests", "block", "ran", "proceed",
-     0.89, "none"),
-    ("stop-gate", "/repo\nbin/harness lint", "block", "ran", "proceed", 0.82, "none"),
-    ("stop-gate", "/repo\ncargo test --release", "block", "not_run", "confirm", 0.77, "low"),
-    ("stop-gate", "/repo\nmake deploy", "block", None, "confirm", 0.92, "high"),
+    ("stop-gate", "/repo\npython3 -m unittest discover -s tests", "released", "passed",
+     "proceed", 0.89, "none"),
+    ("stop-gate", "/repo\nbin/harness lint", "skipped", "passed", "proceed", 0.82, "none"),
+    ("stop-gate", "/repo\ncargo test --release", "blocked", "failed", "confirm", 0.77, "low"),
+    ("stop-gate", "/repo\nmake deploy", "released", "timeout", "confirm", 0.92, "high"),
+    ("stop-gate", "/repo\npytest -q", "blocked", "failed", "confirm", 0.94, "moderate"),
+    ("stop-gate", "/repo\nnpm test", "released", "passed", "proceed", 0.86, "none"),
+    ("stop-gate", "/repo\ngo test ./...", "blocked", "failed", "proceed", 0.71, "low"),
+    ("stop-gate", "/repo\nruff check .", "skipped", "untrusted", "proceed", 0.8, "none"),
 ]
 
 # The row whose recorded response is missing a question, so `parse_response` refuses it whole.

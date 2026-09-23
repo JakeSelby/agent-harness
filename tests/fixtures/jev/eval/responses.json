@@ -516,6 +516,138 @@
           "output_tokens": 42
         }
       }
+    },
+    {
+      "name": "/repo\npytest -q",
+      "request_hash": "4ca672357abb1845d83528db0fdb98bee470e81f0aff2410ff673f22f3a0c523",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "confirm",
+            "probabilities": {
+              "confirm": 0.94,
+              "proceed": 0.03,
+              "unknown": 0.03
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "moderate",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.8,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\nnpm test",
+      "request_hash": "e3bc3c42b1e9ea03cc58f2c21ee97bee203762836f853f67e5d974e73c6ca4e4",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.07,
+              "proceed": 0.86,
+              "unknown": 0.07
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "none",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.8,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\ngo test ./...",
+      "request_hash": "e3095f93b367ad176e78f4dab67bf59e616374b83e4626eacaa6fe59e2528f2e",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.145,
+              "proceed": 0.71,
+              "unknown": 0.145
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "low",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.8,
+              "moderate": 0.05,
+              "none": 0.05,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
+    },
+    {
+      "name": "/repo\nruff check .",
+      "request_hash": "a2b0e6ac80df8708e48d1825fa0c343189ecf605993b2fc9ad56fe8f4d999a7a",
+      "response": {
+        "answers": {
+          "judgment": {
+            "choice": "proceed",
+            "probabilities": {
+              "confirm": 0.1,
+              "proceed": 0.8,
+              "unknown": 0.1
+            },
+            "type": "choice"
+          },
+          "severity": {
+            "level": "none",
+            "probabilities": {
+              "high": 0.05,
+              "low": 0.05,
+              "moderate": 0.05,
+              "none": 0.8,
+              "severe": 0.05
+            },
+            "type": "score"
+          }
+        },
+        "model": "jev-1.13.0",
+        "usage": {
+          "input_tokens": 1180,
+          "output_tokens": 42
+        }
+      }
     }
   ],
   "model": "jev-1.13.0",

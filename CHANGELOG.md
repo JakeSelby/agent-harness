@@ -17,22 +17,31 @@ All notable changes to this project are documented here. The format follows
   and the hash of its content, is frozen at construction so nothing holding one can rewrite a
   criterion between the hash being taken and the request being built, and the provider puts the
   id and version on every ledger row beside the request hash. The dev and held-out split is
-  seeded by the hash of the text that was judged rather than by `random`, so a re-run reproduces
-  it and new rows do not reshuffle the old ones. Thresholds are fitted per decision point on the
-  dev split and reported on both; there is no global default, because a cutoff optimal on one
-  workload does not transfer, and a point with no labelled dev case is reported unfitted rather
-  than given the shipped 0.8 as though it had been measured. The report names accuracy, the
-  confusion by label, agreement with the deterministic answer, a calibration table over the
-  confidence with its expected calibration error and a deterministic bootstrap interval, the
-  flip rate over repeated passes, tokens, cost per 1,000 decisions where a price was given, the
-  returned model ids, and an `unusable` block in which an unavailable call, an error and an
-  abstention are each counted and none is ever a pass. It carries no clock, so two runs over one
-  log are byte-identical. What the labels do not prove is in the report itself: `grade-bash`
+  seeded by the hash of the decision point and the capped input a request actually carries,
+  rather than by `random` or by the row's hash of the uncapped text, so a re-run reproduces it,
+  new rows do not reshuffle the old ones, and one identical request cannot sit on both sides —
+  which is refused outright rather than reported. Thresholds are fitted per decision point on
+  the dev split and only the held-out block is evidence; there is no global default, because a
+  cutoff optimal on one workload does not transfer, and a point with no labelled dev case is
+  reported unfitted rather than given the shipped 0.8 as though it had been measured. The fit is
+  scored under the provider's own semantics — below the threshold the deterministic answer is
+  what is compared against the label, since that is what the harness would have done, and
+  scoring an abstention as a miss would drive every fit to the lowest confidence in the set. The
+  report names accuracy, the deterministic answer's own accuracy as the baseline to beat, how
+  many cases the provider could have changed at all, the confusion by label, agreement with the
+  deterministic answer, a calibration table over the confidence with its expected calibration
+  error and a bootstrap interval drawn from hashed indices, the flip rate over repeated passes,
+  tokens, cost per 1,000 decisions where a price was given, the returned model ids, and an
+  `unusable` block in which an unavailable call, an error and an abstention are each counted and
+  none is ever a pass. It carries no clock, no absolute path and no input text, so two runs over
+  one log are byte-identical and the file can be sent on. What the labels do not prove is in the report itself: `grade-bash`
   records a row only where the harness asked or denied, `ran` is a user approving something they
   were asked about rather than proof the prompt was unneeded, and `not_run` does not tell a
   refusal from an interrupted turn. `--live` is the opt-in path and needs an explicit request
   ceiling; `--budget-usd` needs a price beside it, because none is published here and a dollar
-  ceiling nobody can convert is not a ceiling (#138).
+  ceiling nobody can convert is not a ceiling; `--replay` and `--live` together are refused
+  rather than silently ordered; and a live run under an empty `governance.jev.state_fields` is
+  refused as pointless, since every request would then differ in nothing (#138).
 - The `jev` decision provider is opt-in per decision point, and sends only what a configuration
   lists. `governance.jev.mode` sets a default and `governance.jev.modes.<point>` overrides it for
   one of the points the decision ledger already names: `off` calls nothing, `shadow` calls and

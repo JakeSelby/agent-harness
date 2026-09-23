@@ -4409,9 +4409,14 @@ def _eval_client(args, jev, evaluation, cfg):
     `governance.jev.state_fields`: an evaluation that could send a field no hook is allowed to
     send would be a way round the allowlist rather than a measurement of the provider.
     """
+    if args.live and args.replay:
+        raise SystemExit("--replay and --live are two sources for one run; name one")
     if not args.live:
         if not args.replay:
             raise SystemExit("decisions eval needs --replay FILE, or --live with a budget")
+        # `shadow_controls` and not the user's: a replay makes no request, so the kill switch
+        # and the outbound allowlist have nothing to gate. What the state may carry is still
+        # the provider's own builder, and the recorded request hashes are keyed to it.
         return (jev.ReplayClient.from_file(args.replay),
                 evaluation.shadow_controls(),
                 jev.Budget(),
@@ -4428,6 +4433,13 @@ def _eval_client(args, jev, evaluation, cfg):
     if args.budget_usd is not None:
         tokens = int(args.budget_usd / args.usd_per_mtok * 1e6)
     configured = decision_controls.Controls.from_config(cfg)
+    if not configured.state_fields:
+        raise SystemExit("governance.jev.state_fields is empty, so every request this run made "
+                         "would carry the same four base fields and differ in nothing; set the "
+                         "allowlist a hook would send under before measuring one")
+    if configured.disabled():
+        raise SystemExit("the jev kill switch is in place at " + str(configured.sentinel_path())
+                         + "; remove it before making live requests")
     allowlist = evaluation.shadow_controls(state_fields=configured.state_fields, configured=True,
                                            timeout=configured.timeout,
                                            max_requests=args.max_requests, max_tokens=tokens)
@@ -4448,6 +4460,10 @@ def cmd_decisions(args: argparse.Namespace) -> int:
     module = load_hook_module("decisions")
     if module is None:
         raise SystemExit("this checkout has no claude/hooks/decisions.py; reinstall or re-clone it")
+    if args.bins < 1:
+        raise SystemExit("--bins is the number of confidence bins and is at least 1")
+    if not 0 < args.dev_share < 1:
+        raise SystemExit("--dev-share is a fraction strictly between 0 and 1")
     log = Path(args.log) if args.log else state_dir() / "decisions.jsonl"
     rows = module.joined(module.read_rows(log))
     out = Path(args.out) if args.out else state_dir() / DEFAULT_EVAL_REPORT
@@ -4707,7 +4723,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     decisions_sub = p.add_subparsers(dest="action", required=True)
     ev = decisions_sub.add_parser("eval", help="replay labelled decision-log rows through a versioned question pack")
     ev.add_argument("--point", choices=list(decision_controls.POINTS), help="one decision point (default: every point in the log)")
-    ev.add_argument("--split", choices=["dev", "heldout"], default="heldout", help="which split the printed rates come from; the report file carries both")
+    ev.add_argument("--split", choices=["dev", "heldout"], default="heldout", help="which split the printed rates come from; only held-out is evidence, and the file carries both")
     ev.add_argument("--replay", help="a recorded fixture of responses keyed by request hash; no socket is opened")
     ev.add_argument("--live", action="store_true", help="call the service instead of replaying; needs --max-requests")
     ev.add_argument("--max-requests", type=int, help="ceiling on live requests")
@@ -4717,7 +4733,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ev.add_argument("--log", help="the decision log to read (default: the recorded one)")
     ev.add_argument("--pack", help="pack id or id:version (default: the newest decision pack)")
     ev.add_argument("--out", help="where the report is written")
-    ev.add_argument("--dev-share", type=int, default=50, help="percent of cases in the dev split")
+    ev.add_argument("--dev-share", type=float, default=0.5, help="fraction of cases in the dev split, strictly between 0 and 1")
     ev.add_argument("--bins", type=int, default=10, help="confidence bins in the calibration table")
     ev.add_argument("--repeat", type=int, default=1, help="replay passes, for the flip rate")
     ev.set_defaults(func=cmd_decisions)
