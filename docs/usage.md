@@ -431,7 +431,11 @@ The row names the decision point, the mode it ran under, the status, the request
 model ids, the pack and request hashes, the token counts, the latency in `ms` and the session
 that asked. It never carries the outbound state, an answer's prose, a prompt, a file path or an
 environment value: `lib/harness_core/decisions/ledger.py` builds it key by key from that list and
-reads nothing else. What may leave the machine at all is a separate question, answered in
+reads nothing else. The counterparty is kept only when it matches the `repo:<name>/<branch>` slug
+the ledger already derives, within a bounded length, and as a short digest otherwise — it is a
+caller's string and part of what went out, so a path must not survive in a row kept for months.
+A row that could not be written at all is recorded in `usage.errors.jsonl` beside the ledger,
+by exception type and never by message. What may leave the machine at all is a separate question, answered in
 [runtime controls](runtime-controls.md).
 
 Four things are worth reading off it:

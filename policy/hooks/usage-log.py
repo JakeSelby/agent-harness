@@ -1178,6 +1178,32 @@ def release(lock, held=True):
             pass
 
 
+def errors_path(path=None):
+    """`usage.errors.jsonl` beside the ledger this path names."""
+    return (Path(path) if path else usage_path()).with_suffix(".errors.jsonl")
+
+
+def record_error(error, path=None, where=""):
+    """Append one swallowed failure beside the ledger. Never raises.
+
+    The same file this hook's own crash lands in, because a write that failed silently is
+    unknown rather than absent: a report with no rows in it has somewhere to be explained. The
+    exception type, never its message — a message can carry a path or a value.
+    """
+    entry = {"time": time.time(), "error": type(error).__name__ if isinstance(error, BaseException)
+             else str(error)}
+    if where:
+        entry["where"] = where
+    try:
+        target = errors_path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(entry) + "\n")
+    except OSError:
+        return False
+    return True
+
+
 def append_row(record, path=None):
     """Append one row to the ledger without rewriting it, and return its path.
 
@@ -1424,8 +1450,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
     except Exception as exc:
-        failure = usage_path().with_suffix(".errors.jsonl")
-        failure.parent.mkdir(parents=True, exist_ok=True)
-        with failure.open("a") as stream:
-            stream.write(json.dumps({"time": time.time(), "error": type(exc).__name__}) + "\n")
+        record_error(exc)
         sys.exit(1)

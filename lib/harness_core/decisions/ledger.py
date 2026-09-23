@@ -24,6 +24,7 @@ judgment was free.
 import hashlib
 import json
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -54,12 +55,31 @@ def _ident(request_hash: Optional[str], now: float) -> str:
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
 
 
-def _repo(counterparty: str) -> str:
-    """The repository name inside a `repo:<name>/<branch>` slug, or the slug as given."""
-    slug = str(counterparty or "")
-    if not slug.startswith("repo:"):
+# The one counterparty shape a row may keep verbatim: the slug `decision.counterparty()`
+# derives. Both halves are bounded, because a row is kept for months and a branch name has no
+# length anyone enforces.
+SLUG = re.compile(r"^repo:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._/-]{1,96}$")
+
+
+def _counterparty(value: Any) -> str:
+    """The counterparty as a row may keep it: the slug shape, or a digest of anything else.
+
+    `counterparty` is a caller's string and part of what goes out in the request, so an
+    absolute path can arrive here — and a path on this machine is exactly what a row kept for
+    months must not hold. A counterparty this module cannot recognise is a short digest, which
+    still groups a report and names nothing.
+    """
+    slug = str(value or "")
+    if SLUG.match(slug):
         return slug
-    return slug[len("repo:"):].split("/")[0]
+    return "sha256:" + hashlib.sha256(slug.encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _repo(counterparty: str) -> str:
+    """The repository name inside a kept `repo:<name>/<branch>` slug, or the slug as kept."""
+    if not counterparty.startswith("repo:"):
+        return counterparty
+    return counterparty[len("repo:"):].split("/")[0]
 
 
 def row(point: Optional[str], mode: str, result: Dict[str, Any], action_class: str,
@@ -82,11 +102,12 @@ def row(point: Optional[str], mode: str, result: Dict[str, Any], action_class: s
     latency = result.get("latency_ms")
     latency = float(latency) if isinstance(latency, (int, float)) else 0.0
     began = now - latency / 1000.0 if started is None else started
+    kept = _counterparty(counterparty)
     record = {
         "kind": KIND, "runtime": RUNTIME, "provider": "jev",
         "session_id": str(session_id or ""),
         "agent_id": _ident(result.get("request_hash"), now),
-        "repo": _repo(counterparty), "counterparty": str(counterparty or ""),
+        "repo": _repo(kept), "counterparty": kept,
         "action_class": str(action_class or ""),
         "point": str(point) if point else None,
         "mode": str(mode or ""),
@@ -159,7 +180,13 @@ def append(record: Dict[str, Any], target: Optional[str] = None) -> bool:
             return False
         usage.append_row(record, path=target)
         return True
-    except Exception:
+    except Exception as exc:
+        # A swallowed write is unknown, not absent: the failure lands in the errors file every
+        # other ledger writer uses, so a run of empty reports has somewhere to be explained.
+        try:
+            usage.record_error(exc, path=target, where="decision-row")
+        except Exception:
+            pass
         return False
 
 

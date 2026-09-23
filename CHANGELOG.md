@@ -13,7 +13,12 @@ All notable changes to this project are documented here. The format follows
   returned model id, the pack and request hashes, the judgment and severity labels, the
   deterministic outcome and the one an `act` mode would have reached, the token counts, the
   latency and the session that asked — and none of the state it sent, no prompt, no file path and no environment value,
-  because the row is built key by key from that list and reads nothing else. A judgment costs
+  because the row is built key by key from that list and reads nothing else. The counterparty
+  is part of what goes out in the request and could be a path, so a row keeps it only when it
+  matches the `repo:<name>/<branch>` slug the ledger already derives, within a bounded length,
+  and keeps a short digest of anything else. Exported over OTLP the row travels under
+  `harness.decision.*`, its price included, because its `input` and `usd` in the columns a
+  session's land in would have a backend counting the harness's question as session spend. A judgment costs
   tokens and holds up a turn, and until now neither figure was anywhere: `harness usage --by
   provider` prices the calls from `policy/prices.json` like any other row and reports the
   latency distribution beside the statuses, which are separate columns rather than a success

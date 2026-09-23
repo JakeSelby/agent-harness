@@ -54,6 +54,15 @@ LEAKY = {"file_path": "/" + "Users/someone/repos/private/secrets.env",
          "tool_output": "3 files changed, 218 insertions(+)"}
 
 
+# Every key a decision row may carry. Pinned rather than sampled: the leak test proves what is
+# absent from the values, and this proves nothing new arrived in the keys.
+EXPECTED_KEYS = ("kind", "runtime", "provider", "session_id", "agent_id", "repo", "counterparty",
+                 "action_class", "point", "mode", "status", "judgment", "severity",
+                 "base_outcome", "advised_outcome", "error", "requested_model", "model",
+                 "pack_hash", "request_hash", "ms", "harness_version", "started", "ended",
+                 "input", "output", "cache_read", "cache_write")
+
+
 class _Failing(object):
     """A client that cannot answer: the `unavailable` path, with no usage to report."""
 
@@ -130,14 +139,38 @@ class RowTests(Base):
     def test_a_row_carries_none_of_the_state_no_prompt_no_path_no_environment_value(self):
         context = dict(LEAKY)
         context["summary"] = "force push the release branch"
+        # A real variable in this process's environment, so the assertion is over what a row
+        # could actually have picked up rather than over a literal nothing reads.
+        os.environ["HARNESS_TEST_LEAK"] = "seventeen-syllable-secret"
         self.decide(context=context)
         body = json.dumps(self.rows())
-        for leaked in LEAKY.values():
+        for leaked in list(LEAKY.values()) + ["seventeen-syllable-secret", str(self.root)]:
             self.assertNotIn(leaked, body)
         for absent in ("file_path", "prompt", "tool_output", "summary", "command",
                        CASES["confirm"]["context"]["command"],
                        "force push the release branch"):
             self.assertNotIn(absent, body)
+
+    def test_the_row_holds_exactly_these_keys_and_no_field_a_caller_can_add(self):
+        """The leak test is only as strong as this: a key added without a decision here is a
+        field nobody vetted travelling in every row."""
+        self.decide()
+        self.assertEqual(sorted(self.rows()[0]), sorted(EXPECTED_KEYS))
+        self.decide(provider=self.provider(client=_Failing()))
+        self.assertEqual(sorted(self.rows()[1]), sorted(EXPECTED_KEYS + ("partial",)))
+
+    def test_a_counterparty_that_is_not_a_repo_slug_is_kept_as_a_digest(self):
+        path = "/" + "Users/someone/repos/private"
+        self.assertEqual(ledger._counterparty("repo:agent-harness/main"),
+                         "repo:agent-harness/main")
+        for opaque in (path, "repo:" + path, "repo:a/" + "b" * 200, "", None):
+            kept = ledger._counterparty(opaque)
+            self.assertTrue(kept.startswith("sha256:"), kept)
+            self.assertEqual(len(kept), len("sha256:") + 16)
+        row = ledger.row("grade-bash", "act", dict(jev.blank_result(), status="ok"),
+                         "coding.shell_exec", path)
+        self.assertNotIn(path, json.dumps(row))
+        self.assertEqual(row["repo"], row["counterparty"])
 
     def test_a_call_with_no_usage_is_partial_and_never_priced_at_zero(self):
         self.decide(provider=self.provider(client=_Failing()))
@@ -206,6 +239,15 @@ class RowTests(Base):
                                            "state_fields": ["command", "summary"]}}})
         answer = self.decide(provider=provider)
         self.assertEqual(answer.outcome, "ask")
+        # And the write that failed is on record: a report with no rows in it has somewhere to
+        # be explained, rather than reading as a provider that was never called.
+        failures = self.root / "blocked.errors.jsonl"
+        self.assertTrue(failures.exists())
+        entry = json.loads(failures.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(entry["where"], "decision-row")
+        self.assertIn("Error", entry["error"])
+        # The type, never the message: a message can carry a path or a value.
+        self.assertNotIn(str(self.root), json.dumps(entry))
 
 
 class ShapeTests(unittest.TestCase):
@@ -251,6 +293,14 @@ class ReportTests(Base):
         row.update(fields)
         return row
 
+    def subagent(self, **fields):
+        row = {"kind": "subagent", "runtime": "claude-code", "session_id": "S",
+               "agent_id": "sub", "agent_type": "worker-a", "repo": "r",
+               "model": "claude-fable-5-1", "input": 4, "output": 2, "cache_read": 0,
+               "cache_write": 0, "tool_calls": 3, "started": self.now, "ended": self.now}
+        row.update(fields)
+        return row
+
     def decision_row(self, **fields):
         row = {"kind": "decision", "runtime": "harness", "provider": "jev", "session_id": "S",
                "agent_id": "one", "repo": "r", "point": "grade-bash", "mode": "shadow",
@@ -276,14 +326,32 @@ class ReportTests(Base):
         self.assertIn("unpriced: 1 call(s)", out)
         self.assertIn("2000", out)
 
-    def test_a_decision_row_is_never_added_to_a_session_grouping(self):
-        self.write([self.session()])
-        code, alone = self.run_usage("--by", "day", "--days", "2")
-        self.assertEqual(code, 0, alone)
+    def test_a_decision_row_changes_no_other_grouping_at_all(self):
+        """Every report but `--by provider` must read exactly as it did before the row existed:
+        a judgment's tokens are the harness's, and a session charged for them is a wrong bill."""
+        groupings = (("--by", "day"), ("--by", "repo"), ("--by", "model"), ("--by", "role"),
+                     ("--by", "prefix"), ("--by", "stance", "--stance", "cost"))
+        self.write([self.session(), self.subagent()])
+        before = {}
+        for args in groupings:
+            code, out = self.run_usage(*(args + ("--days", "2")))
+            self.assertEqual(code, 0, out)
+            before[args] = out
+        self.write([self.session(), self.subagent(), self.decision_row(),
+                    self.decision_row(agent_id="two", mode="act", status="unavailable",
+                                      partial=True, input=None, output=None,
+                                      cache_read=None, cache_write=None)])
+        for args in groupings:
+            code, out = self.run_usage(*(args + ("--days", "2")))
+            self.assertEqual(code, 0, out)
+            self.assertEqual(before[args], out, " ".join(args))
+
+    def test_the_provider_report_counts_rows_nothing_else_does(self):
         self.write([self.session(), self.decision_row()])
-        code, both = self.run_usage("--by", "day", "--days", "2")
-        self.assertEqual(code, 0, both)
-        self.assertEqual(alone, both)
+        code, out = self.run_usage("--by", "provider", "--days", "2")
+        self.assertEqual(code, 0, out)
+        self.assertIn("grade-bash", out)
+        self.assertNotIn("(no repo)", out)
 
     def test_an_empty_window_says_so_rather_than_printing_an_empty_table(self):
         self.write([])
@@ -311,13 +379,97 @@ class DoctorTests(Base):
         self.assertIn("no provider reaches the network", out.stdout)
 
     def test_the_lines_a_configured_provider_adds_name_the_model_and_the_last_call(self):
+        state = self.root / ".local" / "state" / "agent-harness"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "usage.jsonl").write_text(json.dumps(
+            {"kind": "decision", "provider": "jev", "status": "ok", "model": "jev-other-model",
+             "ended": "2026-09-21T00:00:00.000Z"}) + "\n", encoding="utf-8")
         self.assertEqual(CLI.pinned_jev_model(), jev.DEFAULT_MODEL)
         lines = CLI.governance_lines({"governance": {"provider": "jev",
                                                      "jev": {"mode": "shadow"}}})
         joined = "\n".join(lines)
         self.assertIn("jev model: " + jev.DEFAULT_MODEL, joined)
-        self.assertIn("jev kill switch:", joined)
-        self.assertIn("jev calls:", joined)
+        self.assertIn("jev modes: ", joined)
+        # The sentinel is named by path, and by whether it is there: a reader has to be able to
+        # create it without being told where.
+        self.assertIn(str(self.root / ".local" / "state" / "agent-harness" / "jev-disabled"),
+                      joined)
+        self.assertIn("absent; create it", joined)
+        # A returned model the harness did not request is the line's whole reason to exist.
+        self.assertIn("1 recorded; last ok at 2026-09-21T00:00:00.000Z returned jev-other-model",
+                      joined)
+        self.assertNotEqual(jev.DEFAULT_MODEL, "jev-other-model")
+
+    def test_a_machine_that_has_never_called_says_so_rather_than_naming_a_model(self):
+        joined = "\n".join(CLI.governance_lines(
+            {"governance": {"provider": "jev", "jev": {"mode": "shadow"}}}))
+        self.assertIn("jev calls: none recorded", joined)
+        self.assertNotIn("returned", joined)
+
+    def test_the_sentinel_being_in_place_is_said_on_the_line_that_names_it(self):
+        state = self.root / ".local" / "state" / "agent-harness"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "jev-disabled").write_text("", encoding="utf-8")
+        joined = "\n".join(CLI.governance_lines(
+            {"governance": {"provider": "jev", "jev": {"mode": "act"}}}))
+        self.assertIn("present, every call is off", joined)
+
+
+class ExportTests(Base):
+    """A decision row reaching a collector must not read as a session's tokens or dollars."""
+
+    def setUp(self):
+        Base.setUp(self)
+        self.now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+        self.telemetry = _load("harness_telemetry_rows", REPO / "policy" / "hooks" / "telemetry.py")
+
+    def row(self, **fields):
+        row = {"kind": "decision", "runtime": "harness", "provider": "jev", "session_id": "S",
+               "agent_id": "one", "repo": "r", "point": "grade-bash", "mode": "shadow",
+               "status": "ok", "model": "claude-fable-5-1", "ms": 40.0, "input": 1000,
+               "output": 20, "cache_read": 0, "cache_write": 0,
+               "started": self.now, "ended": self.now}
+        row.update(fields)
+        return row
+
+    def named(self, row, price=None):
+        return dict((a["key"], a["value"]) for a in self.telemetry.attributes(
+            row, {}, "0.0.0", price))
+
+    def test_every_field_of_a_decision_row_travels_under_its_own_namespace(self):
+        attrs = self.named(self.row(), price=(0.25, "2026-09-01"))
+        for bare in ("input", "output", "ms", "status", "point", "mode", "harness.usd"):
+            self.assertNotIn(bare, attrs)
+        self.assertEqual(attrs["harness.decision.input"], {"intValue": "1000"})
+        self.assertEqual(attrs["harness.decision.usd"], {"doubleValue": 0.25})
+        self.assertEqual(attrs["harness.decision.price_as_of"], {"stringValue": "2026-09-01"})
+        # The identity and the stamp stay shared: a reader de-duplicates every kind the same way.
+        self.assertIn("harness.row_key", attrs)
+        self.assertIn("harness.exported_at", attrs)
+        self.assertTrue(attrs["harness.row_key"]["stringValue"].endswith("|decision|one"))
+
+    def test_a_session_row_is_untouched_by_the_namespace(self):
+        session = {"kind": "session", "runtime": "claude-code", "session_id": "S", "input": 7,
+                   "ended": self.now}
+        attrs = self.named(session, price=(1.5, "2026-09-01"))
+        self.assertEqual(attrs["input"], {"intValue": "7"})
+        self.assertEqual(attrs["harness.usd"], {"doubleValue": 1.5})
+        self.assertNotIn("harness.decision.input", attrs)
+
+    def test_a_dry_run_counts_the_decision_row_in_the_window(self):
+        state = self.root / ".local" / "state" / "agent-harness"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "usage.jsonl").write_text("".join(json.dumps(r) + "\n" for r in (
+            {"kind": "session", "runtime": "claude-code", "session_id": "S",
+             "ended": self.now}, self.row())), encoding="utf-8")
+        env = dict(os.environ)
+        env["HOME"] = str(self.root)
+        env.pop("HARNESS_QUIET", None)
+        out = subprocess.run(
+            [sys.executable, str(REPO / "bin" / "harness"), "usage", "export", "--dry-run",
+             "--since", self.now[:10]], capture_output=True, text=True, env=env)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("2 row(s)", out.stdout)
 
 
 if __name__ == "__main__":
