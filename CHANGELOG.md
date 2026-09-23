@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A spike record measures what the Claude Code Workflow tool does to the delegation guards. A
+  script's `agent()` calls produce no `Agent` tool call, so band routing, the brief guard and the
+  constrained-role refusal never see them, and a script can run a read-only harness role in session
+  by naming it in `agentType`; the usage ledger does record every workflow agent, but those rows
+  carry no tool use id, so the reroute join is empty for all of them. The record names the two
+  changes the code needs. `docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md` (#540).
+
 ### Fixed
 
 - The repository's own copy states the figures its code holds. The landing copy said nineteen
