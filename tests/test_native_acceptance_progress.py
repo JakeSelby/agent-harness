@@ -68,7 +68,8 @@ class ProgressTests(unittest.TestCase):
                                         "kind", "model_run", "observations", "platform",
                                         "runtime_version", "source_commit", "tier_routing"])
         self.assertEqual(data["cases"], {CASES[0]: "passed"})
-        self.assertEqual(data["observations"], ["A native session did " + CASES[0] + "."])
+        self.assertEqual(data["observations"],
+                         [CASES[0] + ": A native session did " + CASES[0] + "."])
 
     def test_a_resumed_round_unions_its_cases_with_the_surviving_ones(self):
         with self.assertRaises(KeyboardInterrupt):
@@ -86,7 +87,8 @@ class ProgressTests(unittest.TestCase):
         self.run_round(failing, names=[CASES[0]])
         data = self.run_round(passing, names=[CASES[0]])
         self.assertEqual(data["cases"], {CASES[0]: "passed"})
-        self.assertEqual(data["observations"], ["A native session did " + CASES[0] + "."])
+        self.assertEqual(data["observations"],
+                         [CASES[0] + ": A native session did " + CASES[0] + "."])
 
     def test_lines_from_another_commit_or_a_torn_write_are_ignored(self):
         self.run_round(passing, names=[CASES[0]], commit="b" * 40)

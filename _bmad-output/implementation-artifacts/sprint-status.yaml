@@ -310,7 +310,8 @@ development_status:
   ah-b077-spawn-confinement-s-brief-never-makes-the-model: ready-for-dev
   ah-b078-a-round-without-model-runs-the-runner-default: ready-for-dev
   ah-b079-a-hook-you-add-beside-the-harness-s-hooks-makes: ready-for-dev
-  ah-b081-role-confinement-never-has-a-read-only-role: backlog
+  ah-b080-a-native-evidence-record-pairs-its-observations: ready-for-dev
+  ah-b083-stance-switch-and-custom-stance-switch-only: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
@@ -444,3 +445,4 @@ development_status:
   ah-t006-replay-task-set-sits-below-the-harness-s-break: done
   ah-t007-replay-a-pinned-older-tag-into-a-temporary: done
   ah-t008-rule-recognize-spawn-a-new-chat-as-a-cloud-run: done
+  ah-t026-compatibility-step-8-says-a-resumed-session-is: ready-for-dev
