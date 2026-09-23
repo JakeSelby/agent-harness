@@ -444,3 +444,4 @@ development_status:
   ah-t006-replay-task-set-sits-below-the-harness-s-break: done
   ah-t007-replay-a-pinned-older-tag-into-a-temporary: done
   ah-t008-rule-recognize-spawn-a-new-chat-as-a-cloud-run: done
+  ah-t026-compatibility-step-8-says-a-resumed-session-is: ready-for-dev
