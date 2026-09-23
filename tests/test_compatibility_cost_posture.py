@@ -37,7 +37,8 @@ class RequiredCaseTests(unittest.TestCase):
         step = " ".join(step.split())  # wrapping is not stable; the observables are.
         for needle in ("cost variant", "keeps its link", "default band worker", "effort",
                        "budget sentence", "usage feed", "harness usage --rescan --by role",
-                       "already running before the workers were installed", "feed off",
+                       "started before the workers were installed",
+                       "keeps them out of its session record", "announced band worker", "feed off",
                        "does not route native spawns", "not applicable"):
             self.assertIn(needle, step, msg=needle)
 
