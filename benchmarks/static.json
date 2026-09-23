@@ -2,6 +2,12 @@
   "schema_version": 1,
   "harness_version": "0.12.0",
   "chars_per_token": 4.0,
+  "scopes": {
+    "always_loaded": "claude/CLAUDE.md, claude/rules/, claude/output-styles/ and the stance variant config.example.json selects, for the default selection",
+    "listings": "one description line per agent, skill and command the session lists",
+    "worst_case_est_tokens": "the same files with the longest variant of every stance dimension",
+    "note": "`harness lint` counts a narrower set against its caps: instructions, rules and the longest stance variant, with no output style and no listings"
+  },
   "always_loaded": {
     "files": 21,
     "lines": 343,

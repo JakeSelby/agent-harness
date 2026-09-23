@@ -6,7 +6,7 @@
   "hero": {
     "title": "Find out which of your agent rules actually fire.",
     "subtitle": "Agent Harness is an open-source layer over the Claude Code and Codex you already run. It holds your rules, skills, roles and workflows in one place, requires every rule to name a detector over the transcript or say why it cannot have one, then tells you how often each one actually fired.",
-    "proof": "MIT licensed. Nineteen detectors ship today, lint fails a rule that has neither a detector nor a written reason, and harness uninstall puts everything back."
+    "proof": "MIT licensed. Seventeen detectors ship today, lint fails a rule that has neither a detector nor a written reason, and harness uninstall puts everything back."
   },
   "capabilities": [
     {
@@ -31,7 +31,7 @@
         },
         {
           "name": "What is detected",
-          "line": "Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
+          "line": "Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
           "doc": "claude/hooks/rule-detectors.py"
         },
         {

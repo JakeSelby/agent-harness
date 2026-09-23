@@ -2230,7 +2230,9 @@ def context_summary(root: Path) -> str:
     lines = sum(g[1] for g in groups)
     tokens = est_tokens(sum(g[2] for g in groups))
     return (f"context: always-loaded is ~{tokens} tokens of {ALWAYS_LOADED_TOKEN_CAP} "
-            f"and {lines} lines of {ALWAYS_LOADED_CAP}")
+            f"and {lines} lines of {ALWAYS_LOADED_CAP} "
+            f"(instructions, rules and the longest variant of every stance; "
+            f"benchmarks/static.json counts a wider set)")
 
 
 def check_context_cap(root: Path) -> List[str]:
