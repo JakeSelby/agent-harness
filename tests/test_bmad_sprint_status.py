@@ -111,7 +111,7 @@ class RenderingTests(SprintRoot):
         self.assertTrue(text.startswith("# Derived from _bmad-output/issue-map.json"))
         self.assertIn("# regenerate with: python3 scripts/bmad_issue_sync.py sprint-status\n", text)
         self.assertIn(
-            "\ngenerated: 2026-09-02\nproject: agent-harness\nproject_key: AH\n"
+            "\ngenerated: \"2026-09-02\"\nproject: agent-harness\nproject_key: AH\n"
             "tracking_system: github-issues\n"
             'story_location: "_bmad-output/implementation-artifacts"\n\ndevelopment_status:\n',
             text,
@@ -167,14 +167,17 @@ class DerivationTests(SprintRoot):
         self.assertEqual(found["ah-sp006-a-spike-numbered-6"], "backlog")
 
     def test_epic_states(self):
-        cases = {
-            "done": (("completed", "legacy"), ("completed", "legacy")),
-            "in-progress": (("completed", "legacy"), ("active", "skeleton")),
-            "backlog": (("active", "skeleton"), ("active", "legacy")),
-        }
-        for expected, children in cases.items():
-            with self.subTest(expected=expected):
-                epic = item_for("epic", 1)
+        # (epic lifecycle, children as (lifecycle, story shape), expected epic status)
+        cases = [
+            ("completed", (("completed", "legacy"), ("completed", "legacy")), "done"),
+            ("active", (("completed", "legacy"), ("completed", "legacy")), "in-progress"),
+            ("completed", (("active", "skeleton"),), "done"),
+            ("active", (("completed", "legacy"), ("active", "skeleton")), "in-progress"),
+            ("active", (("active", "skeleton"), ("active", "legacy")), "backlog"),
+        ]
+        for epic_lifecycle, children, expected in cases:
+            with self.subTest(epic=epic_lifecycle, children=children):
+                epic = item_for("epic", 1, lifecycle=epic_lifecycle)
                 items = [epic]
                 for offset, (lifecycle, shape) in enumerate(children):
                     items.append(item_for("story", 2 + offset, parent=epic, lifecycle=lifecycle))
@@ -182,6 +185,75 @@ class DerivationTests(SprintRoot):
                     legacy(item) if shape == "legacy" else skeleton(item) for item in items[1:]
                 ]
                 self.assertEqual(self.render(items, texts)["ah-e001-a-epic-numbered-1"], expected)
+
+    def test_an_open_epic_whose_children_are_all_done_is_in_progress(self):
+        epic = item_for("epic", 1)
+        child = item_for("story", 2, parent=epic, lifecycle="completed")
+        found = self.render([epic, child], [legacy(epic), legacy(child)])
+        self.assertEqual(found["ah-e001-a-epic-numbered-1"], "in-progress")
+
+    def test_a_completed_epic_with_an_open_child_is_done(self):
+        epic = item_for("epic", 1, lifecycle="completed")
+        child = item_for("story", 2, parent=epic)
+        found = self.render([epic, child], [legacy(epic), skeleton(child)])
+        self.assertEqual(found["ah-e001-a-epic-numbered-1"], "done")
+        self.assertEqual(found["ah-s002-a-story-numbered-2"], "backlog")
+
+    def test_an_epic_decided_only_by_a_child_epic(self):
+        cases = [
+            ("completed", None, "in-progress"),
+            ("active", "filled", "in-progress"),
+            ("active", "skeleton", "backlog"),
+        ]
+        for sub_lifecycle, story_shape, expected in cases:
+            with self.subTest(sub_epic=sub_lifecycle, story=story_shape):
+                epic = item_for("epic", 1)
+                sub_epic = item_for("epic", 2, parent=epic, lifecycle=sub_lifecycle)
+                items = [epic, sub_epic]
+                texts = [legacy(epic), legacy(sub_epic)]
+                if story_shape:
+                    story = item_for("story", 3, parent=sub_epic)
+                    items.append(story)
+                    texts.append(filled(story) if story_shape == "filled" else skeleton(story))
+                self.assertEqual(self.render(items, texts)["ah-e001-a-epic-numbered-1"], expected)
+
+    def test_a_parent_cycle_terminates_and_lands_in_the_no_epic_block(self):
+        first = item_for("story", 1)
+        second = item_for("story", 2, parent=first)
+        first.update(parent_bmad_id=second["bmad_id"], parent_github_number=2)
+        epic_a = item_for("epic", 3)
+        epic_b = item_for("epic", 4, parent=epic_a)
+        epic_a.update(parent_bmad_id=epic_b["bmad_id"], parent_github_number=4)
+        items = [first, second, epic_a, epic_b]
+        for item in items:
+            self.write(item, legacy(item))
+        text = sync.render_sprint_status(manifest_for(items))
+        found = statuses(text)
+        self.assertEqual(found["ah-e003-a-epic-numbered-3"], "backlog")
+        self.assertEqual(found["ah-e004-a-epic-numbered-4"], "backlog")
+        self.assertIn(
+            "  # Items with no epic\n  ah-s001-a-story-numbered-1: backlog\n  ah-s002-a-story-numbered-2: backlog\n",
+            text,
+        )
+
+    def test_a_parent_missing_from_the_map_lands_in_the_no_epic_block(self):
+        orphan = item_for("story", 1)
+        orphan.update(parent_bmad_id="AH-E099", parent_github_number=99)
+        self.write(orphan, legacy(orphan))
+        text = sync.render_sprint_status(manifest_for([orphan]))
+        self.assertTrue(text.endswith("  # Items with no epic\n  ah-s001-a-story-numbered-1: backlog\n"))
+
+    def test_a_non_ascii_title_keys_by_id_and_every_key_is_unique(self):
+        items = [item_for("story", 1, "日本語のタイトル"), item_for("story", 2, "日本語のタイトル")]
+        items += [item_for("story", number, "Same title") for number in range(3, 6)]
+        items += [item_for("story", 6, "word " * 30), item_for("story", 7, "word " * 30)]
+        self.assertEqual(sync.sprint_key(items[0]), "ah-s001")
+        for item in items:
+            self.write(item, legacy(item))
+        text = sync.render_sprint_status(manifest_for(items))
+        keys = re.findall(r"(?m)^  ([a-z0-9-]+):", text)
+        self.assertEqual(len(keys), len(items))
+        self.assertEqual(len(set(keys)), len(keys))
 
     def test_a_ready_child_makes_its_epic_in_progress(self):
         epic = item_for("epic", 1)
@@ -235,9 +307,9 @@ class StabilityAndDriftTests(SprintRoot):
         self.assertEqual(sync.render_sprint_status(self.manifest).encode("utf-8"), first)
 
     def test_generated_is_the_newest_recorded_date_not_the_clock(self):
-        self.assertIn("\ngenerated: 2026-09-05\n", sync.render_sprint_status(self.manifest))
+        self.assertIn('\ngenerated: "2026-09-05"\n', sync.render_sprint_status(self.manifest))
         self.manifest["generated_at"] = "2026-09-09"
-        self.assertIn("\ngenerated: 2026-09-09\n", sync.render_sprint_status(self.manifest))
+        self.assertIn('\ngenerated: "2026-09-09"\n', sync.render_sprint_status(self.manifest))
 
     def run_cli(self, *args):
         with mock.patch.object(sync, "load_manifest", return_value=self.manifest), redirect_stdout(io.StringIO()) as out:
@@ -265,6 +337,37 @@ class StabilityAndDriftTests(SprintRoot):
         path = self.status_file()
         path.write_text(path.read_text(encoding="utf-8").replace(": backlog", ": done"), encoding="utf-8")
         self.assertEqual(len(sync.sprint_status_findings(self.manifest)), 1)
+
+    def test_generated_ignores_malformed_dates(self):
+        other = item_for("story", 2)
+        third = item_for("story", 3)
+        self.manifest = manifest_for([self.story, other, third])
+        self.write(self.story, skeleton(self.story, "2026-09-03"))
+        self.write(other, skeleton(other, "9999-99-99T00:00"))
+        self.write(third, skeleton(third, "unknown").replace('updated: "unknown"', "updated: 20260910"))
+        self.assertIn('\ngenerated: "2026-09-03"\n', sync.render_sprint_status(self.manifest))
+        self.manifest["generated_at"] = "not a date"
+        self.assertIn('\ngenerated: "2026-09-03"\n', sync.render_sprint_status(self.manifest))
+
+    def test_a_crlf_copy_of_a_correct_file_is_not_drift(self):
+        rendered = sync.render_sprint_status(self.manifest)
+        self.status_file().write_bytes(rendered.replace("\n", "\r\n").encode("utf-8"))
+        self.assertEqual(sync.sprint_status_findings(self.manifest), [])
+        self.assertFalse(sync.write_sprint_status(self.manifest))
+        self.assertIn(b"\r\n", self.status_file().read_bytes())
+
+    def test_an_unreadable_file_is_a_finding_not_a_traceback(self):
+        self.status_file().write_bytes(b"\xff\xfe\x00not utf-8")
+        code, out = self.run_cli("audit")
+        self.assertEqual(code, 1)
+        self.assertIn("sprint-status.yaml cannot be read (UnicodeDecodeError)", out)
+        self.assertTrue(sync.write_sprint_status(self.manifest))
+        self.assertEqual(sync.sprint_status_findings(self.manifest), [])
+        self.status_file().unlink()
+        self.status_file().mkdir()
+        code, out = self.run_cli("audit")
+        self.assertEqual(code, 1)
+        self.assertIn("sprint-status.yaml cannot be read", out)
 
     def test_delivery_audit_ignores_the_file(self):
         self.write(self.story, filled(self.story))
@@ -319,6 +422,18 @@ class RegenerationTests(SprintRoot):
         text = self.rendered()
         self.assertIn("  # Items with no epic\n  ah-b001-a-defect: backlog\n  ah-s001-a-story: backlog\n", text)
         self.assertEqual(sync.sprint_status_findings(sync.load_manifest()), [])
+
+    def test_upgrade_check_and_a_refused_upgrade_leave_it_untouched(self):
+        path = self.root / self.story["artifact_path"]
+        path.write_text(sync.render_legacy_stub(self.story), encoding="utf-8")
+        self.status_file().write_bytes(b"stale\n")
+        report = sync.upgrade(self.manifest, ["AH-S001"], check=True)
+        self.assertEqual(report[0][1], "convert")
+        self.assertEqual(self.status_file().read_bytes(), b"stale\n")
+        path.write_text(sync.render_legacy_stub(self.story).replace("# AH-S001", "# Edited AH-S001"), encoding="utf-8")
+        report = sync.upgrade(self.manifest, ["AH-S001"])
+        self.assertEqual(report[0][1], "refuse")
+        self.assertEqual(self.status_file().read_bytes(), b"stale\n")
 
     def test_upgrade_regenerates_it(self):
         path = self.root / self.story["artifact_path"]

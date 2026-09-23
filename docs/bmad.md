@@ -149,12 +149,14 @@ python3 scripts/bmad_issue_sync.py sprint-status --check
 ```
 
 Each epic is listed by BMad ID, followed by the items whose nearest epic ancestor it is, in BMad ID
-order; items under no epic close the file. A key is the lower-case ID and a slug of the title. A
-completed item is `done`; an active item whose story is typed and passes the depth check is
-`ready-for-dev`; any other active item is `backlog`. An epic, counting its child epics, is `done`
-when every child is done, `in-progress` when any is done or ready, and otherwise `backlog`; an
-epic with no children follows its own state. `generated` is the newest date the map or a story
-records, not the clock, so an unchanged corpus renders byte for byte the same.
+order; items under no epic close the file. A key is the lower-case ID and a slug of the title.
+Status follows the lifecycle the map records, not GitHub directly; `refresh` is what copies
+GitHub's open or closed state into the map. An item the map records as completed is `done`; an
+active item whose story is typed and passes the depth check is `ready-for-dev`; any other active
+item is `backlog`. Epics follow the same rule for `done`; an open epic is `in-progress` when any
+child, child epics included, is done, ready or in progress, and otherwise `backlog`. `generated`
+is the newest `YYYY-MM-DD` date the map or a story records, not the clock, so an unchanged corpus
+renders byte for byte the same. The comparison ignores CRLF line endings.
 
 `new`, `reserve`, `refresh`, `bootstrap` and `upgrade` regenerate the file whenever they write,
 and `audit` fails while it differs from a fresh render. Filling a story can move it to

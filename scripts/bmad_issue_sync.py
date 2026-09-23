@@ -1366,6 +1366,7 @@ def collision_report(kind, sequence, used, claimed, unreadable):
 SPRINT_STATUS_RELATIVE_PATH = "_bmad-output/implementation-artifacts/sprint-status.yaml"
 SPRINT_STATUS_COMMAND = "python3 scripts/bmad_issue_sync.py sprint-status"
 SLUG_LENGTH = 48
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def sprint_key(item):
@@ -1385,7 +1386,7 @@ def story_state(item):
     except (OSError, UnicodeDecodeError):
         return False, None
     updated = frontmatter_value(text, "updated")
-    updated = updated if isinstance(updated, str) else None
+    updated = updated if isinstance(updated, str) and ISO_DATE.match(updated) else None
     try:
         typed = artifact_layout(item, text) is not None
     except RuntimeError:
@@ -1402,7 +1403,8 @@ def render_sprint_status(manifest):
     items = sorted(manifest["items"], key=lambda value: value["bmad_id"])
     by_id = {item["bmad_id"]: item for item in items}
     status = {}
-    dates = [manifest["generated_at"]] if isinstance(manifest.get("generated_at"), str) else []
+    generated_at = manifest.get("generated_at")
+    dates = [generated_at] if isinstance(generated_at, str) and ISO_DATE.match(generated_at) else []
     for item in items:
         ready, updated = story_state(item)
         if updated:
@@ -1434,14 +1436,14 @@ def render_sprint_status(manifest):
             members[epic_of(item)].append(item)
 
     def epic_status(bmad_id, visiting):
+        # Done follows the epic's own lifecycle, like every other item; children only decide
+        # between in-progress and backlog while it is open.
+        if by_id[bmad_id]["lifecycle"] == "completed":
+            return "done"
         children = [status[item["bmad_id"]] for item in members[bmad_id]]
         for child in sub_epics[bmad_id]:
             if child not in visiting:
                 children.append(epic_status(child, visiting | {child}))
-        if not children:
-            return "done" if by_id[bmad_id]["lifecycle"] == "completed" else "backlog"
-        if all(value == "done" for value in children):
-            return "done"
         if any(value in {"done", "ready-for-dev", "in-progress"} for value in children):
             return "in-progress"
         return "backlog"
@@ -1449,11 +1451,12 @@ def render_sprint_status(manifest):
     lines = [
         "# Derived from _bmad-output/issue-map.json and the story files. Do not edit by hand;",
         "# regenerate with: {}".format(SPRINT_STATUS_COMMAND),
-        "# done: the issue is closed. ready-for-dev: open, with a typed story that passes the depth",
-        "# check. backlog: any other open item. An epic is done when every child is done, and",
-        "# in-progress when any child is done or ready.",
+        "# Status follows the map's lifecycle, which `refresh` copies from GitHub. done: the map",
+        "# records the issue as closed. ready-for-dev: open, with a typed story that passes the",
+        "# depth check. backlog: any other open item. An open epic is in-progress when any child",
+        "# is done, ready or in progress, and backlog otherwise.",
         "",
-        "generated: {}".format(max(dates) if dates else "unknown"),
+        'generated: "{}"'.format(max(dates) if dates else "unknown"),
         "project: {}".format(manifest["repository"].rsplit("/", 1)[-1]),
         "project_key: AH",
         "tracking_system: github-issues",
@@ -1480,26 +1483,40 @@ def render_sprint_status(manifest):
     return "\n".join(lines) + "\n"
 
 
+def current_sprint_status():
+    """The committed file in LF, so a checkout with core.autocrlf compares like any other.
+
+    Raises FileNotFoundError when it is absent, and OSError or UnicodeDecodeError when it cannot
+    be read as text.
+    """
+    return read_exact(ROOT / SPRINT_STATUS_RELATIVE_PATH).replace("\r\n", "\n")
+
+
 def write_sprint_status(manifest):
     """Write the derived file when its render changed; returns whether it wrote."""
     path = ROOT / SPRINT_STATUS_RELATIVE_PATH
     rendered = render_sprint_status(manifest)
     try:
-        if read_exact(path) == rendered:
+        if current_sprint_status() == rendered:
             return False
     except FileNotFoundError:
         path.parent.mkdir(parents=True, exist_ok=True)
+    except UnicodeDecodeError:
+        pass
     write_text_atomic(path, rendered)
     return True
 
 
 def sprint_status_findings(manifest):
-    """One finding when the committed file is missing or differs from a fresh render."""
-    path = ROOT / SPRINT_STATUS_RELATIVE_PATH
+    """One finding when the committed file is missing, unreadable or differs from a fresh render."""
     try:
-        current = read_exact(path)
+        current = current_sprint_status()
     except FileNotFoundError:
         return ["{} is missing; run {}".format(SPRINT_STATUS_RELATIVE_PATH, SPRINT_STATUS_COMMAND)]
+    except (OSError, UnicodeDecodeError) as error:
+        return ["{} cannot be read ({}); remove it and run {}".format(
+            SPRINT_STATUS_RELATIVE_PATH, type(error).__name__, SPRINT_STATUS_COMMAND
+        )]
     if current != render_sprint_status(manifest):
         return ["{} differs from the issue map and story files; run {}".format(
             SPRINT_STATUS_RELATIVE_PATH, SPRINT_STATUS_COMMAND
