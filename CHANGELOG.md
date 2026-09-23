@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Every replay-benchmark row records `cache_miss_ratio` beside its cache-normalised cost: the
+  share of the run's prefix the provider re-wrote rather than served, summed over the run's turns
+  and computed by the same module `harness usage --by prefix` uses, so the two figures cannot
+  drift apart. `benchmarks/history.jsonl` and `history.md` carry each arm's mean of it, so a
+  candidate that buys fewer tokens by re-writing its prefix more often is visible in the history
+  rather than hidden inside the dollars. A run whose CLI output carries no per-turn cache figures
+  is `null`, never zero, since zero is a run that held its whole prefix (#497).
+
 ### Fixed
 
 - A model id the price table does not list is unpriced, where an unlisted variant of a listed

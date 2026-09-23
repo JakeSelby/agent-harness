@@ -66,6 +66,15 @@ python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 a
   plan sign-in. Run order changes it, because a later run finds its prefix already cached, so each
   row also carries a cache-normalised cost that reprices every thread's first-turn cache reads as
   cache writes. It is empty when the CLI output does not carry per-turn usage.
+- **Beside it, `cache_miss_ratio`: how much of its prefix the run re-bought.** The figure
+  `harness usage --by prefix` reports for a session, `cache_write / (cache_read + cache_write)`
+  summed over the run's turns, computed by the same module so the two cannot drift. A candidate
+  that buys fewer tokens by re-writing its prefix more often is otherwise invisible in the
+  history, so `history.jsonl` and `history.md` carry each arm's mean of it beside the
+  cache-normalised ratio. Unlike the session figure it subtracts nothing for subagents: a fan-out
+  writes a fresh prefix, and in a replay that is part of what the run cost. A run whose output
+  carries no per-turn cache figures, or whose turns report neither reads nor writes, is `null` and
+  is left out of the arm's mean. Never zero: zero is a run that served its whole prefix.
 - **An errored run is an error, never a failure.** It sits outside both cost per passed task and
   the pass count, and is counted beside them. The per-run cap is soft, so the runner also stops
   before any launch that could take reported spend past `--spend-cap`.
