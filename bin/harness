@@ -4991,7 +4991,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = sub.add_parser("task", help="save or inspect a shared task continuation contract")
     p.add_argument("action", choices=["save", "show"])
     p.add_argument("path", nargs="?")
-    p.add_argument("--input", help="JSON task contract; never executed")
+    p.add_argument("--input", metavar="FILE", help="path to a JSON task contract; never executed")
     p.add_argument("--runtime", choices=["claude-code", "codex"], default=os.environ.get("HARNESS_RUNTIME", "codex"))
     p.add_argument("--revision", type=int, default=0, help="expected current revision; rejects stale writers")
     p.set_defaults(func=cmd_task)
