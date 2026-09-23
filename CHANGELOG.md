@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A session that was already running when `harness sync` installed the band workers starts
+  routing unnamed spawns as soon as it can resolve them, instead of waiting for a new session.
+  Claude Code announces a reload to the session it happened in, as an `agent_listing_delta`
+  attachment on the transcript, so the spawn hook reads that over a bounded tail, keeps what it
+  found in the session record so routing survives the delta scrolling out of that read, and routes
+  to a worker the session's start-time record predates when a later delta names it. The record
+  stays the floor: an absent or unreadable transcript, a listing never seen in either place, and a
+  session that reloaded nothing all route exactly as they did before, so a reroute still never
+  turns a spawn that would have worked into one that fails. The pricing hook reads the same
+  answer, and `docs/spikes/2026-09-22-registry-reload.md` records the eight sessions this was
+  measured in, including the headless ones that never reload (#263).
 - `scripts/smoke_tier.py` runs the repository's deterministic pre-qualification checks as one
   command that spends no model turn: the acceptance runner's self-tests against recorded
   transcripts under `tests/fixtures/transcripts/`, the documentation-link check, the
