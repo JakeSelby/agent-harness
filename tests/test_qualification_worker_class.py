@@ -247,6 +247,7 @@ class OrderTests(unittest.TestCase):
         order = []
         with patch.object(MODULE, "routing",
                           side_effect=lambda *a, **k: order.append("routing") or FAKE_ROUTING), \
+                patch("platform.system", return_value="Darwin"), \
                 patch.object(MODULE, "record",
                              side_effect=lambda *a, **k: order.append("record") or {
                                  "cases": {"cost-posture": "passed"}}):
@@ -268,6 +269,7 @@ class OrderTests(unittest.TestCase):
                                   CLAUDE: FAKE_ROUTING}), \
                     patch.object(ROUND, "smoke",
                                  side_effect=lambda *a, **k: order.append("smoke") or done), \
+                    patch("platform.system", return_value="Darwin"), \
                     patch.object(ROUND.subprocess, "run",
                                  side_effect=lambda *a, **k: order.append("target") or done):
                 with redirect_stdout(io.StringIO()):
