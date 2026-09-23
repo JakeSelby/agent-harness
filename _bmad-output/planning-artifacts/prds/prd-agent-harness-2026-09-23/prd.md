@@ -206,7 +206,7 @@ Three commitments make this credible:
   - **Path:**
     1. The milestone empties, and Jordan freezes the candidate on a release branch.
     2. Jordan runs the model-free smoke tier, then one native qualification round per required target.
-    3. Jordan works the seven release surfaces in order.
+    3. Jordan works the five release surfaces in order.
   - **Climax:** the tag, compatibility catalog, changelog, `stable` branch and GitHub About all name the
     same revision and status.
   - **Edge case:** a change under one runtime's adapter directory invalidates only that runtime's targets.
@@ -296,14 +296,12 @@ Three commitments make this credible:
 - **Evidence record:** the stored result of a qualification case, pinned to a commit.
 - **Source paths:** the runtime source directories whose change invalidates qualification evidence:
   `VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates` and `config.example.json`.
-- **Release surface:** one of the seven places a release must reach:
+- **Release surface:** one of the five places a release must reach:
   1. source and evidence;
   2. release metadata;
   3. tag and GitHub release;
-  4. reference site;
-  5. maintainer site card;
-  6. GitHub About;
-  7. development resumes.
+  4. GitHub About;
+  5. development resumes.
 - **Always-loaded context:** the instruction text a runtime loads into every session. Its size is the
   **standing prefix**. The **static estimate** is counted from files. The **live prefix** is measured
   from paired transcripts.
@@ -993,8 +991,7 @@ compatibility status says so. **Status:** partial:
 **Consequences (testable):**
 - `scripts/release_preflight.py` fails when the compatibility catalog, its evidence and `VERSION`
   disagree, when the checkout is dirty, or when projections have drifted. It also fails when GitHub About
-  differs from `product.json` (if `gh` is authenticated), or when a reference deployment's pin differs
-  from the tag (with `--reference-repo`).
+  differs from `product.json` (if `gh` is authenticated).
 - A minor release marks at least `claude-code-cli-macos` as required for release.
 - Codex targets stay non-required until one scripted round passes with `--home-confirmed` and agrees with
   a hand-driven round on every case outcome.
@@ -1027,7 +1024,7 @@ case runs. Per-case evidence must be recorded as it completes. **Status:**
 - Each case's evidence is written when the case completes, and a resumed round skips completed cases.
 
 #### FR-53: Release surfaces
-A release must work its seven release surfaces in order, and report each as done, skipped or unverified.
+A release must work its five release surfaces in order, and report each as done, skipped or unverified.
 Releases are cut by milestone, and a regression fix releases at once as a patch. **Status:** implemented
 (0.11). **Scope:** repository process.
 

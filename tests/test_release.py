@@ -3,6 +3,7 @@ import importlib.util
 import json
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,12 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(module, "git", return_value=""), patch.object(module.compatibility, "release_errors", return_value=["fixture is unqualified"]):
             errors = module.check(REPO)
         self.assertTrue(any("unqualified" in error for error in errors))
+
+    def test_preflight_takes_no_downstream_site_checkout(self):
+        result = subprocess.run([sys.executable, str(REPO / "scripts" / "release_preflight.py"),
+                                 "--reference-repo", str(REPO)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2, msg=result.stderr)
+        self.assertIn("unrecognized arguments: --reference-repo", result.stderr)
 
     def test_release_notes_use_current_product_and_support_data(self):
         text = load("release_notes").notes()

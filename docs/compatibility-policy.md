@@ -87,7 +87,7 @@ Tags and published artifacts are immutable. If publication fails after a tag exi
 surfaces completed, stop, fix the cause and publish a new version under this policy. Do not retarget,
 delete and recreate, or silently replace a tag or asset.
 
-The release transaction publishes in order: verified source tag and artifact, reference-site pin,
-then project-site metadata. Mutable sites roll back to their prior immutable pins. A corrective
-release repeats the affected qualification, lifecycle and audit gates; the prior release remains a
-historical record. Release notes always link this policy and state migration actions.
+The release transaction publishes in order: verified source tag and artifact, then repository
+metadata. Repository metadata rolls back by re-applying the previous release's `product.json`. A
+corrective release repeats the affected qualification, lifecycle and audit gates; the prior release
+remains a historical record. Release notes always link this policy and state migration actions.
