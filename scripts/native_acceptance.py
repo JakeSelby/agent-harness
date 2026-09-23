@@ -1272,6 +1272,38 @@ GATHER_LINE = "orange marmalade is the first line"
 ARTIFACT_REFUSAL = "--artifact must be a Markdown filename, not a path"
 
 
+def last_json_object(text):
+    """The last top-level JSON object in `text`, or None when it holds none.
+
+    `harness role run` prints the worker's record as an indented JSON document, and a client may
+    write lines around it, so the record is found by decoding rather than by matching its keys
+    as text: `"status": "completed"` is JSON, and no `status: completed` ever appears in it.
+    """
+    decoder = json.JSONDecoder()
+    found, index = None, text.find("{")
+    while index != -1:
+        try:
+            value, end = decoder.raw_decode(text, index)
+        except ValueError:
+            index = text.find("{", index + 1)
+            continue
+        if isinstance(value, dict):
+            found = value
+        index = text.find("{", end)
+    return found
+
+
+def worker_result(record):
+    """What an isolated worker returned: the file its record's `result_path` names, or ``""``.
+
+    The printed record carries the path to the result, not the result itself.
+    """
+    try:
+        return Path(str(record.get("result_path") or "")).read_text(errors="replace")
+    except (OSError, ValueError):
+        return ""
+
+
 def role_run(home, name, brief, *extra, **kwargs):
     # `harness role run` requires `--runtime`, and the worker runs on the client under test.
     return home.harness("role", "run", name, "--runtime", home.runtime,
@@ -1307,13 +1339,28 @@ def case_role_confinement(home):
     (home.project / "notes.txt").write_text(GATHER_LINE + "\n")
     brief = home.root / "gatherer-brief.md"
     brief.write_text(GATHER_BRIEF)
-    gathered = role_run(home, "gatherer", brief)
-    if "status: completed" not in gathered or "isolated-cli" not in gathered:
-        raise Unverified(observed(notes, "harness role run gatherer did not complete as an "
-                                  "isolated-cli worker: " + redact(gathered[-300:])))
-    if GATHER_LINE not in gathered:
+    gathered = role_run(home, "gatherer", brief, expected=None)
+    code = home.last_code
+    record = last_json_object(gathered)
+    if record is None:
+        raise Unverified(observed(notes, "harness role run gatherer printed no worker record to "
+                                  "read: " + redact(gathered[-300:], [home.root])))
+    if record.get("mode") != "isolated-cli":
+        raise AssertionError(observed(notes, "harness role run gatherer ran in mode %r, not "
+                                      "isolated-cli" % record.get("mode")))
+    if record.get("status") != "completed":
+        raise Unverified(observed(notes, "harness role run gatherer ended with status %r, so "
+                                  "no completed isolated-cli worker was observed: %s"
+                                  % (record.get("status"),
+                                     redact(record.get("error") or "", [home.root]))))
+    if code != 0:
+        raise AssertionError(observed(notes, "harness role run gatherer reported status completed "
+                                      "but exited %s" % code))
+    result = worker_result(record)
+    if GATHER_LINE not in result:
         raise AssertionError(observed(notes, "the isolated gatherer did not return the workspace "
-                                      "line it was asked for: " + redact(gathered[-200:])))
+                                      "line it was asked for: "
+                                      + redact(result[-200:], [home.root])))
     escape = role_run(home, "planner", brief, "--artifact", "../escape.md", expected=1)
     if ARTIFACT_REFUSAL not in escape:
         raise AssertionError(observed(notes, "a planner artifact above the workspace was not "
@@ -1321,8 +1368,9 @@ def case_role_confinement(home):
     if (home.project.parent / "escape.md").exists():
         raise AssertionError(observed(notes, "the refused artifact path still wrote a file above "
                                       "the workspace"))
-    notes.append("harness role run gatherer exited 0 with status: completed, mode: isolated-cli and "
-                 "returned the workspace line it was asked for, and a planner --artifact above the "
+    notes.append("harness role run gatherer exited 0 printing a worker record with mode "
+                 "isolated-cli and status completed, and the result its result_path names held "
+                 "the workspace line it was asked for, and a planner --artifact above the "
                  "workspace exited 1 with \"%s\" writing no file" % ARTIFACT_REFUSAL)
     if gap:
         raise Unverified("; ".join(notes))
@@ -1392,6 +1440,51 @@ def logged_refusals(home, session_id):
     return rows
 
 
+SPAWN_TOOLS = ("Agent", "Task")  # the client's spawn tool, under its current and former name
+
+
+def agent_calls(home, session_id):
+    """Every spawn the orchestrator attempted, with what came back: `(calls, readable)`.
+
+    Read from the session's own transcript, which records the model's `tool_use` whether or not
+    a hook later refuses it. The decision log cannot answer this: it holds a row for an Agent call
+    only when a hook judged it — a framework deny, a band reroute, a capped brief — so a spawn
+    that none of them touched leaves no row at all. Each call is `{"id", "input", "result",
+    "is_error"}`, `result` being its tool result's text or None when the transcript holds none.
+    `readable` is False when the client wrote no transcript this runner can read, which says
+    nothing about whether a spawn was attempted.
+    """
+    path = home.transcript_path(session_id) if session_id else None
+    if path is None:
+        return [], False
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return [], False
+    calls, results = [], {}
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        message = record.get("message") if isinstance(record, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") in SPAWN_TOOLS:
+                calls.append({"id": block.get("id"), "input": block.get("input") or {}})
+            elif block.get("type") == "tool_result":
+                body = block.get("content")
+                if isinstance(body, list):
+                    body = " ".join(str(item.get("text", "")) for item in body
+                                    if isinstance(item, dict))
+                results[block.get("tool_use_id")] = (str(body or ""), bool(block.get("is_error")))
+    for call in calls:
+        call["result"], call["is_error"] = results.get(call["id"], (None, False))
+    return calls, True
+
+
 def framework_brief(spawn, corroboration):
     """A brief carrying enough of a declared spawn's own sentences to be recognised."""
     phrases = list(spawn.get("phrases") or [])[:max(2, corroboration)]
@@ -1400,6 +1493,42 @@ def framework_brief(spawn, corroboration):
                          "asks for as corroboration" % (spawn["id"], len(phrases), corroboration))
     return ("Use your Agent tool exactly once with no subagent_type and this prompt: "
             + " ".join(phrases) + " Then report in one line what happened.")
+
+
+def spawn_not_refused(home, session_id, spawn_id):
+    """Raise what a framework spawn with no refusal observed means. Never returns.
+
+    Called when the spawn wrote no subagent transcript and neither the decision log nor the
+    client showed the confinement deny, which leaves three different stories that must not read
+    as one: the model attempted the spawn and it ran, which is a failure; the model attempted it
+    and something other than the confinement refused it; and the model never attempted it at all,
+    which observes nothing about the guard.
+    """
+    calls, readable = agent_calls(home, session_id)
+    if not readable:
+        raise Unverified("the unnamed framework spawn wrote no subagent transcript, the harness "
+                         "decision log held no %s deny for its session, the constrained-role "
+                         "refusal was not in what the client reported, and the client wrote no "
+                         "transcript to show whether a spawn was attempted, so the classification "
+                         "itself was not observed" % FRAMEWORK_POINT)
+    if not calls:
+        raise Unverified("the model never attempted the spawn: its transcript holds no Agent tool "
+                         "call, so no spawn carrying the descriptor's own %s sentences reached the "
+                         "harness and its classification was not observed" % spawn_id)
+    allowed = [call for call in calls if call["result"] is not None and not call["is_error"]]
+    if allowed:
+        raise AssertionError("an unnamed spawn carrying the descriptor's own %s sentences was "
+                             "attempted %s time(s) and allowed: its tool result came back without "
+                             "an error and the harness logged no %s deny for the session"
+                             % (spawn_id, len(allowed), FRAMEWORK_POINT))
+    answered = [call for call in calls if call["result"] is not None]
+    raise Unverified("the model attempted the spawn %s time(s) and none ran, but no %s deny was "
+                     "logged for its session and %s, so what refused it was not the confinement "
+                     "this case observes%s"
+                     % (len(calls), FRAMEWORK_POINT,
+                        "its tool result was an error without the constrained-role refusal"
+                        if answered else "the transcript holds no tool result for it",
+                        (": " + redact(answered[-1]["result"][-200:])) if answered else ""))
 
 
 def case_spawn_confinement(home):
@@ -1426,10 +1555,7 @@ def case_spawn_confinement(home):
     logged = logged_refusals(home, refused["session_id"])
     reported = CONFINEMENT_DENY in text
     if not logged and not reported:
-        raise Unverified("the unnamed framework spawn wrote no subagent transcript, but neither the "
-                         "harness decision log held a %s deny for its session nor was the "
-                         "constrained-role refusal in what the client reported, so the "
-                         "classification itself was not observed" % FRAMEWORK_POINT)
+        spawn_not_refused(home, refused["session_id"], spawn["id"])
     notes = ["an Agent spawn naming no subagent_type, carrying only the descriptor's own %s "
              "sentences, wrote 0 subagent transcripts" % spawn["id"]]
     if logged:
@@ -1449,6 +1575,11 @@ def case_spawn_confinement(home):
                      "its wording was not observed in this run")
     ordinary = home.session(SPAWN_PROMPT)
     if not home.subagents(ordinary["session_id"]):
+        tried, readable = agent_calls(home, ordinary["session_id"])
+        if readable and not tried:
+            raise Unverified(observed(notes, "the false-positive check was not observed: the model "
+                                      "never attempted the ordinary spawn, so no Agent call "
+                                      "reached the guard"))
         raise AssertionError(observed(notes, "the false-positive check failed: an ordinary unnamed "
                                       "spawn carrying none of the descriptor's sentences wrote no "
                                       "subagent transcript either, so the guard refuses everything"))
@@ -1599,6 +1730,10 @@ CLAUDE_MARKER = "CLAUDE-WAS-HERE"
 HANDOFF_PROMPT = ("Read .agent-harness/task.json in this directory. Carry out its first next step "
                   "exactly, then reply with one line: OBJECTIVE=<its objective> "
                   "STATUS=<its verification status>.")
+# The return leg asks for the writing runtime by name: a reader that is not asked need not say it.
+RETURN_PROMPT = ("Read .agent-harness/task.json in this directory and change no file. Reply with "
+                 "one line: OBJECTIVE=<its objective> RUNTIME=<its runtime field, the runtime that "
+                 "wrote it>.")
 STALE_SAVE = "task revision changed since --revision 1"
 
 
@@ -1618,6 +1753,18 @@ def task_revision(repo):
     """
     try:
         return json.loads((repo / ".agent-harness" / "task.json").read_text()).get("revision")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def task_runtime(repo):
+    """The runtime the task record says wrote it, or ``None`` when there is no readable record.
+
+    `tasks.save` stamps the `--runtime` of the save into the record, so this is the return leg's
+    deterministic reading; a reading session's answer is the model's, and only corroborates it.
+    """
+    try:
+        return json.loads((repo / ".agent-harness" / "task.json").read_text()).get("runtime")
     except (OSError, ValueError, AttributeError):
         return None
 
@@ -1675,15 +1822,21 @@ def case_bidirectional_handoff(home):
         raise Unverified(observed(notes, "a --runtime %s save against revision 1 did not produce "
                                   "revision 2, so there was no cross-runtime record to read back"
                                   % other))
-    back = home.answer(home.session(HANDOFF_PROMPT, tools=("Bash", "Read")))
-    if other not in back:
+    writer = task_runtime(repo)
+    if writer != other:
+        raise AssertionError(observed(notes, "a --runtime %s save produced revision 2 but the "
+                                      "record names %r as its writing runtime" % (other, writer)))
+    back = home.answer(home.session(RETURN_PROMPT, tools=("Bash", "Read")))
+    if TASK_OBJECTIVE not in back:
         raise Unverified(observed(notes, "a %s-written record was saved at revision 2 but the "
-                                  "reading session did not name the writing runtime, so the "
-                                  "return leg was not observed" % other))
-    notes.append("a --runtime %s save against revision 1 then produced revision 2 and a native %s "
-                 "session read that record back and named the writing runtime; the %s client's own "
-                 "native turn is that target's own round and was not run here"
-                 % (other, home.runtime, other))
+                                  "reading session did not report its objective, so the return "
+                                  "leg's read was not observed: %s" % (other, redact(back[-200:]))))
+    named = ("and named %s as the writing runtime when asked" % other if other in back else
+             "though, asked for the writing runtime, it did not name %s" % other)
+    notes.append("a --runtime %s save against revision 1 then produced revision 2 whose record "
+                 "names %s as its writing runtime, and a native %s session read that record back, "
+                 "reported its objective %s; the %s client's own native turn is that target's "
+                 "own round and was not run here" % (other, writer, home.runtime, named, other))
     # The record now stands at revision 2, so revision 1 is spent: `tasks.save` refuses a writer
     # whose expected revision is not the current one, which is the rule this sequence follows.
     stale = save_task(home, repo, other, 1, expected=1)
