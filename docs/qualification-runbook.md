@@ -81,12 +81,23 @@ launched:
 - An assessment class weaker than `strong`. A cheaper tier may execute the cases; it does not
   assess them.
 - A cheap execution class that resolves to the assessment class's own model — because the
-  adapter maps both classes to one identifier, or because it does not map the cheap class at all
-  and an unmapped class resolves upward. The executor would then be the only reader of the
-  evidence it produced.
+  adapter maps both classes to one identifier, because it spells one model two ways, or because
+  it does not map the cheap class at all and an unmapped class resolves upward. The executor
+  would then be the only reader of the evidence it produced. The two identifiers are compared
+  the way the usage ledger compares them, so a date-stamped id and a bare alias of the same
+  model are one model; the comparison errs towards refusing, and two models an operator means
+  to be different are written as two ids neither of which is a prefix of the other.
+- An assessment class the adapter does not map while the execution class is mapped: the reader
+  would inherit whatever model the session happens to be running, which is no named reader.
 
-A class an adapter does not map at all is disclosed rather than guessed at: the worker inherits
-the session model and the record carries the note saying so.
+An unmapped *execution* class beside a mapped assessor — what asking for a class stronger than
+the assessor's does — is disclosed rather than guessed at: that worker inherits the session
+model and the record carries the note saying so.
+
+The routing is written to the durable per-case log before the first case runs and to
+`round.json` before the smoke tier, so a killed round still records which classes were running.
+`--from-progress` refuses a log whose cases were executed under a different routing rather than
+merging them: a record built from two routings cannot say which class produced an observation.
 
 The saving this buys is the issue's estimate, not a measurement: workers ran 0.7×–1.8× their 82K
 output budget, so four targets cost 230K–590K output tokens per round, most of it authoring

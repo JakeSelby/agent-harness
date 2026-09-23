@@ -1588,6 +1588,49 @@ def append_case(path, header, item):
         os.fsync(handle.fileno())
 
 
+def append_routing(path, header):
+    """Declare the round's class routing before the first case runs.
+
+    A line with no case is not a result and `progress_lines` ignores it; what it does is put the
+    executing and assessing classes on disk before anything they could bias has run, so a round
+    killed in its first case still says who ran it.
+    """
+    if path is None:
+        return
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(str(path), "a") as handle:
+        handle.write(json.dumps(dict(header, declared="tier_routing"), sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def logged_routing(items):
+    """Every distinct routing the surviving lines were logged under."""
+    seen = []
+    for item in items:
+        routing = item.get("tier_routing")
+        if routing not in seen:
+            seen.append(routing)
+    return seen
+
+
+def under_routing(items, tier_routing):
+    """`items` logged under this routing, refusing a log that mixes two of them.
+
+    A record whose cases were produced by two different classes cannot say which class produced
+    an observation, and merging them silently is the one thing the routing is recorded to stop.
+    """
+    keep = [item for item in items if item.get("tier_routing") == tier_routing]
+    others = [one for one in logged_routing(items) if one != tier_routing]
+    if others:
+        raise SystemExit(
+            "the durable log holds cases executed under another class routing (%s); rerun them "
+            "under %s or build from their own log"
+            % ("; ".join(sorted(json.dumps(one, sort_keys=True) for one in others)),
+               json.dumps(tier_routing, sort_keys=True)))
+    return keep
+
+
 def progress_lines(path, header=None):
     """Every finished case on disk, ignoring a line torn by the kill or from another round."""
     items = []
@@ -1677,6 +1720,7 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=Fa
         # the per-case header so a resumed round cannot union lines two classes produced.
         "tier_routing": tier_routing,
     }
+    append_routing(progress, header)
     results = []
     for name in names:
         item = (runner(client, name, model, keep, confirmed) if name in CASES
@@ -1716,7 +1760,7 @@ def main(argv=None):
         return 0
     progress = args.progress or progress_path(args.client, args.out)
     if args.from_progress:
-        data = build_record(progress_lines(progress))
+        data = build_record(under_routing(progress_lines(progress), tier_routing))
     else:
         data = record(args.client, names, args.model, args.keep_home, progress=progress,
                       confirmed=args.home_confirmed, tier_routing=tier_routing)

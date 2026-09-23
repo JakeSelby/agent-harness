@@ -81,9 +81,11 @@ def routing(targets, execution, assessment):
     """
     try:
         executes = qualification.parse_class_map(execution, targets,
-                                                 qualification.EXECUTION_DEFAULT)
+                                                 qualification.EXECUTION_DEFAULT,
+                                                 "--execution-class", CLIENTS)
         assesses = qualification.parse_class_map(assessment, targets,
-                                                 qualification.ASSESSMENT_DEFAULT)
+                                                 qualification.ASSESSMENT_DEFAULT,
+                                                 "--assessment-class", CLIENTS)
         return dict((client, qualification.resolve(ROOT, CLIENTS[client]["runtime"],
                                                    executes[client], assesses[client]))
                     for client in targets)
@@ -107,6 +109,17 @@ def summarise(records):
     return "\n".join(lines)
 
 
+def write_round(round_dir, result):
+    """The round record as it stands, rewritten as each target finishes.
+
+    It is written before the smoke tier runs, so a round killed part way through still names the
+    classes that were executing and whatever targets had finished.
+    """
+    (Path(round_dir) / "round.json").write_text(json.dumps(result, indent=2, sort_keys=True)
+                                                + "\n")
+    return result
+
+
 def run_round(round_dir, targets, model, confirmed, skip_smoke=False, tier_routing=None):
     tier_routing = tier_routing or routing(targets, None, None)
     report = provision_record(round_dir)
@@ -116,6 +129,7 @@ def run_round(round_dir, targets, model, confirmed, skip_smoke=False, tier_routi
     env = environment(report)
     result = {"source_commit": report.get("source_commit"), "smoke": "skipped", "targets": {},
               "tier_routing": tier_routing}
+    write_round(round_dir, result)
     if not skip_smoke:
         result["smoke"] = PASSED if smoke(clone, env).returncode == 0 else "failed"
     for client in targets:
@@ -130,6 +144,7 @@ def run_round(round_dir, targets, model, confirmed, skip_smoke=False, tier_routi
         if note:
             data.setdefault("observations", []).append(note)
         result["targets"][client] = data
+        write_round(round_dir, result)
     return result
 
 
@@ -164,10 +179,9 @@ def main(argv=None):
                                   or "driven by this runner"))
             print("  %-24s %s" % ("", qualification.describe(tier_routing[client])))
         return 0
-    result = run_round(args.round, targets, args.model, args.home_confirmed, args.skip_smoke,
-                       tier_routing)
-    (Path(args.round) / "round.json").write_text(json.dumps(result, indent=2, sort_keys=True)
-                                                 + "\n")
+    result = write_round(args.round, run_round(args.round, targets, args.model,
+                                               args.home_confirmed, args.skip_smoke,
+                                               tier_routing))
     print("smoke tier: " + result["smoke"])
     print(summarise(result["targets"]))
     for client in targets:

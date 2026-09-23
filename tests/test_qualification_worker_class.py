@@ -7,9 +7,11 @@ two classes onto one model, or leaves a class unmapped, can be tested without to
 adapters this repository ships.
 """
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -82,12 +84,29 @@ class ResolutionTests(unittest.TestCase):
         routing = self.resolve({"frontier": "huge", "strong": "big"}, execution="strong")
         self.assertEqual(routing["execution_model"], routing["assessment_model"])
 
-    def test_an_unmapped_assessment_class_is_disclosed_and_not_guessed_at(self):
-        routing = self.resolve({"standard": "small"})
-        self.assertIsNone(routing["assessment_model"])
-        self.assertEqual(routing["execution_model"], "small")
-        self.assertTrue(any("inherits the session model" in note
-                            for note in routing["notes"]))
+    def test_an_unmapped_assessor_beside_a_mapped_executor_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "maps no strong class"):
+            self.resolve({"standard": "small"})
+
+    def test_an_unmapped_executor_beside_a_mapped_assessor_is_disclosed(self):
+        # Asking for a class stronger than the assessor's is the only way round: the reader is
+        # named, the executor is not, and the record says which.
+        routing = self.resolve({"strong": "big"}, execution="frontier")
+        self.assertIsNone(routing["execution_model"])
+        self.assertEqual(routing["assessment_model"], "big")
+        self.assertTrue(any("inherits the session model" in note for note in routing["notes"]))
+
+    def test_two_spellings_of_one_model_are_refused(self):
+        with self.assertRaisesRegex(ValueError, "only reader"):
+            self.resolve({"strong": "big-model-20260101", "standard": "big-model"})
+
+    def test_an_alias_of_the_assessors_model_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "only reader"):
+            self.resolve({"strong": "vendor/family-big-4-5", "standard": "big"})
+
+    def test_two_models_of_one_family_are_not_one_model(self):
+        routing = self.resolve({"strong": "family-5.6-sol", "standard": "family-5.6-terra"})
+        self.assertEqual(routing["execution_model"], "family-5.6-terra")
 
     def test_an_unknown_class_is_refused_by_name(self):
         with self.assertRaisesRegex(ValueError, "execution class must be one of"):
@@ -118,11 +137,31 @@ class ClassMapTests(unittest.TestCase):
         chosen = qualification.parse_class_map(["light", CODEX + "=standard"], TARGETS, "strong")
         self.assertEqual(chosen, {CLAUDE: "light", CODEX: "standard"})
 
+    def test_surrounding_space_is_stripped_from_target_and_class(self):
+        self.assertEqual(qualification.parse_class_map([" " + CODEX + " = light "], TARGETS,
+                                                       "standard")[CODEX], "light")
+
     def test_an_unknown_target_or_class_is_refused(self):
         with self.assertRaisesRegex(ValueError, "unknown qualification target"):
             qualification.parse_class_map(["codex-cli-solaris=light"], TARGETS, "standard")
         with self.assertRaisesRegex(ValueError, "worker class must be one of"):
             qualification.parse_class_map([CODEX + "=cheap"], TARGETS, "standard")
+
+    def test_a_client_left_out_of_the_round_is_not_an_unknown_target(self):
+        with self.assertRaisesRegex(ValueError, "not in this round's --targets"):
+            qualification.parse_class_map([CODEX + "=light"], [CLAUDE], "standard",
+                                          known=ROUND.CLIENTS)
+
+    def test_an_empty_class_names_the_target_it_was_given_for(self):
+        with self.assertRaisesRegex(ValueError, "no class given for target " + CODEX):
+            qualification.parse_class_map([CODEX + "="], TARGETS, "standard")
+
+    def test_every_refusal_names_the_flag_it_came_from(self):
+        for value in [CODEX + "=cheap", CODEX + "=", "codex-cli-solaris=light", "cheap"]:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "^--assessment-class: "):
+                    qualification.parse_class_map([value], TARGETS, "strong",
+                                                  flag="--assessment-class")
 
 
 class RunnerTests(unittest.TestCase):
@@ -142,6 +181,98 @@ class RunnerTests(unittest.TestCase):
         routing = MODULE.routing(CODEX)
         self.assertEqual(routing["assessment_class"], "strong")
         self.assertEqual(routing["execution_class"], "standard")
+
+
+FAKE_ROUTING = {"execution_class": "standard", "execution_model": "small",
+                "assessment_class": "strong", "assessment_model": "big"}
+OTHER_ROUTING = dict(FAKE_ROUTING, execution_class="light", execution_model="tiny")
+
+
+def passing(client, name, model, keep, confirmed=False):
+    return {"case": name, "result": "passed", "observation": "A native session did " + name + ".",
+            "seconds": 0.1, "sessions": 1}
+
+
+class DurableRoutingTests(unittest.TestCase):
+    """The routing is on disk before the first case, and two routings never merge."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.progress = Path(self.tmp.name) / "round.partial.jsonl"
+
+    def record(self, runner=passing, names=("cost-posture",), routing=FAKE_ROUTING):
+        with patch.object(MODULE, "client_version", return_value="9.9.9"), \
+                patch.object(MODULE, "git", side_effect=lambda *args: "" if args[0] == "status"
+                             else "a" * 40), \
+                patch.dict(MODULE.CASES, dict((name, (None, "stub")) for name in names),
+                           clear=True):
+            return MODULE.record(CLAUDE, list(names), "cheapest", False, runner=runner,
+                                 progress=self.progress, tier_routing=routing)
+
+    def lines(self):
+        return [json.loads(line) for line in self.progress.read_text().splitlines()]
+
+    def test_the_routing_is_logged_before_the_first_case_runs(self):
+        def killed(client, name, model, keep, confirmed=False):
+            raise KeyboardInterrupt("the round was killed in its first case")
+
+        with self.assertRaises(KeyboardInterrupt):
+            self.record(runner=killed)
+        self.assertEqual(self.lines()[0]["declared"], "tier_routing")
+        self.assertEqual(self.lines()[0]["tier_routing"], FAKE_ROUTING)
+
+    def test_the_record_carries_the_routing_it_was_given(self):
+        data = self.record()
+        self.assertEqual(data["tier_routing"], FAKE_ROUTING)
+        self.assertEqual(self.lines()[-1]["tier_routing"], FAKE_ROUTING)
+
+    def test_a_log_written_under_two_routings_is_refused_rather_than_merged(self):
+        self.record(names=("cost-posture",))
+        self.record(names=("installation",), routing=OTHER_ROUTING)
+        with self.assertRaisesRegex(SystemExit, "another class routing"):
+            MODULE.under_routing(MODULE.progress_lines(self.progress), FAKE_ROUTING)
+
+    def test_a_log_written_under_one_routing_rebuilds(self):
+        self.record(names=("cost-posture", "installation"))
+        data = MODULE.build_record(
+            MODULE.under_routing(MODULE.progress_lines(self.progress), FAKE_ROUTING))
+        self.assertEqual(sorted(data["cases"]), ["cost-posture", "installation"])
+
+
+class OrderTests(unittest.TestCase):
+    """Nothing that costs money starts before the routing has been resolved."""
+
+    def test_the_runner_resolves_the_routing_before_it_records(self):
+        order = []
+        with patch.object(MODULE, "routing",
+                          side_effect=lambda *a, **k: order.append("routing") or FAKE_ROUTING), \
+                patch.object(MODULE, "record",
+                             side_effect=lambda *a, **k: order.append("record") or {
+                                 "cases": {"cost-posture": "passed"}}):
+            with redirect_stdout(io.StringIO()):
+                MODULE.main(["--client", CLAUDE, "--cases", "cost-posture",
+                             "--out", str(Path(tempfile.gettempdir()) / "unused-record.json")])
+        self.assertEqual(order, ["routing", "record"])
+
+    def test_the_round_resolves_every_targets_routing_before_the_smoke_tier(self):
+        order = []
+        with tempfile.TemporaryDirectory() as temp:
+            round_dir = Path(temp)
+            (round_dir / "provision.json").write_text(json.dumps(
+                {"clone": str(round_dir / "clone"), "records": str(round_dir / "records"),
+                 "source_commit": "a" * 40}))
+            done = type("Done", (), {"returncode": 0})()
+            with patch.object(ROUND, "routing",
+                              side_effect=lambda *a, **k: order.append("routing") or {
+                                  CLAUDE: FAKE_ROUTING}), \
+                    patch.object(ROUND, "smoke",
+                                 side_effect=lambda *a, **k: order.append("smoke") or done), \
+                    patch.object(ROUND.subprocess, "run",
+                                 side_effect=lambda *a, **k: order.append("target") or done):
+                with redirect_stdout(io.StringIO()):
+                    ROUND.main(["--round", str(round_dir), "--targets", CLAUDE])
+        self.assertEqual(order, ["routing", "smoke", "target"])
 
 
 class RoundTests(unittest.TestCase):

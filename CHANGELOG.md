@@ -16,13 +16,18 @@ All notable changes to this project are documented here. The format follows
   for; assessing what they observed is, and the published procedure requires a reviewer. Both
   classes are written into the evidence record and the round record, so the evidence says which
   class produced an observation and which class read it, and either can be moved per target with
-  `--execution-class TARGET=CLASS`. Two pairs are refused before any client is launched: an
-  assessment class weaker than `strong`, and a cheap execution class that resolves to the
-  assessment class's own model, whether because the adapter table maps both to one identifier or
-  because it maps the cheap class not at all and an unmapped class resolves upward — in either
-  case the worker that produced the evidence would be its only reader. A class an adapter does
-  not map is disclosed in the record rather than guessed at. The resolution reads the adapter's
-  table and not a personal `tiers` override, because a round runs from a frozen clone. The
+  `--execution-class TARGET=CLASS`. Three pairs are refused before any client is launched: an
+  assessment class weaker than `strong` or one the adapter does not map at all, and a cheap
+  execution class that resolves to the assessment class's own model, whether because the table
+  maps both to one identifier, spells one model two ways, or maps the cheap class not at all so
+  that it resolves upward — in each case the worker that produced the evidence would be its only
+  reader. The two identifiers are compared through the usage ledger's own normalisation rather
+  than as strings, so a date-stamped id and a bare alias of one model are one model. An unmapped
+  execution class beside a mapped assessor is disclosed in the record rather than guessed at.
+  The routing is written to the durable log before the first case and to the round record before
+  the smoke tier, so a killed round still says which classes were running, and `--from-progress`
+  refuses a log that mixes two routings rather than merging them. The resolution reads the
+  adapter's table and not a personal `tiers` override, because a round runs from a frozen clone. The
   saving is the issue's estimate and not a measurement: 230K–590K output tokens per round, most
   of it authoring rather than judgement (#338).
 - `docs/spikes/` records the measurements a decision was taken on, starting with the in-run budget
