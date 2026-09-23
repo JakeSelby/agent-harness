@@ -169,8 +169,22 @@ All notable changes to this project are documented here. The format follows
   session's own model, which the harness never writes; a `delegation` variant other than
   `tiered`; and a class table mapping fewer than two models — and the `delegation-tiering` skill
   now links to the row instead of restating it (#520).
+
 ### Changed
 
+- `/plan` now enters plan mode, writes its Review Card into the plan file the runtime designates,
+  and finishes through `ExitPlanMode`, so the native plan pane is the review surface and the
+  native approval is the gate. The typed `build` reply was a convention no tooling could observe,
+  and a plan written straight to disk reached no plan view at all. Because the runtime fixes the
+  filename before any content exists and plan mode permits no other write, the naming waits for
+  approval: `/plan` then renames the file to a topic slug — refusing to overwrite an existing
+  name — and invokes `/build` with that path, which the builder commits into its worktree so the
+  plan reaches the pull request. `/build` works from the path or the
+  issue number it is given and never searches for a plan, because a plan found by modification
+  date is as likely to be a stale one a checkout touched. `/plan` asks before entering plan mode,
+  since entering it is the user's call, and a runtime with no plan mode — or a user who declines
+  it — keeps the previous behaviour as an explicit branch: write the file named for the topic,
+  open it for the reviewer, close on the build line (#439).
 - Native qualification evidence is now invalidated per target rather than per repository. Each
   client's evidence is checked against the shared runtime source plus its own runtime's adapter
   directory, so a fix confined to `adapters/codex` no longer costs the Claude Code targets of a
