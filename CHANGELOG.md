@@ -14,8 +14,12 @@ All notable changes to this project are documented here. The format follows
   eleven per-policy entries the file still listed were replaced unread at every sync, and an
   entry added there by hand would have been silently discarded. `docs/how-it-works.md` now
   describes the model: why one process per event rather than one per policy, where precedence is
-  decided, and how the coordinator fails closed. No installed settings file changes, because what
-  sync wrote was already the coordinator registration (#521).
+  decided, and how the coordinator fails closed. Two places that still described registration as
+  conditional are corrected with it: `docs/preferences.md` said the `plan-ceremony` stance decides
+  whether the plan-card validator is registered, where it decides whether the validator runs, and
+  `claude/OWNERSHIP.json` now says in the manifest itself that a hook id's `stance` and `variant`
+  name when a policy acts, never whether it is registered. No installed settings file changes,
+  because what sync wrote was already the coordinator registration (#521).
 
 ### Fixed
 

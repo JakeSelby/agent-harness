@@ -91,9 +91,12 @@ class UninstallSharedFilesTests(TempHome):
 
 class SettingsMergeTests(unittest.TestCase):
     def test_merge_is_idempotent(self):
-        once = harness.merge_claude_settings({}, TEMPLATE, CFG)
-        twice = harness.merge_claude_settings(once, TEMPLATE, CFG)
+        # The registration sync actually writes, not the hooks-less committed template.
+        template = harness.runtime_template()
+        once = harness.merge_claude_settings({}, template, CFG)
+        twice = harness.merge_claude_settings(once, template, CFG)
         self.assertEqual(once, twice)
+        self.assertTrue(once["hooks"])
 
     def test_allow_rules_are_a_union_and_user_rules_survive(self):
         live = {"permissions": {"allow": ["Bash(my-tool *)", "Read(~/**)"]}}
@@ -145,8 +148,10 @@ class SettingsMergeTests(unittest.TestCase):
         self.assertTrue(any("# harness:runtime-posttooluse" in c for c in commands))
 
     def test_strip_removes_only_harness_material(self):
-        merged = harness.merge_claude_settings({"model": "m", "permissions": {"allow": ["Bash(mine)"]}}, TEMPLATE, CFG)
-        stripped = harness.strip_claude_settings(merged, TEMPLATE)
+        template = harness.runtime_template()
+        merged = harness.merge_claude_settings({"model": "m", "permissions": {"allow": ["Bash(mine)"]}}, template, CFG)
+        self.assertTrue(merged["hooks"])
+        stripped = harness.strip_claude_settings(merged, template)
         self.assertEqual(stripped["model"], "m")
         self.assertEqual(stripped["permissions"]["allow"], ["Bash(mine)"])
         self.assertNotIn("hooks", stripped)

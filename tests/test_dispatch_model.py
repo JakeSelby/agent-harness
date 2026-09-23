@@ -59,9 +59,10 @@ class TemplateTests(unittest.TestCase):
             self.assertNotIn("# harness:" + hid, text, msg=hid)
             self.assertNotIn(module, text, msg=module)
 
-    def test_sync_supplies_the_registration_the_coordinator_emits(self):
-        self.assertEqual(harness.runtime_template()["hooks"],
-                         lifecycle.registration(REPO, "claude-code")["hooks"])
+    def test_a_sync_writes_the_registration_the_coordinator_emits(self):
+        merged = harness.merge_claude_settings({}, harness.runtime_template(),
+                                               json.loads((REPO / "config.example.json").read_text()))
+        self.assertEqual(merged["hooks"], lifecycle.registration(REPO, "claude-code")["hooks"])
 
     def test_the_template_is_otherwise_carried_through_unchanged(self):
         template = harness.runtime_template()
@@ -94,10 +95,57 @@ class RegistrationTests(unittest.TestCase):
             self.assertTrue((REPO / "policy" / "hooks" / module).is_file(), msg=hid)
             self.assertIn(OWNERSHIP["claude"]["hook_ids"][hid]["event"], self.hooks, msg=hid)
 
+    def test_each_event_gets_the_budget_its_slowest_policy_needs(self):
+        # The stop gate runs a repository's whole test suite; SessionEnd is a native 1.5s budget.
+        timeouts = dict((event, entries[0]["hooks"][0]["timeout"])
+                        for event, entries in self.hooks.items())
+        self.assertEqual(timeouts.pop("Stop"), 300)
+        self.assertEqual(timeouts.pop("SessionEnd"), 2)
+        self.assertEqual(sorted(set(timeouts.values())), [10])
+
     def test_hook_health_finds_every_registered_command(self):
         count, problems = harness.hook_health(harness.runtime_template())
         self.assertEqual(count, len(self.hooks))
         self.assertEqual(problems, [])
+
+
+class RoutingTests(unittest.TestCase):
+    """Which policies a tool name reaches. Registration no longer carries a matcher, so the
+    routing the matchers used to express is only true if dispatch does it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        config = self.home / ".config" / "agent-harness"
+        config.mkdir(parents=True)
+        (config / "config.json").write_text(json.dumps({"stances": {"delegation": "tiered"}}))
+        self.transcript = self.home / "session.jsonl"
+        self.transcript.write_text(json.dumps(
+            {"type": "assistant", "message": {"role": "assistant", "model": "claude-opus-5"}}) + "\n")
+
+    def _dispatch(self, event):
+        clean = dict((k, v) for k, v in os.environ.items() if not k.startswith("HARNESS_"))
+        clean["HOME"] = str(self.home)
+        with unittest.mock.patch.dict(os.environ, clean, clear=True):
+            return lifecycle.dispatch("claude-code", event)
+
+    def test_a_plan_mode_web_fetch_reaches_the_plan_webfetch_policy(self):
+        result = self._dispatch({"hook_event_name": "PreToolUse", "tool_name": "WebFetch",
+                                 "permission_mode": "plan",
+                                 "tool_input": {"url": "https://docs.example.com/x"}})
+        output = result["hookSpecificOutput"]
+        self.assertEqual(output["permissionDecision"], "allow")
+        self.assertIn("allow-plan-webfetch", output["permissionDecisionReason"])
+
+    def test_a_bare_spawn_reaches_both_the_tier_ladder_and_the_brief_guard(self):
+        result = self._dispatch({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                                 "transcript_path": str(self.transcript),
+                                 "tool_input": {"prompt": "Find the callers.", "description": "d"}})
+        updated = result["hookSpecificOutput"]["updatedInput"]
+        self.assertEqual(updated["model"], "sonnet")           # tier-agent-spawns
+        self.assertIn("400 words", updated["prompt"])          # brief-guard
+        self.assertIn("brief-guard", result["systemMessage"])
 
 
 class StanceTests(unittest.TestCase):

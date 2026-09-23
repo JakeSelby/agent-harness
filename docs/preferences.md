@@ -79,7 +79,10 @@ the `harness-session.py` hook compares the environment with the synced config an
 line of context for any difference, so `HARNESS_STANCE_TESTING=off claude` works for one
 session without a re-sync.
 
-The `plan-ceremony` stance also decides whether the plan-card validator hook is registered.
+The `plan-ceremony` stance also decides whether the plan-card validator runs. Registration is
+unconditional — one coordinator per lifecycle event, as in
+[how it works](how-it-works.md) — so the stance is read inside dispatch, at the moment a plan
+file is written, and a switch takes effect in the next turn rather than at the next sync.
 
 ## What a session costs
 
