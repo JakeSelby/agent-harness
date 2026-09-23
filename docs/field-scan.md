@@ -144,13 +144,18 @@ Stated as narrowly as the evidence allows. Each line names the file that impleme
 
 The section that decides whether the rest is credible.
 
-- **Detector validity is measured for six detectors of seventeen.** The vendored `ruleprobe`
-  wheel ships a labelled corpus and a `validity.py` scorer, and the labels cover the six generic
-  detectors the engine itself ships. The eleven detectors written for these rules are unscored, and
-  nothing in this repository's CI or tests runs the scorer or holds a precision floor; #522 wires
-  `ruleprobe corpus --floor 0.9` in here and labels the other eleven. Until it lands, read a figure
-  from `usage --rules` for those eleven as a rate of the detector firing rather than of the
-  behaviour.
+- **Detector validity is measured for seventeen detectors of seventeen.** The vendored
+  `ruleprobe` wheel ships a labelled corpus and a `validity.py` scorer for the generic detectors
+  the engine itself ships; `tests/fixtures/detector-corpus/` labels the rest, five positives and
+  five near-misses each bar `research/search-over-cap`, whose positive costs a whole
+  two-hundred-search transcript. CI runs `scripts/detector_corpus.py --floor 0.9` over both corpora in the
+  `corpus` job, so a precision or recall under 0.9 is a red check. Two detectors sit under the
+  floor and are recorded as such with the score and the floor they were measured against, rather
+  than the floor being lowered: `secrets/git-add-secret-file` reads any basename holding `id_rsa`
+  as a credential, and `autonomy/denied-by-grade` reads the grade hook's signature anywhere in a
+  Bash result, so a runbook named after a key and a grep that prints the signature are both hits
+  (p=0.83, r=1.00 each). A corpus is synthetic and hand-authored, so it measures the detector
+  against what its author says it should find, not against the field.
 - **Per-variant hit rates are observational.** No fixed task set is replayed under variant A and
   variant B; "this rule works better under `execute`" is not yet a supported sentence. The one
   project that ran an A/B in this field shows both how much it helps a position and how quickly a

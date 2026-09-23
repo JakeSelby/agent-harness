@@ -27,6 +27,17 @@ change. What the release must carry before it can be tagged is the next section.
    that runs it, qualify the target by hand as well and compare the two results before the
    automated verdict is trusted. Record that comparison with the round's observations, and replace
    the recorded decline in `tests/fixtures/permission-controls/` if the round produces a real one.
+   Every other case gained a driver at the same time, and `scripts/qualification_provision.py`
+   and `scripts/qualification_round.py` provision and drive the round; the
+   [runbook](qualification-runbook.md) is the mechanics. The same hand comparison is owed once
+   per case on its first live round. A Codex target reports `unverified` whatever it observed
+   until `--home-confirmed` says its configuration home was compared against a hand run.
+   The scripted cases are executed at the `standard` capability class and their observations are
+   assessed at `strong`; both classes are recorded in the evidence record and in the round
+   record, and a round whose cheap executor would be the only reader of its own evidence is
+   refused rather than run. The classes, the per-target overrides and the refusals are in the
+   [runbook](qualification-runbook.md). The expected saving is #338's estimate rather than a
+   measurement: 230K–590K output tokens per round, most of it authoring rather than judgement.
 2. On a minor release, run the optional BMad integration suite once, on one target, before the
    tag: the native four-layer review described in [BMad](bmad.md). It gates nothing — a red result
    is an issue to file, not a blocked release — and its outcome is recorded in the release pull

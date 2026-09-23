@@ -1,0 +1,335 @@
+# The labels for this repository's own corpus: the eleven detectors in
+# `claude/hooks/rule-detectors.py` that are about these rules. The six the vendored engine
+# ships are labelled by the corpus inside the wheel, and `scripts/detector_corpus.py` scores
+# both, so every detector `harness usage --rules` reports has a precision and a recall.
+#
+# The file is the same shape as the wheel's `ruleprobe/corpus/labels.yaml`. One entry per
+# labelled event: `at` is the key a hit carries - the turn, a colon, and the tool use id, or
+# `-` when the hit is on the message rather than on a tool use. `fire` is every detector that
+# should fire there and is the whole truth about that event, so a hit at a key whose `fire`
+# does not name the detector is a false positive. `near` marks a deliberate near-miss and is
+# what the negative count counts. An event with neither is unremarkable.
+#
+# The sessions are written by `build_sessions.py` beside this file; change a case there,
+# re-run it, and commit what it writes. Every one is synthetic: no real transcript content,
+# no home paths, no personal names, no live credentials.
+
+version: 1
+
+# A detector measured under the floor, with the score it measured and the floor it was
+# measured against. The floor is not lowered for it: the entry says what is known to be wrong,
+# and `scripts/detector_corpus.py` fails again the moment the measurement moves or the detector
+# climbs above the floor its entry names. Run at a lower floor the entry is simply dormant.
+known_below_floor:
+  - detector: secrets/git-add-secret-file
+    floor: 0.9
+    precision: 0.83
+    recall: 1.0
+    note: any basename holding id_rsa is a hit, so a runbook named after a key is one too
+  - detector: autonomy/denied-by-grade
+    floor: 0.9
+    precision: 0.83
+    recall: 1.0
+    note: the signature is matched anywhere in a result, so a grep that prints it is a hit
+
+sessions:
+
+  - session: briefs-word-cap.jsonl
+    note: five Agent briefs the model wrote with no word cap, and five that carry one
+    labels:
+      - at: "1:tu-b1"
+        fire: [transcript-hygiene/model-wrote-no-cap]
+        note: an uncapped brief to an agent whose own definition carries no cap
+      - at: "1:tu-n1"
+        near: [transcript-hygiene/model-wrote-no-cap]
+        note: a capped agent, which needs no cap in the brief
+      - at: "2:tu-b2"
+        fire: [transcript-hygiene/model-wrote-no-cap]
+        note: a brief saying only to keep it short states no cap, because a cap carries a number
+      - at: "2:tu-n2"
+        near: [transcript-hygiene/model-wrote-no-cap]
+      - at: "3:tu-b3"
+        fire: [transcript-hygiene/model-wrote-no-cap]
+        note: a paragraph count is a bound on shape, not the word cap the rule asks for
+      - at: "3:tu-n3"
+        near: [transcript-hygiene/model-wrote-no-cap]
+      - at: "4:tu-b4"
+        fire: [transcript-hygiene/model-wrote-no-cap]
+      - at: "4:tu-n4"
+        near: [transcript-hygiene/model-wrote-no-cap]
+      - at: "5:tu-b5"
+        fire: [transcript-hygiene/model-wrote-no-cap]
+      - at: "5:tu-n5"
+        near: [transcript-hygiene/model-wrote-no-cap]
+
+  - session: delegation-from-summary.jsonl
+    note: five commands first seen in a subagent's return, and five that were not
+    labels:
+      - at: "1:tu-d1"
+        fire: [delegation/executed-from-summary]
+        note: the same command, run with the spacing normalised away
+      - at: "2:tu-d2"
+        fire: [delegation/executed-from-summary]
+        note: the quoted command behind a cd
+      - at: "3:tu-d3"
+        fire: [delegation/executed-from-summary]
+      - at: "3:tu-e1"
+        near: [delegation/executed-from-summary]
+        note: an extra flag, so not the command the return carried
+      - at: "4:tu-d4"
+        fire: [delegation/executed-from-summary]
+        note: a four-backtick block holding a three-backtick one closes only on four
+      - at: "5:tu-e6"
+        near: [delegation/executed-from-summary]
+        note: a prefix of the quoted command, which is a different command
+      - at: "6:tu-d5"
+        fire: [delegation/executed-from-summary]
+      - at: "7:tu-e3"
+        near: [delegation/executed-from-summary]
+        note: the session ran it first and a subagent quoted it back, which is repetition
+      - at: "8:tu-e4"
+        near: [delegation/executed-from-summary]
+        note: named in the return's prose rather than in a block
+      - at: "9:tu-e5"
+        near: [delegation/executed-from-summary]
+        note: a Read result, whose text is not a subagent's return
+
+  - session: secrets-git-add.jsonl
+    note: five credential-shaped paths staged, and five paths that only look like one
+    labels:
+      - at: "1:tu-s1"
+        fire: [secrets/git-add-secret-file]
+      - at: "1:tu-p1"
+        near: [secrets/git-add-secret-file]
+        note: an example env file is the one shape that is meant to be committed
+      - at: "2:tu-s2"
+        fire: [secrets/git-add-secret-file]
+      - at: "2:tu-p2"
+        near: [secrets/git-add-secret-file]
+        note: a runbook about rotating the key, which the detector reads as the key
+      - at: "3:tu-s3"
+        fire: [secrets/git-add-secret-file]
+      - at: "3:tu-p3"
+        near: [secrets/git-add-secret-file]
+      - at: "4:tu-s4"
+        fire: [secrets/git-add-secret-file]
+      - at: "4:tu-p4"
+        near: [secrets/git-add-secret-file]
+        note: the basename is credentials-format, not credentials
+      - at: "5:tu-s5"
+        fire: [secrets/git-add-secret-file]
+        note: a suffixed env file that is not one of the example spellings
+      - at: "5:tu-p5"
+        near: [secrets/git-add-secret-file]
+
+  - session: research-search-over-cap.jsonl
+    note: the search that takes the session past the per-session cap, in one response
+    labels:
+      - at: "1:q201"
+        fire: [research/search-over-cap]
+
+  - session: research-search-spread.jsonl
+    note: the same, spread over three turns; the hit is on the search that crosses the cap
+    labels:
+      - at: "3:q201"
+        fire: [research/search-over-cap]
+
+  - session: research-search-at-cap.jsonl
+    note: a session that stops exactly at the cap
+    labels:
+      - at: "1:q200"
+        near: [research/search-over-cap]
+
+  - session: research-search-mixed-tools.jsonl
+    note: two hundred and ten web tool calls, of which a hundred and fifty are searches
+    labels:
+      - at: "1:f51"
+        near: [research/search-over-cap]
+        note: the two hundred and first web call, which is not the two hundred and first search
+
+  - session: voice-openers.jsonl
+    note: five banned openers or closing phrases, and five messages that only look like one
+    labels:
+      - at: "1:-"
+        fire: [voice/banned-opener]
+      - at: "2:-"
+        fire: [voice/banned-opener]
+      - at: "3:-"
+        fire: [voice/banned-opener]
+      - at: "4:-"
+        fire: [voice/banned-opener]
+        note: the closing phrase, wherever in the message it appears
+      - at: "5:-"
+        fire: [voice/banned-opener]
+        note: bold around the opener is still the opener
+      - at: "6:-"
+        near: [voice/banned-opener]
+        note: an opener that starts the same way and then says something else
+      - at: "7:-"
+        near: [voice/banned-opener]
+        note: the phrase in backticks is under discussion, not in use
+      - at: "8:-"
+        near: [voice/banned-opener]
+        note: the opener named mid-sentence rather than opening the message
+      - at: "9:-"
+        near: [voice/banned-opener]
+        note: after investigation is a different word from the banned after investigating
+      - at: "10:-"
+        near: [voice/banned-opener]
+        note: the banned opener is in a message that is not the final one of its turn
+
+  - session: voice-tables.jsonl
+    note: five messages with a second table, and five with one table or none
+    labels:
+      - at: "1:-"
+        fire: [voice/second-table]
+      - at: "2:-"
+        fire: [voice/second-table]
+        note: three blocks are still a second table
+      - at: "3:-"
+        fire: [voice/second-table]
+        note: a line of prose between them separates the blocks
+      - at: "4:-"
+        fire: [voice/second-table]
+        note: a second block of two rows and no separator row
+      - at: "5:-"
+        fire: [voice/second-table]
+      - at: "6:-"
+        near: [voice/second-table]
+        note: one table is the shape the stance allows
+      - at: "7:-"
+        near: [voice/second-table]
+        note: a single piped line inside a sentence is not a block
+      - at: "8:-"
+        near: [voice/second-table]
+        note: two single rows, neither of them two consecutive lines
+      - at: "9:-"
+        near: [voice/second-table]
+        note: one long table, not two
+      - at: "10:-"
+        near: [voice/second-table]
+
+  - session: decisions-alternatives.jsonl
+    note: five decisions named with no other course, and five that name one
+    labels:
+      - at: "1:-"
+        fire: [decisions/no-alternatives]
+      - at: "2:-"
+        fire: [decisions/no-alternatives]
+        note: a batched decisions block with one course in it
+      - at: "3:-"
+        fire: [decisions/no-alternatives]
+      - at: "4:-"
+        near: [decisions/no-alternatives]
+        note: an inline "I recommend" in running prose is not a decision block
+      - at: "5:-"
+        fire: [decisions/no-alternatives]
+      - at: "6:-"
+        fire: [decisions/no-alternatives]
+      - at: "7:-"
+        near: [decisions/no-alternatives]
+        note: the alternative named beside the recommendation
+      - at: "8:-"
+        near: [decisions/no-alternatives]
+        note: a numbered option and its honest case
+      - at: "9:-"
+        near: [decisions/no-alternatives]
+        note: the shape discussed in backticks rather than used
+      - at: "11:-"
+        near: [decisions/no-alternatives]
+        note: alternatively, in prose, still names the other course
+
+  - session: autonomy-confirmed.jsonl
+    note: five commands re-run behind the confirmation marker, and five that carry no marker
+    labels:
+      - at: "1:tu-c1"
+        fire: [autonomy/confirmed-irreversible]
+      - at: "1:tu-m1"
+        near: [autonomy/confirmed-irreversible]
+        note: the same command without the marker, which the gate has not been through
+      - at: "2:tu-c2"
+        fire: [autonomy/confirmed-irreversible]
+      - at: "2:tu-m2"
+        near: [autonomy/confirmed-irreversible]
+        note: a quoted value is not the marker the gate reads
+      - at: "3:tu-c3"
+        fire: [autonomy/confirmed-irreversible]
+        note: env may carry the assignment, as the shell allows
+      - at: "3:tu-m3"
+        near: [autonomy/confirmed-irreversible]
+        note: the marker as an argument to echo, not as the command's environment
+      - at: "4:tu-c4"
+        fire: [autonomy/confirmed-irreversible]
+        note: a leading comment line is nothing the shell runs
+      - at: "4:tu-m4"
+        near: [autonomy/confirmed-irreversible]
+        note: a marker buried mid-command confirms a command the gate never saw
+      - at: "5:tu-c5"
+        fire: [autonomy/confirmed-irreversible]
+      - at: "5:tu-m5"
+        near: [autonomy/confirmed-irreversible]
+        note: an export with no command after it runs nothing
+
+  - session: autonomy-denied.jsonl
+    note: five commands the grade gate denied, and five results that only mention the hook
+    labels:
+      - at: "1:tu-g1"
+        fire: [autonomy/denied-by-grade]
+      - at: "1:tu-k1"
+        near: [autonomy/denied-by-grade]
+      - at: "2:tu-g2"
+        fire: [autonomy/denied-by-grade]
+      - at: "2:tu-k2"
+        near: [autonomy/denied-by-grade]
+        note: another hook's denial, which this detector does not read as its own
+      - at: "3:tu-g3"
+        fire: [autonomy/denied-by-grade]
+      - at: "3:tu-k3"
+        near: [autonomy/denied-by-grade]
+        note: the hook's file name in a listing
+      - at: "4:tu-g4"
+        fire: [autonomy/denied-by-grade]
+      - at: "4:tu-k4"
+        near: [autonomy/denied-by-grade]
+        note: the hook named in prose, without the signature it signs a denial with
+      - at: "5:tu-g5"
+        fire: [autonomy/denied-by-grade]
+      - at: "5:tu-k5"
+        near: [autonomy/denied-by-grade]
+      - at: "6:tu-k6"
+        near: [autonomy/denied-by-grade]
+        note: a grep that prints the signature out of a test file, which is not a denial
+
+  - session: commits-messages.jsonl
+    note: five non-conventional subjects and five missing trailers, overlapping on four
+    labels:
+      - at: "1:tu-x1"
+        fire: [commits/non-conventional, commits/missing-trailer]
+      - at: "1:tu-y1"
+        near: [commits/non-conventional, commits/missing-trailer]
+        note: the conventional subject and the trailer in a second -m
+      - at: "2:tu-x2"
+        fire: [commits/non-conventional, commits/missing-trailer]
+        note: a short cluster, where the value follows the m
+      - at: "2:tu-y2"
+        near: [commits/non-conventional, commits/missing-trailer]
+        note: an amend carries no message here, so there is nothing to judge
+      - at: "3:tu-x3"
+        fire: [commits/non-conventional]
+        note: the heredoc form Claude Code writes, with a subject that is not conventional
+      - at: "3:tu-y3"
+        near: [commits/non-conventional, commits/missing-trailer]
+        note: a message the parse never opened is not a bad one
+      - at: "4:tu-x4"
+        fire: [commits/missing-trailer]
+        note: conventional, and no trailer
+      - at: "4:tu-y4"
+        near: [commits/non-conventional, commits/missing-trailer]
+      - at: "5:tu-x5"
+        fire: [commits/non-conventional, commits/missing-trailer]
+      - at: "5:tu-x6"
+        fire: [commits/non-conventional, commits/missing-trailer]
+        note: the long flag with an equals sign
+      - at: "5:tu-y5"
+        near: [commits/non-conventional, commits/missing-trailer]
+        note: one command continued over three physical lines

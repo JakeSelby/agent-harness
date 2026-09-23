@@ -39,6 +39,12 @@ MAX_ROWS = 100
 MAX_BYTES = 1 << 20
 
 SERVICE_NAME = "agent-harness"
+# A decision row measures a provider call, not a session, and carries `input`, `output` and a
+# price under the same names a session row does. Exported bare they would land in the same
+# columns, and a backend summing `input` would count a hook's question as session spend. So a
+# decision row's own fields travel under one namespace of their own; see `attributes`.
+DECISION_KIND = "decision"
+DECISION_PREFIX = "harness.decision."
 SEVERITY_NUMBER = 9  # INFO, per the OTLP logs data model.
 
 # `native` is validated here and used by `harness sync`, never by this exporter: runtime
@@ -349,13 +355,18 @@ def attributes(row, config=None, version="", price=None, exported=None):
 
     `exported` is the `harness.exported_at` stamp; see that function for why every record
     carries one. Rows in one batch may share a stamp, which is harmless: they are distinct keys.
+
+    A `kind: "decision"` row is a provider call rather than a session, and its fields travel
+    under `harness.decision.*` — its price included — so a backend that sums `input` or `usd`
+    over its logs counts what the sessions spent and not what the harness spent asking.
     """
     out = {}
+    prefix = DECISION_PREFIX if row.get("kind") == DECISION_KIND else ""
     for key, value in sorted(row.items()):
         if value is None or key == "stances":
             continue
         if isinstance(value, (str, int, float, bool)):
-            out[key] = value
+            out[prefix + key] = value
     for dimension, variant in sorted((row.get("stances") or {}).items()):
         if isinstance(variant, (str, int, float, bool)):
             out["harness." + str(dimension)] = variant
@@ -363,9 +374,9 @@ def attributes(row, config=None, version="", price=None, exported=None):
     out["harness.exported_at"] = exported or exported_at()
     usd, as_of = price or (None, "")
     if usd is not None:
-        out["harness.usd"] = float(usd)
+        out[(prefix or "harness.") + "usd"] = float(usd)
         if as_of:
-            out["harness.price_as_of"] = str(as_of)
+            out[(prefix or "harness.") + "price_as_of"] = str(as_of)
     stamped = row.get("harness_version") or version
     if stamped:
         out["harness.version"] = stamped

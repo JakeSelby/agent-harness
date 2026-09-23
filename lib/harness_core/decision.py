@@ -222,6 +222,11 @@ def events_suppressed():
         _SUPPRESSED.pop()
 
 
+def suppressed() -> bool:
+    """Whether a reporting command is holding writes open. Read by every ledger this module has."""
+    return bool(_SUPPRESSED)
+
+
 def append_event(name: str, detail: Dict[str, Any], target: Optional[str] = None) -> bool:
     """Write one `event` row to the decision ledger. Never raises; says whether it wrote.
 
@@ -229,7 +234,7 @@ def append_event(name: str, detail: Dict[str, Any], target: Optional[str] = None
     `harness usage --by decision` never counts provider bookkeeping as a judgment nobody
     labelled. `read_events` below reads them back.
     """
-    if _SUPPRESSED:
+    if suppressed():
         return False
     module = _ledger()
     if module is None:

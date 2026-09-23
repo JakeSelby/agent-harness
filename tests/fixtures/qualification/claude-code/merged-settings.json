@@ -1,0 +1,10 @@
+{
+  "permissions": {"defaultMode": "bypassPermissions"},
+  "env": {"MY_OWN_KEY": "kept"},
+  "hooks": {
+    "PostToolUse": [
+      {"hooks": [{"type": "command", "command": "/frozen/clone/adapters/claude-code/hook.py"}]},
+      {"matcher": "Write", "hooks": [{"type": "command", "command": "/tmp/probe/user-hook.py"}]}
+    ]
+  }
+}

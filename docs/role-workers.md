@@ -38,6 +38,37 @@ read other native-permitted paths. Claude's restricted file tools use the suppli
 The default deadline is 300 seconds; `--timeout` accepts 1–3600 seconds. Interrupting the runner
 or reaching its deadline terminates its process group and prevents artifact publication.
 
+## What a worker loads
+
+A worker carries the shared instructions, the rules, the resolved stances and its own role body
+as its system text — about 4,200 estimated tokens for a review role. Beside that it is mounted
+only what the policy it was just given tells it to open: the skill directories that text names,
+and copies of the `docs/*.md` files it cites, taken from the resolved text itself so a stance
+that stops citing a skill stops paying for it. A role may add what its body assumes but the
+shared text never names, with a `skills:` line in its contract — `design-loop` for
+`design-judge`, and `all` for `planner`, whose body tells it to read the skills the plan will
+name. A `skills:` name that resolves to no shipped skill fails the run.
+
+The harness checkout itself is no longer one of those roots. How much that is worth depends on
+the runtime, in the sense the compatibility table's tier-restriction row uses:
+
+- **Claude Code — enforced.** The restricted `Read`, `Grep` and `Glob` tools resolve against the
+  supplied `--add-dir` roots, and the checkout is not among them.
+- **Codex — advisory.** Its read-only sandbox can read any native-permitted path, so the narrowing
+  is instruction text, as the declared input roots above already are.
+
+`status.json` records the estimate under `context`: policy tokens, reference tokens and their
+total against a 50,000-token budget, counted with the same characters-per-token approximation
+`harness lint` uses on always-loaded context. A review role resolves at about 30,800 and the
+planner, which may read any skill, at about 43,800. The budget is recorded, not enforced: what a
+worker is shown is fixed by its contract and the policy's own pointers before any brief is read.
+
+Every figure here measures what is **mounted**, not what a run reads; a worker opens what its
+brief needs and usually far less. On that measure a review role went from the whole checkout —
+about 1,073,900 tokens of text, since `--add-dir` took the repository root — to about 30,800, and
+the skill corpus it was pointed at as authority went from all 31,600 tokens of it to the 26,600
+the policy actually cites.
+
 A role's class (`tier:` in its contract) resolves through the adapter's `tiers` table in
 `bindings.json`, so omit `--model` unless you mean to override it. An adapter that maps no model
 for the class requires the caller's actual session model; the worker does not resolve downward

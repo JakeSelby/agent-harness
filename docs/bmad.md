@@ -200,7 +200,11 @@ which no override template reaches — is routed to the variant's default band w
 from that band's row instead, so its class, effort and soft budget come from the posture rather
 than from the recipe. Nothing in the framework's own templates changes. Constrained review roles use
 `harness role run` with explicit input roots; builders retain their normal
-workflow. See [isolated role workers](role-workers.md). Recipes retain
+workflow. See [isolated role workers](role-workers.md). Each review layer is asked to launch only
+once the previous layer's worker has exited, because a worker still running reports no token count
+and a round whose spend is invisible cannot be held under its cap. Running four layers one after
+another is affordable because each is now mounted about 30,800 estimated tokens rather than the
+whole checkout; that figure is what is mounted, not what a layer reads. Recipes retain
 complete keyed review-layer records so BMad's replacement merge does not discard required fields.
 The assigned implementation worktree, framework checkout, artifact root, baseline commit and
 review diff must be separate explicit inputs; run framework scripts from the framework checkout.
