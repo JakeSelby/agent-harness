@@ -1485,7 +1485,14 @@ def agent_calls(home, session_id):
     return calls, True
 
 
-SPAWN_SUBJECT = "The file under review is notes.md in the working directory."
+REVIEW_FILE = "calc.py"
+REVIEW_SOURCE = ("def average(values):\n"
+                 "    \"\"\"The arithmetic mean of values.\"\"\"\n"
+                 "    return sum(values) / len(values)\n")
+REVIEW_SUBJECT = "average"  # what a finding about REVIEW_FILE names, whatever else it says
+
+
+SPAWN_SUBJECT = "The file under review is %s in the working directory." % REVIEW_FILE
 
 
 def framework_prompt(spawn, corroboration):
@@ -1506,9 +1513,10 @@ def framework_prompt(spawn, corroboration):
 def framework_brief(spawn, corroboration):
     """A brief that makes the orchestrator attempt the spawn, carrying `framework_prompt` verbatim.
 
-    It says the quoted text is the subagent's, not the orchestrator's, because a model that takes
-    the descriptor's sentences as addressed to itself answers them and never calls the tool,
-    which leaves the confinement unobserved rather than tested.
+    This is the framework's own spawn text as its workflow hands it to the client, which is what
+    step 9 claims is refused. It says the quoted text is the subagent's, not the orchestrator's,
+    because a model that takes the descriptor's sentences as addressed to itself answers them and
+    never calls the tool, which leaves the confinement unobserved rather than tested.
     """
     return ("Call your Agent tool exactly once, as your first action, with no subagent_type and "
             "no model. Pass the quoted text below as its prompt, copied exactly. The text is "
@@ -1516,6 +1524,73 @@ def framework_brief(spawn, corroboration):
             "or check whether the file it names exists. Prompt: \""
             + framework_prompt(spawn, corroboration) + "\" After the tool call returns, whether "
             "the subagent ran or the call was refused, report in one line what happened.")
+
+
+def layer_name(spawn):
+    """The layer as a framework's own client names it: its prompt file's stem, else its id."""
+    names = spawn.get("identifiers") or []
+    return Path(names[0]).stem if names else spawn["id"]
+
+
+def layer_instructions(data, spawn):
+    """`(path, text)`: the layer's review instructions, where the framework keeps them.
+
+    The path is the layer's own identifier under the descriptor's first input root, and the text
+    is the descriptor's sentences, which are that layer's instructions. The orchestrator is never
+    shown the text: it is told where the file is and writes the spawn's brief itself, so a
+    refusal is earned by what the model wrote and not by sentences the case handed it.
+    """
+    roots = [root.strip("/") for root in data.get("input_roots") or [] if root.strip("/")]
+    if not roots:
+        raise Unverified("the %s descriptor declares no input roots to place the %s layer's "
+                         "instructions under" % (data.get("id"), spawn["id"]))
+    names = spawn.get("identifiers") or []
+    path = roots[0] + "/" + (names[0] if names else spawn["id"] + ".md")
+    text = ("# %s review instructions\n\n" % layer_name(spawn)
+            + "".join("- " + phrase + "\n" for phrase in spawn.get("phrases") or []))
+    return path, text
+
+
+def layer_request(data, spawn, instructions):
+    """What a user asks in plain words: have a subagent do the layer's work on a named file.
+
+    It quotes none of the descriptor's sentences and names no role, and it tells the model to
+    write the brief itself, so the brief under test is the one the client writes. It says to
+    report either outcome, because a model that answers the request itself never calls the tool,
+    which observes nothing about the guard.
+    """
+    return ("I'd like a second opinion on %s in this directory. Please have a subagent do it as "
+            "the %s review layer of our %s code review; that layer's review instructions are in "
+            "%s. Use your Agent tool once for this, as your first action, and write the "
+            "subagent's brief yourself, in your own words. Leave subagent_type unset. Do not "
+            "open, read or check either file yourself. When the tool call returns, whether the "
+            "subagent ran or the call was refused, tell me in one line what happened."
+            % (REVIEW_FILE, layer_name(spawn), data["name"], instructions))
+
+
+ROLE_RUN_PLACEHOLDER = "harness role run <role>"
+
+
+def refusal_gaps(text, data, spawn):
+    """What step 9 requires a refusal to name that `text` does not: framework, layer, command."""
+    wanted = ((data["name"], "the framework"), (spawn["id"], "the layer"),
+              (FRAMEWORK_ORIGIN, "the constrained role it runs as"),
+              (FRAMEWORK_ROOTS, "the read roots that worker needs"),
+              (ROLE_RUN_PLACEHOLDER, "`" + ROLE_RUN_PLACEHOLDER + "`"),
+              ("harness role run " + spawn["role"], "the %s role's run command" % spawn["role"]))
+    return [what for needle, what in wanted if needle not in text]
+
+
+def brief_rows(rows, brief):
+    """The deny rows whose logged input is the fingerprint of `brief`, the spawn's own prompt."""
+    from harness_core import lifecycle
+    said = lifecycle.fingerprint(brief)
+    return [row for row in rows
+            if isinstance(row.get("input"), str) and row["input"] and said.startswith(row["input"])]
+
+
+def quoted(text, limit=1500):
+    return "\"" + redact(" ".join(str(text).split())[:limit]) + "\""
 
 
 def spawn_not_refused(home, session_id, spawn_id):
@@ -1529,38 +1604,239 @@ def spawn_not_refused(home, session_id, spawn_id):
     """
     calls, readable = agent_calls(home, session_id)
     if not readable:
-        raise Unverified("the unnamed framework spawn wrote no subagent transcript, the harness "
+        raise Unverified("the unnamed %s spawn wrote no subagent transcript, the harness "
                          "decision log held no %s deny for its session, the constrained-role "
                          "refusal was not in what the client reported, and the client wrote no "
                          "transcript to show whether a spawn was attempted, so the classification "
-                         "itself was not observed" % FRAMEWORK_POINT)
+                         "itself was not observed" % (spawn_id, FRAMEWORK_POINT))
     if not calls:
         raise Unverified("the model never attempted the spawn: its transcript holds no Agent tool "
                          "call, so no spawn carrying the descriptor's own %s sentences reached the "
                          "harness and its classification was not observed" % spawn_id)
+    brief = quoted(calls[0]["input"].get("prompt", ""))
     allowed = [call for call in calls if call["result"] is not None and not call["is_error"]]
     if allowed:
         raise AssertionError("an unnamed spawn carrying the descriptor's own %s sentences was "
                              "attempted %s time(s) and allowed: its tool result came back without "
-                             "an error and the harness logged no %s deny for the session"
-                             % (spawn_id, len(allowed), FRAMEWORK_POINT))
+                             "an error and the harness logged no %s deny for the session; its "
+                             "brief was %s"
+                             % (spawn_id, len(allowed), FRAMEWORK_POINT, brief))
     answered = [call for call in calls if call["result"] is not None]
     raise Unverified("the model attempted the spawn %s time(s) and none ran, but no %s deny was "
                      "logged for its session and %s, so what refused it was not the confinement "
-                     "this case observes%s"
+                     "this case observes%s; its brief was %s"
                      % (len(calls), FRAMEWORK_POINT,
                         "its tool result was an error without the constrained-role refusal"
                         if answered else "the transcript holds no tool result for it",
-                        (": " + redact(answered[-1]["result"][-200:])) if answered else ""))
+                        (": " + redact(answered[-1]["result"][-200:])) if answered else "",
+                        brief))
+
+
+def framework_refused(home, data, spawn):
+    """Step 9's native claim: the framework's own spawn text, naming no role, is refused by name."""
+    refused = home.session(framework_brief(spawn, int(data.get("corroboration") or 2)))
+    session_id = refused["session_id"]
+    wrote = home.subagents(session_id)
+    calls, _ = agent_calls(home, session_id)
+    brief = str(calls[0]["input"].get("prompt", "")) if calls else ""
+    if wrote:
+        raise AssertionError("an unnamed spawn carrying the descriptor's own %s sentences wrote %s "
+                             "subagent transcript(s), so the spawn ran; its brief was %s"
+                             % (spawn["id"], len(wrote), quoted(brief)))
+    reports = [call["result"] for call in calls
+               if call["result"] and CONFINEMENT_DENY in call["result"]]
+    answer = home.answer(refused) + home.orchestrator_text(session_id)
+    refusal = reports[0] if reports else (answer if CONFINEMENT_DENY in answer else "")
+    logged = logged_refusals(home, session_id)
+    if not logged and not refusal:
+        spawn_not_refused(home, session_id, spawn["id"])
+    if not calls:
+        raise Unverified("the refusal appeared but the client wrote no transcript holding the "
+                         "Agent call, so the brief it refused was not observed")
+    named = calls[0]["input"].get("subagent_type")
+    if named and named != "general-purpose":
+        raise Unverified("the model set subagent_type %r on its spawn, so a spawn that names no "
+                         "role was not observed" % named)
+    notes = ["an Agent spawn %s, carrying the %s %s layer's own declared sentences quoted whole "
+             "as its workflow hands them to the client, sent the brief %s and wrote 0 subagent "
+             "transcripts" % ("with subagent_type general-purpose" if named
+                              else "naming no subagent_type", data["name"], spawn["id"],
+                              quoted(brief))]
+    matching = brief_rows(logged, brief)
+    if not matching:
+        raise AssertionError(observed(notes, "the harness decision log held %s %s deny row(s) "
+                                      "for the session and none whose logged input is that "
+                                      "brief's fingerprint" % (len(logged), FRAMEWORK_POINT)))
+    notes.append("the harness decision log recorded %s %s deny row(s) for the session whose "
+                 "logged input is that brief's fingerprint" % (len(matching), FRAMEWORK_POINT))
+    if not refusal:
+        raise Unverified(observed(notes, "the Agent call's tool result in the transcript did not "
+                                  "carry the constrained-role refusal and the client did not "
+                                  "repeat it, so the refusal's wording was not observed"))
+    gaps = refusal_gaps(refusal, data, spawn)
+    source = "the Agent call's tool result" if reports else "the client's answer"
+    if gaps:
+        raise AssertionError(observed(notes, "the refusal in %s did not name %s: %s"
+                                      % (source, ", ".join(gaps), quoted(refusal))))
+    notes.append("%s carried the refusal, naming the framework (%s), the layer (%s), the "
+                 "constrained role, the input roots, `%s` and `harness role run %s`: %s"
+                 % (source, data["name"], spawn["id"], ROLE_RUN_PLACEHOLDER, spawn["role"],
+                    quoted(refusal)))
+    return notes
+
+
+REWORDING_LIMIT = ("recognition is lexical, so a brief that keeps the layer's prompt file but none "
+                   "of the descriptor's phrases is not refused (tracked in #739)")
+
+
+def reworded_probe(home, data, spawn, instructions):
+    """The observed limit of the claim: what the model's own brief for the layer did. Never raises.
+
+    Recorded, never judged: step 9 claims refusal for the framework's own spawn text only, and a
+    rewording is run to show where lexical recognition stops, whichever way it goes.
+    """
+    probe = home.session(layer_request(data, spawn, instructions))
+    session_id = probe["session_id"]
+    calls, readable = agent_calls(home, session_id)
+    head = ("as the observed limit of the claim, not a pass criterion: asked in plain words to "
+            "have a subagent do the %s layer's review of %s, with that layer's instructions at %s "
+            "and no role named, " % (spawn["id"], REVIEW_FILE, instructions))
+    if not calls:
+        return head + ("the model %s, so no reworded brief reached the guard"
+                       % ("made no Agent call" if readable else "left no readable transcript"))
+    brief = str(calls[0]["input"].get("prompt", ""))
+    match = frameworks.classify(brief, calls[0]["input"].get("subagent_type"))
+    rows = brief_rows(logged_refusals(home, session_id), brief)
+    ran = len(home.subagents(session_id))
+    if rows:
+        outcome = ("it was refused, with %s %s deny row(s) logged for that brief's fingerprint"
+                   % (len(rows), FRAMEWORK_POINT))
+    else:
+        outcome = ("it was not refused: no %s deny was logged for it and it wrote %s subagent "
+                   "transcript(s)" % (FRAMEWORK_POINT, ran))
+    return head + ("the model wrote its own brief %s; %s; the classifier %s; %s"
+                   % (quoted(brief), outcome,
+                      "matched it as `%s`" % match["spawn"] if match else "matched no spawn in it",
+                      REWORDING_LIMIT))
+
+
+def routed_layer(home, data, spawn, instructions, notes):
+    """Step 9's routed half: the same layer through `harness role run` writes worker state."""
+    roots = [home.project / root for root in data.get("input_roots") or []
+             if (home.project / root).is_dir()]
+    extra = []
+    for root in roots:
+        extra += ["--read-dir", str(root)]
+    brief = home.root / "layer-brief.md"
+    brief.write_text("Review %s in the workspace as the %s review layer. Your review instructions "
+                     "are in %s: read that file and follow it.\n"
+                     % (REVIEW_FILE, layer_name(spawn), instructions))
+    printed = role_run(home, spawn["role"], brief, *extra, expected=None)
+    code = home.last_code
+    record = last_json_object(printed)
+    state = home.root / ".local" / "state" / "agent-harness" / "workers"
+    run_dir = state / str((record or {}).get("id") or "")
+    if record is None or not record.get("id") or not (run_dir / "status.json").is_file():
+        raise AssertionError(observed(notes, "harness role run %s for the same layer wrote no "
+                                      "isolated worker state under the harness state home's "
+                                      "workers directory, so no routed review ran: %s"
+                                      % (spawn["role"], redact(printed[-300:], [home.root]))))
+    if record.get("status") == "timed-out":
+        raise Unverified(observed(notes, "harness role run %s timed out, so no findings came "
+                                  "back to read" % spawn["role"]))
+    if record.get("mode") != "isolated-cli" or record.get("status") != "completed" or code != 0:
+        raise AssertionError(observed(notes, "harness role run %s exited %s with mode %r and "
+                                      "status %r, not a completed isolated-cli worker: %s"
+                                      % (spawn["role"], code, record.get("mode"),
+                                         record.get("status"),
+                                         redact(record.get("error") or "", [home.root]))))
+    result_path = Path(str(record.get("result_path") or ""))
+    if not result_path.is_file() or result_path.resolve().parent != run_dir.resolve():
+        raise AssertionError(observed(notes, "the completed %s worker's result is not in its own "
+                                      "state directory" % spawn["role"]))
+    missing = [str(root) for root in roots if str(root.resolve()) not in
+               [str(Path(path).resolve()) for path in record.get("read_roots") or []]]
+    if missing:
+        raise AssertionError(observed(notes, "the %s worker's record does not carry the "
+                                      "framework's input roots %s as read roots"
+                                      % (spawn["role"], ", ".join(redact(m, [home.root])
+                                                                  for m in missing))))
+    result = result_path.read_text(errors="replace")
+    if REVIEW_SUBJECT not in result.casefold() and REVIEW_FILE not in result.casefold():
+        raise AssertionError(observed(notes, "the %s worker completed but returned no findings "
+                                      "about %s: %s" % (spawn["role"], REVIEW_FILE,
+                                                        quoted(result[-300:]))))
+    notes.append("the same layer run the routed way, harness role run %s with %s as --read-dir, "
+                 "exited 0 printing a worker record with mode isolated-cli and status completed, "
+                 "wrote status.json and result.md in its own directory under the harness state "
+                 "home's workers directory, recorded those input roots as read roots, and "
+                 "returned %s characters of findings naming %s (a run whose worker state is "
+                 "missing fails this case)"
+                 % (spawn["role"], ", ".join(root.name for root in roots), len(result.strip()),
+                    REVIEW_FILE if REVIEW_FILE in result.casefold() else REVIEW_SUBJECT))
+
+
+def ordinary_brief(prompt):
+    """An orchestrator turn that hands an ordinary spawn a prompt the case controls."""
+    return ("Use your Agent tool exactly once, as your first action, with no subagent_type, and "
+            "pass it this prompt, copied exactly: \"" + prompt + "\" When the tool call returns, "
+            "report in one line what the subagent said.")
+
+
+def review_words_prompt():
+    """Ordinary work whose brief mentions review, a diff and findings only in passing."""
+    return ("Count the lines in %s in the working directory and reply with just the number. "
+            "I will review the diff and write up the findings myself later, so do not review "
+            "anything." % REVIEW_FILE)
+
+
+def input_root_edit(data):
+    """`(path, prompt)`: ordinary work that edits a file under the framework's input roots."""
+    roots = [root.strip("/") for root in data.get("input_roots") or [] if root.strip("/")]
+    if not roots:
+        raise Unverified("the %s descriptor declares no input roots to edit under" % data.get("id"))
+    # The second root when there is one: the first holds the layer's instructions already.
+    path = (roots[1] if len(roots) > 1 else roots[0]) + "/sprint-notes.md"
+    return path, ("Append the line status: done to the file %s in the working directory with "
+                  "your Edit or Write tool, then reply DONE." % path)
+
+
+def ordinary_ran(home, prompt, needles, what, notes, tools=("Agent",)):
+    """Run one ordinary spawn and require it ran unrefused. Returns the brief the model sent."""
+    session = home.session(ordinary_brief(prompt), tools=tools)
+    session_id = session["session_id"]
+    calls, readable = agent_calls(home, session_id)
+    if readable and not calls:
+        raise Unverified(observed(notes, "the false-positive check was not observed: the model "
+                                  "never attempted %s, so no Agent call reached the guard" % what))
+    sent = str(calls[0]["input"].get("prompt", "")) if calls else ""
+    dropped = [needle for needle in needles if calls and needle.casefold() not in sent.casefold()]
+    if dropped:
+        raise Unverified(observed(notes, "the model's brief for %s dropped %s, so a spawn "
+                                  "carrying it was not observed: %s"
+                                  % (what, ", ".join(dropped), quoted(sent))))
+    denied = logged_refusals(home, session_id)
+    if denied:
+        raise AssertionError(observed(notes, "the false-positive check failed: %s was refused, "
+                                      "with %s %s deny row(s) logged for its session"
+                                      % (what, len(denied), FRAMEWORK_POINT)))
+    if not home.subagents(session_id):
+        raise AssertionError(observed(notes, "the false-positive check failed: %s wrote no "
+                                      "subagent transcript%s"
+                                      % (what, (": " + quoted(calls[0]["result"] or "", 300))
+                                         if calls else "")))
+    return sent
 
 
 def case_spawn_confinement(home):
-    """docs/compatibility.md: a framework's review spawn is confined by what it carries (#291).
+    """docs/compatibility.md step 9: a framework's review layer is confined by what it carries.
 
-    The point of the case is that dropping the role name does not drop the confinement, so the
-    spawn under test names no `subagent_type` at all and carries the descriptor's own sentences.
-    A false-positive check runs beside it: ordinary work must still spawn, or a guard that
-    refuses everything would read as a pass.
+    Each part is read from what the run wrote. The framework's own spawn text, naming no role, must
+    be refused by name. A brief the model rewrites in its own words is run and recorded as the
+    claim's observed limit, never judged. The same layer through `harness role run` must write
+    isolated worker state and return findings. Two ordinary spawns, one merely mentioning review
+    words and one editing the framework's input roots, must still run, or a guard that refuses
+    everything would read as a pass.
     """
     home.seed()
     home.harness("sync")
@@ -1568,46 +1844,33 @@ def case_spawn_confinement(home):
     if gap:
         raise Unverified(gap + ", so spawn confinement was not observed")
     data, spawn = descriptor_spawn()
-    brief = framework_brief(spawn, int(data.get("corroboration") or 2))
-    refused = home.session(brief)
-    text = home.answer(refused) + home.orchestrator_text(refused["session_id"])
-    wrote = home.subagents(refused["session_id"])
-    if wrote:
-        raise AssertionError("an unnamed spawn carrying the descriptor's own %s sentences wrote "
-                             "%s subagent transcript(s)" % (spawn["id"], len(wrote)))
-    logged = logged_refusals(home, refused["session_id"])
-    reported = CONFINEMENT_DENY in text
-    if not logged and not reported:
-        spawn_not_refused(home, refused["session_id"], spawn["id"])
-    notes = ["an Agent spawn naming no subagent_type, carrying only the descriptor's own %s "
-             "sentences, wrote 0 subagent transcripts" % spawn["id"]]
-    if logged:
-        notes.append("the harness decision log recorded %s %s deny row(s) for its session"
-                     % (len(logged), FRAMEWORK_POINT))
-    if reported:
-        notes.append("the client reported the refusal \"%s\"" % CONFINEMENT_DENY)
-        for clause, what in ((FRAMEWORK_ORIGIN, "what it recognised"),
-                             (FRAMEWORK_ROOTS, "the read roots that worker needs")):
-            if clause not in text:
-                raise AssertionError(observed(notes, "the refusal did not name %s" % what))
-        notes.append("and the refusal named both the framework work it recognised and the input "
-                     "roots the isolated worker needs")
-    else:
-        # The row carries no reason, so the wording is the unit tests' to hold, not this run's.
-        notes.append("the client did not repeat the refusal, and the log row carries no reason, so "
-                     "its wording was not observed in this run")
-    ordinary = home.session(SPAWN_PROMPT)
-    if not home.subagents(ordinary["session_id"]):
-        tried, readable = agent_calls(home, ordinary["session_id"])
-        if readable and not tried:
-            raise Unverified(observed(notes, "the false-positive check was not observed: the model "
-                                      "never attempted the ordinary spawn, so no Agent call "
-                                      "reached the guard"))
-        raise AssertionError(observed(notes, "the false-positive check failed: an ordinary unnamed "
-                                      "spawn carrying none of the descriptor's sentences wrote no "
-                                      "subagent transcript either, so the guard refuses everything"))
-    notes.append("while an ordinary unnamed spawn in the same home still ran and wrote its own "
-                 "subagent transcript, so the guard classifies rather than refusing every spawn")
+    instructions, text = layer_instructions(data, spawn)
+    (home.project / instructions).parent.mkdir(parents=True, exist_ok=True)
+    (home.project / instructions).write_text(text)
+    (home.project / REVIEW_FILE).write_text(REVIEW_SOURCE)
+    edited, edit_prompt = input_root_edit(data)
+    (home.project / edited).parent.mkdir(parents=True, exist_ok=True)
+    (home.project / edited).write_text("status: open\n")
+    notes = framework_refused(home, data, spawn)
+    notes.append(reworded_probe(home, data, spawn, instructions))
+    routed_layer(home, data, spawn, instructions, notes)
+    ordinary_ran(home, review_words_prompt(), ("review", "diff", "findings"),
+                 "an ordinary unnamed spawn whose brief mentions review, a diff and findings in "
+                 "passing", notes)
+    notes.append("an ordinary unnamed spawn whose brief mentions review, a diff and findings in "
+                 "passing ran, wrote its own subagent transcript and logged no %s deny"
+                 % FRAMEWORK_POINT)
+    ordinary_ran(home, edit_prompt, (edited,),
+                 "an ordinary unnamed spawn that edits %s under the input roots" % edited, notes,
+                 tools=("Agent", "Read", "Edit", "Write"))
+    after = (home.project / edited).read_text(errors="replace")
+    if "status: done" not in after:
+        raise Unverified(observed(notes, "the spawn told to edit %s ran unrefused but the file "
+                                  "does not hold the line it was to append, so an edit under the "
+                                  "input roots was not observed" % edited))
+    notes.append("and an ordinary unnamed spawn told to edit %s, under the framework's input "
+                 "roots, ran, logged no %s deny and appended its line to the file"
+                 % (edited, FRAMEWORK_POINT))
     return "; ".join(notes) + "."
 
 
@@ -2013,10 +2276,13 @@ CASES = {
                          "same work as an isolated worker and refuse an artifact path above the "
                          "workspace"),
     "spawn-confinement": (case_spawn_confinement,
-                          "spawn a framework's review work with no subagent_type at all, carrying "
-                          "only the descriptor's own sentences, and read the refusal from the "
-                          "harness decision log and the client's answer beside an "
-                          "ordinary spawn that must still run"),
+                          "spawn a framework's review layer with its own spawn text and no "
+                          "subagent_type, and read the refusal's framework, layer and role-run "
+                          "command from the decision log and the tool result; record what a brief "
+                          "the model rewrites itself did, as the claim's limit; run the same layer "
+                          "through harness role run and read its worker state and findings; and "
+                          "spawn ordinary work mentioning review words and editing the "
+                          "framework's input roots, which must still run"),
     "cost-posture": (case_cost_posture,
                      "sync a non-default cost variant, spawn an unnamed subagent in a new native "
                      "session, and read its meta record, brief, the usage feed and the usage rows"),
