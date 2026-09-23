@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A framework integration descriptor, `policy/integrations/<id>.json`, names a framework, the
+  release it is pinned to, how its spawns are recognised, which harness role each spawn maps to,
+  and the input roots a confined worker needs; BMad Method 6.12.0 is the first tenant. The spawn
+  hook now classifies a native spawn against those descriptors instead of trusting the
+  `subagent_type` the model wrote, so a review layer re-issued as an unnamed subagent is refused
+  with the same isolated-worker instruction a named `reviewer` spawn gets, and the refusal names
+  the read roots that worker needs. The `harness-role:` line in a routed brief goes back to being
+  an optimisation rather than the thing confinement depends on. Recognition is corroborated: one
+  of the framework's own layer names as the spawn type is enough, a path out of its routed text
+  counts only with one of its sentences beside it, and two of those sentences are enough on their
+  own, so the fix-up brief after a review, a brief that edits the override templates and a brief
+  that quotes a single line of them all still run. A classified refusal is deliberately not
+  remembered for the session, because that memory matches by prefix and similarity and one wrong
+  classification would go on refusing the corrected brief. A descriptor that will not parse or
+  will not validate is announced once per session and logged rather than skipped in silence.
+  `spawn-confinement` joins the required qualification cases, with a false-positive check, and the
+  catalog records what a descriptor still cannot recognise (#291).
+
 ### Changed
 
 - `claude/settings.template.json` no longer carries a hooks block. Dispatch has been
