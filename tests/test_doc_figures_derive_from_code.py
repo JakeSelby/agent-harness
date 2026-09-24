@@ -63,8 +63,10 @@ class DetectorCountTests(unittest.TestCase):
         self.product = json.loads((REPO / "product.json").read_text(encoding="utf-8"))
 
     def copy_lines(self):
-        """Every published sentence that states a detector count."""
-        found = [self.product["hero"]["proof"]]
+        """Every published sentence that states a detector count. The hero proof no longer
+        states one (#764), so it is checked only if it names detectors again."""
+        proof = self.product["hero"]["proof"]
+        found = [proof] if "detector" in proof else []
         for group in self.product["capabilities"]:
             for feature in group["features"]:
                 if "deterministic detectors" in feature["line"]:
@@ -73,7 +75,7 @@ class DetectorCountTests(unittest.TestCase):
         return found
 
     def test_the_registry_and_the_landing_copy_state_the_same_count(self):
-        self.assertGreaterEqual(len(self.copy_lines()), 3)  # proof, feature line, README
+        self.assertGreaterEqual(len(self.copy_lines()), 2)  # feature line, README
         for line in self.copy_lines():
             self.assertIn(spelled(self.count), line.lower(), msg=line)
 

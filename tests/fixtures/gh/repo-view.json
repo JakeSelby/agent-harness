@@ -1,5 +1,5 @@
 {
-    "description": "Find out which of your agent rules actually fire. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
+    "description": "The control plane for your coding agents, however you run them. One checkout of rules, skills, subagents, hooks and stances, projected into Claude Code and Codex with your own primitives: hook-enforced guardrails, usage telemetry, cost postures and model tiering, under any rules library or orchestration layer.",
     "homepageUrl": "https://agent-harness.jakeselby.com",
     "repositoryTopics": [
         {
