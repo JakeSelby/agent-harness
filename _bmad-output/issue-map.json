@@ -8,7 +8,7 @@
     "story": 231,
     "task": 31,
     "bug": 91,
-    "chore": 70,
+    "chore": 71,
     "spike": 13,
     "decision": 12
   },
@@ -5650,6 +5650,19 @@
       "type": "task",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T030.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C070",
+      "github_number": 765,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/765",
+      "title": "Open the 0.13.1 candidate for the landing-copy patch",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C070.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
