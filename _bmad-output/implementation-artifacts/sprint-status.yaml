@@ -372,6 +372,7 @@ development_status:
   ah-d001-docs-bmad-decide-the-builder-routing-follow-up: done
   ah-d003-decide-whether-the-credential-probe-names-the: done
   ah-d004-decide-whether-repeated-agent-pairs-get-an: done
+  ah-d012-record-the-layered-configurable-measurable: backlog
   ah-s001-feat-hook-stop-hook-runs-the-repo-gate-and: done
   ah-s002-feat-agents-ship-gatherer-reviewer-and-log: done
   ah-s003-feat-stance-add-cost-stance-and-cache-hygiene: done

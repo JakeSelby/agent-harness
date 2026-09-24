@@ -2,7 +2,7 @@
 title: Agent Harness product requirements
 status: final
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 supersedes: ../prd-agent-harness-2026-09-19/prd.md
 sources:
   - ../../source-ledger.md
@@ -109,6 +109,64 @@ Three commitments make this credible:
   - "model-agnostic", which is accurate but crowded.
 - **Claims never made:** universal compatibility, identical behaviour across runtimes, being first, or an
   unmeasured saving.
+- **Amended 2026-09-24:** the layered, configurable, measurable framing is in
+  [the vision amendment](#amendment-2026-09-24-a-layered-configurable-measurable-harness).
+
+### Amendment 2026-09-24: a layered, configurable, measurable harness
+
+Added after the original run; sections 1 to 1.2 above are unchanged and dated 2026-09-23. No requirement
+ID, success metric or other section changes with this amendment. The same amendment is recorded in the
+[product brief](../../product-briefs/brief-agent-harness-2026-09-23/brief.md#amendment-2026-09-24-a-layered-configurable-measurable-harness).
+
+**What the product is.** It is a lightweight harness you layer alongside whatever agent runtime you use
+(Claude Code, Codex and others), however you orchestrate it: native subagents, workflow scripts, or
+methodologies such as BMad or Superpowers. It is built from independent layers. Every layer, and every
+module within one, can be switched on, off or configured. A user keeps the layers they like and turns ours
+off where they already have their own. The harness then cedes that whole area to the other tool rather than
+trimming inside it. The north star is running beside a methodology such as Superpowers, with the user
+choosing which layer comes from which source.
+
+**The layers.**
+- **Observation:** telemetry, meaning ledger, OTel export and transcripts. It must add nothing to the
+  model's context.
+- **Instruction:** what the model reads. Rules, stances, repository instructions, the session prompt and
+  the output style.
+- **Capability:** on-demand skills, agent roles and commands.
+- **Enforcement:** hooks and guards at tool and turn boundaries.
+- **Orchestration:** delegation, choosing a model class and effort for each role inside the host, and
+  the context lifecycle (trimming, compaction, clearing, handoff). It never selects a provider endpoint or
+  serves a model.
+- **Advisory:** recommendations to the human, such as starting a fresh session, clearing context or
+  reviewing a plan.
+- **Economy** is a concern rather than a layer. Cost posture, budgets and prices run through the
+  instruction, enforcement and orchestration layers, and each can be switched on its own. By default
+  nothing is denied for cost: budgets inform. A spend cap is an opt-in module that denies only when the
+  user switches it on.
+- A control plane of profiles, toggles and configuration composes the layers, and an evaluation plane
+  measures them.
+
+**Measurable by construction.** Every module declares three things: what it claims to improve, what it
+costs to carry, and the instrument that measures it. A module with no instrument is reported as
+unmeasured, never as working. Telemetry runs in every arm, including a bare runtime with nothing of ours
+loaded, so the harness can measure the baseline it is compared against.
+
+**How it is evaluated.** There are four comparisons, and each runs at the cheapest tier that can answer
+it:
+1. The whole harness against the bare runtime.
+2. One rule, skill or hook in a minimal profile: first alone, then with the economy concern switched on.
+   A unit eval never pays for the full context.
+3. One of our layers against an external equivalent in the same slot, with everything else held fixed.
+4. Permutations of switches within and across layers: screened with fractional factorial designs, then
+   tested in combination.
+
+Every comparison is measured on three axes: adherence (did the agent follow it), effectiveness (did the
+outcome improve) and efficiency (what it cost). Advisory-layer effects are reported separately, as
+estimates that depend on the user following the advice.
+
+**Why.** Agent tooling mostly ships as monoliths that bundle methodology, instructions and enforcement. A
+user cannot tell which part helps, or combine the best parts of several. The harness sits beneath them as
+a substrate: the control plane, telemetry and evaluation that make any combination configurable and
+measurable.
 
 ## 2. Target user
 
@@ -1351,6 +1409,8 @@ makes stale, in the same pull request:
 - **Not an agent runtime.** It does not replace Claude Code or Codex.
 - **Not hosted.** No feature requires a remote service.
 - **Never caps spend.** Budgets inform, and nothing is denied for cost.
+  *Amended 2026-09-24:* this stays the default. An opt-in cap module may deny for cost when the user
+  switches it on; see the [§1 amendment](#amendment-2026-09-24-a-layered-configurable-measurable-harness).
 - **Never relaxes a decision.** No decision provider relaxes a decision or denies one. Semantic
   auto-authorization is out of scope.
 - **No distillation.** The harness never trains a model on a third-party provider's output. Any local model
