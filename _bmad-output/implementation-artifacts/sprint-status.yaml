@@ -325,6 +325,10 @@ development_status:
   ah-b088-a-role-confinement-refusal-writes-no-decision: backlog
   ah-b089-the-confinement-refusal-names-a-harness-command: backlog
   ah-b090-qualification-provisioning-installs-bmad-without: backlog
+  ah-b091-harness-role-run-accepts-a-read-directory-as: backlog
+  ah-b092-a-release-pull-request-cannot-pass-the-changelog: backlog
+  ah-b093-bmad-issue-sync-new-files-the-issue-then-fails: backlog
+  ah-b094-harness-worktree-remove-cannot-remove-a-worktree: backlog
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
@@ -364,6 +368,7 @@ development_status:
   ah-c066-release-0-13-0-fold-the-changelog-record-the: ready-for-dev
   ah-c070-open-the-0-13-1-candidate-for-the-landing-copy: ready-for-dev
   ah-c071-release-0-13-1-the-control-plane-landing-copy: ready-for-dev
+  ah-c072-file-the-0-13-release-session-s-follow-ups: ready-for-dev
   ah-d001-docs-bmad-decide-the-builder-routing-follow-up: done
   ah-d003-decide-whether-the-credential-probe-names-the: done
   ah-d004-decide-whether-repeated-agent-pairs-get-an: done
@@ -466,3 +471,4 @@ development_status:
   ah-t028-close-the-round-5-assessment-s-should-fix-gaps: backlog
   ah-t029-record-the-token-only-worker-login-limitation-in: ready-for-dev
   ah-t030-landing-copy-leads-with-another-tool-s-hero-and: ready-for-dev
+  ah-t031-the-generated-compatibility-block-carries-an-em: backlog
