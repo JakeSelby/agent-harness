@@ -185,9 +185,8 @@ again.
 
 ## Release status
 
-The 0.13.1 candidate requires fresh native qualification for Claude Code CLI on macOS and
-Linux; until each carries evidence for this source, the preflight blocks publication. 0.13.0,
-the current release, qualifies those two targets. Codex CLI is not in its
+The 0.13.1 release qualifies Claude Code CLI on macOS and Linux; against 0.13.0 it changes the
+landing copy only. Codex CLI is not in its
 contract: it is admitted once a scripted qualification round agrees with a hand-driven one, so
 0.11.1 remains the last release qualifying it. The VS Code surfaces and Codex Desktop are unqualified previews. The architecture-viewer
 integration is also a preview for a separately installed implementation, with no bundled viewer
