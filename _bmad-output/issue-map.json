@@ -10,7 +10,7 @@
     "bug": 95,
     "chore": 73,
     "spike": 13,
-    "decision": 12
+    "decision": 13
   },
   "items": [
     {
@@ -5754,6 +5754,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B094.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D012",
+      "github_number": 778,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/778",
+      "title": "Record the layered, configurable, measurable harness vision in the brief and PRD",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D012.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
