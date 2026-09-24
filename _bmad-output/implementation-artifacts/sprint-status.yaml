@@ -320,7 +320,7 @@ development_status:
   ah-b083-stance-switch-and-custom-stance-switch-only: ready-for-dev
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: ready-for-dev
   ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
-  ah-b086-the-100-kb-grade-bash-timing-test-fails-under: backlog
+  ah-b086-the-100-kb-grade-bash-timing-test-fails-under: ready-for-dev
   ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
   ah-b088-a-role-confinement-refusal-writes-no-decision: backlog
   ah-b089-the-confinement-refusal-names-a-harness-command: backlog
