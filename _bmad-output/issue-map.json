@@ -4,11 +4,11 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "epic": 18,
+    "epic": 20,
     "story": 231,
     "task": 32,
     "bug": 95,
-    "chore": 73,
+    "chore": 74,
     "spike": 13,
     "decision": 14
   },
@@ -5769,6 +5769,32 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D012.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-E019",
+      "github_number": 780,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/780",
+      "title": "Adopt BMad's native ticketing once upstream's gate opens",
+      "type": "epic",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-E019.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C073",
+      "github_number": 781,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/781",
+      "title": "Record the BMad ticketing adoption epic and its upstream contribution",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C073.md",
+      "parent_bmad_id": "AH-E019",
+      "parent_github_number": 780,
       "lifecycle": "active",
       "provenance": "authored"
     },
