@@ -264,6 +264,9 @@ development_status:
   ah-s211-ledger-rows-carry-a-schema-version-and-readers: ready-for-dev
   ah-s212-remote-control-pin-the-verified-client-versions: ready-for-dev
 
+  ah-e019-adopt-bmad-s-native-ticketing-once-upstream-s: in-progress
+  ah-c073-record-the-bmad-ticketing-adoption-epic-and-its: ready-for-dev
+
   # Items with no epic
   ah-b001-plan-mode-prompts-for-read-only-work-it-can-t: done
   ah-b002-fix-rules-the-always-loaded-delegation: done
