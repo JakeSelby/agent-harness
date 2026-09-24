@@ -6,7 +6,7 @@
   "next_ids": {
     "epic": 18,
     "story": 227,
-    "task": 30,
+    "task": 31,
     "bug": 91,
     "chore": 67,
     "spike": 10,
@@ -5585,6 +5585,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B090.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-T030",
+      "github_number": 764,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/764",
+      "title": "Landing copy leads with another tool's hero and claims savings the benchmark does not show",
+      "type": "task",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-T030.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
