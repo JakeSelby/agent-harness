@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit reviews every pull request into the default branch. The settings keep it to defects:
+# one review per pull request, no summaries written into the PR description, and no prose-style
+# linters, because much of this repository is instruction text that agents execute.
+# Reference: https://docs.coderabbit.ai/reference/configuration
+
+language: en-US
+tone_instructions: >-
+  Terse. Report defects, contradictions and broken references, not preferences.
+  Never comment on the wording, tone or length of prose.
+
+reviews:
+  profile: chill
+  high_level_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: false
+    ignore_title_keywords:
+      - "chore(release)"
+    ignore_usernames:
+      - "dependabot[bot]"
+  path_filters:
+    - "!_bmad/**"
+    - "!_bmad-output/**"
+    - "!.agent-harness/plans/**"
+    - "!claude/agents/**"
+    - "!claude/commands/**"
+    - "!claude/CLAUDE.md"
+    - "!claude/CLAUDE.personal.template.md"
+    - "!compatibility/evidence/**"
+  path_instructions:
+    - path: "primitives/**"
+      instructions: >-
+        Instructions that language-model agents execute. Flag contradictions with other rules,
+        stances or workflows; references to files, commands, flags or skills that do not exist;
+        steps whose order cannot work; and instructions an agent cannot follow as written.
+        Skip wording, tone and length.
+    - path: "{bin/**,lib/**,policy/hooks/**,scripts/**,adapters/**,.github/scripts/**}"
+      instructions: >-
+        Python here must run on Python 3.9: flag syntax or standard-library APIs newer than 3.9.
+        Flag a behaviour change that arrives without a test under tests/.
+    - path: "tests/**"
+      instructions: >-
+        Flag tests that cannot fail, and tests that reach the network or a live service.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Flag permissions broader than the job needs and third-party actions not pinned to a
+        commit SHA.
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+  tools:
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    vale:
+      enabled: false
+    pylint:
+      enabled: false
+    flake8:
+      enabled: false
+    yamllint:
+      enabled: false
+
+chat:
+  auto_reply: true

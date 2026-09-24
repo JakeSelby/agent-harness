@@ -462,6 +462,7 @@ development_status:
   ah-s224-scripted-cases-drive-the-cli-with-the-contract: ready-for-dev
   ah-s225-round-2-unverified-cases-observe-what-happened: ready-for-dev
   ah-s226-docs-field-scan-credit-claude-md-doctor-and: ready-for-dev
+  ah-s231-adopt-coderabbit-review-and-clear-review-bot: ready-for-dev
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-t001-give-each-replay-arm-its-own-profile-and: done
   ah-t002-record-the-fields-a-cost-replay-regression-needs: done
