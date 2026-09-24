@@ -5,7 +5,7 @@
 # depth check. backlog: any other open item. An open epic is in-progress when any child
 # is done, ready or in progress, and backlog otherwise.
 
-generated: "2026-09-23"
+generated: "2026-09-24"
 project: agent-harness
 project_key: AH
 tracking_system: github-issues
@@ -317,6 +317,10 @@ development_status:
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: ready-for-dev
   ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
   ah-b086-the-100-kb-grade-bash-timing-test-fails-under: backlog
+  ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
+  ah-b088-a-role-confinement-refusal-writes-no-decision: backlog
+  ah-b089-the-confinement-refusal-names-a-harness-command: backlog
+  ah-b090-qualification-provisioning-installs-bmad-without: backlog
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
@@ -454,3 +458,4 @@ development_status:
   ah-t026-compatibility-step-8-says-a-resumed-session-is: ready-for-dev
   ah-t027-hand-compare-the-eleven-scripted-native-cases: backlog
   ah-t028-close-the-round-5-assessment-s-should-fix-gaps: backlog
+  ah-t029-record-the-token-only-worker-login-limitation-in: ready-for-dev
