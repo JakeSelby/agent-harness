@@ -18,7 +18,7 @@ loader.exec_module(harness)
 
 COMMANDS = REPO / "claude" / "commands"
 EXPECTED = ["build.md", "close-out.md", "handoff.md", "land.md", "plan.md", "research.md", "review.md"]
-MAX_BODY_LINES = 39
+MAX_BODY_LINES = 40
 
 
 def split(path):
@@ -174,6 +174,7 @@ class CommandContentTests(unittest.TestCase):
         body = split(COMMANDS / "build.md")[1]
         self.assertIn("Answer the review bot", body)
         self.assertIn("say so if none arrives", body)
+        self.assertIn("one more review", body)
         self.assertIn("resolveReviewThread", body)
         self.assertIn("never yours to resolve", body)
 
