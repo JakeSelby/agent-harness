@@ -7,7 +7,7 @@ paradigm: 'policy kernel with ports and adapters, enforced at hook ports'
 scope: 'the harness CLI, its primitive catalog, policy kernel, hook dispatch, adapters, measurement, integrations and planning traceability'
 status: final
 created: '2026-09-23'
-updated: '2026-09-23'
+updated: '2026-09-24'
 supersedes: '../architecture-agent-harness-2026-09-19/ARCHITECTURE-SPINE.md'
 binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-27, FR-28, FR-29, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-37, FR-38, FR-39, FR-40, FR-41, FR-42, FR-43, FR-44, FR-45, FR-46, FR-47, FR-48, FR-49, FR-50, FR-51, FR-52, FR-53, FR-54, FR-55, FR-56, FR-57, FR-58, FR-59, FR-60, FR-61, FR-62, FR-63, FR-64, FR-65, FR-66, FR-67, FR-68, FR-69, FR-70]
 sources:
@@ -271,10 +271,11 @@ flowchart TB
     - readers tolerate unknown fields;
     - a rename ships with a fold map, as renamed detector ids already do.
 
-### AD-12: Measurement invariants [ADOPTED]
+### AD-12: Measurement invariants [ADOPTED; estimand labels planned for v0.14.0, soft-estimate report for v0.15.0]
 
-- **Binds:** FR-24, FR-55 to FR-58; the benchmark runner, pricing and usage reports.
-- **Prevents:** comparisons contaminated by model drift, profile leakage or double counting.
+- **Binds:** FR-24, FR-55 to FR-58; the benchmark runner, pricing, usage reports and published evidence.
+- **Prevents:** comparisons contaminated by model drift, profile leakage or double counting; a modelled
+  estimate read as a measurement.
 - **Rule:**
   - Compare ratios across days, never dollars. Dollars are list-price equivalents.
   - Arms differ only by environment. Each fence is proved before scoring, and no tagged sync touches a
@@ -283,7 +284,20 @@ flowchart TB
   - A session row is never summed with its subagent rows. A subagent's cost comes from its own
     transcript.
   - Micro-tier rows never enter the production series.
-  - Every row records the provenance of its arm, and ablations are declared in a manifest.
+  - Every row records the provenance of its arm. Ablations are declared in an ablation manifest, which
+    lists arms and is distinct from a module's manifest (AD-22).
+  - Every figure carries an estimand label. (Amended 2026-09-24. The labels land in v0.14.0 with
+    attribution; the soft-estimate report and series land in v0.15.0.)
+    - **Measured:** a count read directly from recorded rows, or an estimate from runs. Each names the
+      fingerprint it covers; an estimate also carries n and an interval.
+    - **Unattributed:** a qualifier on a figure from rows with no fingerprint. It supports only
+      whole-profile statements.
+    - **Soft estimate:** it depends on an assumption the run does not observe, such as the user following
+      advice, and a named estimator computes it.
+    - **Unmeasured:** there is no instrument.
+  - The soft series is never pooled with the measured one.
+  - Estimand labels are orthogonal to FR-11's known, partial, unavailable and failed, which describe a
+    field's availability. Both apply to a figure.
 
 ### AD-13: Detector logic lives in `ruleprobe` [ADOPTED; declarative loading in the harness planned]
 
@@ -329,7 +343,7 @@ flowchart TB
   - No model trains on a third-party provider's output.
   - Evidence changes a stance only as a proposal the developer applies.
 
-### AD-16: Parallel writers coordinate through shared, recorded state [PLANNED: v0.15.0, #542, #543]
+### AD-16: Parallel writers coordinate through shared, recorded state [PLANNED: backlog, #542, #543]
 
 - **Binds:** FR-44, FR-63; builders, worktrees, the decision log, the session archive.
 - **Prevents:** overlapping edits between sibling agents, and coordination chat that bills as prompts.
@@ -407,17 +421,69 @@ flowchart TB
   - Third-party code enters only as a pinned wheel in `lib/vendor/`, loaded by path, after a licensing
     review. There are no package-manager dependencies at runtime.
 
+### AD-22: Modules declare a manifest [PLANNED: fields and checks v0.14.0, #554; scorecard v0.15.0; slots and adapters v0.16.0]
+
+- **Binds:** FR-15, FR-16, FR-19, FR-58; every switchable module, the selection document and the
+  scorecard.
+- **Prevents:** a module reported as working with nothing measuring it; two modules taking one slot
+  unnoticed; results from one profile read as another's; a second resolver.
+- **Rule:**
+  - Every module declares a manifest with six fields: claims, surface, instruments, slot, dependencies and
+    conflicts.
+  - Each manifest sits beside its module's source: primitives in the catalog (AD-1), hooks in
+    `policy/hooks/`. The one resolver, `policy/hooks/posture.py` (AD-2, AD-6), reads both and resolves
+    dependencies and conflicts.
+  - A conflict never switches off a fixed invariant. It switches off a core hook only with AD-2's
+    acknowledgement.
+  - Two switched-on modules claiming one slot is a resolution error, unless one of them declares that it
+    cedes the slot.
+  - A module with no instrument reports as unmeasured, never as working.
+  - The profile fingerprint is a digest of the resolved selection:
+    - each switched-on module, with its version or content digest;
+    - the stance variants;
+    - the configuration values that reach the model or the hooks;
+    - the harness version.
+
+### AD-23: Observation adds nothing to any arm's model context, and every new row is attributable [PLANNED: v0.14.0, #482]
+
+- **Binds:** FR-11, FR-23, FR-27, FR-56, FR-58; the observation layer, the ledgers, the decision log and
+  every benchmark arm.
+- **Prevents:** a baseline observed differently from the arm it is compared against; observation changing
+  what it measures; a cost or a decision that no module owns.
+- **Rule:**
+  - Observation runs in every arm, bare included, through an observation-only hook path. That path appends
+    to the ledger, prints nothing, adds no context and returns no decision.
+  - **Registration:** observation has its own registered hook entry point beside `hook.py`, and is not
+    routed through the dispatcher. It reads which events each runtime raises from the same event table
+    AD-7 names as the one declaration, so the two entry points cannot disagree on events.
+  - **Failure:** it fails open and silent. On any exception it exits 0 with no output, never a deny, a
+    block or a `systemMessage`. The error goes to a local error log only.
+  - In the bare arm, only the observation-only path is installed.
+  - Context-emitting handlers, such as `neutralize-tool-output`, the `harness-session` notices and
+    `stop-gate`, are enforcement or advisory modules, never observation. Observation never rides on them.
+  - A test drives a scripted session against a recorded model through every hook event the arm installs:
+    session start, prompt submit, pre and post tool use, subagent stop, and stop. It compares every model
+    request with observation on and off. Each must be byte-identical after timestamps and session ids are
+    normalised. It runs per arm: bare, and each harness profile under test.
+  - Every new ledger row carries the profile fingerprint (AD-22). The fields are additive under AD-11, and
+    older rows read as unattributed.
+  - Usage rows carry per-module attribution of context tokens. That attribution is an estimate and carries
+    AD-12's soft-estimate label.
+  - Decision-log rows carry the attribution of hook decisions, not token counts.
+  - Adherence events are observation, not instruction.
+
 ## Consistency Conventions
 
 | Concern | Convention |
 | --- | --- |
 | Where logic goes | Logic a hook needs at event time goes in the kernel, `policy/hooks/`, as an import-cheap, standard-library module. CLI-only logic goes in `lib/harness_core/`. `bin/harness` stays a command layer and gains no new domain logic. |
-| Hook ids | The runtime registers only `adapters/<runtime>/hook.py`. A hook id is the name of a `policy/hooks/` script that the dispatcher's table invokes for an event. Every other module there is a kernel library: `posture`, `pricing`, `telemetry`, `decisions`, `filter-lines`, `otel-headers`, `rule-detectors`, `allow-readonly-bash` and `usage-log` as loaded. The named decision points are listed in `policy/hooks/decisions.py`, the authority. `lib/harness_core/decisions/controls.py` mirrors that list, and a test keeps the two in step. Switches apply in the dispatcher, never inside a script. |
+| Hook ids | The runtime registers `adapters/<runtime>/hook.py` and, beside it, the observation entry point (AD-23), which bypasses the dispatcher. A hook id is the name of a `policy/hooks/` script that the dispatcher's table invokes for an event. Every other module there is a kernel library: `posture`, `pricing`, `telemetry`, `decisions`, `filter-lines`, `otel-headers`, `rule-detectors`, `allow-readonly-bash` and `usage-log` as loaded. The named decision points are listed in `policy/hooks/decisions.py`, the authority. `lib/harness_core/decisions/controls.py` mirrors that list, and a test keeps the two in step. Switches apply in the dispatcher, never inside a script. |
 | Hook cost | Kernel modules do no work at import. The dispatcher sets per-event timeouts. Each hook's p95 wall time is measured against the NFR-16 bound. |
-| Status words | Catalog states are `qualified`, `unqualified`, `planned` and `unsupported`. Capability modes are `instruction`, `instruction-and-hook` and `instruction-and-setting`. The tier restriction is `enforced`, `advisory` or `none`. Evidence results are `passed`, `failed` and `unverified`. Decision stages are `off`, `shadow`, `advise` and `act`. Documentation shows "preview" for an unqualified surface. |
+| Status words | Catalog states are `qualified`, `unqualified`, `planned` and `unsupported`. Capability modes are `instruction`, `instruction-and-hook` and `instruction-and-setting`. The tier restriction is `enforced`, `advisory` or `none`. Evidence results are `passed`, `failed` and `unverified`. Decision stages are `off`, `shadow`, `advise` and `act`. Estimand labels are measured, soft estimate and unmeasured, with unattributed as a qualifier (AD-12), orthogonal to FR-11's known, partial, unavailable and failed. Documentation shows "preview" for an unqualified surface. |
 | Data and formats | Ledgers are JSON lines with ISO-8601 UTC timestamps. Dollars carry `price_as_of`. Unknown values are `null`, never `0`. Issue numbers are keyed `github_number`. |
 | Configuration | One `config.json` per user, plus project selections. Secrets come from the environment or a headers file. |
 | Failure posture | Enforcement hooks fail closed where the runtime allows it, and say so. Providers, exports and nudges fail open. A timeout never yields a clean result. |
+| Failure posture: observation | The observation entry point fails open and silent: exit 0, no output, no decision, no `systemMessage`. Errors go to a local error log only (AD-23). |
 | Standing context | Always-loaded context stays within 200 lines and 4,202 tokens. A new resident line needs a deferral or a trade. |
 | Documentation | Explain once at the authority, and point to it elsewhere. Every change under a governed root carries a changelog fragment. |
 
@@ -486,18 +552,18 @@ flowchart LR
 | Capability / Area | Lives in | Governed by |
 | --- | --- | --- |
 | Primitives and projection (FR-1, FR-3, FR-10, FR-13) | `primitives/`, `lib/harness_core/catalog.py`, `importer.py`, `collisions.py`, `adapters/` | AD-1, AD-7 |
-| Stances and selection (FR-2, FR-14 to FR-16) | `policy/hooks/posture.py`, `primitives/constraints.json`, `bin/harness` `load_config` (retiring) | AD-2, AD-6 |
+| Stances and selection (FR-2, FR-14 to FR-16) | `policy/hooks/posture.py`, `primitives/constraints.json`, `bin/harness` `load_config` (retiring) | AD-2, AD-6, AD-22 |
 | Configuration lifecycle (FR-4, FR-5, FR-17, FR-66, FR-69, FR-70) | `bin/harness` (sync, init, config), `lib/harness_core/reconcile.py`, `compatibility/migration.json` | AD-3, AD-18 |
 | Distribution (FR-17, FR-18, FR-53, FR-54) | `scripts/install.sh`, `.claude-plugin/`, `product.json`, `scripts/advance_stable.py`, `scripts/sync_about.py` | AD-19 |
-| Measured rules (FR-19 to FR-22, FR-67) | `policy/hooks/rule-detectors.py`, `lib/vendor/ruleprobe` | AD-13 |
-| Ledgers, pricing, telemetry (FR-11, FR-23 to FR-27) | `policy/hooks/usage-log.py`, `pricing.py`, `telemetry.py`, `decisions.py`, `otel-headers.py` | AD-11, AD-12 |
+| Measured rules (FR-19 to FR-22, FR-67) | `policy/hooks/rule-detectors.py`, `lib/vendor/ruleprobe` | AD-13, AD-22 |
+| Ledgers, pricing, telemetry (FR-11, FR-23 to FR-27) | `policy/hooks/usage-log.py`, `pricing.py`, `telemetry.py`, `decisions.py`, `otel-headers.py` | AD-11, AD-12, AD-23 |
 | Cost posture (FR-28 to FR-34) | `tier-agent-spawns.py`, `brief-guard.py`, `usage-feed.py`, `posture.py`, `adapters/*/bindings.json` | AD-14 |
 | Guardrails (FR-35 to FR-39) | `grade-bash.py`, `stop-gate.py`, `neutralize-tool-output.py`, `filter-output.py`, `allow-readonly-bash.py`, `lifecycle.py` | AD-7, AD-18 |
 | Role workers and the delivery loop (FR-40 to FR-44, FR-68) | `lib/harness_core/workers.py`, `primitives/workflows/`, `validate-plan-card.py`, `bin/harness` worktree | AD-1, AD-8, AD-9, AD-16 |
 | Integrations (FR-45, FR-46) | `policy/integrations/`, `lib/harness_core/integrations.py`, `frameworks.py`, `upstream_viewer.py` | AD-10 |
 | Decision providers (FR-47 to FR-50) | `lib/harness_core/decision.py`, `lib/harness_core/decisions/`, `policy/hooks/decisions.py` | AD-15 |
 | Compatibility and release (FR-6, FR-7, FR-12, FR-51, FR-52) | `lib/harness_core/compatibility.py`, `qualification.py`, `compatibility/`, `scripts/` | AD-4 |
-| Benchmarks (FR-55 to FR-58) | `scripts/cost_bench.py`, `benchmarks/` | AD-12 |
+| Benchmarks (FR-55 to FR-58) | `scripts/cost_bench.py`, `benchmarks/` | AD-12, AD-22, AD-23 |
 | Session operations (FR-8, FR-59 to FR-63) | `tasks.py`, `remote_control.py`, `keychain.py`, `bin/harness` workspace, workflows | AD-16, AD-17, AD-18, AD-20 |
 | Public planning (FR-9, FR-64, FR-65) | `scripts/bmad_issue_sync.py`, `.github/scripts/check_issue_ownership.py`, `_bmad-output/` | AD-5, AD-18 |
 
