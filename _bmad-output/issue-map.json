@@ -10,7 +10,7 @@
     "bug": 95,
     "chore": 73,
     "spike": 13,
-    "decision": 13
+    "decision": 14
   },
   "items": [
     {
@@ -5767,6 +5767,19 @@
       "type": "decision",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D012.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-D013",
+      "github_number": 783,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/783",
+      "title": "Align the PRD, architecture spine and milestone map to the measurable-harness roadmap",
+      "type": "decision",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-D013.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

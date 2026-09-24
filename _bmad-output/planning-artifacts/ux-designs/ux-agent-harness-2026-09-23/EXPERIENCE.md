@@ -2,7 +2,7 @@
 title: Agent Harness developer experience contract
 status: final
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 supersedes: ../ux-agent-harness-2026-09-19/EXPERIENCE.md
 sources:
   - DESIGN.md
@@ -105,7 +105,7 @@ required sections are filled.
 **Current state:** the typed format and the check landed in #629. Most existing stories are still legacy
 stubs until the enrichment batches under #616 finish.
 
-## UJ-6. Lee layers the harness under a skill library (planned, v0.14.0)
+## UJ-6. Lee layers the harness under a skill library (planned, v0.16.0)
 
 Lee selects the `superpowers` mode. The selection report lists the mode keys applied and Lee's own values
 kept, and names each shadowed key.
@@ -136,7 +136,7 @@ Each release surface is reported as done, skipped or unverified.
 reconnects dropped sessions. A session that the server has already archived is past recovery, so status
 leaves it out and heal never claims it.
 
-## UJ-9. Ari tries a decision provider in shadow (planned, v0.15.0)
+## UJ-9. Ari tries a decision provider in shadow (planned, v0.16.0)
 
 Ari enables a provider at one decision point in the `shadow` stage, and runs `harness decisions eval`.
 
