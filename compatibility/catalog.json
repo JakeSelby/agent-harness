@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "harness_version": "0.13.1",
-  "release_state": "candidate",
+  "release_state": "released",
   "required_cases": [
     "installation",
     "stance-switch",
@@ -38,9 +38,16 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "macos",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "compatibility/evidence/claude-code-cli-macos-0.13.1.json",
+          "sha256": "4efd04635420695abf659001557f825b5e1f2668473f334858e4d32f9bce48af"
+        }
+      ],
+      "runtime_version": "2.1.280",
+      "client_version": "2.1.280"
     },
     {
       "id": "claude-code-vscode-macos",
@@ -58,9 +65,16 @@
       "provider": "anthropic",
       "client": "cli",
       "platform": "linux",
-      "status": "unqualified",
+      "status": "qualified",
       "required_for_release": true,
-      "evidence": []
+      "evidence": [
+        {
+          "path": "compatibility/evidence/claude-code-cli-linux-0.13.1.json",
+          "sha256": "f8beef165eabc4232a3829a5d94ce28730953db6273840686dc9da85319f75ba"
+        }
+      ],
+      "runtime_version": "2.1.278",
+      "client_version": "2.1.278"
     },
     {
       "id": "claude-code-plugin-marketplace",
@@ -147,12 +161,14 @@
     "harness sync links user-level stance selections only; a HARNESS_STANCE_ variable or a project selection changes what harness stances and the hooks resolve, not the linked stance text. Tracked in #276 and #294.",
     "The 0.11.1 spawn guards refuse a constrained role's brief re-issued verbatim under another name, or carrying a `harness-role:` line; a client that paraphrases the brief and names no role is not caught, so BMad review confinement still depends on the client following the routed instructions. Tracked in #291 and #300.",
     "No third-party framework's own workflow is exercised natively in a release qualification round. Framework layering is qualified through a synthetic recipe driven at the spawn hook; that a given framework's workflow completes on a given client is not claimed by a release. The BMad Method integration is exercised by an optional suite whose last result is recorded separately, at the harness version, framework version and client stated there.",
-    "Constrained-role confinement is enforced at the spawn hook only for a framework a declared descriptor covers. From 0.13.0 the hook classifies a spawn against the descriptors in policy/integrations/, so a covered recipe layer is refused whatever the client named it, and the two entries above describe 0.11.1 through 0.12.0 and stop applying at that release. What remains: recognition needs one of the framework's own layer names as the spawn type, or two sentences of its prompt text, or one of those sentences beside a path out of its routed text, so a brief rewritten with none of that, or a framework or a release no descriptor covers, still runs as an unnamed native subagent, unconfined, and can still report a result. Observed on the Claude Code CLI on Linux, where one confined run required five attempts; a confined run writes isolated-worker state. In the 0.13.0 qualification round a brief the client wrote in its own words kept the layer's prompt file, the layer's agent name and the framework's name, quoted none of the descriptor's phrases, and was not refused; step 9 of the qualification procedure records that as the observed limit. Tracked in #291 and #739.",
-    "Codex CLI is not in the 0.13.0 stable contract: FR-12 admits it only once a scripted qualification round agrees with a hand-driven one, and the acceptance runner cannot drive Codex until #612; codex-cli-macos carries hand evidence only (#700).",
-    "gate-invalidation, in the 0.13.0 qualification of both Claude Code CLI targets, delivered its Stop events to the harness coordinator directly, not through client turns: no client turn ran the trusted gate's pass, reuse, rerun or block-then-release loop. The only Stop event observed from a client turn is hook-composition's untrusted skip.",
-    "No Codex client ran in the 0.13.0 qualification of the two Claude Code CLI targets. The Claude to Codex continuation was not observed, because a Claude session read a Claude save, and the Codex to Claude record was written by `harness task save --runtime codex`; step 7's re-established permissions were observed in neither direction. The Codex targets are not required for this release, so no round covers these.",
-    "In the 0.13.0 qualification the eleven scripted cases other than permission-controls were judged only by the case driver and the assessment of its observation text; the hand comparison owed on each case's first live round is still owed. Tracked in #741.",
-    "In the 0.13.0 qualification a band worker's effort was read from the installed worker definition, not from the subagent's transcript; its model, the budget sentence in its brief, the usage feed and the usage row were observed from the run.",
-    "With a token-only login (`CLAUDE_CODE_OAUTH_TOKEN`, as in CI and containers, including the 0.13.0 Linux target image), an isolated role worker that a Claude Code session launches cannot authenticate: the client strips the token from its tool subprocesses, and the worker reports that it is not logged in. A client whose confined layers cannot run may then do their work in its own context, unconfined, as the 0.13.0 BMad integration suite observed. Qualification rounds launch their workers from the runner rather than from a client session, so they do not exercise this path. Tracked in #759."
-  ]
+    "Constrained-role confinement is enforced at the spawn hook only for a framework a declared descriptor covers. From 0.13.0 the hook classifies a spawn against the descriptors in policy/integrations/, so a covered recipe layer is refused whatever the client named it, and the two entries above describe 0.11.1 through 0.12.0 and stop applying at that release. What remains: recognition needs one of the framework's own layer names as the spawn type, or two sentences of its prompt text, or one of those sentences beside a path out of its routed text, so a brief rewritten with none of that, or a framework or a release no descriptor covers, still runs as an unnamed native subagent, unconfined, and can still report a result. Observed on the Claude Code CLI on Linux, where one confined run required five attempts; a confined run writes isolated-worker state. In the 0.13.0 and 0.13.1 qualification rounds a brief the client wrote in its own words kept the layer's prompt file, the layer's agent name and the framework's name, quoted none of the descriptor's phrases, and was not refused; step 9 of the qualification procedure records that as the observed limit. Tracked in #291 and #739.",
+    "Codex CLI is not in the 0.13.0 or 0.13.1 stable contract: FR-12 admits it only once a scripted qualification round agrees with a hand-driven one, and the acceptance runner cannot drive Codex until #612; codex-cli-macos carries hand evidence only (#700).",
+    "gate-invalidation, in the 0.13.0 and 0.13.1 qualifications of both Claude Code CLI targets, delivered its Stop events to the harness coordinator directly, not through client turns: no client turn ran the trusted gate's pass, reuse, rerun or block-then-release loop. The only Stop event observed from a client turn is hook-composition's untrusted skip.",
+    "No Codex client ran in the 0.13.0 and 0.13.1 qualifications of the two Claude Code CLI targets. The Claude to Codex continuation was not observed, because a Claude session read a Claude save, and the Codex to Claude record was written by `harness task save --runtime codex`; step 7's re-established permissions were observed in neither direction. The Codex targets are not required for this release, so no round covers these.",
+    "In the 0.13.0 and 0.13.1 qualifications the eleven scripted cases other than permission-controls were judged only by the case driver and the assessment of its observation text; the hand comparison owed on each case's first live round (0.13.0's) was not made and is still owed. Tracked in #741.",
+    "In the 0.13.0 and 0.13.1 qualifications a band worker's effort was read from the installed worker definition, not from the subagent's transcript; its model, the budget sentence in its brief, the usage feed and the usage row were observed from the run.",
+    "With a token-only login (`CLAUDE_CODE_OAUTH_TOKEN`, as in CI and containers, including the Linux target image), an isolated role worker that a Claude Code session launches cannot authenticate: the client strips the token from its tool subprocesses, and the worker reports that it is not logged in. A client whose confined layers cannot run may then do their work in its own context, unconfined, as the 0.13.0 BMad integration suite observed. Qualification rounds launch their workers from the runner rather than from a client session, so they do not exercise this path. Tracked in #759.",
+    "In the 0.13.0 and 0.13.1 qualifications cost-posture compared each role the cost variant does not change by its content, byte for byte, rather than by its link, so a role replaced by an identical copy would also pass; step 8 asks that every other role keeps its link. Tracked in #742."
+  ],
+  "qualification_source_commit": "52bdee3c3b310375ef62b63ead1a6cc899e5bce5"
 }

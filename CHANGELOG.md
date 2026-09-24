@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-09-24
+
+### Changed
+
+- The landing copy now leads with the harness as the control plane under your coding agents, rather
+  than with the rule-detector loop, and the spend capability is retitled so it no longer claims
+  savings the cost benchmark does not show. (#764)
+
+### Fixed
+
+- The grade-bash timing test no longer fails under the Python 3.9 floor on a loaded machine. It
+  takes the best of five runs rather than one, bounds a 100 KB command by a tenth of the
+  PreToolUse timeout `harness sync` registers rather than a fixed 0.2 seconds, and adds a growth
+  check against a quarter-size command so a quadratic scan still fails. (#743)
+
 ## [0.13.0] — 2026-09-23
 
 ### Added
