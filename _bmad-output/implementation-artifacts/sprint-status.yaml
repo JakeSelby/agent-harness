@@ -76,6 +76,8 @@ development_status:
 
   ah-e003-close-the-loop-jev-as-the-controller-between: in-progress
   ah-c058-restate-545-s-confined-role-route-a-workflow: ready-for-dev
+  ah-c068-jev-price-its-calls-in-the-usage-ledger: ready-for-dev
+  ah-c069-record-four-decision-layer-follow-ups-in-the: ready-for-dev
   ah-s049-jev-add-a-shared-decision-provider-interface-and: done
   ah-s050-jev-add-opt-in-jev-configuration-and-outbound: done
   ah-s051-jev-add-versioned-jev-question-packs-and-a: done
@@ -100,12 +102,14 @@ development_status:
   ah-s193-run-review-and-research-as-workflow-scripts-in-a: ready-for-dev
   ah-s213-harness-usage-rules-list-every-rule-as-measured: ready-for-dev
   ah-s220-report-stance-drift-and-propose-promotions-or: ready-for-dev
+  ah-s230-replay-judge-a-one-policy-arm-pair-on-cost-per: ready-for-dev
   ah-sp001-jev-verify-stop-claims-against-gate-evidence: ready-for-dev
   ah-sp002-jev-evaluate-advisory-action-risk-and-tool: done
   ah-sp003-jev-evaluate-short-source-to-output-fidelity: done
   ah-sp005-jev-evaluate-deletion-only-compaction-against: ready-for-dev
   ah-sp006-jev-evaluate-a-typed-same-work-check-for-evasion: ready-for-dev
   ah-sp007-does-the-claude-code-workflow-tool-bypass-band: done
+  ah-sp012-jev-can-a-self-hosted-laya-model-serve-the: backlog
 
   ah-e004-commit-bmad-as-the-repository-s-public-planning: done
   ah-b008-correct-traceability-for-personal-repository: done
@@ -316,7 +320,7 @@ development_status:
   ah-b083-stance-switch-and-custom-stance-switch-only: ready-for-dev
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: ready-for-dev
   ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
-  ah-b086-the-100-kb-grade-bash-timing-test-fails-under: backlog
+  ah-b086-the-100-kb-grade-bash-timing-test-fails-under: ready-for-dev
   ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
   ah-b088-a-role-confinement-refusal-writes-no-decision: backlog
   ah-b089-the-confinement-refusal-names-a-harness-command: backlog
@@ -460,3 +464,4 @@ development_status:
   ah-t027-hand-compare-the-eleven-scripted-native-cases: backlog
   ah-t028-close-the-round-5-assessment-s-should-fix-gaps: backlog
   ah-t029-record-the-token-only-worker-login-limitation-in: ready-for-dev
+  ah-t030-landing-copy-leads-with-another-tool-s-hero-and: ready-for-dev

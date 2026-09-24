@@ -1,51 +1,14 @@
 {
-  "headline": "Find out which of your agent rules actually fire.",
-  "description": "A user-owned agent harness with a measurement loop. Every rule names a deterministic detector over the transcript or says in one line why nothing in a transcript can decide it, and lint fails the commit otherwise. harness usage --rules then reports which rules fired, grouped by repository and by the preference variant you had selected.",
+  "headline": "The control plane for your coding agents, however you run them.",
+  "description": "An open-source control plane for coding agents. One checkout of rules, skills, roles and stances, projected into Claude Code and Codex with your own primitives, enforced with hooks, and measured with usage telemetry and cost controls. It layers under the rules libraries and orchestration you already use.",
   "stances": "Preferences you can switch: autonomy, delegation, cost, testing, voice, commits, planning, licensing and build versus buy. Three of those bind to enforcement today: autonomy sets which shell-command grade stops and asks, delegation changes spawn routing, and cost resolves a model and budget table per role. The rest are prose that swaps cleanly. The usage report groups rule hits by the variant that was selected, so a switch can be checked rather than assumed.",
-  "github_description": "Find out which of your agent rules actually fire. An agentic coding harness for Claude Code and Codex: one checkout of rules, skills, subagents, slash commands, hooks and output styles, projected into AGENTS.md and ~/.claude, with switchable stances for autonomy, testing, delegation and cost.",
+  "github_description": "The control plane for your coding agents, however you run them. One checkout of rules, skills, subagents, hooks and stances, projected into Claude Code and Codex with your own primitives: hook-enforced guardrails, usage telemetry, cost postures and model tiering, under any rules library or orchestration layer.",
   "hero": {
-    "title": "Find out which of your agent rules actually fire.",
-    "subtitle": "Agent Harness is an open-source layer over the Claude Code and Codex you already run. It holds your rules, skills, roles and workflows in one place, requires every rule to name a detector over the transcript or say why it cannot have one, then tells you how often each one actually fired.",
-    "proof": "MIT licensed. Seventeen detectors ship today, lint fails a rule that has neither a detector nor a written reason, and harness uninstall puts everything back."
+    "title": "The control plane for your coding agents, however you run them.",
+    "subtitle": "Agent Harness sits under the Claude Code and Codex you already run, and under whatever rules library you like. It keeps your rules, skills, roles and stances in one checkout, projects them into each agent with your own primitives, enforces them with hooks, and shows you what every session did and what it cost.",
+    "proof": "MIT licensed. One checkout, nothing hosted, and harness uninstall puts everything back. Every release names the clients it qualified and what it could not prove."
   },
   "capabilities": [
-    {
-      "id": "measured-rules",
-      "title": "Rules you can measure, and prune",
-      "pitch": "Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.",
-      "features": [
-        {
-          "name": "Detector or reason",
-          "line": "Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.",
-          "doc": "primitives/rules"
-        },
-        {
-          "name": "Hit rate per rule",
-          "line": "harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.",
-          "doc": "docs/usage.md"
-        },
-        {
-          "name": "Cache prefix held",
-          "line": "harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.",
-          "doc": "docs/usage.md"
-        },
-        {
-          "name": "What is detected",
-          "line": "Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
-          "doc": "claude/hooks/rule-detectors.py"
-        },
-        {
-          "name": "Caught in the act",
-          "line": "The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.",
-          "doc": "docs/field-scan.md"
-        },
-        {
-          "name": "Exports where you already look",
-          "line": "The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.",
-          "doc": "docs/telemetry.md"
-        }
-      ]
-    },
     {
       "id": "guardrails",
       "title": "Guardrails that leave room for judgment",
@@ -122,7 +85,7 @@
     },
     {
       "id": "spend-less",
-      "title": "Spend less without capping your agents",
+      "title": "See and steer what your agents spend",
       "pitch": "A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things cost and let it pace itself.",
       "features": [
         {
@@ -186,6 +149,43 @@
           "name": "Conciseness rules",
           "line": "Explain a decision once. Comments say why, not what.",
           "doc": "primitives/rules/conciseness.md"
+        }
+      ]
+    },
+    {
+      "id": "measured-rules",
+      "title": "Rules you can measure, and prune",
+      "pitch": "Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.",
+      "features": [
+        {
+          "name": "Detector or reason",
+          "line": "Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.",
+          "doc": "primitives/rules"
+        },
+        {
+          "name": "Hit rate per rule",
+          "line": "harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.",
+          "doc": "docs/usage.md"
+        },
+        {
+          "name": "Cache prefix held",
+          "line": "harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.",
+          "doc": "docs/usage.md"
+        },
+        {
+          "name": "What is detected",
+          "line": "Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
+          "doc": "claude/hooks/rule-detectors.py"
+        },
+        {
+          "name": "Caught in the act",
+          "line": "The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.",
+          "doc": "docs/field-scan.md"
+        },
+        {
+          "name": "Exports where you already look",
+          "line": "The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.",
+          "doc": "docs/telemetry.md"
         }
       ]
     },

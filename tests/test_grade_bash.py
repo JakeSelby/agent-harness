@@ -32,6 +32,15 @@ from test_allow_readonly_bash import ALLOW, APPROVED  # noqa: E402
 
 CWD = "/work/repo"
 
+sys.path.insert(0, str(REPO / "lib"))
+from harness_core import lifecycle  # noqa: E402
+
+
+def pre_tool_use_timeout():
+    """The tightest PreToolUse timeout `harness sync` registers for any runtime, in seconds."""
+    return min(lifecycle.registration(REPO, runtime)["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"]
+               for runtime in ("claude-code", "codex"))
+
 
 def grade(command):
     return grader.grade_text(command, CWD)[0]
@@ -407,14 +416,27 @@ class GradeTests(unittest.TestCase):
         self.assertEqual([c for c in ALLOW + APPROVED if grade(c) != 0], [])
 
     def test_grading_a_hundred_kilobyte_command_stays_well_inside_the_hook_timeout(self):
-        # The hook has five seconds; a scan that degraded on length would fail open instead.
-        line = "echo " + "push " * 20000
-        for command in (line, line + ' "unbalanced'):
-            start = time.perf_counter()
-            grader.grade_text(command, CWD)
-            elapsed = time.perf_counter() - start
-            with self.subTest(length=len(command)):
-                self.assertLess(elapsed, 0.2)
+        # A PreToolUse hook past its registered timeout fails open, and every PreToolUse policy
+        # shares that one timeout, so the grader gets a tenth of it. The best of several runs
+        # measures the grader rather than the machine's load, and the quarter-size run bounds the
+        # growth: linear grading quadruples, a quadratic scan grows sixteenfold and fails here
+        # long before it would outgrow the budget.
+        budget = pre_tool_use_timeout() / 10
+
+        def best(command, runs=5):
+            times = []
+            for _ in range(runs):
+                start = time.perf_counter()
+                grader.grade_text(command, CWD)
+                times.append(time.perf_counter() - start)
+            return min(times)
+
+        for suffix in ("", ' "unbalanced'):
+            full = best("echo " + "push " * 20000 + suffix)
+            quarter = best("echo " + "push " * 5000 + suffix)
+            with self.subTest(unbalanced=bool(suffix)):
+                self.assertLess(full, budget)
+                self.assertLess(full / quarter, 8)
 
     def test_an_unparseable_command_past_the_scan_cap_grades_three(self):
         command = "echo " + "x" * 20000 + ' "unbalanced'

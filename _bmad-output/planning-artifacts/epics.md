@@ -124,7 +124,7 @@ How to read it:
 
 ### AH-E003: Close the loop: Jev as the controller between measured rules and autonomy ([#135](https://github.com/JakeSelby/agent-harness/issues/135), open)
 
-- **Milestones:** v0.15.0
+- **Milestones:** v0.14.0 to v0.16.0
 - **Goal:** Decision providers as the controller between measured rules and autonomy: evidence gates per stage, tighten-only act, stance proposals.
 - **Covers:** FR-20, FR-47 to FR-50, FR-67
 - **Stories:**
@@ -159,6 +159,10 @@ How to read it:
   - AH-S213 [#647](https://github.com/JakeSelby/agent-harness/issues/647): harness usage --rules: list every rule as measured, dark or unmeasured, and load declarative detectors (open)
   - AH-C058 [#690](https://github.com/JakeSelby/agent-harness/issues/690): Restate #545's confined-role route: a Workflow script has no shell to run harness role run (open)
   - AH-S220 [#692](https://github.com/JakeSelby/agent-harness/issues/692): Report stance drift and propose promotions or demotions from the decision log (FR-50) (open)
+  - AH-SP012 [#753](https://github.com/JakeSelby/agent-harness/issues/753): Jev: can a self-hosted Laya model serve the decision packs as a local provider? (open)
+  - AH-S230 [#754](https://github.com/JakeSelby/agent-harness/issues/754): Replay: judge a one-policy arm pair on cost per passed task, decision calls included (open)
+  - AH-C068 [#755](https://github.com/JakeSelby/agent-harness/issues/755): Jev: price its calls in the usage ledger (open)
+  - AH-C069 [#756](https://github.com/JakeSelby/agent-harness/issues/756): Record four decision-layer follow-ups in the BMad corpus (open)
 
 ### AH-E004: Commit BMad as the repository’s public planning system ([#189](https://github.com/JakeSelby/agent-harness/issues/189), done)
 
