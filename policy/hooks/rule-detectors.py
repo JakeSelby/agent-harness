@@ -329,17 +329,24 @@ SCAFFOLD_LABEL_RE = re.compile(
 HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
 
 
+# Backtick and tilde fences, for `_unfenced_lines` only; `_fenced_lines` keeps `_FENCE_RE` so the
+# detectors that read fenced commands keep their measured behaviour.
+_ANY_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
+
+
 def _unfenced_lines(text):
-    """Every line outside a fenced code block, by the same closing rule as `_fenced_lines`."""
+    """Every line outside a fenced code block, backtick or tilde, by the CommonMark closing
+    rule: the same fence character, at least as many of it, and no info string."""
     out, opener = [], None
     for line in (text or "").split("\n"):
-        match = _FENCE_RE.match(line)
+        match = _ANY_FENCE_RE.match(line)
         if opener is None:
             if match:
-                opener = len(match.group(1))
+                opener = match.group(1)
             else:
                 out.append(line)
-        elif match and len(match.group(1)) >= opener and not match.group(2).strip():
+        elif (match and match.group(1)[0] == opener[0] and len(match.group(1)) >= len(opener)
+              and not match.group(2).strip()):
             opener = None
     return out
 

@@ -296,10 +296,10 @@ stance is thrown, which is what lets the harness install for someone whose prefe
 knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
 want the opposite, it belongs in `primitives/stances/`, not `primitives/rules/`.
 
-One rule does not pass that test yet, tracked rather than hidden: `conciseness.md` is comment and
-doc style. `voice-and-format.md` no longer hard-wires the Scannable reply template (#811); it keeps
-only the subagent brief's return shape, which no variant can carry. `cache-hygiene.md` is
-cost-dimension content the `cost` stance already points at.
+Two rules do not pass that test yet, tracked rather than hidden: `conciseness.md` is comment and
+doc style, and `cache-hygiene.md` is cost-dimension content the `cost` stance already points at.
+`voice-and-format.md` no longer hard-wires the Scannable reply template (#811); it keeps only the
+subagent brief's return shape, which no variant can carry.
 
 ## Extend your choices
 

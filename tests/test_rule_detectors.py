@@ -220,6 +220,9 @@ CASES = {
         ([say("The old template used `**What changed**` as a label.")], 0),
         ([say("It printed \"Why:\" before the line.")], 0),
         ([say("Here is the template:\n```md\n**What changed**\nWhy:\n```\nIt is gone.")], 0),
+        ([say("Here is the template:\n~~~md\n**What changed**\nWhy:\n~~~\nIt is gone.")], 0),
+        # A tilde fence is not closed by backticks.
+        ([say("~~~\nexample\n```\n**What changed**\n~~~")], 0),
         ([say("**What changed**", final=False)], 0),
     ],
     "voice/heading-first": [

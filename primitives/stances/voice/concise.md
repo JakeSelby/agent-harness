@@ -11,11 +11,11 @@ do. A report gives the outcome in one sentence, then at most five bullets that c
 reader does next; the detail stays in the pull request or a file, and if the explanation outgrows
 the change, cut the explanation. A decision opens with the question and your recommendation with
 its reason, then numbered options, one line each with its honest case, so the reader can answer by
-number. A brief, for research, review or status, gives two or three sentences of bottom line, three
-to five findings with their numbers, and what they mean for the reader, then links the rest. Go
-deep only when the reader asks for depth or is deciding a design, and then lead with a summary and
-use headers that state conclusions. A draft in the user's name is the draft, then at most two lines
-of notes, under any personal voice profile.
+number. A brief, for research, review or status, gives two or three sentences of bottom line, up to
+five findings with their numbers, and what they mean for the reader, then links the rest. Go deep
+only when the reader asks for depth or is deciding a design, and then lead with a summary and use
+headers that state conclusions. A draft in the user's name is the draft, then at most two lines of
+notes, under any personal voice profile.
 
 Whatever the shape, the first sentence is the result, the answer, or your question, and anything
 the reader must do or decide is in the first two lines. Use plain words: no coined terms,
