@@ -138,7 +138,9 @@ role carries** — the same figures `brief-guard` writes into a brief — so an 
 subtraction on one row rather than a join against whatever the cost table says today. They are
 read from the table at the moment the row is written, not from the brief, which no scan can
 see; a role nothing prices, a table that will not build and a Codex subagent all record `null`,
-because a zero would say the spawn was budgeted nothing. `return_path` and
+because a zero would say the spawn was budgeted nothing. A Workflow-tool agent records `null` too,
+whatever role it is named for, and carries `unconfined: true`: the tool launched it, so no spawn
+hook routed it and no brief budgeted it. `return_path` and
 `return_over_budget` measure the return this row's spawn handed back, joined to the parent's
 `Agent` call on the same `tool_use_id`: whether it named a path that existed under the worktree
 or the scratchpad at the moment the row was written (`"resolvable"`, `"unresolvable"`, or
@@ -567,7 +569,9 @@ bin/harness usage --by provider        # decision-provider calls, priced, above
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
 
-`--by role` reads the subagent and worker rows. Spend per delegated task is a distribution, not
+`--by role` reads the subagent and worker rows. A row with a `workflow` directory is grouped under
+`(workflow)`, printed last and named in the footer, rather than under its `agent_type`, including
+a row written before the ledger marked such rows `unconfined`. Spend per delegated task is a distribution, not
 a mean, so it prints three points on the curve; `unmeasured` counts the runs whose runtime
 reported no tool-call figure, which are named there rather than averaged in as a zero. A role
 with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the

@@ -54,7 +54,8 @@ change. What the release must carry before it can be tagged is the next section.
    cut-over that ends the lint's Unreleased exemption; from the next release on, with
    `python3 scripts/release_notes.py --changelog <version>`, which assembles the `changelog.d/`
    fragments in a stable order and deletes them (see
-   [`changelog.d/README.md`](../changelog.d/README.md)). Run the CI commands and the Python floor
+   [`changelog.d/README.md`](../changelog.d/README.md)). That assembly satisfies the lint's
+   fragment rule, so the release pull request adds no `.none.md` waiver. Run the CI commands and the Python floor
    suite on committed HEAD; then run:
 
    ```sh
