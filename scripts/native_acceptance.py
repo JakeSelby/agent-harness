@@ -2907,9 +2907,10 @@ CASES = {
     "spawn-confinement": (case_spawn_confinement,
                           "spawn a framework's review layer with its own spawn text and no "
                           "subagent_type, and read the refusal's framework, layer and role-run "
-                          "command from the decision log and the tool result; record what a brief "
-                          "the model rewrites itself did, as the claim's limit; run the same layer "
-                          "through harness role run and read its worker state and findings; and "
+                          "command from the decision log and the tool result; require the brief "
+                          "the model writes itself for the layer to be refused too; run the same "
+                          "layer through harness role run and read its worker state and "
+                          "findings; and "
                           "spawn ordinary work mentioning review words and editing the "
                           "framework's input roots, which must still run"),
     "cost-posture": (case_cost_posture,

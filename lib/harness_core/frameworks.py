@@ -28,7 +28,8 @@ way to hear that it was wrong.
   sentence of the framework's own text (#739). The directive is what separates this from a brief
   that edits the file or reads it for some other reason, so it is enough alone. It must govern
   the file: ahead of it and unbroken by a clause, or after it with a pronoun pointing back ("and
-  follow them", "follow it" in the next sentence). A negated directive, a directive aimed at
+  follow them", "follow it" in a later sentence while the ones between still talk about the
+  file). A negated directive, a directive aimed at
   something else, and a sentence that edits, updates or rewrites the file itself are not
   directives; "update your findings" edits something else and leaves the directive standing.
   The path has to end where the declared one does, so `<path>.bak` is another file, and a
@@ -311,6 +312,10 @@ def _governs(pattern, before):
     return False
 
 
+# A directive in a later sentence still points back at the file while each sentence between keeps
+# talking about it: "Read <path>. These instructions define the layer. Follow them precisely."
+FOLLOW_REACH = 3
+ANAPHOR = re.compile(r"\b(?:(?:these|those|its|the) instructions|(?:that|this|the) file)\b")
 # A trailing "the instructions" followed by where they live names its own file, not this one.
 OWN_TARGET = re.compile(r"\s+(?:in|at|from|of|under|inside)\b")
 # The declared path ends where a longer file name would go on: `<path>.bak` is another file.
@@ -342,9 +347,11 @@ def _directed(value, text):
             continue
         if any(_governs(DIRECTIVE, before) or _points_back(after) for before, after in pairs):
             return True
-        following = sentences[index + 1] if index + 1 < len(sentences) else ""
-        if _points_back(following) and not _unnegated(EDIT_BACK, following):
-            return True
+        for following in sentences[index + 1:index + 1 + FOLLOW_REACH]:
+            if _points_back(following) and not _unnegated(EDIT_BACK, following):
+                return True
+            if not ANAPHOR.search(following):
+                break
     return False
 
 

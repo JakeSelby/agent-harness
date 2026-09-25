@@ -5,12 +5,14 @@ itself: it kept the prompt file and quoted none of the descriptor's sentences, a
 A brief that edits the file, or reads it for another reason, still runs.
 Run: python3 -m unittest discover tests
 """
+import json
 import os
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from test_harness import REPO  # noqa: F401  (puts lib/ on the path)
+from test_harness import REPO  # also puts lib/ on the path
 from harness_core import frameworks, lifecycle
 
 PROMPT = "_bmad/review-prompts/edge-case-hunter.md"
@@ -40,6 +42,8 @@ DIRECTED = {
     "at the sentence end": "Here is your task. Review calc.py and follow " + PROMPT + ".",
     "as an absolute path": "Follow /work/project/" + PROMPT + " on calc.py.",
     "as your instructions in": "Use " + PROMPT + " as your instructions in this review of calc.py.",
+    "two sentences on": ("Read " + PROMPT + ". These instructions define the layer's scope. "
+                         "Follow them precisely."),
 }
 UNDIRECTED = {
     "edit": ("Edit templates/bmad/custom/bmad-code-review.user.toml so the edge-case layer points "
@@ -64,6 +68,8 @@ UNDIRECTED = {
     "per something else": "Explain what " + PROMPT + " does per the docs.",
     "directive in another clause": ("Follow the commit convention, and summarise " + PROMPT
                                     + "."),
+    "a chain that changes subject": ("Read " + PROMPT + ". The gate is slow today. Follow them "
+                                     "anyway."),
     "edit that governs the file": ("Update the wording of " + PROMPT + " so reviewers follow it "
                                    "more easily."),
     # A longer file name that starts with the declared path is another file.
@@ -92,6 +98,23 @@ class DirectedIdentifierTests(unittest.TestCase):
         text = frameworks.normalise(OBSERVED)
         self.assertEqual(frameworks._score(spawn, text, "")[3], 0)
         self.assertEqual(frameworks._score(spawn, text, "")[1], 1)
+
+    def test_every_brief_a_model_wrote_in_a_qualification_round_is_the_review_layer(self):
+        # The 0.13.x rounds recorded four model-written briefs, one per platform and release. The
+        # macOS 0.13.1 one puts its "follow them precisely" two sentences after the prompt file.
+        briefs = {}
+        for name in ("linux-0.13.0", "linux-0.13.1", "macos-0.13.0", "macos-0.13.1"):
+            path = os.path.join(REPO, "compatibility", "evidence", "claude-code-cli-%s.json" % name)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            found = re.search(r'the model wrote its own brief \\"(.*?)\\"; it was', text)
+            self.assertIsNotNone(found, msg=name)
+            briefs[name] = json.loads('"%s"' % found.group(1))
+        for name, brief in briefs.items():
+            with self.subTest(name=name):
+                match = self.classify(brief)
+                self.assertIsNotNone(match, msg=brief)
+                self.assertEqual(match["spawn"], "code-review-layer")
 
     def test_a_directive_in_any_wording_is_recognised(self):
         for name, brief in DIRECTED.items():
