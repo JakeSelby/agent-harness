@@ -253,8 +253,9 @@ class CommandContentTests(unittest.TestCase):
     def test_close_out_asks_once_for_the_follow_ups_and_the_merges(self):
         body = split(COMMANDS / "close-out.md")[1]
         self.assertIn("then ask once", body)
-        self.assertIn("any step 4 would open", body)
+        self.assertIn("any step 4 would open and then merge", body)
         self.assertIn("Step 2's go-ahead is the one it asks for", body)
+        self.assertIn("go-ahead covers filing them and landing what they", body)
 
     def test_ownership_records_the_commands_directory(self):
         ownership = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())

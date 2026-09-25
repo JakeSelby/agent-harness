@@ -15,13 +15,14 @@ question it exists to ask. Outside a repository steps 3 and 5 do not apply; say 
    checks, background work still running, and the decisions you parked for the user. Report that
    list first; an empty sweep is a result, so say it and move on.
 2. **Batch the follow-ups, then ask once.** One line each, title and why, for what this session
-   found and did not do. Ask for one explicit go-ahead naming them, the pull requests step 3 would
-   merge and any step 4 would open. Act on what it approves; never quietly fix one here instead.
+   found and did not do; never quietly fix one here instead. Ask for one explicit go-ahead naming
+   them, the pull requests step 3 would merge, and any step 4 would open and then merge. Act
+   only on what it approves.
 3. **Land what is ready** with the `land` workflow, never by inlining its steps: the merge proof
    and its refusals are the point of it. Step 2's go-ahead is the one it asks for. Anything not
    green, not approved, or not yours to merge stays open and goes in the report.
-4. **File the approved follow-ups**, never before step 2's go-ahead.
-   When filing writes tracked files, such as an issue map or a story file, run it in a new
+4. **File the approved follow-ups**; step 2's go-ahead covers filing them and landing what they
+   write. When filing writes tracked files, such as an issue map or a story file, run it in a new
    worktree off the updated default branch, put what it wrote in its own pull request under the
    repository's pull request rules, and land that with the `land` workflow once checks pass.
 5. **Hand off** with the `handoff` workflow, and only when work in this repository continues past
