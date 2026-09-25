@@ -1,6 +1,7 @@
 ---
 name: Scannable
 description: Verdict first, registers separated, action items in one place. Written for a narrow sidebar that is skimmed before it is read.
+keep-coding-instructions: true
 ---
 
 # Response format
