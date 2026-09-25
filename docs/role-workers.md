@@ -41,7 +41,10 @@ harness role status <worker-id>
 
 `--prompt-file -` reads the brief from stdin. `--read-dir /path/to/artifacts` grants access to
 additional input directories, such as the framework checkout or review artifacts outside the
-implementation worktree. It never grants writes. Input prompts and results are capped at 1 MiB.
+implementation worktree. It never grants writes, and it refuses `/`, the home directory, a system
+temporary root such as `/tmp`, and any directory above one of them, because each holds other
+runs' files; grant a dedicated subdirectory, such as one made by `mktemp -d`, instead. Input
+prompts and results are capped at 1 MiB.
 These are declared input roots, not a confidentiality boundary: Codex's read-only sandbox can
 read other native-permitted paths. Claude's restricted file tools use the supplied directories.
 The default deadline is 300 seconds; `--timeout` accepts 1–3600 seconds. Interrupting the runner
@@ -131,6 +134,14 @@ configuration, no automatic permission approvals, and only `Read`, `Grep`, and `
 It supplies shared instructions explicitly; ambient user/project customization is disabled.
 Managed native policies still apply. The worker has no shell, write, external-connector or
 delegation tools. If its brief needs a diff or online evidence, the caller supplies those as files.
+
+Run from inside a Claude Code session, where `CLAUDECODE` is set, a Claude worker is checked
+before launch: the client's own `claude auth status` runs under the worker's environment from an
+empty directory, and a failed or unconfirmed login refuses the run with no worker state written.
+Claude Code strips `CLAUDE_CODE_OAUTH_TOKEN` from its tool subprocesses, so a session logged in
+with that token alone hands a worker nothing. Run `harness role run` from a shell that exports the token, or log
+the client in with `claude auth login`. The harness never writes the token anywhere to work
+around it. Workers on Bedrock, Vertex or Foundry are launched unchecked.
 
 No isolated worker reaches the network, whatever its role declares: the Codex adapter disables
 hosted search under a read-only sandbox and the Claude adapter grants `Read`, `Grep` and `Glob`

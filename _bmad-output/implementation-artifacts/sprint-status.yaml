@@ -237,7 +237,7 @@ development_status:
   ah-s250-an-external-task-set-from-harbor-after-a: backlog
   ah-s252-replay-charges-the-user-s-personal-layer-to-the: backlog
   ah-s253-record-the-cli-s-own-account-of-the-loaded: backlog
-  ah-s254-price-every-rule-stance-variant-skill-and-agent: backlog
+  ah-s254-price-every-rule-stance-variant-skill-and-agent: ready-for-dev
   ah-s255-replay-stored-transcripts-through-the-rule: backlog
   ah-s256-run-every-hook-against-recorded-tool-calls-under: backlog
   ah-s257-add-a-micro-task-tier-on-a-cheap-model-that: backlog
@@ -363,11 +363,11 @@ development_status:
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: done
   ah-b085-a-framework-layer-brief-the-orchestrator-rewords: ready-for-dev
   ah-b086-the-100-kb-grade-bash-timing-test-fails-under: done
-  ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
+  ah-b087-an-isolated-worker-launched-from-a-token-only: ready-for-dev
   ah-b088-a-role-confinement-refusal-writes-no-decision: ready-for-dev
   ah-b089-the-confinement-refusal-names-a-harness-command: ready-for-dev
   ah-b090-qualification-provisioning-installs-bmad-without: ready-for-dev
-  ah-b091-harness-role-run-accepts-a-read-directory-as: backlog
+  ah-b091-harness-role-run-accepts-a-read-directory-as: ready-for-dev
   ah-b092-a-release-pull-request-cannot-pass-the-changelog: ready-for-dev
   ah-b093-bmad-issue-sync-new-files-the-issue-then-fails: backlog
   ah-b094-harness-worktree-remove-cannot-remove-a-worktree: done
