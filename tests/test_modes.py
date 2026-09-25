@@ -326,6 +326,10 @@ class CommandLine(unittest.TestCase):
                 self.assertEqual(os.path.realpath(links / (name + ".md")),
                                  str((REPO / "primitives" / "stances" / name /
                                       (minimal.get(name, default) + ".md")).resolve()))
+        commands = self.home / ".claude" / "commands"
+        for workflow in json.loads((SHIPPED / "minimal.json").read_text(encoding="utf-8"))["workflows"]:
+            with self.subTest(workflow=workflow):
+                self.assertFalse(os.path.lexists(commands / (workflow + ".md")))
         diff = self.cli("diff")
         self.assertEqual(diff.returncode, 0, diff.stdout + diff.stderr)
         self.assertIn("no drift", diff.stdout)

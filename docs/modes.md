@@ -52,9 +52,8 @@ stances keep their values. It changes:
 - Workflows: `build` off, `close-out` off, `handoff` off, `land` off, `plan` off,
   `research` off, `review` off.
 
-`sync` projects the stance changes. Workflow switches are resolved and reported by
-`harness selection`; until switch kinds are projected per file (#556), a workflow's command stays
-installed while it is `off`.
+`sync` projects both: each stance links its chosen variant, and a workflow that is `off` has no
+command installed.
 
 ## Writing a mode
 
