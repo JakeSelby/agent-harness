@@ -50,7 +50,8 @@ this precedence, lowest first:
 
 1. **`default`** — the built-in stance variants, and `on` for every switch.
 2. **`mode:<name>`** — `modes/<name>.json` in a primitive root, for the mode the highest layer
-   names. No mode ships yet, so an unknown name selects nothing.
+   names. It sits above a stance `harness init` wrote as a default (`init`); how, and what the
+   shipped modes change, is [modes.md](modes.md).
 3. **`user`** — `~/.config/agent-harness/config.json`.
 4. **`project`** — the file `HARNESS_PROJECT_CONFIG` names.
 5. **`session`** — the file `HARNESS_SESSION_CONFIG` names, then `HARNESS_MODE` and
