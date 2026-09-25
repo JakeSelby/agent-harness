@@ -692,6 +692,19 @@ UNNAMED_TYPES = ("", "general-purpose")
 AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
 
 
+def refused_spawns(agents, errored):
+    """The `Agent` call ids in `errored` that never ran: no subagent row names them.
+
+    A spawn a `PreToolUse` hook denied comes back as an error result and writes no subagent
+    transcript, so counting it as a subagent reports work nobody did. A spawn that ran and then
+    failed also comes back as an error, but it left a transcript whose meta names the call, and
+    it stays counted. A subagent file whose meta names no call is still one row in `agents`,
+    and the session's count is never below that, so it is counted either way.
+    """
+    ran = set(row.get("tool_use_id") for row in agents or [] if row.get("tool_use_id"))
+    return set(use_id for use_id in errored if use_id not in ran)
+
+
 def mark_reroutes(agents, requested):
     """Fill `requested_type` and `rerouted` from the parent's `Agent` inputs, joined on tool use id.
 
@@ -938,6 +951,12 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     raw = {} if raw is None else raw
     idless = 0
     models, agent_calls, seen, requested = [], set(), set(), {}
+    # `Agent` calls whose result came back as an error: a spawn a hook refused, or one that
+    # failed after it ran. `refused_spawns` tells the two apart when the row is counted, but
+    # only by subagent files: a session file holding sidechain lines is the older format, where
+    # a spawn that ran and failed has no file either, so there every errored call stays counted.
+    errored_calls = set()
+    legacy_sidechains = False
     briefs = {}
     started = ended = branch = ""
     turns = 0
@@ -967,6 +986,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             # turns into this one as sidechain lines. They are that agent's work, so they make
             # no event here; their tokens were spent by this session and are summed as ever.
             sidechain = bool(entry.get("isSidechain"))
+            legacy_sidechains = legacy_sidechains or sidechain
             stamp = entry.get("timestamp") or ""
             if stamp:
                 started = stamp if not started or stamp < started else started
@@ -991,6 +1011,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 for block in results:
                     tool_use_id = block.get("tool_use_id") or ""
                     name = tool_names.get(tool_use_id, "")
+                    if name == "Agent" and tool_use_id and block.get("is_error") is True:
+                        errored_calls.add(tool_use_id)
                     text, cut = _result_parts(block.get("content"), name)
                     events.append({"kind": "tool_result", "turn": turn,
                                    "tool_use_id": tool_use_id, "tool_name": name,
@@ -1112,7 +1134,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     for name, _ in CACHE_TIERS:
         if name in totals:
             record[name] = totals[name]
-    record["subagents"] = max(len(agents), len(agent_calls))
+    refused = set() if legacy_sidechains else refused_spawns(agents, errored_calls)
+    record["subagents"] = max(len(agents), len(agent_calls - refused))
     record["turns"] = turns
     # Every record these totals include that nothing identified — neither a message id nor a
     # request id — this session's own and those of the subagent files folded into it, since
