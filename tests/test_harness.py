@@ -214,7 +214,7 @@ class SyncTests(TempHome):
         rc = harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=True, adopt_codex=False, print_only=False))
         self.assertEqual(rc, 0)
         cd = self.home / ".claude"
-        self.assertTrue((cd / "rules" / "harness").is_symlink())
+        self.assertTrue((cd / "rules" / "harness" / "secrets.md").is_symlink())
         self.assertTrue((cd / "rules" / "harness-stances" / "testing.md").is_symlink())
         self.assertTrue((cd / "skills" / "plan-authoring").is_symlink())
         self.assertTrue((cd / "CLAUDE.md").is_symlink())
@@ -247,6 +247,184 @@ class SyncTests(TempHome):
         moved = list((self.home / ".local/state/agent-harness/pre-harness").rglob("CLAUDE.md"))
         self.assertEqual(len(moved), 1)
         self.assertEqual(moved[0].read_text(), "mine")
+
+
+class SwitchKindSyncTests(TempHome):
+    """Rules, skills, workflows and roles switched `off` are absent from every runtime home."""
+
+    def sync(self):
+        return harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=False, adopt_codex=False, print_only=False))
+
+    def switch(self, kind, unit, value):
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(harness.config_set(kind + "." + unit, value), 0)
+
+    def manifest(self):
+        return json.loads(harness.manifest_path().read_text())
+
+    def test_an_off_rule_is_unlinked_and_on_restores_it(self):
+        self.assertEqual(self.sync(), 0)
+        rules = self.home / ".claude" / "rules" / "harness"
+        link = rules / "decisions-and-plans.md"
+        self.assertTrue(rules.is_dir() and not rules.is_symlink())
+        self.assertEqual(Path(os.readlink(link)), REPO / "claude" / "rules" / "decisions-and-plans.md")
+        self.switch("rules", "decisions-and-plans", "off")
+        self.assertEqual(harness._diff_lines(), ["pending sync: switch selection changed since last sync"])
+        self.assertEqual(self.sync(), 0)
+        self.assertFalse(link.is_symlink())
+        self.assertTrue((rules / "secrets.md").is_symlink())
+        self.assertNotIn(str(link), [l["path"] for l in self.manifest()["links"]])
+        self.assertNotIn("<!-- decisions-and-plans.md -->", (self.home / ".codex" / "AGENTS.md").read_text())
+        self.assertEqual(harness._diff_lines(), [])
+        self.switch("rules", "decisions-and-plans", "on")
+        self.assertEqual(self.sync(), 0)
+        self.assertTrue(link.is_symlink())
+        self.assertIn("<!-- decisions-and-plans.md -->", (self.home / ".codex" / "AGENTS.md").read_text())
+        self.assertEqual(harness._diff_lines(), [])
+
+    def test_the_directory_link_migrates_and_uninstall_removes_both_states(self):
+        self.assertEqual(self.sync(), 0)
+        # What a release before this one left: the whole directory linked, and one manifest entry.
+        rules = self.home / ".claude" / "rules" / "harness"
+        shutil.rmtree(str(rules))
+        rules.symlink_to(REPO / "claude" / "rules")
+        manifest = self.manifest()
+        manifest["links"] = [l for l in manifest["links"] if Path(l["path"]).parent != rules]
+        manifest["links"].append({"path": str(rules), "target": str(REPO / "claude" / "rules")})
+        harness.manifest_path().write_text(json.dumps(manifest))
+        self.assertEqual(self.sync(), 0)
+        self.assertTrue(rules.is_dir() and not rules.is_symlink())
+        self.assertTrue((rules / "secrets.md").is_symlink())
+        manifest = self.manifest()
+        self.assertEqual(manifest["migrated"], [{"path": str(rules),
+                                                 "prior": {"type": "symlink", "target": str(REPO / "claude" / "rules")},
+                                                 "applied": {"type": "directory"}}])
+        self.assertNotIn(str(rules), [l["path"] for l in manifest["links"]])
+        self.assertEqual(harness._diff_lines(), [])
+        self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 0)
+        self.assertFalse(rules.exists() or rules.is_symlink())
+
+    def test_a_dry_run_reports_the_migration_and_writes_nothing(self):
+        cd = self.home / ".claude"
+        (cd / "rules").mkdir(parents=True)
+        (cd / "rules" / "harness").symlink_to(REPO / "claude" / "rules")
+        out = io.StringIO()
+        os.environ.pop("HARNESS_QUIET", None)
+        try:
+            with redirect_stdout(out):
+                rc = harness.cmd_sync(harness.argparse.Namespace(dry_run=True, adopt=False, adopt_codex=False, print_only=False))
+        finally:
+            os.environ["HARNESS_QUIET"] = "1"
+        self.assertEqual(rc, 0, out.getvalue())
+        self.assertIn("migrate", out.getvalue())
+        self.assertNotIn("is not a harness link", out.getvalue())
+        self.assertTrue((cd / "rules" / "harness").is_symlink())
+
+    def test_a_user_link_at_the_rules_directory_is_preserved_then_restored_by_uninstall(self):
+        cd = self.home / ".claude"
+        (cd / "rules").mkdir(parents=True)
+        mine = self.home / "my-rules"
+        mine.mkdir()
+        (cd / "rules" / "harness").symlink_to(mine)
+        self.assertEqual(self.sync(), 2)
+        self.assertEqual(Path(os.readlink(cd / "rules" / "harness")), mine)
+        rc = harness.cmd_sync(harness.argparse.Namespace(dry_run=False, adopt=True, adopt_codex=False, print_only=False))
+        self.assertEqual(rc, 0)
+        self.assertTrue((cd / "rules" / "harness" / "secrets.md").is_symlink())
+        self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 0)
+        self.assertEqual(Path(os.readlink(cd / "rules" / "harness")), mine)
+
+    def test_uninstall_leaves_a_rules_directory_the_user_already_had(self):
+        rules = self.home / ".claude" / "rules" / "harness"
+        rules.mkdir(parents=True)
+        self.assertEqual(self.sync(), 0)
+        self.assertTrue((rules / "secrets.md").is_symlink())
+        self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 0)
+        self.assertTrue(rules.is_dir() and not rules.is_symlink())
+        self.assertEqual(list(rules.iterdir()), [])
+
+    def test_an_off_skill_workflow_and_role_leave_no_projection_in_either_home(self):
+        self.assertEqual(self.sync(), 0)
+        cd, codex, agents_skills = self.home / ".claude", self.home / ".codex", self.home / ".agents" / "skills"
+        paths = [cd / "skills" / "plan-authoring", agents_skills / "plan-authoring",
+                 cd / "commands" / "land.md", agents_skills / "harness-land" / "SKILL.md",
+                 cd / "agents" / "reviewer.md", codex / "agents" / "reviewer.toml"]
+        for path in paths:
+            self.assertTrue(path.exists(), str(path))
+        self.switch("skills", "plan-authoring", "off")
+        self.switch("workflows", "land", "off")
+        self.switch("workflows", "review", "off")  # the review workflow depends on the reviewer
+        self.switch("roles", "reviewer", "off")
+        self.assertEqual(self.sync(), 0)
+        for path in paths:
+            self.assertFalse(path.exists() or path.is_symlink(), str(path) + " survived its switch")
+        self.assertFalse((agents_skills / "harness-land").exists())
+        self.assertTrue((cd / "skills" / "delegation-tiering").is_symlink())
+        self.assertTrue((cd / "agents" / "builder.md").exists())
+        self.assertEqual(harness._diff_lines(), [])
+        for kind, unit in (("skills", "plan-authoring"), ("workflows", "land"), ("roles", "reviewer"),
+                           ("workflows", "review")):
+            self.switch(kind, unit, "on")
+        self.assertEqual(self.sync(), 0)
+        for path in paths:
+            self.assertTrue(path.exists(), str(path) + " did not come back")
+        self.assertEqual(harness._diff_lines(), [])
+
+    def test_an_off_role_a_cost_row_moves_is_neither_rendered_nor_linked(self):
+        self.switch("workflows", "research", "off")  # research depends on worker-a
+        self.switch("roles", "worker-a", "off")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(harness.config_set("stances.cost", "frugal"), 0)
+        self.assertEqual(self.sync(), 0)
+        target = self.home / ".claude" / "agents" / "worker-a.md"
+        self.assertFalse(target.exists() or target.is_symlink())
+        self.assertFalse((self.home / ".codex" / "agents" / "worker-a.toml").exists())
+        self.assertTrue((self.home / ".claude" / "agents" / "worker-b.md").exists())
+        self.assertEqual(harness._diff_lines(), [])
+
+    def test_a_switch_that_breaks_a_dependency_is_refused_and_one_that_repairs_it_is_written(self):
+        self.switch("workflows", "land", "on")  # writes the configuration the refusal must leave alone
+        before = harness.config_path().read_text()
+        with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            harness.config_set("roles.reviewer", "off")
+        self.assertIn("workflows/review depends on roles/reviewer", str(refused.exception))
+        self.assertEqual(harness.config_path().read_text(), before)
+        cfg = json.loads(before)
+        cfg.setdefault("roles", {})["reviewer"] = "off"
+        harness.config_path().write_text(json.dumps(cfg))
+        with self.assertRaises(SystemExit):
+            harness.load_selection(env={})
+        self.switch("roles", "reviewer", "on")
+        self.assertEqual(harness.load_selection(env={})["roles"]["reviewer"], "on")
+
+    def test_a_switch_value_or_unit_config_set_cannot_apply_is_refused(self):
+        with self.assertRaises(SystemExit):
+            harness.config_set("rules.decisions-and-plans", "maybe")
+        with self.assertRaises(SystemExit):
+            harness.config_set("rules.no-such-rule", "off")
+        with self.assertRaises(SystemExit):
+            harness.config_set("rules", "off")
+
+    def test_selection_reports_the_effective_count_and_the_lint_figure_does_not_move(self):
+        before = harness.always_loaded_lines(REPO)[0]
+
+        def printed():
+            out = io.StringIO()
+            os.environ.pop("HARNESS_QUIET", None)
+            try:
+                with redirect_stdout(out):
+                    harness.cmd_selection(harness.argparse.Namespace(json=False))
+            finally:
+                os.environ["HARNESS_QUIET"] = "1"
+            return [l for l in out.getvalue().splitlines() if l.startswith("always-loaded: ")][0]
+
+        on = printed()
+        self.switch("rules", "decisions-and-plans", "off")
+        off = printed()
+        rule = len((REPO / "claude" / "rules" / "decisions-and-plans.md").read_text().splitlines())
+        self.assertEqual(int(on.split()[1]) - int(off.split()[1]), rule)
+        self.assertIn(f"{before} of {harness.ALWAYS_LOADED_CAP}", off)
+        self.assertEqual(harness.always_loaded_lines(REPO)[0], before)
 
 
 class LinkAliasTests(TempHome):

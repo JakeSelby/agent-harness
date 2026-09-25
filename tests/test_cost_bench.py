@@ -221,7 +221,7 @@ class ReplayArmTests(unittest.TestCase):
         command = BENCH.arm_command("claude", "claude-test", "prompt")
         for flag in ("--strict-mcp-config", "--no-session-persistence", "--verbose"):
             self.assertIn(flag, command)
-        for flag, value in (("--model", "claude-test"), ("--output-format", "json"), ("--max-budget-usd", "2")):
+        for flag, value in (("--model", "claude-test"), ("--output-format", "stream-json"), ("--max-budget-usd", "2")):
             self.assertEqual(command[command.index(flag) + 1], value)
         fence = json.loads(command[command.index("--settings") + 1])["sandbox"]
         self.assertTrue(fence["enabled"] and fence["network"]["strictAllowlist"])
@@ -335,11 +335,11 @@ class ReplayCaptureTests(unittest.TestCase):
         self.assertEqual(parsed["spawns"], 3)
         self.assertEqual(BENCH.parse_result(json.dumps(result()))["tool_counts"], {})
 
-    def test_hook_blocks_is_none_because_this_output_format_carries_no_hook_decision(self):
+    def test_hook_blocks_is_none_for_output_kept_as_one_json_document(self):
         """Hook lifecycle events are the only structured place a Stop hook's `block` appears, and
         the CLI emits them only under `--include-hook-events`, which its help limits to
-        `--output-format=stream-json`. The runner reads `--output-format json`, so the field is
-        unknown rather than zero, and no text pattern is allowed to stand in for it."""
+        `--output-format=stream-json`. Output kept in the older single-document form cannot carry
+        one, so the field is unknown rather than zero, and no text pattern stands in for it."""
         stream = [call(None, ["Bash"]), result()]
         self.assertIsNone(BENCH.parse_result(json.dumps(stream))["hook_blocks"])
         self.assertIn("--include-hook-events", BENCH.parse_result.__doc__)
@@ -751,7 +751,7 @@ class ManifestTests(unittest.TestCase):
 
     def test_every_solved_issue_and_synthetic_task_is_pinned_by_full_sha(self):
         kinds = [t["kind"] for t in self.tasks]
-        self.assertEqual((kinds.count("issue"), kinds.count("synthetic")), (6, 2))
+        self.assertEqual((kinds.count("issue"), kinds.count("synthetic")), (5, 2))
         self.assertEqual(len(kinds), len(set(t["id"] for t in self.tasks)))
         for task in self.tasks:
             self.assertRegex(task["parent_sha"], r"^[0-9a-f]{40}$")
