@@ -69,6 +69,12 @@ MODEL_USAGE_KEYS = ("inputTokens", "outputTokens", "cacheCreationInputTokens", "
 # Every arm is fenced the same way: no network, no credential reads. What differs is the profile
 # the fence admits, which is the arm's own; see `fence`.
 DENY_READ = ["~/.ssh", "~/.aws", "~/.config/gh"]
+# The web tools run in the CLI's own process, not under the command sandbox, so the fence's empty
+# network allowlist does not reach them; a profile's permission rules do. Both arms are denied them
+# whatever their profile allows, since a deny rule outranks any profile's allow.
+NO_WEB = ("WebFetch", "WebSearch")
+# Where `harness trust` records the roots the stop-gate hook may run a gate in, under HOME.
+TRUST_FILE = Path(".config") / "agent-harness" / "trusted.txt"
 DEFAULT_CONFIG_DIR = "~/.claude"
 # The sandbox matches resolved paths: on macOS `/tmp` is a link to `/private/tmp`, and a rule
 # naming the link does not admit the target. Admit both spellings, deduplicated.
@@ -90,7 +96,7 @@ CONFIG_GLOBS = ("CLAUDE.md", "CLAUDE.personal.md", "rules/**/*.md", "skills/*/SK
                 "agents/*.md", "output-styles/*.md")
 SPAWN_TOOLS = ("Task", "Agent")
 # Diagnostic fields `parse_result` reads out of the stream; `backfill` derives the same ones.
-STREAM_FIELDS = ("first_call_cache_write", "tool_counts", "spawns", "hook_blocks",
+STREAM_FIELDS = ("first_call_cache_write", "tool_counts", "spawns", "stop_hooks", "hook_blocks",
                  "cache_miss_ratio")
 RESULTS = "results.jsonl"
 ENRICHED = "results.enriched.jsonl"
@@ -304,7 +310,8 @@ def config_fingerprint(config_dir, home=None):
 
 
 def fence(config_dir=None, admit=()):
-    """The sandbox one arm runs under: no network, no credential reads, its own profile writable.
+    """The settings one arm runs under: no network, no web tools, no credential reads, its own
+    profile writable.
 
     A fence that admits only the CLI's default `~/.claude` handicaps whichever arm was moved to a
     bench profile, because this repository's own suite writes under the config directory and under
@@ -315,21 +322,81 @@ def fence(config_dir=None, admit=()):
     `admit` names anything else the profile leads to, admitted for reading only. A profile
     `harness sync` filled is symlinks into the checkout it was synced from, so an arm on a pinned
     tag reads nothing at all unless that checkout is admitted; and an arm that could write it could
-    rewrite its own rules, skills and hooks in the middle of the run being measured."""
+    rewrite its own rules, skills and hooks in the middle of the run being measured.
+
+    The web tools are denied here rather than left to each profile: see `NO_WEB`."""
     admitted = [str(config_dir) if config_dir else DEFAULT_CONFIG_DIR] + list(SCRATCH_DIRS)
     readable = admitted + [str(path) for path in admit if path]
-    return {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+    return {"permissions": {"deny": list(NO_WEB)},
+            "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
                         "network": {"allowedDomains": [], "strictAllowlist": True},
                         "filesystem": {"denyRead": list(DENY_READ), "allowWrite": list(admitted),
                                        "allowRead": readable}}}
 
 
-def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD, config_dir=None, admit=()):
+def arm_command(claude, model, prompt, run_cap=RUN_CAP_USD, config_dir=None, admit=(), max_turns=None):
     """One command line for every arm: the arms differ by environment and by their fence's
-    profile, which follows that environment, and by nothing else."""
-    return [claude, "-p", prompt, "--model", model, "--output-format", "json", "--verbose",
-            "--strict-mcp-config", "--no-session-persistence", "--max-budget-usd", "%g" % run_cap,
-            "--permission-mode", "acceptEdits", "--settings", json.dumps(fence(config_dir, admit))]
+    profile, which follows that environment, and by nothing else.
+
+    The output is `stream-json` with hook events, because hook lifecycle events are the only place
+    a Stop hook's decision appears and the CLI emits them in no other format. `max_turns` is the
+    task's own cap; without it a run is bounded only by the soft budget and the timeout."""
+    turns = ["--max-turns", str(int(max_turns))] if max_turns else []
+    return [claude, "-p", prompt, "--model", model, "--output-format", "stream-json",
+            "--include-hook-events", "--verbose", "--strict-mcp-config", "--no-session-persistence",
+            "--max-budget-usd", "%g" % run_cap, "--permission-mode", "acceptEdits"] + turns + [
+            "--settings", json.dumps(fence(config_dir, admit))]
+
+
+def trust_path(home):
+    return Path(home) / TRUST_FILE
+
+
+@contextlib.contextmanager
+def _trust_lock(folder):
+    """An exclusive lock on the trust file's folder, so two replays never interleave their
+    updates. The folder is locked rather than the file, because the cleanup replaces the file."""
+    import fcntl
+    fd = os.open(str(folder), os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+@contextlib.contextmanager
+def trusted_run(workdir, home):
+    """The snapshot listed where `harness trust` lists roots, for this run only.
+
+    The stop-gate hook runs a repository's gate only in a folder the user trusted, and a fresh
+    snapshot is trusted by nobody, so without this the gate never fires in a replay and the
+    harness arm is measured without one of its own behaviours. Every arm's snapshot is listed,
+    the bare one included, which has no hook to read it, so the arms still differ by profile
+    alone. Afterwards exactly the line added is removed, through an atomic write, and every
+    other root the file holds is kept as it was. Both updates hold `_trust_lock`, so replays
+    running at once cannot restore a root another removed; `harness trust` takes no lock."""
+    path, root = trust_path(home), str(Path(workdir).resolve())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _trust_lock(path.parent):
+        existed = path.exists()
+        unterminated = existed and path.stat().st_size and not path.read_bytes().endswith(b"\n")
+        with open(str(path), "a", encoding="utf-8") as handle:
+            handle.write(("\n" if unterminated else "") + root + "\n")
+    try:
+        yield root
+    finally:
+        with _trust_lock(path.parent):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines(True)
+            except OSError:
+                lines = []
+            kept = [line for line in lines if line.strip() != root]
+            if not existed and not "".join(kept).strip():
+                with contextlib.suppress(OSError):
+                    path.unlink()
+            elif len(kept) != len(lines):
+                atomic_write(path, "".join(kept).encode("utf-8"))
 
 
 def _git(repo, *args):
@@ -790,9 +857,64 @@ def synced_tag(repo, ref, tmp=None, config_dir=None, python=sys.executable, bare
             shutil.rmtree(str(parent), ignore_errors=True)
 
 
+def cli_messages(stdout):
+    """(messages, streamed): the CLI's output as a list of messages. ValueError when none parse.
+
+    The runner reads `stream-json`, one message per line. A raw file kept before that is one JSON
+    document, the `json --verbose` array or a lone result, and still reads here, with `streamed`
+    False so a field only the stream can carry stays unknown for it. A line that does not parse,
+    such as the last one of a run cut off mid-write, is skipped rather than failing the run."""
+    try:
+        data = json.loads(stdout)
+    except (TypeError, ValueError):
+        data = None
+    else:
+        if isinstance(data, (list, dict)):
+            return (data if isinstance(data, list) else [data]), False
+    messages = []
+    for line in (stdout or "").splitlines() if isinstance(stdout, str) else ():
+        try:
+            message = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(message, dict):
+            messages.append(message)
+    if not messages:
+        raise ValueError("the CLI did not return JSON")
+    return messages, True
+
+
+def _hook_blocked(event):
+    """Whether one `hook_response` event refused the stop: a `block` decision on stdout, or the
+    exit code 2 that feeds stderr back to the model."""
+    if event.get("exit_code") == 2:
+        return True
+    for key in ("stdout", "output"):
+        try:
+            decision = json.loads(str(event.get(key) or "").strip() or "null")
+        except ValueError:
+            continue
+        if isinstance(decision, dict) and decision.get("decision") == "block":
+            return True
+    return False
+
+
+def stop_hook_counts(messages, streamed):
+    """(stop hook runs, of which blocked), or (None, None) for output that cannot carry them.
+
+    Counted from the `hook_response` lifecycle events of the `Stop` hook only. Text in the
+    transcript is not a substitute: the block reason also appears in the prompt and in files the
+    agent reads."""
+    if not streamed:
+        return None, None
+    stops = [m for m in messages if m.get("type") == "system" and m.get("subtype") == "hook_response"
+             and m.get("hook_event") == "Stop"]
+    return len(stops), sum(1 for m in stops if _hook_blocked(m))
+
+
 def parse_result(stdout):
-    """Cost, tokens, turns and the diagnostic fields, from the CLI's JSON. ValueError when there is
-    no result to read.
+    """Cost, tokens, turns and the diagnostic fields, from the CLI's output. ValueError when there
+    is no result to read.
 
     With `--verbose` the output is every message, which also gives each thread's first turn; without
     it the output is the result alone and the cache-normalised cost cannot be computed.
@@ -802,16 +924,12 @@ def parse_result(stdout):
     cache, as against the run's total writes. `tool_counts` counts every `tool_use` content block
     by name, and `spawns` is the subagent share of it.
 
-    `hook_blocks` is always None. Hook lifecycle events are the only place a Stop hook's `block`
-    decision appears in the stream, and this CLI emits them only under `--include-hook-events`,
-    which its own help says "only works with --output-format=stream-json"; the runner reads
-    `--output-format json`, so no run of it can carry a hook decision. Text in the transcript is
-    not a substitute: the block reason also appears in the prompt and in files the agent reads."""
-    try:
-        data = json.loads(stdout)
-    except (TypeError, ValueError):
-        raise ValueError("the CLI did not return JSON")
-    messages = data if isinstance(data, list) else [data]
+    `stop_hooks` and `hook_blocks` are how often the Stop hook ran and how often it refused the
+    stop. Hook lifecycle events carry them, and the CLI emits those only under
+    `--include-hook-events`, which works only with `--output-format=stream-json`; for output kept
+    in the older single-document form both are None, never zero. See `stop_hook_counts`."""
+    messages, streamed = cli_messages(stdout)
+    stops, blocks = stop_hook_counts(messages, streamed)
     results = [m for m in messages if isinstance(m, dict) and m.get("type") == "result"]
     if not results or not isinstance(results[-1].get("total_cost_usd"), (int, float)):
         raise ValueError("the CLI returned no result with total_cost_usd")
@@ -852,7 +970,8 @@ def parse_result(stdout):
             "turns": int(result.get("num_turns") or 0), "is_error": bool(result.get("is_error")),
             "subtype": str(result.get("subtype") or ""), "first_turns": first_turns,
             "first_call_cache_write": first_write, "tool_counts": tools,
-            "spawns": sum(tools.get(name, 0) for name in SPAWN_TOOLS), "hook_blocks": None,
+            "spawns": sum(tools.get(name, 0) for name in SPAWN_TOOLS), "stop_hooks": stops,
+            "hook_blocks": blocks,
             "cache_miss_ratio": run_miss_ratio(cache)}
 
 
@@ -980,7 +1099,7 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
     config, admit = env.get("CLAUDE_CONFIG_DIR"), arm_admits(arm, opts)
     row = dict(opts["stamp"], task=task["id"], arm=arm, tag=opts["tag"], rep=rep, passed=None, error=False,
                error_kind="", cost_usd=None, cost_normalised_usd=None, turns=None, wall_seconds=None,
-               first_call_cache_write=None, tool_counts={}, spawns=None, hook_blocks=None,
+               first_call_cache_write=None, tool_counts={}, spawns=None, stop_hooks=None, hook_blocks=None,
                cache_miss_ratio=None,
                change_note=opts.get("change_note", ""), preflight=opts.get("preflight", "skipped"),
                arm_config_dir=config_label(config, opts.get("home")),
@@ -995,11 +1114,12 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
     try:
         snapshot(opts["repo"], task["parent_sha"], workdir)
         try:
-            done = launch(arm_command(opts["claude"], opts["model"], prompt_of(task), opts["run_cap"],
-                                      config, admit),
-                          cwd=str(workdir), env=env,
-                          timeout=RUN_TIMEOUT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          universal_newlines=True)
+            with trusted_run(workdir, opts["home"]):
+                done = launch(arm_command(opts["claude"], opts["model"], prompt_of(task), opts["run_cap"],
+                                          config, admit, task["max_turns"]),
+                              cwd=str(workdir), env=env,
+                              timeout=RUN_TIMEOUT, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True)
         except subprocess.TimeoutExpired:
             return dict(row, error=True, error_kind="timeout", wall_seconds=round(time.time() - started, 1))
         row["wall_seconds"] = round(time.time() - started, 1)
@@ -1031,11 +1151,11 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
 def gate_output(stdout):
     """Every tool result in a `-p` stream, joined: the gate's own output, not the model's relay."""
     try:
-        data = json.loads(stdout)
-    except (TypeError, ValueError):
+        messages = cli_messages(stdout)[0]
+    except ValueError:
         return ""
     parts = []
-    for ev in data if isinstance(data, list) else [data]:
+    for ev in messages:
         content = ((ev.get("message") or {}).get("content") if isinstance(ev, dict) else None) or []
         for blk in content if isinstance(content, list) else []:
             if isinstance(blk, dict) and blk.get("type") == "tool_result":
@@ -1055,10 +1175,9 @@ def gate_passed(stdout):
 def reply_text(stdout):
     """The final text of a `-p` run: the `result` field of the CLI's last result message, or ""."""
     try:
-        data = json.loads(stdout)
-    except (TypeError, ValueError):
+        messages = cli_messages(stdout)[0]
+    except ValueError:
         return ""
-    messages = data if isinstance(data, list) else [data]
     texts = [m.get("result") for m in messages if isinstance(m, dict) and m.get("type") == "result"]
     return str(texts[-1] or "").strip() if texts else ""
 
@@ -1083,7 +1202,7 @@ def preflight(tasks, opts, launch=subprocess.run):
         try:
             snapshot(opts["repo"], tasks[0]["parent_sha"], workdir)
             command = arm_command(opts["claude"], opts["model"], PREFLIGHT_PROMPT, PREFLIGHT_CAP_USD,
-                                  config, arm_admits(arm, opts)) + ["--max-turns", str(PREFLIGHT_TURNS)]
+                                  config, arm_admits(arm, opts), PREFLIGHT_TURNS)
             try:
                 done = launch(command, cwd=str(workdir), env=env, timeout=RUN_TIMEOUT,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
