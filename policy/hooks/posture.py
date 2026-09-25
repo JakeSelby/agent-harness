@@ -21,9 +21,13 @@ variant's JSON sidecar — switches, per-role and per-band rows, the default ban
 reads more files than a stance question needs. No number lives here: an unusable sidecar yields
 the base variant's table and a warning, never a guessed default.
 
+`fingerprint(env)` digests the resolved selection into the profile fingerprint every new ledger
+row carries; see `FINGERPRINT_KEY`.
+
 Import-cheap on purpose: no work at import, JSON reads only, because the dispatcher loads
 this on every tool call.
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -1045,6 +1049,116 @@ def selection(env=None, strict=True, config=None, root=None):
             raise ValueError("module manifest: " + "\nmodule manifest: ".join(errors))
     result["sources"] = sources
     return result
+
+
+# The profile fingerprint (AD-22, AD-23): which profile wrote a ledger row. The configuration it
+# covers is the user keys that reach the model or a hook; installer switches, remote control and
+# integrations change neither. `primitive_roots` is left out because the modules it adds are
+# hashed by content, so one profile on two machines matches. A row that predates the field is
+# unattributed, and the bare arm of a replay, which loads no harness, is `BARE_FINGERPRINT`.
+FINGERPRINT_KEY = "profile_fingerprint"
+FINGERPRINT_CONFIG_KEYS = ("identity", "permissions", "permissions_bypass_acknowledged",
+                           "plan_allow_tools", "telemetry", "governance")
+BARE_FINGERPRINT = "bare"
+_FINGERPRINTS = {}
+
+
+def _unit_files(entry, unit, value, config, root=None):
+    """`[(label, path)]` for the files one unit's content is, across every primitive root.
+
+    The label is the root's position and the path inside it, so a checkout's own location never
+    reaches the digest. A skill is its whole directory; a stance is its selected variant and the
+    sidecar beside it; any other kind is its one file.
+    """
+    directory, pattern = entry.get("directory"), entry.get("pattern")
+    if not directory or not pattern or not _identifier(unit):
+        return []
+    files = []
+    for index, source in enumerate(primitive_roots(config, root, directory)):
+        if pattern == "*/*.md":
+            if not _identifier(value):
+                continue
+            found = [source / unit / (value + suffix) for suffix in (".md", ".json")]
+        elif "/" in pattern:
+            base = source / unit
+            found = sorted(path for path in base.rglob("*") if path.is_file() and not any(
+                part.startswith(".") or part == "__pycache__" for part in path.relative_to(base).parts)) \
+                if base.is_dir() else []
+        else:
+            found = [source / pattern.replace("*", unit)]
+        files += [(str(index) + "/" + path.relative_to(source).as_posix(), path)
+                  for path in found if path.is_file()]
+    return files
+
+
+def _content_digest(files):
+    """The sha256 of the labelled files' bytes, or None when the unit has no file anywhere."""
+    if not files:
+        return None
+    digest = hashlib.sha256()
+    for label, path in files:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = b"\0unreadable"
+        digest.update(label.encode("utf-8") + b"\0" + str(len(data)).encode("ascii") + b"\0" + data)
+    return digest.hexdigest()
+
+
+def _version(root=None):
+    try:
+        return ((root or ROOT) / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def profile(env=None, config=None, root=None):
+    """The document the profile fingerprint digests, resolved non-strict from the one ladder.
+
+    Every switched-on module with its content digest, every stance with its variant and that
+    variant's digest, the configuration values `FINGERPRINT_CONFIG_KEYS` names, and the harness
+    version. A switched-off module is absent, as it is from the session. A mode is not named:
+    what it selects is.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, False) if config is None else config
+    document = selection(env, strict=False, config=config, root=root)
+    modules, stances = {}, {}
+    for kind, entry in selection_kinds(root).items():
+        units = document.get(kind) or {}
+        if entry.get("value") == "switch":
+            on = {unit: _content_digest(_unit_files(entry, unit, None, config, root))
+                  for unit, value in units.items() if value == "on"}
+            if on:
+                modules[kind] = on
+        else:
+            stances.update({unit: {"variant": value,
+                                   "digest": _content_digest(_unit_files(entry, unit, value, config, root))}
+                            for unit, value in units.items() if value})
+    settings = config if isinstance(config, dict) else {}
+    return {"harness_version": _version(root), "modules": modules, "stances": stances,
+            "config": {key: settings[key] for key in FINGERPRINT_CONFIG_KEYS if key in settings}}
+
+
+def fingerprint(env=None, config=None, root=None):
+    """The profile fingerprint: the sha256 of `profile()` as canonical JSON. See `FINGERPRINT_KEY`.
+
+    Identical inputs give one fingerprint on every run and machine, and any module, stance or
+    setting that differs gives another. Remembered per process for one environment, because a
+    hook stamps it on each row it writes and the profile cannot change under a running hook.
+    """
+    env = os.environ if env is None else env
+    key = (str(root or ROOT), tuple(sorted((name, value) for name, value in env.items()
+                                           if name in ("HOME", "HARNESS_HOME", MODE_VARIABLE,
+                                                       "HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG")
+                                           or name.startswith(PREFIX))))
+    if config is None and key in _FINGERPRINTS:
+        return _FINGERPRINTS[key]
+    text = json.dumps(profile(env, config, root), sort_keys=True, separators=(",", ":"))
+    value = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if config is None:
+        _FINGERPRINTS[key] = value
+    return value
 
 
 def resolve(env=None, strict=True, table=False):
