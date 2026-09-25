@@ -6,8 +6,22 @@ import re
 from pathlib import Path
 
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
-KINDS = {"rules": "rules", "stances": "stances", "skills": "skills",
-         "roles": "roles", "workflows": "workflows", "presentation": "presentation"}
+# Every kind of primitive: its directory under a primitive root, the files that are its units, the
+# value a selection gives it and what sync projects it into. `variant` kinds pick one named file
+# per dimension; `switch` kinds are `on` or `off`, default `on`; a kind with no value is not
+# selectable. `policy/hooks/posture.py` reads this map to resolve a selection, so a new kind is
+# one entry here. `hooks` has no directory: its units are the lifecycle modules.
+KINDS = {
+    "rules": {"directory": "rules", "pattern": "*.md", "value": "switch", "projection": "rule link"},
+    "stances": {"directory": "stances", "pattern": "*/*.md", "value": "variant",
+                "projection": "stance link and generated instructions"},
+    "skills": {"directory": "skills", "pattern": "*/SKILL.md", "value": "switch", "projection": "skill link"},
+    "roles": {"directory": "roles", "pattern": "*.md", "value": "switch", "projection": "agent definition"},
+    "workflows": {"directory": "workflows", "pattern": "*.md", "value": "switch",
+                  "projection": "command and generated skill"},
+    "hooks": {"directory": None, "pattern": None, "value": "switch", "projection": "settings hook"},
+    "presentation": {"directory": "presentation", "pattern": "*.md", "value": None, "projection": "output style"},
+}
 # Capability classes, strongest first. A shared role names the class its work needs; each
 # adapter's bindings.json maps the classes it has qualified onto its own native models.
 TIER_CLASSES = ("frontier", "strong", "standard", "light")
@@ -176,10 +190,11 @@ def resolve_stances(root, config, strict=True):
 
 def catalog(root):
     entries = []
-    for kind, directory in KINDS.items():
-        source = root / "primitives" / directory
-        pattern = "*/SKILL.md" if kind == "skills" else "*/*.md" if kind == "stances" else "*.md"
-        for path in sorted(source.glob(pattern)):
+    for kind, entry in KINDS.items():
+        if not entry["directory"]:
+            continue
+        source = root / "primitives" / entry["directory"]
+        for path in sorted(source.glob(entry["pattern"])):
             ident = str(path.relative_to(source).with_suffix(""))
             if kind == "skills":
                 ident = path.parent.name
