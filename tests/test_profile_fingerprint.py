@@ -204,13 +204,14 @@ class UsageLedgerTests(Home):
         usage_log._POSTURE[:] = []
         self.expected = posture.fingerprint(dict(os.environ))
 
-    def test_appended_and_upserted_rows_carry_the_active_profile_under_schema_2(self):
+    def test_appended_and_upserted_rows_carry_the_active_profile_under_schema_1(self):
         usage_log.append_row({"kind": "decision", "session_id": "d-1"}, path=self.usage)
         usage_log.upsert(session_row(), path=self.usage)
         rows = self.lines(self.usage)
         self.assertEqual([r[KEY] for r in rows], [self.expected] * 2)
-        self.assertEqual([r["schema_version"] for r in rows], [2, 2])
-        self.assertEqual(usage_log.SCHEMA_VERSION, 2)
+        self.assertEqual([r["schema_version"] for r in rows], [1, 1])
+        self.assertEqual(usage_log.SCHEMA_VERSION, 1)
+        self.assertEqual(decisions.SCHEMA_VERSION, 1)
 
     def test_a_row_that_names_its_profile_keeps_it_even_when_null(self):
         self.assertIsNone(usage_log.stamped({"kind": "worker", KEY: None})[KEY])
@@ -273,8 +274,9 @@ class ReaderTests(Home):
     def test_a_reader_from_before_the_field_still_reads_a_new_row(self):
         usage_log.upsert(session_row("s-1"), path=self.usage)
         self.assertIn("TOTAL", self.usage_report("day"))
-        with patch.object(usage_log, "SCHEMA_VERSION", 1):
-            self.assertEqual(len(usage_log.ledger_rows(self.usage.read_text())), 1)
+        rows = usage_log.ledger_rows(self.usage.read_text())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][KEY], usage_log.profile_fingerprint())
 
     def test_rules_by_profile_is_refused_rather_than_reported_as_something_else(self):
         args = harness.argparse.Namespace(days=30, by="profile", rules=True, rescan=False, stance=None)
@@ -288,13 +290,13 @@ class DecisionLogTests(Home):
         posture._FINGERPRINTS.clear()
         decisions._POSTURE[:] = []
 
-    def test_decision_and_outcome_rows_carry_the_active_profile_under_schema_2(self):
+    def test_decision_and_outcome_rows_carry_the_active_profile_under_schema_1(self):
         identity = decisions.record("grade-bash", "ask", "git push", key="k-1",
                                     event={"session_id": "s-1"}, target=self.decisions)
         decisions.observe(identity, "ran", "grade-bash", "s-1", target=self.decisions)
         rows = self.lines(self.decisions)
         self.assertEqual([r[KEY] for r in rows], [posture.fingerprint(dict(os.environ))] * 2)
-        self.assertEqual([r["schema_version"] for r in rows], [2, 2])
+        self.assertEqual([r["schema_version"] for r in rows], [1, 1])
 
     def test_an_old_decision_row_reads_without_a_fingerprint(self):
         self.decisions.write_text(json.dumps({"kind": "decision", "decision_id": "d-1",

@@ -11,10 +11,10 @@ so a reader of the file sees the decision exactly as the hook made it.
     {"kind": "decision", "decision_id": "…", "point": "grade-bash", "session_id": "…",
      "ts": "2026-09-21T18:04:05Z", "input_sha256": "…", "input": "git push --force",
      "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
-     "harness_version": "0.12.0", "profile_fingerprint": "…", "schema_version": 2}
+     "harness_version": "0.12.0", "profile_fingerprint": "…", "schema_version": 1}
     {"kind": "outcome", "decision_id": "…", "point": "grade-bash", "session_id": "…",
      "ts": "…", "outcome": "ran", "harness_version": "0.12.0", "profile_fingerprint": "…",
-     "schema_version": 2}
+     "schema_version": 1}
 
 `input` is the text the hook judged, capped at MAX_INPUT (2 KiB) — a command or a brief, never
 tool output and never assistant prose. `input_sha256` is over the **uncapped** text, so two
@@ -494,8 +494,8 @@ def claim_fields(transcript, cfg=None):
 # adds a field, a rename ships a fold (`old name: new name`), nothing is removed in place and no
 # old row is rewritten. A row without SCHEMA_KEY predates the version and reads as version 0.
 SCHEMA_KEY = "schema_version"
-# 2 adds `profile_fingerprint`, which `usage-log.py` documents with its own.
-SCHEMA_VERSION = 2
+# Version 1 is first released in v0.14.0 and carries `profile_fingerprint`; see `usage-log.py`.
+SCHEMA_VERSION = 1
 FIELD_FOLDS = {}
 FINGERPRINT_KEY = "profile_fingerprint"
 _POSTURE = []

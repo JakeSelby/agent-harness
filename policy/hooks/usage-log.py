@@ -194,8 +194,9 @@ def usage_path():
 # change to what a row carries, and add a rename to FIELD_FOLDS as `old name: new name`, never
 # by rewriting old rows. See docs/usage.md, "Ledger schema".
 SCHEMA_KEY = "schema_version"
-# 2 adds `profile_fingerprint`.
-SCHEMA_VERSION = 2
+# Version 1 is first released in v0.14.0 and carries every field that release adds,
+# `profile_fingerprint` among them.
+SCHEMA_VERSION = 1
 FIELD_FOLDS = {}
 FINGERPRINT_KEY = "profile_fingerprint"
 _POSTURE = []

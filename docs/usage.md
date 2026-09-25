@@ -52,7 +52,7 @@ Every row also names the `harness_version` that wrote it, read from the same `VE
 row carries `null`**: the version that ran a past session is not recoverable from its
 transcript, and stamping today's would make the whole history look like this release.
 
-Every row written from schema version 2 on, in this ledger and in the decision log, also names
+Every new row, in this ledger and in the decision log, also names
 the **`profile_fingerprint`** of the profile that wrote it: the sha256 of each switched-on
 module's content, the stance variants, the configuration keys that reach the model or a hook
 (`identity`, `permissions`, `permissions_bypass_acknowledged`, `plan_allow_tools`, `telemetry`,
@@ -239,7 +239,8 @@ so both grow compatibly:
   under the new name, and a row carrying both keeps the new one.
 
 `SCHEMA_VERSION` in each of those modules is bumped with any change to what a row carries.
-Version 2, in both, adds `profile_fingerprint`.
+Version 1 is first released in v0.14.0 and carries every field that release adds,
+`profile_fingerprint` among them.
 
 ## Usage feed
 
@@ -407,10 +408,10 @@ a context token.
 {"kind": "decision", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
  "ts": "2026-09-21T19:41:05Z", "input_sha256": "d20c…", "input": "git push --force origin main",
  "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
- "harness_version": "0.12.0", "profile_fingerprint": "5f1c…", "schema_version": 2}
+ "harness_version": "0.12.0", "profile_fingerprint": "5f1c…", "schema_version": 1}
 {"kind": "outcome", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
  "ts": "2026-09-21T19:41:22Z", "outcome": "ran", "harness_version": "0.12.0",
- "profile_fingerprint": "5f1c…", "schema_version": 2}
+ "profile_fingerprint": "5f1c…", "schema_version": 1}
 ```
 
 The file is **append-only**: an outcome is its own record, joined to its decision by
