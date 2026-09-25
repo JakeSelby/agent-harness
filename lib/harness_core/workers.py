@@ -136,6 +136,20 @@ def session_selection(root, env=None):
         return None
 
 
+def session_fingerprint(root, env=None):
+    """The launching session's profile fingerprint, stamped on the run's ledger row; None without one.
+
+    Taken from the same environment as `session_selection` and for the same reason: the worker
+    runs the launching session's profile. Never raises, since a missing stamp is an unattributed
+    row and never a reason to refuse a run.
+    """
+    module = catalog.posture_module(root)
+    try:
+        return module.fingerprint(os.environ if env is None else env, root=root) if module else None
+    except Exception:
+        return None
+
+
 def switched_off(selection):
     """`{kind: units set off}` for the rules, skills and roles a worker run is built from.
 
@@ -365,6 +379,7 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
               # The harness that launched this run, stamped now: the usage sweep that turns the
               # status file into a ledger row may run long after this version was replaced.
               "harness_version": harness_version(root),
+              "profile_fingerprint": session_fingerprint(root),
               "model": bindings["model"], "workspace": str(workspace),
               "effort": bindings.get("model_reasoning_effort", bindings.get("effort")),
               # The documents the policy cites are mounted as copies, so the roots recorded here

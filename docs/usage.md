@@ -52,6 +52,18 @@ Every row also names the `harness_version` that wrote it, read from the same `VE
 row carries `null`**: the version that ran a past session is not recoverable from its
 transcript, and stamping today's would make the whole history look like this release.
 
+Every new row, in this ledger and in the decision log, also names
+the **`profile_fingerprint`** of the profile that wrote it: the sha256 of each switched-on
+module's content, the stance variants, the configuration keys that reach the model or a hook
+(`identity`, `permissions`, `permissions_bypass_acknowledged`, `plan_allow_tools`, `telemetry`,
+`governance`) and the harness version. `posture.profile()` builds the document it digests, and
+`posture.fingerprint()` is the one definition. Identical profiles match on any machine, since no
+path reaches the digest; one module, stance or setting apart, they differ. A role worker's row
+carries the profile its run started under, and a replay row carries its arm's, or `bare` for the
+arm that loads no harness. A row from before the field, a rescanned session the ledger did not
+already hold, and a row whose profile could not be resolved carry none or `null`, and read as
+**unattributed**: nothing is ever given a guessed fingerprint.
+
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
 `days`, `raw_vs_deduped` and, when the row has any, `idless_records`.
@@ -227,6 +239,8 @@ so both grow compatibly:
   under the new name, and a row carrying both keeps the new one.
 
 `SCHEMA_VERSION` in each of those modules is bumped with any change to what a row carries.
+Version 1 is first released in v0.14.0 and carries every field that release adds,
+`profile_fingerprint` among them.
 
 ## Usage feed
 
@@ -394,10 +408,10 @@ a context token.
 {"kind": "decision", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
  "ts": "2026-09-21T19:41:05Z", "input_sha256": "d20c…", "input": "git push --force origin main",
  "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
- "harness_version": "0.12.0", "schema_version": 1}
+ "harness_version": "0.12.0", "profile_fingerprint": "5f1c…", "schema_version": 1}
 {"kind": "outcome", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
  "ts": "2026-09-21T19:41:22Z", "outcome": "ran", "harness_version": "0.12.0",
- "schema_version": 1}
+ "profile_fingerprint": "5f1c…", "schema_version": 1}
 ```
 
 The file is **append-only**: an outcome is its own record, joined to its decision by
@@ -568,6 +582,7 @@ bin/harness usage --days 7 --by repo
 bin/harness usage --by model           # a session using two models groups under both, joined
 bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output, p50/p75 usd
 bin/harness usage --by stance --stance cost   # tokens per variant of one stance dimension
+bin/harness usage --by profile         # tokens per profile fingerprint; older rows unattributed
 bin/harness usage --by decision        # hook decisions and their outcomes, above
 bin/harness usage --by provider        # decision-provider calls, priced, above
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
@@ -602,7 +617,11 @@ make a newly stamped variant look like the whole history of the ledger. `--rules
 is the hit report below and is unchanged. `--by stance` with neither is refused, since it names
 two different reports and guessing between them would be worse than asking.
 
-The token groupings — `day`, `repo`, `model`, `stance` — sum session and worker rows and never a
+`--by profile` groups tokens by `profile_fingerprint`, so two profiles are told apart by their
+rows alone. A row that carries none groups under `(unattributed)` and is counted there. The
+fingerprint is 64 characters and the label column 34, which still tells profiles apart.
+
+The token groupings — `day`, `repo`, `model`, `stance`, `profile` — sum session and worker rows and never a
 subagent's. A subagent's tokens are already inside its session's total; a role-run worker has
 no session row at all, so leaving it out would hide its spend in every report there is.
 

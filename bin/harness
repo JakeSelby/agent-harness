@@ -4198,6 +4198,10 @@ def percentile(values: List[Any], share: float) -> Any:
     return values[min(max(index, 0), len(values) - 1)]
 
 
+# The `--by profile` group of a row that carries no profile fingerprint (AD-23).
+UNATTRIBUTED = "(unattributed)"
+
+
 def stance_key(row: Dict[str, Any], dimension: str) -> str:
     """The group a row belongs to under `--by stance --stance <dimension>`.
 
@@ -4448,7 +4452,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
         print("usage --by stance needs --stance <dimension> for tokens, or --rules for hits",
               file=sys.stderr)
         return 2
-    if rules_mode and by in ("model", "role"):
+    if rules_mode and by in ("model", "role", "profile"):
         # Reporting something else silently would be worse than refusing: a rule hit belongs
         # to a session, and a session's hits cannot be attributed to one of its models, nor to
         # a subagent whose conduct the session's detectors never measured.
@@ -4579,6 +4583,12 @@ def cmd_usage(args: argparse.Namespace) -> int:
             key = ("+".join(row.get("models") or []) or row.get("model") or "(unknown)")
         elif by == "stance":
             key = stance_key(row, stance)
+        elif by == "profile":
+            # A row from before the fingerprint, or one whose profile could not be resolved, is
+            # unattributed: it is never grouped under a fingerprint it was not written with. A
+            # value that is not a string is unattributed too, rather than an unhashable key.
+            value = row.get("profile_fingerprint")
+            key = value if isinstance(value, str) and value else UNATTRIBUTED
         else:
             key = ended[:10]
         acc = groups.setdefault(key, [0, 0, 0, 0, 0, 0.0])
@@ -5098,7 +5108,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="with export, count what would be sent and open no connection")
     p.add_argument("--days", type=int, default=30)
     p.add_argument("--by", choices=["day", "repo", "model", "role", "rule", "stance", "decision",
-                                    "provider", "prefix"],
+                                    "provider", "prefix", "profile"],
                    default="day")
     p.add_argument("--stance", choices=STANCE_NAMES,
                    help="with --by stance, the dimension whose variants group the tokens")
