@@ -172,10 +172,21 @@ class UsageFoldTests(Home):
         self.assertIn("model-a", out)
         self.assertEqual(self.lines(self.usage), [row])
 
-    def test_the_shipped_fold_map_names_distinct_old_and_new_fields(self):
-        for old, new in usage_log.FIELD_FOLDS.items():
+    def assert_well_formed(self, folds):
+        self.assertIsInstance(folds, dict)
+        for old, new in folds.items():
             self.assertNotEqual(old, new)
-            self.assertNotIn(new, usage_log.FIELD_FOLDS)
+            self.assertNotIn(new, folds)
+
+    def test_the_shipped_fold_maps_name_distinct_old_and_new_fields(self):
+        # Both maps ship empty; this guard binds the first rename either ledger adds.
+        self.assert_well_formed(usage_log.FIELD_FOLDS)
+        self.assert_well_formed(decisions.FIELD_FOLDS)
+
+    def test_the_fold_map_guard_rejects_an_identity_or_chained_rename(self):
+        for bad in ({"ended": "ended"}, {"finished": "done", "done": "ended"}):
+            with self.assertRaises(AssertionError):
+                self.assert_well_formed(bad)
 
 
 class DecisionLogTests(Home):
