@@ -2456,10 +2456,10 @@ def case_spawn_confinement(home):
     """docs/compatibility.md step 9: a framework's review layer is confined by what it carries.
 
     Each part is read from what the run wrote. The framework's own spawn text, naming no role, must
-    be refused by name, and so must the brief the model writes itself for the layer. The same layer through `harness role run` must write
-    isolated worker state and return findings. Two ordinary spawns, one merely mentioning review
-    words and one editing the framework's input roots, must still run, or a guard that refuses
-    everything would read as a pass.
+    be refused by name, and so must the brief the model writes itself for the layer. The same
+    layer through `harness role run` must write isolated worker state and return findings. Two
+    ordinary spawns, one merely mentioning review words and one editing the framework's input
+    roots, must still run, or a guard that refuses everything would read as a pass.
     """
     home.seed()
     home.harness("sync")

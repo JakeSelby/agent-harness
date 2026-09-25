@@ -274,7 +274,8 @@ DIRECTIVE = re.compile(
 LEAD_GAP = 6
 CLAUSE_BREAK = re.compile(r"[,:()]|\b(?:and|then|but|or|while|after|before)\b")
 # The directive after the file, later in its sentence or in the next one, which counts only when
-# it points back at the file: "read <path> and follow it", not "read <path> and use it as a fixture".
+# it points back at the file: "read <path> and follow it", not "read <path> and use it as a
+# fixture".
 DIRECTIVE_BACK = re.compile(
     r"\b(?:(?:follow(?:ing)?|apply(?:ing)?|obey(?:ing)?) (?:it|them|that file|this file"
     r"|those instructions|these instructions|its instructions|the instructions)"
@@ -289,7 +290,7 @@ SENTENCE = re.compile(r"(?<=[.!?;])\s+|\s+(?:—|–|-{2})\s+")
 
 
 def _unnegated(pattern, text):
-    """The matches of `pattern` in `text` that no "not", "never" or "without" just before cancels."""
+    """The matches of `pattern` in `text` not cancelled by a "not", "never" or "without" before."""
     return [found for found in pattern.finditer(text) if not NEGATION.search(text[:found.start()])]
 
 
