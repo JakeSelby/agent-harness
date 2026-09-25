@@ -868,20 +868,23 @@ def selection(env=None, strict=True, config=None, root=None):
             result[kind].update(DEFAULT_STANCES)
         sources[kind] = {unit: "default" for unit in result[kind]}
         for source, data in ladder:
-            chosen = data.get(kind) if isinstance(data, dict) else None
-            if chosen is not None and not isinstance(chosen, dict):
+            if not isinstance(data, dict) or kind not in data:
+                continue
+            chosen = data[kind]
+            if not isinstance(chosen, dict):
                 if strict:
-                    raise ValueError(source + " sets " + kind + " to a " + type(chosen).__name__ +
+                    raise ValueError(source + " sets " + kind + " to " + json.dumps(chosen) +
                                      "; a kind is an object of unit to value")
                 continue
-            for unit, value in (chosen.items() if isinstance(chosen, dict) else ()):
-                value = value.strip() if isinstance(value, str) else None
-                if not isinstance(unit, str) or not value:
-                    continue
+            for unit, value in chosen.items():
+                value = value.strip() if isinstance(value, str) else value
                 if switch and value not in SWITCH_STATES:
                     if strict:
-                        raise ValueError(source + " sets " + kind + "." + unit + " to '" + value +
-                                         "'; a " + kind + " unit is on or off")
+                        shown = "'" + value + "'" if isinstance(value, str) else json.dumps(value)
+                        raise ValueError(source + " sets " + kind + "." + unit + " to " + shown +
+                                         "; a " + kind + " unit is on or off")
+                    continue
+                if not isinstance(value, str) or not value:
                     continue
                 result[kind][unit], sources[kind][unit] = value, source
     for kind in kinds:
