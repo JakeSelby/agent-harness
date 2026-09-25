@@ -2,7 +2,7 @@
 title: Agent Harness design contract
 status: final
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 supersedes: ../ux-agent-harness-2026-09-19/DESIGN.md
 colors:
   status: semantic-names-not-fixed-terminal-colors
@@ -91,7 +91,7 @@ Consistency Conventions):
     rule that Mermaid appears only below the card's rule are authoring rules in the plan-authoring skill.
 - **Answer card.** The answer on the first line, then the why, the catch, the alternatives, and what is
   needed from the reader. Status words are literal.
-- **Drift line (planned, v0.15.0, FR-50).** It shows the declared value, the measured value and the
+- **Drift line (planned, v0.17.0, #692, FR-50).** It shows the declared value, the measured value and the
   evidence rows. The change it proposes is only applied when the developer applies it.
 - **Mismatch line (planned, v0.14.0, FR-20).** A rule that is switched on but never fired in the window,
   shown with its detector and the window length. Today, `--rules` is keyed by detector and marks

@@ -2,7 +2,7 @@
 title: Agent Harness product requirements
 status: final
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 supersedes: ../prd-agent-harness-2026-09-19/prd.md
 sources:
   - ../../source-ledger.md
@@ -31,6 +31,7 @@ document's FR1 to FR12, so existing references stay valid. New requirements star
   - `partial`: part of the requirement exists and part does not. The line says which part is missing and
     the milestone that carries it.
   - `planned (vX)`: filed against a milestone. `planned (unscheduled, #N)` means filed with no milestone.
+  - `planned (backlog)`: accepted, but not scheduled to a milestone before 1.0.
 - These states map onto the governance labels. `implemented` and `unreleased` are implemented claims.
   Evidence in the compatibility catalog makes a claim validated. `planned` is proposed. Superseded material
   is historical. Anything else is unknown.
@@ -109,6 +110,64 @@ Three commitments make this credible:
   - "model-agnostic", which is accurate but crowded.
 - **Claims never made:** universal compatibility, identical behaviour across runtimes, being first, or an
   unmeasured saving.
+- **Amended 2026-09-24:** the layered, configurable, measurable framing is in
+  [the vision amendment](#amendment-2026-09-24-a-layered-configurable-measurable-harness).
+
+### Amendment 2026-09-24: a layered, configurable, measurable harness
+
+Added after the original run; sections 1 to 1.2 above are unchanged and dated 2026-09-23. No requirement
+ID, success metric or other section changes with this amendment. The same amendment is recorded in the
+[product brief](../../product-briefs/brief-agent-harness-2026-09-23/brief.md#amendment-2026-09-24-a-layered-configurable-measurable-harness).
+
+**What the product is.** It is a lightweight harness you layer alongside whatever agent runtime you use
+(Claude Code, Codex and others), however you orchestrate it: native subagents, workflow scripts, or
+methodologies such as BMad or Superpowers. It is built from independent layers. Every layer, and every
+module within one, can be switched on, off or configured. A user keeps the layers they like and turns ours
+off where they already have their own. The harness then cedes that whole area to the other tool rather than
+trimming inside it. The north star is running beside a methodology such as Superpowers, with the user
+choosing which layer comes from which source.
+
+**The layers.**
+- **Observation:** telemetry, meaning ledger, OTel export and transcripts. It must add nothing to the
+  model's context.
+- **Instruction:** what the model reads. Rules, stances, repository instructions, the session prompt and
+  the output style.
+- **Capability:** on-demand skills, agent roles and commands.
+- **Enforcement:** hooks and guards at tool and turn boundaries.
+- **Orchestration:** delegation, choosing a model class and effort for each role inside the host, and
+  the context lifecycle (trimming, compaction, clearing, handoff). It never selects a provider endpoint or
+  serves a model.
+- **Advisory:** recommendations to the human, such as starting a fresh session, clearing context or
+  reviewing a plan.
+- **Economy** is a concern rather than a layer. Cost posture, budgets and prices run through the
+  instruction, enforcement and orchestration layers, and each can be switched on its own. By default
+  nothing is denied for cost: budgets inform. A spend cap is an opt-in module that denies only when the
+  user switches it on.
+- A control plane of profiles, toggles and configuration composes the layers, and an evaluation plane
+  measures them.
+
+**Measurable by construction.** Every module declares three things: what it claims to improve, what it
+costs to carry, and the instrument that measures it. A module with no instrument is reported as
+unmeasured, never as working. Telemetry runs in every arm, including a bare runtime with nothing of ours
+loaded, so the harness can measure the baseline it is compared against.
+
+**How it is evaluated.** There are four comparisons, and each runs at the cheapest tier that can answer
+it:
+1. The whole harness against the bare runtime.
+2. One rule, skill or hook in a minimal profile: first alone, then with the economy concern switched on.
+   A unit eval never pays for the full context.
+3. One of our layers against an external equivalent in the same slot, with everything else held fixed.
+4. Permutations of switches within and across layers: screened with fractional factorial designs, then
+   tested in combination.
+
+Every comparison is measured on three axes: adherence (did the agent follow it), effectiveness (did the
+outcome improve) and efficiency (what it cost). Advisory-layer effects are reported separately, as
+estimates that depend on the user following the advice.
+
+**Why.** Agent tooling mostly ships as monoliths that bundle methodology, instructions and enforcement. A
+user cannot tell which part helps, or combine the best parts of several. The harness sits beneath them as
+a substrate: the control plane, telemetry and evaluation that make any combination configurable and
+measurable.
 
 ## 2. Target user
 
@@ -192,7 +251,7 @@ Three commitments make this credible:
     2. Casey works in a managed worktree and runs the exact gate CI runs.
     3. Casey opens one pull request that closes the issue and brings the story file up to date.
   - **Climax:** a reviewer follows issue, story file, diff and evidence without a private transcript.
-- **UJ-6. Lee layers the harness under a skill library (planned 0.14).**
+- **UJ-6. Lee layers the harness under a skill library (planned 0.16).**
   - **Persona and context:** Lee already uses a methodology skill library, and does not want two opinions
     fighting over the same step.
   - **Path:**
@@ -218,7 +277,7 @@ Three commitments make this credible:
     sessions. Kai never sees a detached workspace for a session the harness can still reach.
   - **Edge case:** a session the server has already archived is past recovery. `status` leaves it out, and
     heal never reports it as healed.
-- **UJ-9. Ari tries a decision provider without risking a decision (planned 0.15).**
+- **UJ-9. Ari tries a decision provider without risking a decision (planned 0.16).**
   - **Persona and context:** Ari wants a second opinion on stop claims, but will not let a model relax a
     guardrail.
   - **Path:**
@@ -313,7 +372,7 @@ Three commitments make this credible:
 - **Work item:** a GitHub issue with a BMad ID. Its **story file** is the design record: context,
   acceptance criteria, design, tasks, dev notes, dev record and review findings. A pull request's
   **delivery issue** is the work item it closes. Its story file is the **delivery story**.
-- **Selection model (planned 0.14):** one document that switches every rule, hook, skill, workflow and role
+- **Selection model (planned 0.14, #554):** one document that switches every rule, hook, skill, workflow and role
   on or off. A **mode** is a named bundle of switches.
 
 ## 4. Features
@@ -374,7 +433,7 @@ UJ-6.
 #### FR-2: One effective selection
 The system must resolve user, project and session selections into one explicit effective policy before any
 projection. **Status:** partial: implemented (0.9), but sync ignores `HARNESS_STANCE_*` session variables
-that `harness stances` honours (#294, unscheduled).
+that `harness stances` honours (#294, v0.14.0).
 
 **Consequences (testable):**
 - `harness stances` shows each dimension's effective variant, the layer it came from, and each adapter's
@@ -404,7 +463,7 @@ selection document with one resolver. **Status:** planned (v0.14.0, #554, #555, 
 
 #### FR-16: Modes
 A developer must be able to select a named mode for a session or a repository. **Status:** planned
-(v0.14.0, #557, #558).
+(v0.14.0, #557; v0.16.0, #558, the `superpowers` mode).
 
 **Consequences (testable):**
 - `HARNESS_MODE` selects a mode for one session without changing stored selections.
@@ -530,12 +589,13 @@ having none. **Status:** implemented (0.6, the lint gate; 0.12, the engine vendo
 #### FR-20: Per-rule hit rate
 `harness usage --rules` must report each rule's hit rate by repository, and by the stance variant selected
 when the session ran. **Status:** partial: implemented (0.12), with the report keyed by detector.
-Planned, unscheduled: listing each unmeasured rule with its reason, and the share of rules measured.
+Planned for v0.15.0, with the module scorecard: listing each unmeasured rule with its reason, and the share
+of rules measured.
 Planned for v0.14.0: grouping by mode and by switch state.
 
 **Consequences (testable):**
 - A detector with zero hits over the reporting window is listed, not omitted.
-- Rules with no detector are listed as unmeasured, with their reasons. (Planned.)
+- Rules with no detector are listed as unmeasured, with their reasons. (Planned, v0.15.0.)
 - A rule that is switched on but never fires appears as a mismatch line. (Planned, v0.14.0.)
 
 #### FR-21: Standalone instrument
@@ -551,9 +611,9 @@ harness's way of working. **Status:** implemented (0.12; `ruleprobe` 0.1.0 is pu
 A developer must be able to bind a detector to any of their own rules without writing code, and to see what
 share of their rules is measured. **Status:** partial:
 - implemented (0.12): declarative detectors in standalone `ruleprobe` 0.1.
-- planned (unscheduled): loading them in `harness usage --rules`.
-- planned (unscheduled): proposing a detector from a rule's prose. `[ASSUMPTION: filed with the v0.15.0
-  loop work]`
+- planned (unscheduled: the 2026-09-24 roadmap does not place it): loading them in `harness usage --rules`.
+- planned (unscheduled: the 2026-09-24 roadmap does not place it): proposing a detector from a rule's
+  prose.
 
 **Consequences (testable):**
 - A declarative detector in `.ruleprobe/detectors.yaml` is picked up by `ruleprobe` without a code change,
@@ -564,7 +624,7 @@ share of their rules is measured. **Status:** partial:
 #### FR-22: Detector validity
 The system must score detectors against a labelled corpus in CI, and fail when a detector falls below the
 precision floor. **Status:** partial: unreleased (#601). Two detectors sit under the floor (#602,
-v0.14.0).
+v0.15.0).
 
 **Consequences (testable):**
 - CI runs the corpus score and fails when a detector falls below 0.9 precision.
@@ -709,7 +769,7 @@ rest up, and only the top session asks the user. **Status:** implemented (0.11).
 #### FR-34: Delegation that fires
 The delegation stance must produce subagent spawns wherever the work pays for them. The measured
 break-even is 4.8 to 7.6 absorbed calls. **Status:** partial: there were zero spawns in 19 headless runs,
-then zero in 40 (#429). A PostToolUse nudge is planned (unscheduled, #513).
+then zero in 40 (#429). A PostToolUse nudge is planned (v0.15.0, #513).
 
 **Consequences (testable):**
 - On a benchmark task above the break-even, the harness arm spawns at least once under `cost=balanced`.
@@ -731,8 +791,9 @@ denied in `auto` or `bypass`. **Status:** implemented (0.6).
 - A read-only command on the allowlist runs without asking, under every variant.
 
 #### FR-36: Stop gate in trusted checkouts
-In a checkout the developer has trusted, a turn must not end while the gate is red. **Status:** partial:
-implemented (0.4). Interleaved sessions in one checkout reset each other's block count (#611, v0.12.1).
+In a checkout the developer has trusted, a turn must not end while the gate is red. **Status:**
+implemented (0.4). The fix for interleaved sessions in one checkout resetting each other's block count is
+implemented (0.13, #611).
 
 **Consequences (testable):**
 - The stop gate blocks the turn from ending while the gate fails. After eight consecutive blocks, it
@@ -744,7 +805,7 @@ implemented (0.4). Interleaved sessions in one checkout reset each other's block
 Text that comes back from a tool must be treated as data. Instruction-shaped content is neutralised and
 flagged; this covers control tags, directives addressed to the agent, and settings or permission JSON.
 Noisy test and build output is filtered before it reaches the model. **Status:** partial: implemented
-(0.10), but output-filter rewrites never reach Codex (#292, unscheduled).
+(0.10), but output-filter rewrites never reach Codex (#292, v0.17.0).
 
 **Consequences (testable):**
 - A tool result that contains an instruction-shaped pattern reaches the agent with a data-only notice.
@@ -824,7 +885,7 @@ comes through the runtime's native approval step. **Status:** unreleased (#590).
 #### FR-44: A worktree per agent
 The system must create, audit and remove task worktrees outside permanent repositories. Removal must be
 safe after a squash merge. **Status:** partial: implemented (0.9), but a checkout that holds a submodule
-cannot be removed (#413, unscheduled).
+cannot be removed; the fix is planned (backlog, #413).
 
 **Consequences (testable):**
 - `harness worktree audit` lists each worktree with its repository identity, merged state and unique
@@ -909,7 +970,7 @@ nothing else: it never denies and never widens. The developer's answer to that a
 so tightening is not authorization, and failing open stays coherent. On a runtime whose dispatcher cannot
 answer `ask`, `act` is unsupported, and the point stays at `advise`: Codex turns an ask into a deny.
 **Status:** unreleased (#592). The
-`act` consumers are planned for v0.15.0: the stop-claim check first (#141), then the ask band (#372).
+`act` consumers are planned (backlog, #141, #372): the stop-claim check first, then the ask band.
 Skill-shortlist ranking stays in `shadow` (#143).
 
 **Consequences (testable):**
@@ -928,8 +989,8 @@ A decision point moves through its stages only by passing each stage's gate.
 - **No criterion:** a point without a criterion stays in `shadow`.
 
 Thresholds are keyed to the pinned model id and the question-pack version. **Status:** unreleased (#596, the eval
-runner and packs); per-point criteria are planned (v0.15.0). Hand-labelled fixtures (#377)
-are the critical path.
+runner and packs); per-point criteria are planned (v0.16.0). Hand-labelled fixtures (#377,
+v0.16.0) are the critical path.
 
 **Consequences (testable):**
 - If the provider returns a model id other than the pinned one, the fitted threshold is void, and the point
@@ -946,7 +1007,8 @@ Evidence for this group: `../../research/technical-decision-layer-evidence-2026-
 #### FR-50: Evidence-driven stance proposals
 The system must compare each declared stance with its measured behaviour and report the drift. When the
 evidence passes a variant's threshold, it must propose a promotion or a demotion. The developer applies a
-proposal; the system never applies one itself. **Status:** planned (v0.15.0, #135).
+proposal; the system never applies one itself. **Status:** planned (v0.17.0, #692; the #135 epic is in the
+backlog).
 
 **Consequences (testable):**
 - For each stance, the drift report names the declared variant and the effective variant measured from the
@@ -985,7 +1047,8 @@ compatibility status. Before 1.0, a release may ship without a qualified target 
 compatibility status says so. **Status:** partial:
 - integrity is implemented (0.9);
 - 0.12.0 shipped with no qualified target;
-- the minimum required target is planned for v0.12.1 (#533);
+- the minimum required target is implemented (0.13): both Claude Code CLI targets carry native evidence
+  for 0.13.0 and 0.13.1 (#533), and the Codex CLI part is planned (v0.14.0, #612; v1.0.0, #686);
 - an explicit waiver field in the compatibility catalog is planned (unscheduled).
 
 **Consequences (testable):**
@@ -1039,7 +1102,7 @@ positioning. **Status:** implemented (0.11); `landing-copy` check (0.12). **Scop
 **Consequences (testable):**
 - The `landing-copy` check fails a pull request that changes a path under `bin/`, `lib/`, `adapters/`,
   `primitives/` or `policy/` without either updating `product.json` or stating why no update is needed.
-- No published copy says "cheaper" until a same-day ratio passes the publish bar (FR-56).
+- No published copy says "cheaper" until a result supports SM-2's pre-registered hypothesis (FR-56).
 - Published copy uses no em dashes. (Partial: the README still has some, and no test checks copy for
   them.)
 - Public documents credit the projects they compare against rather than framing them as competition.
@@ -1060,9 +1123,17 @@ a recorded reason. **Status:** implemented (0.12).
 
 #### FR-56: Live replay against a bare arm
 The system must replay the release task set in bare and harness arms, and report cost per passed task as a
-same-day ratio, with the pass rate beside it. The publish bar is fixed in advance: at most 0.85 of bare,
-while passing at least as many tasks as bare minus one. **Status:** implemented (0.12, the runner). No result
-has passed yet: the one clean result, 1.052 on the earlier four-task set, failed.
+same-day ratio, with the pass rate beside it. The 0.85 figure is the expected effect of a pre-registered
+hypothesis tested under SM-2: the harness lowers Cost-of-Pass against bare, and does not lower the pass
+rate by more than a fixed non-inferiority margin δ of 0.125, one task's share of the original eight-task
+set. Every result is published with its interval, whatever it shows. **Status:** implemented (0.12,
+the runner). No result supports the hypothesis yet. The one clean result, 1.052 on the earlier four-task
+set, is history: a point ratio with no interval, so it is not a test of the hypothesis. The replay defects found on 2026-09-24 are planned for v0.14.0: the docs and the task manifest
+disagree on the task count, the turn cap is never passed, the stop gate is inert in snapshots, the arms have
+different web access, the usage-prices task needs rework, and hook events need `stream-json`.
+
+**Superseded 2026-09-24:** "The publish bar is fixed in advance: at most 0.85 of bare, while passing at
+least as many tasks as bare minus one."
 
 **Consequences (testable):**
 - Both arms run from a clone outside `$HOME`, with a scrubbed environment, strict MCP configuration, one
@@ -1088,8 +1159,9 @@ recorded. **Status:** unreleased (#609).
 
 #### FR-58: Per-rule regression and the four-arm benchmark
 The system must attribute cost to each loaded instruction source, including the developer's own rules. It
-must also run bare, library, harness and combined arms from built profiles. **Status:** planned (v0.14.0:
-#514, #559, #560).
+must also run bare, library, harness and combined arms from built profiles. **Status:** planned:
+per-rule attribution and the two-arm path (v0.15.0: #514, #559, #560); four arms (v0.16.0: #559, #560,
+#561).
 
 **Consequences (testable):**
 - A per-rule report lists each loaded instruction source with its token cost, including sources outside
@@ -1159,7 +1231,7 @@ closed as unverified. **Status:** implemented (0.11).
 #### FR-63: Coordination for parallel agents
 Parallel builders must declare the paths they will write, including new paths they plan to create. A
 pre-write check must warn when an edit overlaps a live sibling's claim. Sessions must be archived across
-runtimes for later search. **Status:** planned (v0.15.0: #542, #543, after the #541 spike).
+runtimes for later search. **Status:** planned (backlog, #542, #543, after the #541 spike).
 
 **Consequences (testable):**
 - Every overlap lands in the decision log.
@@ -1196,7 +1268,7 @@ implementation begins. **Status:** implemented (0.9); the worktree-aware `reserv
 
 #### FR-64: Story files as design records
 Each work item's story file must carry the design for its kind. The sync tool must preserve that content.
-**Status:** planned (v0.14.0, #620). **Scope:** repository process.
+**Status:** implemented (0.13, #620). **Scope:** repository process.
 
 What each kind carries:
 - **Story:** context, acceptance criteria, design, tasks and cited dev notes.
@@ -1219,7 +1291,7 @@ makes stale, in the same pull request:
 - a changed invariant amends the architecture spine;
 - sprint status is derived, not hand-maintained.
 
-**Status:** planned (v0.14.0: #621, #623). **Scope:** repository process.
+**Status:** implemented (0.13: #621, #623). **Scope:** repository process.
 
 **Consequences (testable):**
 - `audit` reports zero drift between `issue-map.json` and `sprint-status.yaml`.
@@ -1303,7 +1375,7 @@ makes stale, in the same pull request:
 - **Safety:**
   - Invariants sit outside every switch.
   - A decision provider may only tighten.
-  - Core hooks can be switched off only with an explicit acknowledgement (planned 0.14).
+  - Core hooks can be switched off only with an explicit acknowledgement (planned 0.14, #552).
   - No stance changes without the developer applying it.
 - **Privacy:**
   - Native telemetry export can carry account identity fields, and the docs say so before a developer points
@@ -1351,6 +1423,8 @@ makes stale, in the same pull request:
 - **Not an agent runtime.** It does not replace Claude Code or Codex.
 - **Not hosted.** No feature requires a remote service.
 - **Never caps spend.** Budgets inform, and nothing is denied for cost.
+  *Amended 2026-09-24:* this stays the default. An opt-in cap module may deny for cost when the user
+  switches it on; see the [§1 amendment](#amendment-2026-09-24-a-layered-configurable-measurable-harness).
 - **Never relaxes a decision.** No decision provider relaxes a decision or denies one. Semantic
   auto-authorization is out of scope.
 - **No distillation.** The harness never trains a model on a third-party provider's output. Any local model
@@ -1381,12 +1455,18 @@ makes stale, in the same pull request:
   - one publication of the audited bytes.
   - These are tracked under #206, through #207, #209, #210 and #211.
 - **Automation:** provider-backed end-to-end tests on inexpensive models (#134).
+- **Evaluation gate:** a candidate ships only with a verified proof bundle. See the evaluation gate in the
+  2026-09-24 amendment at the end of this section.
 - `[NOTE FOR PM]` Codex CLI's place in the 1.0 contract is conditional. Its native cases now have drivers
   (#336), but one scripted round must still agree with a hand-driven round (FR-12).
 
 ### 9.2 Milestones before 1.0
 
-- **v0.12.1:** restore the qualified release floor (#533), plus planning hygiene and small fixes.
+The v0.14.0 to v0.16.0 entries below are superseded by the 2026-09-24 amendment at the end of this section.
+They are kept as the plan of record at 2026-09-23.
+
+- **v0.12.1:** restore the qualified release floor (#533), plus planning hygiene and small fixes. Closed on
+  2026-09-24 without a release, superseded by 0.13.0 and 0.13.1.
 - **v0.13.0:** the work merged since the 0.12.0 tag.
   - the decision-provider foundation: the `jev` provider, stages, packs and eval;
   - release-cost reductions: the smoke tier, per-runtime invalidation and drivers for every case;
@@ -1427,6 +1507,58 @@ makes stale, in the same pull request:
 - a bundled architecture viewer;
 - hosted execution.
 
+### Amendment 2026-09-24: the measurable-harness roadmap
+
+Added after the original run. It supersedes the v0.14.0 to v0.16.0 entries in §9.2, which stay above as the
+plan of record at 2026-09-23. The trigger and the impact analysis are in the
+[sprint change proposal](../../sprint-change-proposal-2026-09-24.md).
+
+**The MVP claim.** Every harness module is switchable, attributable and measured. A defensible proof set
+shows the harness's effect on instruction adherence, output effectiveness and cost against bare Claude
+Code.
+
+**Milestones.** Work is ordered by what the claim cannot ship without: the control plane, then
+observation, then evaluation, then proof. Each entry names what the milestone newly delivers.
+- **v0.14.0, Switchable:**
+  - one selection document drives every module kind (#552, #554 to #557), and every module declares a
+    manifest;
+  - every ledger row carries a profile fingerprint and per-module attribution (#482);
+  - the bare arm is observed like the harness arm, with nothing added to model context;
+  - the replay defects found on 2026-09-24 are fixed;
+  - an evidence standard and a pre-registration template.
+- **v0.15.0, Measured:**
+  - evaluation tiers (#510, #511, #512);
+  - harness against bare at five or more trials, with confidence intervals (#559, #560);
+  - the two-by-two unit design (#754) and per-rule attribution (#514);
+  - a scorecard, and soft estimates labelled as such;
+  - delegation fixed or disproved (#429, #513);
+  - proof set 1;
+  - the coexistence spike with a methodology library (#553).
+- **The MVP line falls after v0.15.0.** The claim ships when `harness evidence verify` passes on proof set 1,
+  whatever it shows, with its "what we do not claim" section.
+- **v0.16.0, Composable:**
+  - the slot model and the adapter contract;
+  - the `superpowers` mode (#558);
+  - four arms and layer swaps (#559, #560, #561, and #562's four-arm part);
+  - a compliance judge calibrated on hand labels (#140, #377);
+  - a measured context trim (#430).
+- **v0.17.0, Real work:**
+  - randomised real sessions, with intention-to-treat effects;
+  - Codex evaluation parity (#292, #293);
+  - an external task set, after a licensing review;
+  - factorial screening;
+  - context-lifecycle treatments (#123, #745) and cache-leverage measurement (#524);
+  - stance drift and proposals (#692);
+  - the adoption cohort (#212, #213, #214).
+- **v1.0.0, Stable:** the §9.1 contract, the audit and the publication (#206, #207, #209, #210, #211),
+  plus the evaluation gate below.
+- **Backlog:** decision-provider consumers (#135), policy preferences, the session archive and
+  write-intent claims (#541, #542, #543), and editor and desktop clients (#216, #217).
+
+**The evaluation gate in the 1.0 contract.** A candidate ships only with a verified proof bundle:
+- `harness evidence verify` re-derives the published proof set;
+- every module in the selection document has a scorecard row, measured or marked unmeasured.
+
 ## 10. Success metrics
 
 **Primary**
@@ -1437,18 +1569,54 @@ makes stale, in the same pull request:
   - The report states how many of their rules are measured, dark and unmeasured.
   - Validates FR-19, FR-20, FR-21 and FR-67.
 - **SM-2 Measured cost claim:**
-  - **Target:** on the release task set, a same-day ratio of 0.85 or less, with the pass rate at least
-    bare minus one.
-  - **Power:** a claim is published only from three or more reps, with a stated minimum detectable effect
-    and the per-task figures beside the headline.
-  - **Current:** 1.052 on the earlier four-task set, which fails the target. No claim is made. The
-    eight-task release task set has no clean result yet.
+  - **Target:** Cost-of-Pass and pass rate, harness against bare, on the release task set.
+    - Each arm's Cost-of-Pass pools the set: the total cost of every attempt divided by the total number
+      of passes. The ratio divides the harness figure by bare's. If either arm passes nothing, the ratio
+      is undefined and the result is reported as a pass-rate result only.
+    - The paired, task-clustered 95% intervals on the Cost-of-Pass ratio and on the pass-rate difference
+      govern the comparison. They come from a task-clustered paired bootstrap, which resamples tasks and
+      keeps both arms' trials of a task together, or from the delta method.
+    - Wilson or Bayesian intervals describe each arm's own pass rate. They are descriptive only, as are
+      the per-task figures reported beside the headline.
+  - **Pre-registered hypothesis:** the harness lowers Cost-of-Pass against bare, with an expected ratio of
+    0.85, and does not lower the pass rate by more than the non-inferiority margin δ. δ is fixed at 0.125,
+    one task's share of the original eight-task set, and does not shrink as the set grows.
+  - **Power:** five or more trials per task and arm, and α 0.05 two-sided. The task set and the trial
+    count are sized for a joint power of 0.8 on both tests of the decision rule, assuming a true ratio of
+    0.85 and equal pass rates. The minimum detectable effect is stated before the run and is at most 15%.
+    The set includes long multi-turn tasks.
+  - **Decision rule:** the hypothesis is supported only when both conditions hold:
+    - the paired, task-clustered 95% interval on the Cost-of-Pass ratio lies wholly below 1.0;
+    - pass-rate non-inferiority holds: the lower bound of the paired, task-clustered 95% interval on the
+      pass-rate difference (harness minus bare) is above −δ.
+
+    The result is published with its intervals, whatever it shows. A magnitude is claimed only as far as
+    the interval supports it: "at least 15% cheaper" needs the interval's upper bound at or below 0.85.
+  - **Sources:**
+    - Cost-of-Pass: Erol et al., ICLR 2026, https://arxiv.org/pdf/2504.13359.
+    - Clustered and paired standard errors, and the power formula: Miller, "Adding Error Bars to Evals",
+      https://arxiv.org/html/2411.00640.
+    - The delta method for a clustered ratio: Deng, Knoblich and Lu, KDD 2018,
+      https://arxiv.org/pdf/1803.06336.
+    - Small-n pass-rate intervals: Bowyer et al., ICML 2025, https://arxiv.org/pdf/2503.01747.
+  - **Current:** 1.052 on the earlier four-task set, measured before the hypothesis was registered. It was
+    a point ratio with no interval, so it is history, not a test of the hypothesis. No claim is made. The
+    eight-task release task set has no clean result yet. The 23 Sep eight-task runs were unscored and ran
+    with unequal web access between the arms, so they are not a result.
   - **Where the saving must come from:** turns and thrash, not context. The standing prefix is about 20%
-    of a run's cost, and trimming can remove about a quarter of it, so about 5% of the run. The gap to the
-    bar is about 19%.
-  - **Stop condition (decided):** if the release task set on clean snapshots shows no harness win on long
-    tasks, the instrument findings are published as the result and the saving claim is retired. §4.6 then
-    stands on routing control and legibility, not on savings.
+    of a run's cost, and trimming can remove about a quarter of it, so about 5% of the run. The earlier
+    1.052 point ratio would have needed a cut of about 19% to reach 0.85.
+  - **Stop condition (decided):** a saving claim needs the hypothesis supported on the whole set, and a win
+    on the pre-registered long-task subset. That win means the subset's ratio interval lies wholly below
+    1.0. If the long-task subset shows no win on clean snapshots, the instrument findings are published as
+    the result and the saving claim is retired, whatever the whole-set result. §4.6 then stands on routing
+    control and legibility, not on savings.
+  - **Superseded 2026-09-24:** the target read "on the release task set, a same-day ratio of 0.85 or less,
+    with the pass rate at least bare minus one". The power line read "a claim is published only from three
+    or more reps, with a stated minimum detectable effect and the per-task figures beside the headline".
+    The stop condition read "if the release task set on clean snapshots shows no harness win on long
+    tasks, the instrument findings are published as the result and the saving claim is retired". The
+    amended text keeps that trigger and defines a win as an interval lying wholly below 1.0.
   - Validates FR-28 to FR-34 and FR-56.
 - **SM-3 Standing prefix:**
   - The static estimate holds or falls release over release. Growth over 5% carries a recorded reason.
@@ -1509,7 +1677,7 @@ makes stale, in the same pull request:
   - Counterbalances SM-4.
 - **SM-C5 Runtime count:**
   - Each shallow runtime dilutes the depth claim.
-  - Counterbalances the §9.2 breadth work.
+  - Counterbalances the v0.17.0 Codex parity work and any later runtime work, per the §9 amendment.
 
 ## 11. Open questions
 
@@ -1522,12 +1690,13 @@ answer.
    - Needed by: v0.14.0.
 2. **Keeping the issue map current.** How does the issue map's lifecycle stay current without a pull request
    after every merge (#420)? Does the derived sprint status (FR-65) change the answer?
-   - Blocks: FR-65.
-   - Needed by: v0.14.0.
+   - Blocks: the issue map's lifecycle field (#420). FR-65's derived sprint status (0.13) does not settle
+     it.
+   - Needed by: backlog (#420).
 3. **The unattended sub-issue delete.** Command grading refuses a sub-issue delete that the sync tool's
    `apply` performs unattended (#421). Which side changes?
    - Blocks: FR-9 and FR-35.
-   - Needed by: v0.14.0.
+   - Needed by: backlog (#421).
 4. **Selections a native client cannot read.** How do project and session selections reach a native client
    that reads only user-level configuration (#276)?
    - Blocks: FR-2.
@@ -1543,11 +1712,11 @@ answer.
 7. **Codex's `ultra` effort level.** How does it map under the delegation stance's `high` ceiling? Should
    built-in runtime agents fall under the cost posture?
    - Blocks: FR-28 and FR-29.
-   - Needed by: v0.15.0.
+   - Needed by: v0.17.0, with Codex parity.
 8. **Decision-log default for adopters.** Should the decision log default to on for new adopters, given
    that rows can hold command text?
    - Blocks: FR-27.
-   - Needed by: v0.15.0.
+   - Needed by: v0.17.0, with the adoption cohort (#212).
 9. **Codex hook events.** Which hook events does the current Codex client raise? The recorded evidence
    (Codex 0.154 to 0.155) and the current documentation disagree about:
    - `UserPromptSubmit`;
@@ -1556,7 +1725,7 @@ answer.
 
    One probe settles it.
    - Blocks: FR-32, FR-37 and Codex parity in FR-3.
-   - Needed by: v0.14.0.
+   - Needed by: v0.17.0, with Codex parity.
 10. **Qualifying one capability.** Is capability-level qualification in scope before 1.0? Today no
     capability can be qualified on its own.
     - Blocks: FR-7.
@@ -1567,7 +1736,7 @@ answer.
 12. **A runtime's own memory.** What is the harness's position on a runtime's own memory store next to its
     handoff rules?
     - Blocks: FR-8 and the §8 memory non-goal.
-    - Needed by: v0.15.0.
+    - Needed by: backlog, with the session archive (#541, #543).
 13. **Live instruction changes.** A merged rule reaches running Codex sessions mid-task and rewrites their
     instruction prefix. Should merges be batched, or should the effect be documented only?
     - Blocks: NFR-9.
@@ -1575,11 +1744,11 @@ answer.
 14. **A web mode for the gatherer.** Should the isolated gatherer get an opt-in web mode, given the
     exfiltration boundary?
     - Blocks: FR-40.
-    - Needed by: v0.15.0.
+    - Needed by: unscheduled: the 2026-09-24 roadmap does not place it.
 
 ## 12. Assumptions index
 
-- §4.4 FR-67: detector proposal from rule prose is filed with the v0.15.0 loop work.
+- §4.4 FR-67: detector proposal from rule prose is unscheduled: the 2026-09-24 roadmap does not place it.
 - §4.5 FR-25: schema stability for exported rows before 1.0 is best-effort.
 - §4.6 FR-32: the nudge's starting thresholds are recalibrated from ledger data before 0.15.
 - §4.9 FR-45: the `harness bmad` alias is removed in 0.14.

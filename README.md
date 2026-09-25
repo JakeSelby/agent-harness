@@ -7,18 +7,13 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
 
-## Find out which of your agent rules actually fire.
+## The control plane for your coding agents, however you run them.
 
 ![Terminal output of `bin/harness sync --dry-run` on a fresh home: the resolved personal stances, then every link, rendered file and setting the sync would create for Claude Code and Codex, ending in "sync complete". Nothing is written.](docs/assets/sync-dry-run.svg)
 
-Every project in this field writes instructions and hopes. Here every rule names a deterministic
-detector over the agent's own transcript, or says in one line why nothing in a transcript can decide it,
-and lint fails the commit otherwise. `harness usage --rules` then reports how often each rule fired,
-grouped by repository and by the preference variant you had selected at the time.
+Agent Harness is the layer under your coding agents. You write your rules, skills, roles and stances once, as your own primitives. The harness projects them into Claude Code and Codex, enforces them with hooks, and keeps a ledger of what every session did and spent. It sits under whatever rules library you like and whatever orchestration you run, so you can change how your agents work without changing how you run them.
 
-Around that loop, Agent Harness keeps rules, skills, roles and workflows in one place and projects
-them into Claude Code and Codex, with an ownership journal for every file it touches and an uninstall
-that puts things back. The same ledger exports over OTLP to Langfuse, Phoenix or Opik, off by default.
+Every file it touches goes in an ownership journal, and uninstall puts things back. The same ledger exports over OTLP to Langfuse, Phoenix or Opik, off by default.
 
 Agent Harness is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
 Code and Codex remain responsible for model access, native permissions and client behavior.
@@ -27,17 +22,6 @@ Code and Codex remain responsible for model access, native permissions and clien
 
 The same six groups are held as data in [`product.json`](product.json), so this list, the reference
 site and the GitHub description cannot drift apart.
-
-### Rules you can measure, and prune
-
-Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.
-
-- [Detector or reason](primitives/rules): Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.
-- [Hit rate per rule](docs/usage.md): harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.
-- [Cache prefix held](docs/usage.md): harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.
-- [What is detected](claude/hooks/rule-detectors.py): Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
-- [Caught in the act](docs/field-scan.md): The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.
-- [Exports where you already look](docs/telemetry.md): The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.
 
 ### Guardrails that leave room for judgment
 
@@ -61,7 +45,7 @@ Sync keeps a journal of what it changed and refuses to overwrite what it does no
 - [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.
 - [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents do not step on your checkout or on each other.
 
-### Spend less without capping your agents
+### See and steer what your agents spend
 
 A hard cap cuts an agent off after it has already spent the tokens. I'd rather tell it what things cost and let it pace itself.
 
@@ -81,6 +65,21 @@ Most agent output is a wall of text. This puts the verdict first and the ask whe
 - [Review Card plans](primitives/skills/plan-authoring): Every plan opens with a one-screen card and stops at a build gate until you say build.
 - [Bounded subagent returns](primitives/skills/transcript-hygiene): Subagents come back with findings and a word cap, not their whole transcript.
 - [Conciseness rules](primitives/rules/conciseness.md): Explain a decision once. Comments say why, not what.
+
+### Rules you can measure, and prune
+
+Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.
+
+Every rule names a deterministic detector over the agent's own transcript, or says in one line why nothing in a transcript can decide it,
+and lint fails the commit otherwise. `harness usage --rules` then reports how often each rule fired,
+grouped by repository and by the preference variant you had selected at the time.
+
+- [Detector or reason](primitives/rules): Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.
+- [Hit rate per rule](docs/usage.md): harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.
+- [Cache prefix held](docs/usage.md): harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.
+- [What is detected](claude/hooks/rule-detectors.py): Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
+- [Caught in the act](docs/field-scan.md): The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.
+- [Exports where you already look](docs/telemetry.md): The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.
 
 ### Your preferences, as switches
 
@@ -172,7 +171,7 @@ bin/harness doctor
 ```
 
 Set either runtime to `false` if you do not use it; neither runtime requires the other. Set
-`vscode.manage` deliberately too. Configuration is user-level by default—it is not scoped to the
+`vscode.manage` deliberately too. Configuration is user-level by default: it is not scoped to the
 repository you happen to be in. `sync` installs user defaults; project and session overrides stay
 with that invocation and are not persisted into global projections.
 
@@ -182,11 +181,12 @@ trust if prompted. [Start with the full guide](docs/getting-started.md).
 
 ## Release status
 
-**Release status:** `0.13.0` is the current stable release. Its shared engine, adapters,
+**Release status:** `0.13.1` is the current stable release. Its shared engine, adapters,
 configuration and hook decisions are qualified on the two required Claude Code CLI targets,
-macOS and Linux, listed below. The Codex CLI is outside the 0.13.0 contract until a scripted
-qualification round agrees with a hand-driven one; `0.11.1` remains the last release qualified
-on the Codex CLI for macOS and Linux, so if you need a qualified Codex floor, install that tag.
+macOS and Linux, listed below; against `0.13.0` it changes the landing copy only. The Codex CLI
+is outside the 0.13.1 contract until a scripted qualification round agrees with a hand-driven
+one; `0.11.1` remains the last release qualified on the Codex CLI for macOS and Linux, so if you
+need a qualified Codex floor, install that tag.
 
 <!-- harness:compatibility:start -->
 **Qualified:** `claude-code-cli-macos`, `claude-code-cli-linux`.
@@ -286,14 +286,14 @@ unverified. Hosted agents and native memory merging are also deferred.
 
 ## Cost and measurement
 
-The `cost` stance sets a working posture—effort, fan-out and cache habits—not a hard dollar cap.
+The `cost` stance sets a working posture (effort, fan-out and cache habits), not a hard dollar cap.
 Model access remains billed by the provider or covered by a subscription, and there is no claimed
 savings benchmark. `bin/harness usage` summarizes available local session measurements, labels
 partial data and leaves unavailable metrics unknown. It does not send telemetry to a service.
 Read [usage and its limits](docs/usage.md).
 
-Each variant also carries a resolved table—a model class, a reasoning effort and a soft budget for
-each shared role and for each of the three work bands—which `bin/harness stances --json` prints.
+Each variant also carries a resolved table: a model class, a reasoning effort and a soft budget for
+each shared role and for each of the three work bands, which `bin/harness stances --json` prints.
 A subagent brief states the budget its row expects; a subagent past it finishes or returns and says
 why, and nothing is truncated. A spawn that names no role is routed to the variant's default band
 worker, which is the only way a posture's effort reaches a spawn that named nothing. While a
