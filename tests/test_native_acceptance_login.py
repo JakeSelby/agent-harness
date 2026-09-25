@@ -127,6 +127,30 @@ class RedactionTests(LoginFixture):
         self.assertEqual(outcome["result"], "unverified")
         self.assertNoSecret(json.dumps(outcome))
 
+    def test_a_token_refreshed_through_the_link_mid_case_is_redacted(self):
+        fresh = "rt_refreshed-through-the-link-0099"
+
+        def case(home):
+            (home.client_dir / "auth.json").write_text(json.dumps(
+                dict(LOGIN, tokens=dict(LOGIN["tokens"], refresh_token=fresh))))
+            return "client wrote " + fresh
+        outcome = self.probe(case, login=self.source)
+        self.assertTrue((self.homes[0].client_dir / "auth.json").is_symlink())
+        self.assertNotIn(fresh, json.dumps(outcome))
+        self.assertNoSecret(json.dumps(outcome))
+
+    def test_a_token_the_client_wrote_over_the_link_is_redacted(self):
+        fresh = "rt_replaced-the-link-with-a-file-0100"
+
+        def case(home):
+            link = home.client_dir / "auth.json"
+            link.unlink()
+            link.write_text(json.dumps(dict(LOGIN, tokens={"refresh_token": fresh})))
+            raise RuntimeError("stderr: " + fresh)
+        outcome = self.probe(case, login=self.source)
+        self.assertNotIn(fresh, json.dumps(outcome))
+        self.assertNoSecret(json.dumps(outcome))
+
     def test_redact_removes_a_literal_secret_whatever_its_shape(self):
         self.assertEqual(MODULE.redact("a short-ish tok3n here", secrets=["short-ish tok3n"]),
                          "a " + MODULE.REDACTED + " here")
@@ -166,6 +190,18 @@ class RedactionTests(LoginFixture):
         for text in (progress.read_text(), out.read_text(), buffer.getvalue()):
             self.assertNoSecret(text)
         self.assertIn(MODULE.REDACTED, out.read_text())
+
+        # Rebuilding the record from the log runs no case, so it needs no login.
+        (self.source / "auth.json").unlink()
+        rebuilt = self.scratch / "rebuilt.json"
+        with patch.dict("os.environ", {"CODEX_HOME": str(self.source)}), \
+                patch.object(MODULE, "probe", side_effect=AssertionError("a case ran")), \
+                redirect_stdout(io.StringIO()):
+            self.assertEqual(MODULE.main(["--client", CODEX, "--from-progress",
+                                          "--codex-session-login", "--progress", str(progress),
+                                          "--out", str(rebuilt)]), 0)
+        self.assertEqual(json.loads(rebuilt.read_text())["cases"], {"installation": "passed"})
+        self.assertNoSecret(rebuilt.read_text())
 
 
 class FlagTests(LoginFixture):

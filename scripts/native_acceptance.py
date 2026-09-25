@@ -3042,25 +3042,30 @@ def probe(client, name, model, keep, confirmed=(), login=None):
     home = HOMES[spec["runtime"]](spec, name, model, keep=keep)
     caveat = unobserved_note(client, confirmed)
     secrets = []
+
+    def scrub(text):
+        # Read the login again at redaction time: a token the client refreshed mid-case is in the
+        # operator's file, or in this home's own if the client replaced the link with a file.
+        fresh = [] if login is None else (login_secrets(Path(login) / "auth.json")
+                                          + login_secrets(home.client_dir / "auth.json"))
+        return redact(text, [home.root], secrets + fresh)
     try:
         if login is not None:
             secrets = home.use_login(login)
         observation = CASES[name][0](home)
         return {"case": name, "result": "unverified" if caveat else "passed",
-                "observation": redact(observed([observation], caveat) if caveat else observation,
-                                      [home.root], secrets),
+                "observation": scrub(observed([observation], caveat) if caveat else observation),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     except AssertionError as error:
         # On an unconfirmed surface the reading itself is in question, so an assertion that did
         # not hold is not yet a defect in the harness: it is `unverified` with what was read.
         return {"case": name, "result": "unverified" if caveat else "failed",
-                "observation": redact(observed([str(error)], caveat) if caveat else error,
-                                      [home.root], secrets),
+                "observation": scrub(observed([str(error)], caveat) if caveat else error),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     except Exception as error:  # An unobserved case is unverified, never a pass.
         reason = "%s: %s" % (type(error).__name__, error) if not isinstance(error, Unverified) else str(error)
         return {"case": name, "result": "unverified",
-                "observation": redact(reason, [home.root], secrets),
+                "observation": scrub(reason),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     finally:
         home.discard()
@@ -3336,7 +3341,9 @@ def main(argv=None):
                         help="the capability class of the reader assessing the observations")
     args = parser.parse_args(argv)
     names = selected(args.cases)
-    login = session_login(args.client) if args.codex_session_login else None
+    # Rebuilding from the progress log runs no case, so it needs no login to link.
+    login = (session_login(args.client) if args.codex_session_login and not args.from_progress
+             else None)
     model, tier_routing = executed_by(
         routing(args.client, args.execution_class, args.assessment_class), args.model)
     if args.dry_plan:
