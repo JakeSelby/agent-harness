@@ -6,6 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/JakeSelby/agent-harness?utm_source=oss&utm_medium=github&utm_campaign=JakeSelby%2Fagent-harness&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 ## The control plane for your coding agents, however you run them.
 
