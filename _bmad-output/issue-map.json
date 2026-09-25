@@ -5,11 +5,11 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 20,
-    "story": 232,
+    "story": 261,
     "task": 32,
-    "bug": 95,
-    "chore": 74,
-    "spike": 13,
+    "bug": 99,
+    "chore": 76,
+    "spike": 14,
     "decision": 14
   },
   "items": [
@@ -2779,7 +2779,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S138.md",
       "parent_bmad_id": "AH-E013",
       "parent_github_number": 632,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -2974,7 +2974,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B040.md",
       "parent_bmad_id": "AH-E016",
       "parent_github_number": 635,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -3274,6 +3274,32 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S252",
+      "github_number": 428,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/428",
+      "title": "Replay charges the user's personal layer to the harness",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S252.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B095",
+      "github_number": 429,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/429",
+      "title": "The delegation stance never fires: zero subagent spawns in 19 headless runs",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B095.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3693,6 +3719,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S253",
+      "github_number": 482,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/482",
+      "title": "Record the CLI's own account of the loaded surface on every replay row, and refuse to launch on plugin drift",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S253.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B053",
       "github_number": 483,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/483",
@@ -3729,6 +3768,19 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S260",
+      "github_number": 493,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/493",
+      "title": "usage-feed: surface a running agent's spend mid-run, and a live figure from harness role run",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S260.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3794,6 +3846,84 @@
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S254",
+      "github_number": 509,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/509",
+      "title": "Price every rule, stance variant, skill and agent description individually in the static tier, and report a change's token delta in CI",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S254.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S255",
+      "github_number": 510,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/510",
+      "title": "Replay stored transcripts through the rule-detector registry offline, one row per rule per run, and backfill every evidence set",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S255.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S256",
+      "github_number": 511,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/511",
+      "title": "Run every hook against recorded tool calls under each stance variant as a deterministic permutation matrix",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S256.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S257",
+      "github_number": 512,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/512",
+      "title": "Add a micro-task tier on a cheap model that reports whether each claimed mechanism fires",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S257.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S258",
+      "github_number": 513,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/513",
+      "title": "Nudge delegation from the existing detector through PostToolUse context, since the spawn hook only fires once a spawn is attempted",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S258.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S259",
+      "github_number": 514,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/514",
+      "title": "Per-rule cost attribution across the whole loaded instruction surface",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S259.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
       "provenance": "authored"
     },
     {
@@ -3953,6 +4083,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B098",
+      "github_number": 531,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/531",
+      "title": "grade-bash timing test fails on wall clock under Python 3.9 on a loaded machine",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B098.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C042",
       "github_number": 532,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/532",
@@ -3975,7 +4118,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C043.md",
       "parent_bmad_id": "AH-E014",
       "parent_github_number": 633,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4001,7 +4144,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B069.md",
       "parent_bmad_id": "AH-E016",
       "parent_github_number": 635,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4014,7 +4157,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B068.md",
       "parent_bmad_id": "AH-E015",
       "parent_github_number": 634,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4482,7 +4625,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-E012.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -4677,7 +4820,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T013.md",
       "parent_bmad_id": "AH-E014",
       "parent_github_number": 633,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5019,6 +5162,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B096",
+      "github_number": 677,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/677",
+      "title": "Provisioning leaves an untracked marker in the frozen clone, and the runner then refuses the clone as dirty",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B096.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C057",
       "github_number": 684,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/684",
@@ -5028,7 +5184,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C057.md",
       "parent_bmad_id": "AH-E012",
       "parent_github_number": 616,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5184,7 +5340,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C061.md",
       "parent_bmad_id": "AH-E016",
       "parent_github_number": 635,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5236,7 +5392,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C064.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5249,7 +5405,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S223.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5262,7 +5418,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S224.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5275,7 +5431,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B074.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5288,6 +5444,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B075.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B097",
+      "github_number": 707,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/707",
+      "title": "CLI ergonomics found by the first live qualification round: task save runtime default, role run --runtime check, task --input traceback",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B097.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
       "lifecycle": "active",
       "provenance": "authored"
     },
@@ -5301,7 +5470,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B076.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5312,6 +5481,19 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S226.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-SP013",
+      "github_number": 715,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/715",
+      "title": "spike(architecture): which harness capabilities stand alone as open-source packages",
+      "type": "spike",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-SP013.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
@@ -5327,7 +5509,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S225.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5340,7 +5522,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B077.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5353,7 +5535,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C065.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5366,7 +5548,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B078.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5379,7 +5561,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C066.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5392,7 +5574,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B079.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5405,7 +5587,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B080.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5418,7 +5600,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B081.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5431,7 +5613,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B082.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5444,7 +5626,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B083.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5457,7 +5639,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B084.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5470,7 +5652,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T026.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5522,7 +5704,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B086.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5574,7 +5756,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C069.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5587,7 +5769,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T029.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5652,7 +5834,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-T030.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5665,7 +5847,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C070.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5678,7 +5860,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C071.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5691,7 +5873,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C072.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5756,7 +5938,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B094.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5769,7 +5951,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D012.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5795,7 +5977,7 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-C073.md",
       "parent_bmad_id": "AH-E019",
       "parent_github_number": 780,
-      "lifecycle": "active",
+      "lifecycle": "completed",
       "provenance": "authored"
     },
     {
@@ -5806,6 +5988,292 @@
       "type": "decision",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D013.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "completed",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C074",
+      "github_number": 787,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/787",
+      "title": "File the roadmap's new stories, reserve the unmapped issues and move every issue to its milestone",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C074.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S232",
+      "github_number": 788,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/788",
+      "title": "Module manifest: claims, surface, instruments, slot, dependencies and conflicts",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S232.md",
+      "parent_bmad_id": "AH-E011",
+      "parent_github_number": 552,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S233",
+      "github_number": 789,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/789",
+      "title": "Stamp the profile fingerprint on every ledger row",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S233.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S234",
+      "github_number": 790,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/790",
+      "title": "Attribute context tokens and hook decisions to the module that caused them",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S234.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S235",
+      "github_number": 791,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/791",
+      "title": "Zero-footprint observation: watching the bare arm changes no model request",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S235.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S236",
+      "github_number": 792,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/792",
+      "title": "Adherence events: record each recommendation and whether the user followed it",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S236.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S237",
+      "github_number": 793,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/793",
+      "title": "Replay: fix the six defects that keep the two arms from being comparable",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S237.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S238",
+      "github_number": 794,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/794",
+      "title": "An evidence standard and a pre-registration template for published results",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S238.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S239",
+      "github_number": 795,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/795",
+      "title": "Replay: Cost-of-Pass and pass rate with paired, task-clustered intervals",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S239.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S240",
+      "github_number": 796,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/796",
+      "title": "Replay: a task set sized by power analysis, long tasks included, at five or more trials",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S240.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S241",
+      "github_number": 797,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/797",
+      "title": "Unit evals: the two-by-two of one rule and the economy concern",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S241.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S242",
+      "github_number": 798,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/798",
+      "title": "The soft-estimate report: adherence rate and the if-followed estimate",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S242.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S243",
+      "github_number": 799,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/799",
+      "title": "Proof set 1: the proof bundle, harness evidence verify, and claims gated on it",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S243.md",
+      "parent_bmad_id": "AH-E014",
+      "parent_github_number": 633,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S244",
+      "github_number": 800,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/800",
+      "title": "The slot model and the adapter contract",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S244.md",
+      "parent_bmad_id": "AH-E011",
+      "parent_github_number": 552,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S245",
+      "github_number": 801,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/801",
+      "title": "Jev: compliance packs calibrated on hand labels, with agreement and bias audits",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S245.md",
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S246",
+      "github_number": 802,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/802",
+      "title": "The four-arm bench and layer swaps",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S246.md",
+      "parent_bmad_id": "AH-E011",
+      "parent_github_number": 552,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S247",
+      "github_number": 803,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/803",
+      "title": "The field experiment: randomised real sessions, analysed by intention to treat",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S247.md",
+      "parent_bmad_id": "AH-E006",
+      "parent_github_number": 212,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S248",
+      "github_number": 804,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/804",
+      "title": "Codex parity: ingest Codex telemetry and add a Codex arm",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S248.md",
+      "parent_bmad_id": "AH-E015",
+      "parent_github_number": 634,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S249",
+      "github_number": 805,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/805",
+      "title": "A factorial screening runner for switch permutations",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S249.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S250",
+      "github_number": 806,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/806",
+      "title": "An external task set from Harbor, after a licensing review",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S250.md",
+      "parent_bmad_id": "AH-E013",
+      "parent_github_number": 632,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S251",
+      "github_number": 807,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/807",
+      "title": "Add the evaluation gate to the v1.0 contract",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S251.md",
+      "parent_bmad_id": "AH-E005",
+      "parent_github_number": 206,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C075",
+      "github_number": 808,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/808",
+      "title": "Re-derive the PRD's stale unreleased status lines",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C075.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

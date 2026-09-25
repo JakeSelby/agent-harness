@@ -2,7 +2,7 @@
 title: Agent Harness epics
 status: active
 created: 2026-09-19
-updated: 2026-09-23
+updated: 2026-09-24
 inputDocuments:
   - prds/prd-agent-harness-2026-09-23/prd.md
   - architecture-spines/architecture-agent-harness-2026-09-23/ARCHITECTURE-SPINE.md
@@ -25,8 +25,6 @@ How to read it:
   without delivery). A story's own child issues are nested under it.
 - **Completed work with no epic** is listed by issue range at the end. It is history, and it keeps its
   record in its story file.
-- **Issues held by #529** have no BMad ID yet, and join the map when that pull request merges: #428, #429,
-  #482, #493, #509 to #514, #530 and #531.
 
 ## Requirement coverage
 
@@ -90,7 +88,7 @@ How to read it:
 
 ### AH-E002: Complete the harness stance and settings contract ([#116](https://github.com/JakeSelby/agent-harness/issues/116), open)
 
-- **Milestones:** unscheduled; parts on v0.15.0
+- **Milestones:** unscheduled; parts on v0.14.0 to v0.17.0
 - **Goal:** Every stance and setting switch takes effect at every policy layer, and coordination and archive work for parallel agents.
 - **Covers:** FR-2, FR-14, FR-61, FR-63
 - **Stories:**
@@ -124,7 +122,7 @@ How to read it:
 
 ### AH-E003: Close the loop: Jev as the controller between measured rules and autonomy ([#135](https://github.com/JakeSelby/agent-harness/issues/135), open)
 
-- **Milestones:** v0.14.0 to v0.16.0
+- **Milestones:** unscheduled; parts on v0.15.0 to v0.17.0
 - **Goal:** Decision providers as the controller between measured rules and autonomy: evidence gates per stage, tighten-only act, stance proposals.
 - **Covers:** FR-20, FR-47 to FR-50, FR-67
 - **Stories:**
@@ -162,7 +160,8 @@ How to read it:
   - AH-SP012 [#753](https://github.com/JakeSelby/agent-harness/issues/753): Jev: can a self-hosted Laya model serve the decision packs as a local provider? (open)
   - AH-S230 [#754](https://github.com/JakeSelby/agent-harness/issues/754): Replay: judge a one-policy arm pair on cost per passed task, decision calls included (open)
   - AH-C068 [#755](https://github.com/JakeSelby/agent-harness/issues/755): Jev: price its calls in the usage ledger (open)
-  - AH-C069 [#756](https://github.com/JakeSelby/agent-harness/issues/756): Record four decision-layer follow-ups in the BMad corpus (open)
+  - AH-C069 [#756](https://github.com/JakeSelby/agent-harness/issues/756): Record four decision-layer follow-ups in the BMad corpus (done)
+  - AH-S245 [#801](https://github.com/JakeSelby/agent-harness/issues/801): Jev: compliance packs calibrated on hand labels, with agreement and bias audits (open)
 
 ### AH-E004: Commit BMad as the repository’s public planning system ([#189](https://github.com/JakeSelby/agent-harness/issues/189), done)
 
@@ -193,10 +192,11 @@ How to read it:
   - AH-S093 [#210](https://github.com/JakeSelby/agent-harness/issues/210): Run an independent v1 release audit (open)
   - AH-S094 [#211](https://github.com/JakeSelby/agent-harness/issues/211): Cut and publish v1.0.0 from the audited candidate (open)
   - AH-C059 [#694](https://github.com/JakeSelby/agent-harness/issues/694): Repin the v1 lifecycle baseline and update the stale release references in #207, #209, #210 and #211 (open)
+  - AH-S251 [#807](https://github.com/JakeSelby/agent-harness/issues/807): Add the evaluation gate to the v1.0 contract (open)
 
 ### AH-E006: Broaden developer adoption through evidence and feedback ([#212](https://github.com/JakeSelby/agent-harness/issues/212), open)
 
-- **Milestones:** unscheduled; children across milestones
+- **Milestones:** v0.17.0; children from v0.14.0 to v1.0.0
 - **Goal:** Adoption through evidence: a proof, a direct tester cohort, launch staging, and copy that follows the PRD.
 - **Covers:** FR-17, FR-18, FR-21, FR-54, SM-7
 - **Stories:**
@@ -218,6 +218,7 @@ How to read it:
   - AH-C041 [#527](https://github.com/JakeSelby/agent-harness/issues/527): Log the enterprise-review roadmap intake (done)
   - AH-E011 [#552](https://github.com/JakeSelby/agent-harness/issues/552): A configurable layer under your skill library: one selection model, modes, superpowers, measured (open)
   - AH-C055 [#648](https://github.com/JakeSelby/agent-harness/issues/648): Align product.json on-the-way entries with the PRD and drop em dashes from README copy (open)
+  - AH-S247 [#803](https://github.com/JakeSelby/agent-harness/issues/803): The field experiment: randomised real sessions, analysed by intention to treat (open)
 
 ### AH-E007: Graduate editor and desktop clients beyond preview ([#216](https://github.com/JakeSelby/agent-harness/issues/216), open)
 
@@ -269,7 +270,7 @@ How to read it:
 
 ### AH-E011: A configurable layer under your skill library: one selection model, modes, superpowers, measured ([#552](https://github.com/JakeSelby/agent-harness/issues/552), open)
 
-- **Milestones:** v0.14.0
+- **Milestones:** v0.14.0 to v0.16.0
 - **Goal:** One selection model: switches for every primitive, modes, the superpowers mode, the four-arm benchmark.
 - **Covers:** FR-15, FR-16, FR-20, FR-58
 - **Stories:**
@@ -285,10 +286,13 @@ How to read it:
   - AH-C048 [#562](https://github.com/JakeSelby/agent-harness/issues/562): Docs for the selection model, modes and the four arms (open)
   - AH-C049 [#563](https://github.com/JakeSelby/agent-harness/issues/563): Qualify and tag the release (open)
   - AH-C050 [#569](https://github.com/JakeSelby/agent-harness/issues/569): Reserve BMad IDs for the v0.14.0 release issues (done)
+  - AH-S232 [#788](https://github.com/JakeSelby/agent-harness/issues/788): Module manifest: claims, surface, instruments, slot, dependencies and conflicts (open)
+  - AH-S244 [#800](https://github.com/JakeSelby/agent-harness/issues/800): The slot model and the adapter contract (open)
+  - AH-S246 [#802](https://github.com/JakeSelby/agent-harness/issues/802): The four-arm bench and layer swaps (open)
 
-### AH-E012: Re-baseline the BMad corpus and make story files the design record ([#616](https://github.com/JakeSelby/agent-harness/issues/616), open)
+### AH-E012: Re-baseline the BMad corpus and make story files the design record ([#616](https://github.com/JakeSelby/agent-harness/issues/616), done)
 
-- **Milestones:** v0.14.0
+- **Milestones:** completed
 - **Goal:** The BMad corpus re-baselined and story files made the design record.
 - **Covers:** FR-9, FR-64, FR-65
 - **Stories:**
@@ -312,38 +316,62 @@ How to read it:
   - AH-T024 [#662](https://github.com/JakeSelby/agent-harness/issues/662): Enrich story files: delivered work without an epic, issues #361 to #420 (done)
   - AH-T025 [#663](https://github.com/JakeSelby/agent-harness/issues/663): Enrich story files: delivered work without an epic, issues #421 onward (done)
   - AH-B071 [#666](https://github.com/JakeSelby/agent-harness/issues/666): The real-corpus upgrade test fails once the last amended stub is upgraded (done)
-  - AH-C057 [#684](https://github.com/JakeSelby/agent-harness/issues/684): Reserve IDs and write story files for the re-baseline follow-ups (open)
+  - AH-C057 [#684](https://github.com/JakeSelby/agent-harness/issues/684): Reserve IDs and write story files for the re-baseline follow-ups (done)
 
 ### AH-E013: Measurement: the cost benchmark, detector precision and the evaluation pyramid ([#632](https://github.com/JakeSelby/agent-harness/issues/632), open)
 
-- **Milestones:** v0.14.0 to v0.15.0
+- **Milestones:** v0.14.0 to v0.17.0
 - **Goal:** Measurement: the cost benchmark on the release task set, detector precision, the evaluation pyramid.
 - **Covers:** FR-22, FR-34, FR-55 to FR-58, SM-2
 - **Stories:**
-  - AH-S138 [#369](https://github.com/JakeSelby/agent-harness/issues/369): Record the first live cost replay results (open)
+  - AH-S138 [#369](https://github.com/JakeSelby/agent-harness/issues/369): Record the first live cost replay results (not planned)
+  - AH-S252 [#428](https://github.com/JakeSelby/agent-harness/issues/428): Replay charges the user's personal layer to the harness (open)
+  - AH-B095 [#429](https://github.com/JakeSelby/agent-harness/issues/429): The delegation stance never fires: zero subagent spawns in 19 headless runs (open)
   - AH-S194 [#430](https://github.com/JakeSelby/agent-harness/issues/430): Trim the harness's 12,607-token standing context (open)
+  - AH-S253 [#482](https://github.com/JakeSelby/agent-harness/issues/482): Record the CLI's own account of the loaded surface on every replay row, and refuse to launch on plugin drift (open)
+  - AH-S254 [#509](https://github.com/JakeSelby/agent-harness/issues/509): Price every rule, stance variant, skill and agent description individually in the static tier, and report a change's token delta in CI (open)
+  - AH-S255 [#510](https://github.com/JakeSelby/agent-harness/issues/510): Replay stored transcripts through the rule-detector registry offline, one row per rule per run, and backfill every evidence set (open)
+  - AH-S256 [#511](https://github.com/JakeSelby/agent-harness/issues/511): Run every hook against recorded tool calls under each stance variant as a deterministic permutation matrix (open)
+  - AH-S257 [#512](https://github.com/JakeSelby/agent-harness/issues/512): Add a micro-task tier on a cheap model that reports whether each claimed mechanism fires (open)
+  - AH-S258 [#513](https://github.com/JakeSelby/agent-harness/issues/513): Nudge delegation from the existing detector through PostToolUse context, since the spawn hook only fires once a spawn is attempted (open)
+  - AH-S259 [#514](https://github.com/JakeSelby/agent-harness/issues/514): Per-rule cost attribution across the whole loaded instruction surface (open)
   - AH-S215 [#602](https://github.com/JakeSelby/agent-harness/issues/602): Tighten the two detectors the corpus records under the precision floor (open)
+  - AH-S233 [#789](https://github.com/JakeSelby/agent-harness/issues/789): Stamp the profile fingerprint on every ledger row (open)
+  - AH-S234 [#790](https://github.com/JakeSelby/agent-harness/issues/790): Attribute context tokens and hook decisions to the module that caused them (open)
+  - AH-S235 [#791](https://github.com/JakeSelby/agent-harness/issues/791): Zero-footprint observation: watching the bare arm changes no model request (open)
+  - AH-S236 [#792](https://github.com/JakeSelby/agent-harness/issues/792): Adherence events: record each recommendation and whether the user followed it (open)
+  - AH-S237 [#793](https://github.com/JakeSelby/agent-harness/issues/793): Replay: fix the six defects that keep the two arms from being comparable (open)
+  - AH-S238 [#794](https://github.com/JakeSelby/agent-harness/issues/794): An evidence standard and a pre-registration template for published results (open)
+  - AH-S239 [#795](https://github.com/JakeSelby/agent-harness/issues/795): Replay: Cost-of-Pass and pass rate with paired, task-clustered intervals (open)
+  - AH-S240 [#796](https://github.com/JakeSelby/agent-harness/issues/796): Replay: a task set sized by power analysis, long tasks included, at five or more trials (open)
+  - AH-S241 [#797](https://github.com/JakeSelby/agent-harness/issues/797): Unit evals: the two-by-two of one rule and the economy concern (open)
+  - AH-S242 [#798](https://github.com/JakeSelby/agent-harness/issues/798): The soft-estimate report: adherence rate and the if-followed estimate (open)
+  - AH-S249 [#805](https://github.com/JakeSelby/agent-harness/issues/805): A factorial screening runner for switch permutations (open)
+  - AH-S250 [#806](https://github.com/JakeSelby/agent-harness/issues/806): An external task set from Harbor, after a licensing review (open)
 
 ### AH-E014: Qualify a release in one round, and let its claims match its evidence ([#633](https://github.com/JakeSelby/agent-harness/issues/633), open)
 
-- **Milestones:** v0.12.1 to v0.14.0
+- **Milestones:** v0.14.0 to v1.0.0
 - **Goal:** A release in one qualification round, with claims that match evidence.
 - **Covers:** FR-6, FR-7, FR-12, FR-51 to FR-53, NFR-2, NFR-14
 - **Stories:**
-  - AH-C043 [#533](https://github.com/JakeSelby/agent-harness/issues/533): Qualify the required CLI targets and restore the release floor (open)
+  - AH-C043 [#533](https://github.com/JakeSelby/agent-harness/issues/533): Qualify the required CLI targets and restore the release floor (done)
   - AH-D008 [#582](https://github.com/JakeSelby/agent-harness/issues/582): Decide whether qualification evidence is invalidated per case (#333 part 1b) (open)
   - AH-S214 [#612](https://github.com/JakeSelby/agent-harness/issues/612): Acceptance runner: use the Codex session login in its disposable home (open)
   - AH-C052 [#627](https://github.com/JakeSelby/agent-harness/issues/627): Open the 0.13.0 candidate (done)
-  - AH-T013 [#638](https://github.com/JakeSelby/agent-harness/issues/638): Amend the 0.12.0 release notes with the work merged between #465 and #494 (open)
+  - AH-T013 [#638](https://github.com/JakeSelby/agent-harness/issues/638): Amend the 0.12.0 release notes with the work merged between #465 and #494 (not planned)
   - AH-S209 [#639](https://github.com/JakeSelby/agent-harness/issues/639): Compatibility catalog: an explicit waiver for a release with no required target (open)
   - AH-C053 [#640](https://github.com/JakeSelby/agent-harness/issues/640): CI: check the Python 3.9 floor on every pull request (open)
+  - AH-B096 [#677](https://github.com/JakeSelby/agent-harness/issues/677): Provisioning leaves an untracked marker in the frozen clone, and the runner then refuses the clone as dirty (open)
   - AH-D010 [#686](https://github.com/JakeSelby/agent-harness/issues/686): Decide whether a release may require Codex CLI before FR-12's agreement round (open)
   - AH-D011 [#688](https://github.com/JakeSelby/agent-harness/issues/688): Decide whether a red smoke tier blocks the qualification round, as FR-52 says (open)
   - AH-B073 [#689](https://github.com/JakeSelby/agent-harness/issues/689): A resumed qualification round reruns completed cases; FR-52 says it skips them (open)
+  - AH-B097 [#707](https://github.com/JakeSelby/agent-harness/issues/707): CLI ergonomics found by the first live qualification round: task save runtime default, role run --runtime check, task --input traceback (open)
+  - AH-S243 [#799](https://github.com/JakeSelby/agent-harness/issues/799): Proof set 1: the proof bundle, harness evidence verify, and claims gated on it (open)
 
 ### AH-E015: Guardrails and runtime parity: close the gaps between runtimes and between docs and code ([#634](https://github.com/JakeSelby/agent-harness/issues/634), open)
 
-- **Milestones:** v0.12.1 to v0.14.0
+- **Milestones:** v0.14.0 to v0.17.0
 - **Goal:** Guardrails and runtime parity: close the gaps between runtimes and between docs and code.
 - **Covers:** FR-2, FR-4, FR-18, FR-30, FR-35 to FR-41, FR-44
 - **Stories:**
@@ -352,7 +380,7 @@ How to read it:
   - AH-B024 [#294](https://github.com/JakeSelby/agent-harness/issues/294): harness sync ignores HARNESS_STANCE_ variables that harness stances honours (open)
   - AH-B047 [#406](https://github.com/JakeSelby/agent-harness/issues/406): harness task save writes an absolute path its own lint rejects (open)
   - AH-B049 [#413](https://github.com/JakeSelby/agent-harness/issues/413): harness worktree remove cannot finish a checkout that holds a submodule (open)
-  - AH-B068 [#538](https://github.com/JakeSelby/agent-harness/issues/538): Hide an installed Codex client from the reviewer-key detection test (open)
+  - AH-B068 [#538](https://github.com/JakeSelby/agent-harness/issues/538): Hide an installed Codex client from the reviewer-key detection test (not planned)
   - AH-S217 [#576](https://github.com/JakeSelby/agent-harness/issues/576): Guard the Workflow tool launch: log it, honour delegation off, refuse constrained roles in agentType (open)
   - AH-S216 [#577](https://github.com/JakeSelby/agent-harness/issues/577): harness usage: separate workflow rows and stop pricing them against a confined role budget (open)
   - AH-B067 [#611](https://github.com/JakeSelby/agent-harness/issues/611): stop-gate: interleaved sessions in one checkout reset each other's block count, so the gate never releases (done)
@@ -360,6 +388,7 @@ How to read it:
   - AH-B070 [#650](https://github.com/JakeSelby/agent-harness/issues/650): sync --dry-run words its summary lines as if it had applied the changes (open)
   - AH-B072 [#687](https://github.com/JakeSelby/agent-harness/issues/687): delegation off: the spawn hook emits ask while the stance and the engine deny (open)
   - AH-C060 [#695](https://github.com/JakeSelby/agent-harness/issues/695): docs: the standalone-measurement page still calls the published ruleprobe package planned (open)
+  - AH-S248 [#804](https://github.com/JakeSelby/agent-harness/issues/804): Codex parity: ingest Codex telemetry and add a Codex arm (open)
 
 ### AH-E016: Harden BMad traceability for many sessions filing at once ([#635](https://github.com/JakeSelby/agent-harness/issues/635), open)
 
@@ -367,22 +396,22 @@ How to read it:
 - **Goal:** BMad traceability safe for many sessions filing at once.
 - **Covers:** FR-9, FR-64
 - **Stories:**
-  - AH-B040 [#392](https://github.com/JakeSelby/agent-harness/issues/392): new files an issue the list endpoint does not yet return, so reserve fails (open)
+  - AH-B040 [#392](https://github.com/JakeSelby/agent-harness/issues/392): new files an issue the list endpoint does not yet return, so reserve fails (not planned)
   - AH-B042 [#410](https://github.com/JakeSelby/agent-harness/issues/410): reserve allocates an ID without checking what the default branch already holds (open)
   - AH-B043 [#411](https://github.com/JakeSelby/agent-harness/issues/411): issue-ownership does not say which issues it found, so a keyword in prose is invisible (open)
   - AH-B044 [#412](https://github.com/JakeSelby/agent-harness/issues/412): the issue number is keyed github_number in the map and issue in planned actions (open)
   - AH-D005 [#420](https://github.com/JakeSelby/agent-harness/issues/420): Decide how map lifecycle stays current without a pull request after every merge (open)
   - AH-D006 [#421](https://github.com/JakeSelby/agent-harness/issues/421): grade-bash refuses a sub-issue delete that bmad_issue_sync apply performs unattended (open)
-  - AH-B069 [#537](https://github.com/JakeSelby/agent-harness/issues/537): Reserve a BMad ID in the same invocation that files the issue (open)
+  - AH-B069 [#537](https://github.com/JakeSelby/agent-harness/issues/537): Reserve a BMad ID in the same invocation that files the issue (not planned)
   - AH-B065 [#642](https://github.com/JakeSelby/agent-harness/issues/642): bmad_issue_sync apply: verify artifact frontmatter on main, not only presence (open)
-  - AH-C061 [#696](https://github.com/JakeSelby/agent-harness/issues/696): Close duplicate and superseded open issues: #392, #433 and #537; #538 and #606; #369 (open)
+  - AH-C061 [#696](https://github.com/JakeSelby/agent-harness/issues/696): Close duplicate and superseded open issues: #392, #433 and #537; #538 and #606; #369 (done)
   - AH-C062 [#697](https://github.com/JakeSelby/agent-harness/issues/697): Track or waive the undelivered acceptance items on closed issues (open)
   - AH-S222 [#698](https://github.com/JakeSelby/agent-harness/issues/698): Carry GitHub's stateReason into the issue map so not-planned items stop reading as completed (open)
   - AH-C063 [#699](https://github.com/JakeSelby/agent-harness/issues/699): Give the decision and epic story templates a Change log section (open)
 
 ### AH-E017: Bring the code into line with the 2026-09-23 architecture spine ([#636](https://github.com/JakeSelby/agent-harness/issues/636), open)
 
-- **Milestones:** unscheduled
+- **Milestones:** unscheduled; parts on v0.14.0
 - **Goal:** The code brought in line with the 2026-09-23 architecture spine's migration notes.
 - **Covers:** FR-2, FR-11, FR-60, NFR-6
 - **Stories:**
@@ -547,7 +576,7 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-D004 [#417](https://github.com/JakeSelby/agent-harness/issues/417): Decide whether repeated agent pairs get an amortized return schema, and whether fan-outs get a shared workspace
 - AH-C030 [#418](https://github.com/JakeSelby/agent-harness/issues/418): Reserve BMad IDs for the traceability-gap issues
 
-### Issues #421 onward (31)
+### Issues #421 onward (32)
 
 - AH-C032 [#422](https://github.com/JakeSelby/agent-harness/issues/422): Reserve BMad IDs for the traceability close-out issues
 - AH-C033 [#424](https://github.com/JakeSelby/agent-harness/issues/424): Reserve BMad IDs for the comms-gap issues filed into v0.12.0
@@ -567,6 +596,7 @@ Listed by issue range, which is also how the story-enrichment batches B08 to B12
 - AH-T004 [#499](https://github.com/JakeSelby/agent-harness/issues/499): Make the replay tasks' success bar profile-independent, and pre-flight that bar
 - AH-C035 [#501](https://github.com/JakeSelby/agent-harness/issues/501): Record how a pull request is landed under the main ruleset
 - AH-T005 [#507](https://github.com/JakeSelby/agent-harness/issues/507): State the live benchmark tier's status in docs/benchmarks.md before 0.12
+- AH-B098 [#531](https://github.com/JakeSelby/agent-harness/issues/531): grade-bash timing test fails on wall clock under Python 3.9 on a loaded machine
 - AH-C042 [#532](https://github.com/JakeSelby/agent-harness/issues/532): Open the 0.12.0 candidate
 - AH-C044 [#534](https://github.com/JakeSelby/agent-harness/issues/534): Publish 0.12.0 with a narrowed support contract
 - AH-C047 [#550](https://github.com/JakeSelby/agent-harness/issues/550): Reserve BMad IDs for the three unmapped v0.13.0 issues
