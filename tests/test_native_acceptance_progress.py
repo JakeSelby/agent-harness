@@ -80,11 +80,12 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual([item["case"] for item in self.lines()], CASES)
 
     def test_a_rerun_case_supersedes_its_earlier_result(self):
-        def failing(client, name, model, keep, confirmed=False):
-            return {"case": name, "result": "failed", "observation": "the spawn was not routed",
+        # Only an unverified case reruns at the same commit; a verdict is kept (see settled()).
+        def unobserved(client, name, model, keep, confirmed=False):
+            return {"case": name, "result": "unverified", "observation": "the client timed out",
                     "seconds": 0.1, "sessions": 1}
 
-        self.run_round(failing, names=[CASES[0]])
+        self.run_round(unobserved, names=[CASES[0]])
         data = self.run_round(passing, names=[CASES[0]])
         self.assertEqual(data["cases"], {CASES[0]: "passed"})
         self.assertEqual(data["observations"],

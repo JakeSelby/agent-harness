@@ -217,6 +217,13 @@ The routing is written to the durable per-case log before the first case runs an
 `--from-progress` refuses a log whose cases were executed under a different routing rather than
 merging them: a record built from two routings cannot say which class produced an observation.
 
+A round started again with the same arguments at the same commit resumes from that log: a case
+whose latest line is `passed` or `failed` is not run again, and the runner says so on stderr for
+each one. A failure is kept so its evidence stays intact; an `unverified` case, which observed
+nothing, and a case the kill interrupted both run again. The log's header carries the source
+commit, client version and routing, so a verdict never skips a case for a different candidate. To
+retry a failed case at the same commit, give the round a fresh `--progress` log.
+
 The saving this buys is the issue's estimate, not a measurement: workers ran 0.7×–1.8× their 82K
 output budget, so four targets cost 230K–590K output tokens per round, most of it authoring
 rather than judgement (#338). It is worth nothing without the scripted cases (#336): dropping the
