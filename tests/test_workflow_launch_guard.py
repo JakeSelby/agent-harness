@@ -31,6 +31,9 @@ COMPUTED_BANDS = ("const kinds = ['worker-b', 'worker-c'];\n"
 COMPOUND = "await agent('Look at it.', { agentType: 'worker-a' && 'reviewer' });\n"
 INTERPOLATED = ("const role = 'reviewer';\n"
                 "await agent('Look at it.', { agentType: `${role}` });\n")
+ESCAPED = "await agent('Look at it.', { agentType: 're\\u0076iewer' });\n"
+ESCAPED_ELSEWHERE = ("const role = \"spec-re\\x76iewer\";\n"
+                     "await agent('Don\\'t guess.', { agentType: role });\n")
 PROSE = "await agent('Act as a careful reviewer of docs/releasing.md.', { label: 'reviewer' });\n"
 
 
@@ -125,7 +128,7 @@ class WorkflowLaunchTests(unittest.TestCase):
         self.assertIn("computes agentType", reason(result))
 
     def test_a_literal_that_is_not_the_whole_value_counts_as_computed(self):
-        for script in (COMPOUND, INTERPOLATED):
+        for script in (COMPOUND, INTERPOLATED, ESCAPED, ESCAPED_ELSEWHERE):
             with self.subTest(script=script[:40]):
                 result = self.launch(script=script)
                 self.assertEqual(decision(result), "deny")

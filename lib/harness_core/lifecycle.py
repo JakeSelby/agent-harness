@@ -220,6 +220,9 @@ WORKFLOW_AGENT_TYPE = re.compile(r"\bagentType\b")
 WORKFLOW_AGENT_VALUE = re.compile(r"""['"]?\s*[:=]\s*(['"`])([^'"`\\\n]*)\1(?=\s*(?:[,;)\]}]|$))""")
 WORKFLOW_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 WORKFLOW_LITERAL = re.compile(r"""(['"`])([a-z][a-z0-9-]*)\1""")
+# A literal with an escape in it, such as `'re\u0076iewer'`, which evaluates to a role name.
+WORKFLOW_ESCAPED = re.compile(r"""(['"`])((?:(?!\1)[^\\\n])*\\.(?:(?!\1)[^\\\n]|\\.)*)\1""")
+WORKFLOW_ESCAPE = re.compile(r"""\\(?:u\{([0-9A-Fa-f]{1,6})\}|u([0-9A-Fa-f]{4})|x([0-9A-Fa-f]{2})|(.))""")
 WORKFLOW_MARKER = re.compile(r"""(?:^|\\n|['"`])[ \t]*harness-role:[ \t]*([a-z][a-z0-9-]*)[ \t]*"""
                              r"""(?=$|\\n|\\r|['"`])""", re.M)
 WORKFLOW_SCRIPT_MAX = 1024 * 1024
@@ -258,6 +261,16 @@ def workflow_script(event):
     return None
 
 
+def workflow_literal(text):
+    """A JavaScript string literal's body with its escapes decoded."""
+    def decode(match):
+        code = match.group(1) or match.group(2) or match.group(3)
+        if code is not None:
+            return chr(min(int(code, 16), 0x10FFFF))
+        return match.group(4)
+    return WORKFLOW_ESCAPE.sub(decode, text)
+
+
 def workflow_role(script):
     """`(name, fields, how)` for the first constrained role a workflow script names, else None.
 
@@ -284,10 +297,12 @@ def workflow_role(script):
         if fields is not None:
             return name, fields, "carries a `harness-role: " + name + "` marker"
     if computed:
-        for match in WORKFLOW_LITERAL.finditer(script):
-            fields = constrained_role(match.group(2))
+        literals = [m.group(2) for m in WORKFLOW_LITERAL.finditer(script)]
+        literals += [workflow_literal(m.group(2)) for m in WORKFLOW_ESCAPED.finditer(script)]
+        for value in literals:
+            fields = constrained_role(value) if re.fullmatch(r"[a-z][a-z0-9-]*", value) else None
             if fields is not None:
-                return (match.group(2), fields, "computes agentType and names `" + match.group(2)
+                return (value, fields, "computes agentType and names `" + value
                         + "` in a string literal")
     return None
 
