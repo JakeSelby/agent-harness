@@ -4,13 +4,13 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "epic": 20,
-    "story": 261,
-    "task": 32,
-    "bug": 99,
+    "bug": 100,
     "chore": 76,
+    "decision": 14,
+    "epic": 20,
     "spike": 14,
-    "decision": 14
+    "story": 261,
+    "task": 32
   },
   "items": [
     {
@@ -6378,6 +6378,19 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S231.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B099",
+      "github_number": 810,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/810",
+      "title": "fix(output-style): Scannable drops Claude Code's coding instructions",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B099.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
