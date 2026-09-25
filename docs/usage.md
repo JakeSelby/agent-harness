@@ -68,7 +68,10 @@ response, and a call whose other records do carry a message id joins their slot 
 opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
 deduplicated at all — it is summed as written, and `idless_records` counts how many such records
 the row's totals include, the session's own and those of the subagent files folded into them.
-A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls.
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls, less
+any a hook refused: a call whose result is an error and which left no subagent transcript. A
+session file holding sidechain lines is the older format, where a spawn that ran has no file of
+its own, so there every call is counted.
 
 `raw_vs_deduped` is **the measured size of that inflation**: the per-line sum of the four token
 fields over the deduplicated total the row carries, across the same records — the session's own
@@ -410,6 +413,7 @@ one field that holds prose is [the completion claim](#the-completion-claim), whi
 | `tier-agent-spawns` | the band worker an unnamed spawn was routed to | not labelled yet |
 | `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
 | `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
+| `role-confinement` | `deny`, on a native spawn naming a constrained role, by `subagent_type` or a `harness-role:` line; `input` leads with the role and which of the two named it | not labelled yet |
 
 An approved Bash command is not *graded*. The harness answers the permission question on a small
 minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a

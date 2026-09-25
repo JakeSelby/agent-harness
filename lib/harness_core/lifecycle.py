@@ -174,13 +174,22 @@ CONFINEMENT_SENTENCE = ("A read-only role runs through `harness role run <role>`
                         "needs neither and spawns natively.")
 
 
+def harness_command():
+    """The CLI by the absolute path of this checkout, quoted for a shell.
+
+    No documented install puts `harness` on `PATH`, so a bare name in the refusal is a command the
+    refused client cannot run (issue #761). The checkout the hook runs from is the one that answers.
+    """
+    return shlex.quote(str(ROOT / "bin" / "harness"))
+
+
 def role_instruction(runtime, name, fields):
     """How this role is actually run, ending in the sentence the stance and the roles also carry."""
     from . import catalog
     # The role's class picks the model; the session's is the fallback, never the default.
     mapped = (fields is not None and not fields.get("unresolved")
               and "model" in catalog.role_binding(ROOT, runtime, fields))
-    return ("Use harness role run " + name + " --runtime " + runtime
+    return ("Use " + harness_command() + " role run " + name + " --runtime " + runtime
             + ("" if mapped else " --model <session-model>")
             + " --workspace <repo> --prompt-file <brief-file>. "
             "Planner workers also require --artifact <new-plan.md>. " + CONFINEMENT_SENTENCE
@@ -193,6 +202,23 @@ def role_deny(runtime, name, fields, origin=None):
               + role_instruction(runtime, name, fields))
     return {"hookSpecificOutput": {"permissionDecision": "deny",
             "permissionDecisionReason": origin + " " + reason if origin else reason}}
+
+
+def confinement_deny(runtime, session_id, name, fields, prompt, recognised):
+    """`role_deny`, with the decision-log row every confinement refusal writes.
+
+    `recognised` is what named the role: the spawn's `subagent_type`, or a `harness-role:` line
+    in its brief. The row's input leads with the role and that signal, then the brief's
+    fingerprint, so a refusal is countable by role without a second field on the row, and a
+    refused spawn is never mistaken for a spawn that ran: the usage ledger's own rule for that
+    is in `usage-log.py`.
+    """
+    module = decisions()
+    if module is not None:
+        module.record("role-confinement", "deny",
+                      name + " (" + recognised + "): " + fingerprint(prompt),
+                      {"session_id": session_id}, runtime)
+    return role_deny(runtime, name, fields)
 
 
 def marker_role(prompt):
@@ -505,9 +531,11 @@ def dispatch(runtime, payload):
             delegation = selected("delegation", "tiered")
             inputs = event["tool_input"]
             role_name, prompt = inputs.get("subagent_type"), inputs.get("prompt")
+            session = event.get("session_id")
             fields = constrained_role(role_name)
             if fields is not None:
-                results.append(role_deny(runtime, role_name, fields))
+                results.append(confinement_deny(runtime, session, role_name, fields, prompt,
+                                                "subagent_type"))
             # Refusing the named spawn only moves the work: the same brief comes back with the role
             # name dropped, and nothing sees it. So a spawn is classified by what it carries as well
             # as by what it called itself — a `harness-role:` line, then a declared framework
@@ -517,13 +545,13 @@ def dispatch(runtime, payload):
             # cannot get the corrected brief through. None of this runs where the stance already
             # denies every spawn.
             if delegation != "off":
-                session = event.get("session_id")
                 if fields is not None:
                     remember_denial(session, role_name, prompt)
                 else:
                     marked = marker_role(prompt)
                     if marked is not None:
-                        results.append(role_deny(runtime, marked[0], marked[1]))
+                        results.append(confinement_deny(runtime, session, marked[0], marked[1],
+                                                        prompt, "harness-role marker"))
                         remember_denial(session, marked[0], prompt)
                     else:
                         framed = framework_deny(runtime, session, prompt, role_name)

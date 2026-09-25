@@ -2632,12 +2632,16 @@ def cmd_selection(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(data, indent=2))
         return 0
+    module = load_posture()
+    declared = module.manifests(read_json(config_path()) or {}, REPO)[0]
     say("mode=" + (data["mode"] or "none") + " (" + data["sources"]["mode"] + ")")
     for kind, units in data.items():
         if kind in ("mode", "sources"):
             continue
         for unit, value in units.items():
-            say(kind + "." + unit + "=" + str(value) + " (" + data["sources"][kind][unit] + ")")
+            # A switch unit reports what measures it; one with no instrument is unmeasured.
+            shown = " " + module.measurement(declared[kind].get(unit)) if kind in declared else ""
+            say(kind + "." + unit + "=" + str(value) + " (" + data["sources"][kind][unit] + ")" + shown)
     worst, _ = always_loaded_lines(REPO)
     say(f"always-loaded: {effective_always_loaded_lines(REPO, data)} lines for this selection; "
         f"the lint caps the worst case, {worst} of {ALWAYS_LOADED_CAP}")
