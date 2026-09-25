@@ -789,7 +789,7 @@ do backfill.
 | `secrets/git-add-secret-file` | secrets | `git add` of a path whose name says it holds a credential |
 | `research/search-over-cap` | research-and-verification | the web search that takes the session past the per-session cap |
 | `cache-hygiene/model-switch` | cache-hygiene | a model change mid-session, which rebuilds the cached prefix |
-| `cache-hygiene/compact` | cache-hygiene | each compaction boundary in the transcript |
+| `cache-hygiene/compact` | cache-hygiene | each compaction boundary in the transcript, except under a `cost` variant that allows compaction (`max`) |
 | `voice/banned-opener` | voice-and-format | a final message opening with a phrase the output style bans, or closing with one |
 | `voice/second-table` | voice-and-format | two or more table blocks in one final message |
 | `voice/scaffold-leak` | voice-and-format | under the `concise` voice, a final message wearing a reply template's section labels |

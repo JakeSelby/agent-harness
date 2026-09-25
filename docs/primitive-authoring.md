@@ -17,9 +17,8 @@ selected stance through its linked rules; Codex reads the same text in generated
 Use `HARNESS_STANCE_VOICE=scannable bin/harness stances --json` to inspect a session selection.
 Setting an environment variable on a running agent does not itself rewrite its loaded context.
 
-Resolution order is distribution defaults, user configuration, the optional file explicitly
-named by `HARNESS_PROJECT_CONFIG`, then `HARNESS_STANCE_*` session values. Project files can
-select stances only. They cannot change identity, runtime targets or permission configuration.
+Resolution order, and what a project or session file may carry, is the selection document in
+[preferences](preferences.md#the-selection-document).
 
 ## Define a personal stance
 

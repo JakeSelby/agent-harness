@@ -468,6 +468,9 @@ def dispatch(runtime, payload):
     kind, tool = event.get("hook_event_name"), event.get("tool_name")
     if kind == "PreToolUse":
         results = []
+        # Only a rewrite: the plan-mode approval below still answers for this tool.
+        if tool == "SendUserFile" and runtime == "claude-code":
+            results.append(invoke("stage-user-files", event))
         if tool == "Bash":
             grader = load("grade-bash")
             if grader.ro is None:

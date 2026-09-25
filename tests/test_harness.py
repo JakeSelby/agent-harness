@@ -278,6 +278,32 @@ class LinkAliasTests(TempHome):
         (stances / "voice.md").symlink_to(elsewhere)
         self.assertEqual(harness._diff_lines(), [f"redirected link {stances / 'voice.md'} -> {elsewhere}"])
 
+    def choose_voice(self, variant):
+        path = harness.config_path()
+        cfg = json.loads(path.read_text())
+        cfg["stances"]["voice"] = variant
+        path.write_text(json.dumps(cfg))
+
+    def test_changing_a_stance_relinks_a_link_spelled_through_the_alias(self):
+        self.assertEqual(self.sync(), 0)
+        voice = self.home / ".claude" / "rules" / "harness-stances" / "voice.md"
+        self.alias(voice)
+        self.choose_voice("concise")
+        self.assertEqual(self.sync(), 0)
+        self.assertEqual(Path(os.readlink(voice)), REPO / "primitives" / "stances" / "voice" / "concise.md")
+        self.assertEqual(harness._diff_lines(), [])
+
+    def test_changing_a_stance_preserves_a_real_redirect(self):
+        self.assertEqual(self.sync(), 0)
+        voice = self.home / ".claude" / "rules" / "harness-stances" / "voice.md"
+        elsewhere = self.home / "mine.md"
+        elsewhere.write_text("mine\n")
+        voice.unlink()
+        voice.symlink_to(elsewhere)
+        self.choose_voice("concise")
+        self.assertNotEqual(self.sync(), 0)
+        self.assertEqual(Path(os.readlink(voice)), elsewhere)
+
     def test_uninstall_removes_an_aliased_link_and_preserves_a_real_redirect(self):
         self.assertEqual(self.sync(), 0)
         stances = self.home / ".claude" / "rules" / "harness-stances"
