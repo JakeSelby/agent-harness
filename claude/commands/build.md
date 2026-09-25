@@ -40,6 +40,6 @@ stop at the local commit, and report the branch as ready to push.
    After pushing a fix, ask for one more review, such as `@coderabbitai review`, and wait again. Two
    rounds at most; report whatever remains. A human's thread is never yours to resolve.
 
-Report the outcome in one sentence with the pull request URL, then at most five bullets: bot
-threads answered or still open, a decision taken for the reader, a step left unfinished, a skipped
-test. Give the gate result in one line, and its failing output in full if it failed.
+Report the outcome in one sentence, with the pull request URL when one was opened, then at most
+five bullets: bot threads answered or still open, a decision taken for the reader, a step left
+unfinished, a skipped test. Give the gate result in one line, and any failing output in full.

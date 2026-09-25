@@ -204,6 +204,7 @@ CASES = {
         # A colon after the closing bold is the commonest template form.
         ([say("**What changed**: the hook")], 1),
         ([say("- **Still open**: the Linux client.")], 1),
+        ([say("Done.\n\n## **What changed:**\n\n- the hook")], 1),
         ([say("Why: the cache was stale.")], 1),
         ([say("What Changed:\n- the hook")], 1),
         ([say("**What changed** \u2014 the fix")], 1),

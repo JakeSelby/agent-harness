@@ -324,7 +324,7 @@ _LIST_MARKER = r"^\s{0,3}(?:(?:[-*+]|\d+[.)])\s+)?"
 SCAFFOLD_LABEL_RE = re.compile(
     _LIST_MARKER + _SCAFFOLD_LABELS + r"\s*:"
     r"|" + _LIST_MARKER + r"(\*\*|__)\s*" + _SCAFFOLD_LABELS + r"\s*:?\s*\1"
-    r"|^\s{0,3}#{1,6}\s+(?:\*\*|__)?" + _SCAFFOLD_LABELS + r"(?:\*\*|__)?\s*:?\s*#*\s*$",
+    r"|^\s{0,3}#{1,6}\s+(?:\*\*|__)?" + _SCAFFOLD_LABELS + r"\s*:?\s*(?:\*\*|__)?\s*:?\s*#*\s*$",
     re.IGNORECASE)
 HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
 

@@ -31,7 +31,7 @@ They carry the return caps and the shared search budget this command depends on.
    returned record, count swallowed errors separately from empty results.
 
 Report as a brief: two or three sentences of bottom line, then up to five findings with the numbers
-behind them and what they mean for the reader. Link the rest: end with the scratchpad file paths
-the band workers wrote and the worker ids `harness role status` will show, one per line. An
+behind them and what they mean for the reader. When workers ran, end with the scratchpad file
+paths they wrote and the worker ids `harness role status` will show, one per line. An
 isolated `gatherer` writes nothing itself: save its returned detail to a scratchpad file yourself
 before you synthesize.
