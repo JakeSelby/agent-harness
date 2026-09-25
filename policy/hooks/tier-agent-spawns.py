@@ -20,7 +20,8 @@ every hook alike:
                    with no default band, rewrite `model` to one tier below the session model,
                    the weakest class on the ladder being the floor; refuse the top tier by request
     session-model  leave it alone
-    off            ask before every spawn, named or not
+    off            deny every spawn, named or not, as the stance says; the lifecycle denies
+                   first and never invokes this hook, so this branch decides only a direct run
 
 The band workers exist because the `Agent` tool has no effort input: a spawn that names nothing
 inherits the session's effort, and only an agent definition can carry the posture's. So a spawn
@@ -370,8 +371,8 @@ def main():
     variant = posture.selected("delegation", DEFAULT_STANCE, strict=False) if posture else DEFAULT_STANCE
     if variant == "off":
         emit({
-            "permissionDecision": "ask",
-            "permissionDecisionReason": f"the delegation stance is off: confirm this spawn or do the work inline ({HOOK})",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": f"Delegation is off; perform the work inline or change the selected stance. ({HOOK})",
         })
         return
     if variant != "tiered":
