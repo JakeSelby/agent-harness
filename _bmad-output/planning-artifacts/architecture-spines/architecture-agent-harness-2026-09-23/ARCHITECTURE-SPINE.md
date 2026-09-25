@@ -130,6 +130,10 @@ flowchart TB
   - `policy/hooks/posture.py` is the only resolver. Its precedence runs from the defaults, through the
     user and project layers, to the session.
   - Project configuration may select stances only.
+    *Amended 2026-09-25:* a project file now carries the whole selection document, so it may also
+    switch rules, hooks, skills, workflows and roles and name a mode (#554). Identity, permissions,
+    runtime flags, `primitive_roots` and telemetry stay user-owned, and a project file that sets one
+    is refused with a message naming the key. Invariants still sit outside every switch.
   - `bin/harness` stops resolving on its own and calls the resolver. #294 and #554 carry that
     migration, and no new code may read the ladder directly. The session hook reports stances through
     `bin/harness stances --json`, so that output keeps its shape across the migration.

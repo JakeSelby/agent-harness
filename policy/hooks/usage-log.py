@@ -188,6 +188,54 @@ def usage_path():
     return Path.home() / ".local" / "state" / "agent-harness" / "usage.jsonl"
 
 
+# The ledger grows compatibly: a change adds a field, a rename ships a fold, and nothing is
+# removed in place. Every row written from this version on names the schema it was written
+# under; a row without the key predates it and is read as version 0. Bump the version with any
+# change to what a row carries, and add a rename to FIELD_FOLDS as `old name: new name`, never
+# by rewriting old rows. See docs/usage.md, "Ledger schema".
+SCHEMA_KEY = "schema_version"
+SCHEMA_VERSION = 1
+FIELD_FOLDS = {}
+
+
+def stamped(record):
+    """A copy of `record` naming the schema this writer writes. The caller's dict is untouched."""
+    return dict(record, **{SCHEMA_KEY: SCHEMA_VERSION})
+
+
+def fold(row, folds=None):
+    """A copy of `row` with every renamed field under its current name.
+
+    A field whose current name is already present keeps that value: the row was written after
+    the rename, and the old key is only a leftover. Unknown fields pass through untouched, so a
+    row from a newer writer reads with everything it carries.
+    """
+    folds = FIELD_FOLDS if folds is None else folds
+    out = dict(row)
+    for old, new in folds.items():
+        if old in out:
+            value = out.pop(old)
+            out.setdefault(new, value)
+    return out
+
+
+def ledger_rows(text, folds=None):
+    """The rows a ledger's text holds, folded, oldest first.
+
+    A line that is not a JSON object is skipped rather than fatal, and a row is never refused
+    for a field or a schema version this reader does not know.
+    """
+    rows = []
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(fold(row, folds))
+    return rows
+
+
 def projects_dir():
     return Path.home() / ".claude" / "projects"
 
@@ -1411,8 +1459,8 @@ def upsert(record, path=None, drop=()):
     upsert alone would leave the old row beside the new one and the ledger would carry the same
     thread twice; naming the stale key is how a reclassification migrates rather than doubles.
     """
-    records = [record] if isinstance(record, dict) else list(
-        {row_key(r): r for r in record}.values())
+    records = [stamped(record)] if isinstance(record, dict) else list(
+        {row_key(r): stamped(r) for r in record}.values())
     drop = set(drop)
     if not records and not drop:
         return Path(path) if path else usage_path()
@@ -1429,12 +1477,14 @@ def upsert(record, path=None, drop=()):
             text = path.read_text(encoding="utf-8")
         except OSError:
             text = ""
+        # An existing row is kept exactly as it was written, and matched on its folded key:
+        # the rewrite replaces records, it does not migrate anyone else's.
         for line in text.splitlines():
             try:
                 row = json.loads(line)
             except Exception:
                 continue
-            if isinstance(row, dict) and row_key(row) not in replaced:
+            if isinstance(row, dict) and row_key(fold(row)) not in replaced:
                 rows.append(row)
         rows.extend(records)
         tmp = path.with_name("{}.{}.tmp".format(path.name, os.getpid()))
@@ -1509,7 +1559,7 @@ def append_row(record, path=None):
         raise RuntimeError("usage lock unavailable; the record was not appended")
     try:
         with path.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record) + "\n")
+            stream.write(json.dumps(stamped(record)) + "\n")
     finally:
         release(lock)
     return path
@@ -1539,12 +1589,8 @@ def recorded(path=None):
     except OSError:
         return {}
     out = {}
-    for line in text.splitlines():
-        try:
-            row = json.loads(line)
-        except Exception:
-            continue
-        if isinstance(row, dict) and row.get("session_id") and (row.get("kind") or "session") == "session":
+    for row in ledger_rows(text):
+        if row.get("session_id") and (row.get("kind") or "session") == "session":
             out[row["session_id"]] = row
     return out
 
@@ -1700,6 +1746,8 @@ def main(argv):
         # Role-run workers have no session of their own to end, so the detached worker that
         # records this session also sweeps the recent ones into rows.
         records = scan_all(transcript, session_id, cwd) + worker_rows(time.time() - 30 * 86400)
+        # Stamped here as well as in `upsert`, so what is offered live is what a replay reads.
+        records = [stamped(r) for r in records]
         if records:
             upsert(records)
             export(records)

@@ -94,7 +94,8 @@ def override_lines(config):
 
 def resolved_overrides(repo, config):
     module = sibling("posture")
-    if not ((module and module.overrides(os.environ)) or os.environ.get("HARNESS_PROJECT_CONFIG")):
+    if not ((module and module.overrides(os.environ)) or os.environ.get("HARNESS_PROJECT_CONFIG")
+            or os.environ.get("HARNESS_SESSION_CONFIG") or os.environ.get("HARNESS_MODE")):
         return []
     out = subprocess.run([sys.executable, str(Path(repo) / "bin" / "harness"), "stances", "--json"],
                          capture_output=True, text=True, timeout=remaining(2))
