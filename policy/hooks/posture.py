@@ -996,7 +996,7 @@ def core_refusals(document, sources, config):
     The acknowledgement is read from the user configuration only: a project, session or mode file
     cannot carry it, so no file a repository ships can turn enforcement off on its own authority.
     """
-    if (config or {}).get(CORE_ACK) is True:
+    if isinstance(config, dict) and config.get(CORE_ACK) is True:
         return []
     hooks = document.get("hooks") or {}
     return [(sources.get("hooks") or {}).get(unit, "a layer") + " switches the core hook " + unit +

@@ -212,6 +212,16 @@ class CoreAcknowledgement(Fixture):
         with self.assertRaisesRegex(ValueError, posture.CORE_ACK):
             self.selection(HARNESS_PROJECT_CONFIG={posture.CORE_ACK: True, "hooks": {"grade-bash": "off"}})
 
+    def test_a_user_configuration_that_is_not_an_object_carries_no_acknowledgement(self):
+        path = self.home / ".config" / "agent-harness" / "config.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("[1]")
+        self.assertEqual(self.selection()["hooks"]["grade-bash"], "on")
+        with self.assertRaisesRegex(ValueError, "core hook grade-bash off"):
+            self.selection(HARNESS_PROJECT_CONFIG={"hooks": {"grade-bash": "off"}})
+        resolved = self.selection(strict=False, HARNESS_PROJECT_CONFIG={"hooks": {"grade-bash": "off"}})
+        self.assertEqual(resolved["hooks"]["grade-bash"], "on")
+
     def test_a_hook_that_is_not_core_needs_no_acknowledgement(self):
         self.configure({"validate-plan-card": "off"}, acknowledged=False)
         self.assertEqual(self.selection()["hooks"]["validate-plan-card"], "off")
