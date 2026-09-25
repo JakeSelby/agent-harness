@@ -1557,14 +1557,27 @@ def harness_post_notice(text):
 
     The coordinator's PostToolUse entry leaves no decision-log row for a plain Write; what it
     leaves is the additional context its tool-output scanner returns, which the client keeps in
-    the session's own transcript. That line is the harness entry firing in the turn.
+    the session's own transcript. That line is the harness entry firing in the turn. It is read
+    only from the client's hook-context record for a Write, so a prompt, a tool result or a reply
+    that quotes the notice does not count.
     """
-    unescaped = text.replace('\\"', '"')
-    start = unescaped.find(HARNESS_NOTICE)
-    if start < 0:
-        return ""
-    end = unescaped.find("]", start)
-    return unescaped[start:end + 1] if end > start else unescaped[start:start + 200]
+    for line in text.splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        attachment = record.get("attachment") if isinstance(record, dict) else None
+        if (record.get("type") != "attachment" or not isinstance(attachment, dict)
+                or attachment.get("type") != "hook_additional_context"
+                or attachment.get("hookName") != "PostToolUse:Write"):
+            continue
+        content = attachment.get("content")
+        for item in content if isinstance(content, list) else [content]:
+            start = item.find(HARNESS_NOTICE) if isinstance(item, str) else -1
+            if start >= 0:
+                end = item.find("]", start)
+                return item[start:end + 1] if end > start else item[start:start + 200]
+    return ""
 
 
 def gate_verdicts(home, session_id):

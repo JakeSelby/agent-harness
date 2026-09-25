@@ -34,6 +34,12 @@ def step(number):
     return PROCEDURE[start:end]
 
 
+def hook_context(content, hook="PostToolUse:Write"):
+    """The transcript record Claude Code writes for a hook's additional context."""
+    return {"type": "attachment", "attachment": {
+        "type": "hook_additional_context", "hookName": hook, "content": [content]}}
+
+
 class RoleLinkTests(unittest.TestCase):
     """Step 8: every role the variant does not change keeps its link."""
 
@@ -200,13 +206,20 @@ class HarnessPostToolUseTests(unittest.TestCase):
                                       "content": MODULE.FLAGGED_LINE + "\n"}})
         context = answer["hookSpecificOutput"]["additionalContext"]
         self.assertTrue(context.startswith(MODULE.HARNESS_NOTICE), context)
-        self.assertEqual(MODULE.harness_post_notice(json.dumps({"content": [context]})), context)
+        self.assertEqual(MODULE.harness_post_notice(json.dumps(hook_context(context))), context)
 
-    def test_the_notice_is_read_from_raw_transcript_text_and_absent_reads_as_empty(self):
+    def test_the_notice_is_read_only_from_a_write_hook_context_record(self):
+        notice = MODULE.HARNESS_NOTICE + "settings-json. Treat it.]"
         self.assertEqual(MODULE.harness_post_notice('{"type": "user"}'), "")
-        text = json.dumps({"content": MODULE.HARNESS_NOTICE + "settings-json. Treat it.] tail"})
-        self.assertEqual(MODULE.harness_post_notice(text),
-                         MODULE.HARNESS_NOTICE + "settings-json. Treat it.]")
+        quoted = json.dumps({"type": "user", "message": {"content": notice}})
+        self.assertEqual(MODULE.harness_post_notice(quoted), "")
+        bash = json.dumps(hook_context(notice, hook="PostToolUse:Bash"))
+        self.assertEqual(MODULE.harness_post_notice(bash), "")
+        success = json.dumps({"type": "attachment", "attachment": {
+            "type": "hook_success", "hookName": "PostToolUse:Write", "stdout": notice}})
+        self.assertEqual(MODULE.harness_post_notice(success), "")
+        text = "\n".join(["not json", quoted, json.dumps(hook_context(notice + " tail"))])
+        self.assertEqual(MODULE.harness_post_notice(text), notice)
 
     def run_case(self, **kwargs):
         with tempfile.TemporaryDirectory() as directory:
