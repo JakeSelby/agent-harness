@@ -210,6 +210,114 @@ def marker_role(prompt):
     return None
 
 
+# A workflow script's `agent()` calls never reach the `Agent` hooks, so the launch is the one call
+# the harness sees (docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md). The script
+# is JavaScript: a role is named as a quoted `agentType` value, and a brief's `harness-role:` line
+# usually sits inside a string literal, bounded by a quote or a `\n` escape rather than a newline.
+WORKFLOW_POINT = "workflow-launch"
+WORKFLOW_AGENT_TYPE = re.compile(r"\bagentType\b")
+WORKFLOW_AGENT_VALUE = re.compile(r"""['"]?\s*[:=]\s*(['"`])([^'"`\\\n]*)\1""")
+WORKFLOW_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+WORKFLOW_LITERAL = re.compile(r"""(['"`])([a-z][a-z0-9-]*)\1""")
+WORKFLOW_MARKER = re.compile(r"""(?:^|\\n|['"`])[ \t]*harness-role:[ \t]*([a-z][a-z0-9-]*)[ \t]*"""
+                             r"""(?=$|\\n|\\r|['"`])""", re.M)
+WORKFLOW_SCRIPT_MAX = 1024 * 1024
+
+
+def workflow_script(event):
+    """The text a `Workflow` launch will run, or None when this hook cannot read it.
+
+    The runtime takes `scriptPath` over `script` over `name`; a name resolves to a file under a
+    `.claude/workflows/` directory, project first. A built-in workflow and a resume by run id
+    carry no text here: the first is the runtime's own script, and the second re-runs one whose
+    launch this hook already judged.
+    """
+    inputs = event.get("tool_input") or {}
+    cwd = Path(event.get("cwd") or os.getcwd())
+    candidates = []
+    if isinstance(inputs.get("scriptPath"), str) and inputs["scriptPath"]:
+        candidates.append(cwd / Path(inputs["scriptPath"]).expanduser())
+    elif isinstance(inputs.get("script"), str):
+        return inputs["script"]
+    elif isinstance(inputs.get("name"), str) and WORKFLOW_NAME.fullmatch(inputs["name"]):
+        for base in (cwd, Path(os.environ.get("HOME") or Path.home())):
+            for suffix in (".js", ".mjs", ".ts"):
+                candidates.append(base / ".claude" / "workflows" / (inputs["name"] + suffix))
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                with open(str(candidate), encoding="utf-8", errors="replace") as stream:
+                    return stream.read(WORKFLOW_SCRIPT_MAX)
+        except OSError:
+            continue
+    return None
+
+
+def workflow_role(script):
+    """`(name, fields, how)` for the first constrained role a workflow script names, else None.
+
+    A quoted `agentType` value is read directly. Any other mention of `agentType` — a computed
+    value, a shorthand property — cannot be, so then any whole string literal naming a
+    constrained role counts: a script that picks its agent type at run time from a list holding
+    `'reviewer'` names that role as surely as one that writes it inline. That errs towards
+    refusing, as `constrained_role` does for a contract it cannot load. A marker is matched as `marker_role` matches one, a standalone
+    declaration naming a constrained shared role.
+    """
+    if not isinstance(script, str):
+        return None
+    computed = False
+    for mention in WORKFLOW_AGENT_TYPE.finditer(script):
+        match = WORKFLOW_AGENT_VALUE.match(script, mention.end())
+        if match is None:
+            computed = True
+            continue
+        fields = constrained_role(match.group(2))
+        if fields is not None:
+            return match.group(2), fields, "names `" + match.group(2) + "` in agentType"
+    for name in WORKFLOW_MARKER.findall(script):
+        fields = constrained_role(name)
+        if fields is not None:
+            return name, fields, "carries a `harness-role: " + name + "` marker"
+    if computed:
+        for match in WORKFLOW_LITERAL.finditer(script):
+            fields = constrained_role(match.group(2))
+            if fields is not None:
+                return (match.group(2), fields, "computes agentType and names `" + match.group(2)
+                        + "` in a string literal")
+    return None
+
+
+def workflow_results(runtime, event):
+    """The answers to a `Workflow` launch, with its decision row written.
+
+    Every launch is a row, allowed ones included, because a launch is a batch of spawns no other
+    row accounts for. The row's input is the script as judged, or the tool input when the script
+    could not be read.
+    """
+    results = []
+    script = workflow_script(event)
+    if selected("delegation", "tiered") == "off":
+        results.append({"hookSpecificOutput": {"permissionDecision": "deny",
+            "permissionDecisionReason": "Delegation is off, and every agent() call in a workflow "
+            "script is a spawn; perform the work inline or change the selected stance."}})
+    else:
+        named = workflow_role(script)
+        if named is not None:
+            results.append(role_deny(runtime, named[0], named[1],
+                                     "This workflow script " + named[2] + ", and a script's "
+                                     "agent() calls run in session, past every spawn guard."))
+    if not results and investigating(runtime, event) and plan_allowed_tool("Workflow"):
+        results.append({"hookSpecificOutput": {"permissionDecision": "allow",
+            "permissionDecisionReason": "Plan-mode research tool named by plan_allow_tools, "
+            "run at the permission posture you selected."}})
+    module = decisions()
+    if module is not None:
+        denied = any(r["hookSpecificOutput"].get("permissionDecision") == "deny" for r in results)
+        text = script if script is not None else json.dumps(event.get("tool_input") or {}, sort_keys=True)
+        module.record(WORKFLOW_POINT, "deny" if denied else "allow", text, event, runtime)
+    return results
+
+
 def framework_deny(runtime, session_id, prompt, subagent_type):
     """The refusal a declared integration's spawn gets, or None when this call is not one.
 
@@ -540,6 +648,8 @@ def dispatch(runtime, payload):
                 if runtime == "claude-code":
                     results.append(invoke("tier-agent-spawns", event))
                 results.append(invoke("brief-guard", event))
+        elif tool == "Workflow":
+            results.extend(workflow_results(runtime, event))
         elif tool == "WebFetch":
             results.append(invoke("allow-plan-webfetch", event))
         elif investigating(runtime, event) and plan_allowed_tool(tool):

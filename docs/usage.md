@@ -390,6 +390,7 @@ one field that holds prose is [the completion claim](#the-completion-claim), whi
 | `tier-agent-spawns` | the band worker an unnamed spawn was routed to | not labelled yet |
 | `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
 | `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
+| `workflow-launch` | `allow` or `deny`, on every `Workflow` tool launch | not labelled yet |
 
 An approved Bash command is not *graded*. The harness answers the permission question on a small
 minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a

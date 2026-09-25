@@ -861,7 +861,8 @@ private logs. A planner returns content, and the harness validates it and publis
 #### FR-41: Confinement however the spawn is named
 A constrained role's work must be refused as a native spawn, whatever name the spawn carries. This includes
 framework review layers. **Status:** partial: implemented (0.11.1, spawn guards); the session-level signal
-is unreleased (#585). The Workflow tool still bypasses it (#576, v0.14.0).
+is unreleased (#585). The Workflow tool's launch is guarded (#576, unreleased); a script's `agent()` calls
+are still not band-routed.
 
 **Consequences (testable):**
 - While a routed review is in flight, an unnamed spawn carrying review work is refused.
