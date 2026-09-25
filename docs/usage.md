@@ -69,7 +69,9 @@ opening a second one. A record with neither id is unknown rather than a duplicat
 deduplicated at all — it is summed as written, and `idless_records` counts how many such records
 the row's totals include, the session's own and those of the subagent files folded into them.
 A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls, less
-any a hook refused: a call whose result is an error and which left no subagent transcript.
+any a hook refused: a call whose result is an error and which left no subagent transcript. A
+session file holding sidechain lines is the older format, where a spawn that ran has no file of
+its own, so there every call is counted.
 
 `raw_vs_deduped` is **the measured size of that inflation**: the per-line sum of the four token
 fields over the deduplicated total the row carries, across the same records — the session's own

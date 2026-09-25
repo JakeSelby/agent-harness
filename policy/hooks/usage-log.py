@@ -898,8 +898,11 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     idless = 0
     models, agent_calls, seen, requested = [], set(), set(), {}
     # `Agent` calls whose result came back as an error: a spawn a hook refused, or one that
-    # failed after it ran. `refused_spawns` tells the two apart when the row is counted.
+    # failed after it ran. `refused_spawns` tells the two apart when the row is counted, but
+    # only by subagent files: a session file holding sidechain lines is the older format, where
+    # a spawn that ran and failed has no file either, so there every errored call stays counted.
     errored_calls = set()
+    legacy_sidechains = False
     briefs = {}
     started = ended = branch = ""
     turns = 0
@@ -929,6 +932,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             # turns into this one as sidechain lines. They are that agent's work, so they make
             # no event here; their tokens were spent by this session and are summed as ever.
             sidechain = bool(entry.get("isSidechain"))
+            legacy_sidechains = legacy_sidechains or sidechain
             stamp = entry.get("timestamp") or ""
             if stamp:
                 started = stamp if not started or stamp < started else started
@@ -1076,7 +1080,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     for name, _ in CACHE_TIERS:
         if name in totals:
             record[name] = totals[name]
-    record["subagents"] = max(len(agents), len(agent_calls - refused_spawns(agents, errored_calls)))
+    refused = set() if legacy_sidechains else refused_spawns(agents, errored_calls)
+    record["subagents"] = max(len(agents), len(agent_calls - refused))
     record["turns"] = turns
     # Every record these totals include that nothing identified — neither a message id nor a
     # request id — this session's own and those of the subagent files folded into it, since

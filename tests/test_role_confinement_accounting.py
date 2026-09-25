@@ -151,6 +151,14 @@ class RefusedSpawnCount(unittest.TestCase):
                    result("tu-a", "2026-09-25T10:00:09.000Z", False, "DONE")]
         self.assertEqual(self.session(entries)["subagents"], 1)
 
+    def test_a_spawn_that_ran_as_sidechain_lines_and_failed_is_still_counted(self):
+        """Older Claude Code: the subagent's turns are sidechain lines here, and it has no file."""
+        work = assistant("sub-1", "2026-09-25T10:00:05.000Z", [])
+        work["isSidechain"] = True
+        entries = [assistant("m1", "2026-09-25T10:00:01.000Z", [spawn_call("tu-a")]), work,
+                   result("tu-a", "2026-09-25T10:00:09.000Z", True, "interrupted")]
+        self.assertEqual(self.session(entries)["subagents"], 1)
+
     def test_the_helper_leaves_a_call_a_subagent_row_names(self):
         agents = [{"tool_use_id": "tu-a"}, {"tool_use_id": ""}]
         self.assertEqual(usage_log.refused_spawns(agents, {"tu-a", "tu-b"}), {"tu-b"})
