@@ -6449,6 +6449,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B101",
+      "github_number": 817,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/817",
+      "title": "fix(remote-control): files an agent sends cannot be opened from the app",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B101.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C076",
       "github_number": 818,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/818",
