@@ -295,6 +295,14 @@ development_status:
   ah-s211-ledger-rows-carry-a-schema-version-and-readers: ready-for-dev
   ah-s212-remote-control-pin-the-verified-client-versions: ready-for-dev
 
+  ah-e018-cut-cache-rebuild-spend-in-long-interactive: in-progress
+  ah-c067-reserve-ids-and-write-story-files-for-the-cache: ready-for-dev
+  ah-s227-harness-usage-by-rebuild-attribute-cache: ready-for-dev
+  ah-s228-refresh-the-handoff-at-task-boundaries-in-land: ready-for-dev
+  ah-s229-cold-resume-guard-hold-one-prompt-after-a-long: ready-for-dev
+  ah-sp010-spike-does-a-userpromptsubmit-block-hold-the: ready-for-dev
+  ah-sp011-spike-one-week-trial-of-an-earlier-auto-compact: ready-for-dev
+
   ah-e019-adopt-bmad-s-native-ticketing-once-upstream-s: in-progress
   ah-c073-record-the-bmad-ticketing-adoption-epic-and-its: done
 
