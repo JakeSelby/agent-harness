@@ -141,6 +141,14 @@ flowchart TB
   - For modes, a developer's explicit choice shadows a mode key, while a value `harness init` wrote as a
     default does not. The resolver must therefore be able to tell the two apart. #557 picks the
     mechanism within that constraint.
+    *Amended 2026-09-25, proposed and awaiting the owner's confirmation:* #557 proposes that
+    `config.json` list the stances `harness init` wrote as defaults under
+    `init_defaults: {"stances": [...]}`, and that those resolve in a new `init` layer between the
+    defaults and the mode. `harness init --yes` and a `config set` that creates the file mark every
+    stance, interactive init marks the answers Enter accepted, and `harness config set stances.NAME`
+    removes that name, making it typed again. A config written before this change has no
+    `init_defaults`, so every stance in it stays typed and shadows a mode. This adds a key to the
+    user config schema and a layer to the precedence, so it stands only once the owner confirms it.
   - Invariants sit outside every switch.
 
 ### AD-3: Reversible configuration ownership [ADOPTED]
