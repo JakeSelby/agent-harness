@@ -373,6 +373,7 @@ development_status:
   ah-b094-harness-worktree-remove-cannot-remove-a-worktree: done
   ah-b098-grade-bash-timing-test-fails-on-wall-clock-under: done
   ah-b099-fix-output-style-scannable-drops-claude-code-s: ready-for-dev
+  ah-b100-close-out-files-follow-ups-after-it-lands-so-the: ready-for-dev
   ah-b101-fix-remote-control-files-an-agent-sends-cannot: ready-for-dev
   ah-b102-sync-misreads-an-aliased-stance-link-as-a-user: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done

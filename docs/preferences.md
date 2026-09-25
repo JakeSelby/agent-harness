@@ -112,6 +112,14 @@ Select one with `harness config set stances.cost frugal`, or for a single sessio
 primitive root, `extends` a shipped variant and change only the cells you care about;
 [primitive-authoring.md](primitive-authoring.md) has the worked example and the schema.
 
+Compaction is the one place a variant overrides an always-loaded rule. `cache-hygiene.md` says
+to start a fresh session rather than compact, unless the selected `cost` stance allows compaction;
+the variant's `compaction` switch is what decides. Under `max` (`compact-allowed`) a compaction
+is the stance working, so the `cache-hygiene/compact` detector does not count it there, and it
+still counts one under `frugal`, `balanced`, `off` or no selection, where the rule stands. A
+session override (`HARNESS_STANCE_COST=max`) lifts the rule for that session only; `harness sync`
+never writes it into the user configuration or the global projections.
+
 Two things a variant never wins against. A `role_bindings.<runtime>.<role>` entry in your config
 always beats the row, because you named the role yourself. And a role whose contract says
 `posture: fixed` — the verifiers — ignores a variant's class and effort entirely and takes only
