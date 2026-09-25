@@ -446,9 +446,16 @@ _VOICE_ON = ("voice", None)  # the shape is the stance's; `off` imposes none
 _VOICE_CONCISE = ("voice", ("concise",))  # shapes only the `concise` voice forbids
 _COMMITS_ATTRIBUTED = ("commits", ("conventional-attributed",))
 
+# A cost variant whose `compaction` switch is `compact-allowed` lifts `cache-hygiene.md`'s "not
+# compaction", so a compaction there is the stance working, not a miss. Frozen here because
+# this module reads no file at runtime; a test holds it equal to the shipped sidecars.
+COMPACTION_ALLOWED = frozenset(("max",))
+_GATES = {"cache-hygiene/compact": lambda stances: stances.get("cost") not in COMPACTION_ALLOWED}
+
 # The six the engine ships, re-registered under this file's `Detector` so every entry in the
 # registry answers to the same field names. The functions are the wheel's, not a second copy.
-_GENERIC = [Detector(d.id, d.rule, d.event, d.fn, d.gate) for d in generic.DETECTORS]
+_GENERIC = [Detector(d.id, d.rule, d.event, d.fn, _GATES.get(d.id, d.gate))
+            for d in generic.DETECTORS]
 
 _REGISTRY = _GENERIC + [
     Detector("transcript-hygiene/model-wrote-no-cap", "transcript-hygiene", "agent-brief",

@@ -4,7 +4,7 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "bug": 100,
+    "bug": 103,
     "chore": 78,
     "decision": 14,
     "epic": 20,
@@ -6085,6 +6085,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S231",
+      "github_number": 785,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/785",
+      "title": "Adopt CodeRabbit review and clear review-bot threads before merge",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S231.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C074",
       "github_number": 787,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/787",
@@ -6371,19 +6384,6 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-S231",
-      "github_number": 785,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/785",
-      "title": "Adopt CodeRabbit review and clear review-bot threads before merge",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S231.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
       "bmad_id": "AH-B099",
       "github_number": 810,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/810",
@@ -6430,6 +6430,19 @@
       "type": "spike",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-SP014.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B100",
+      "github_number": 816,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/816",
+      "title": "/close-out files follow-ups after it lands, so the filing's own changes never merge",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B100.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
@@ -6534,6 +6547,19 @@
       "type": "spike",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-SP015.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B102",
+      "github_number": 828,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/828",
+      "title": "sync misreads an aliased stance link as a user redirect when the variant changes",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B102.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
