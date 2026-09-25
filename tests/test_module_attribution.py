@@ -120,15 +120,26 @@ class ContextAttributionTests(Home):
         self.assertEqual(kinds, sorted(SWITCHES))
 
     def test_one_module_switched_off_changes_only_its_entry_and_the_fingerprint(self):
-        base, print_base = self.attribution()["modules"], self.fingerprint()
+        # Every unit starts explicitly on, so a hook, which keeps no resident text, still shows
+        # its switch in the fingerprint.
+        seeded = {kind: {unit: "on"} for kind, (unit, _) in SWITCHES.items()}
+        env = self.selected(seeded)
+        base, print_base = self.attribution(env)["modules"], self.fingerprint(env)
         for kind, (unit, entry) in sorted(SWITCHES.items()):
             with self.subTest(kind=kind):
-                env = self.selected({kind: {unit: "off"}})
+                env = self.selected(dict(seeded, **{kind: {unit: "off"}}))
                 after = self.attribution(env)["modules"]
                 expected = {k: v for k, v in base.items() if k != entry}
                 self.assertEqual(after, expected)
-                if entry is not None:
-                    self.assertNotEqual(self.fingerprint(env), print_base)
+                self.assertNotEqual(self.fingerprint(env), print_base)
+
+    def test_a_folded_description_is_attributed_every_line(self):
+        skill = self.root / "primitives" / "skills" / "zeta" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nname: zeta\ndescription: >\n  " + "z" * 20 + "\n  " + "y" * 21
+                         + "\nother: value\n---\n" + "body " * 100, encoding="utf-8")
+        # "zeta: " plus both lines joined by a space: 6 + 20 + 1 + 21 = 48 characters.
+        self.assertEqual(self.attribution()["modules"]["skills/zeta"], 12)
 
     def test_a_stance_variant_changes_only_its_entry_and_the_fingerprint(self):
         base, env = self.attribution()["modules"], dict(self.env, HARNESS_STANCE_COST="lean")

@@ -1188,6 +1188,29 @@ ATTRIBUTION_METHOD = ("chars/4 of resident text: a rule or stance variant whole;
 LISTED_KINDS = ("skills", "roles", "workflows")
 
 
+def _listed_description(path):
+    """The frontmatter `description` a session lists, folded and literal continuation lines
+    included, read the way `scripts/cost_bench.py` counts it for the static tier."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return ""
+    if not lines or lines[0].strip() != "---":
+        return ""
+    out, taking = [], False
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("description:"):
+            out.append(line.split(":", 1)[1].strip())
+            taking = True
+        elif taking and line[:1] in (" ", "\t"):
+            out.append(line.strip())
+        else:
+            taking = False
+    return " ".join(part for part in out if part and part not in (">", "|", ">-", "|-", ">+", "|+"))
+
+
 def _resident_text(kind, entry, unit, value, config, root=None):
     """The text one unit keeps resident, from the first primitive root holding it, or None."""
     directory, pattern = entry.get("directory"), entry.get("pattern")
@@ -1203,8 +1226,7 @@ def _resident_text(kind, entry, unit, value, config, root=None):
         if not path.is_file():
             continue
         if kind in LISTED_KINDS:
-            fields = _frontmatter(path)
-            return (fields.get("name") or unit) + ": " + fields.get("description", "")
+            return (_frontmatter(path).get("name") or unit) + ": " + _listed_description(path)
         try:
             return path.read_text(encoding="utf-8")
         except (OSError, ValueError):
