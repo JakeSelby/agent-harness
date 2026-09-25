@@ -13,6 +13,7 @@
       "filter-output": {"event": "PreToolUse", "always": true},
       "plan-webfetch": {"event": "PreToolUse", "always": true},
       "tier-spawns": {"event": "PreToolUse", "always": true},
+      "stage-files": {"event": "PreToolUse", "always": true},
 
    "brief-guard": {
     "event": "PreToolUse",

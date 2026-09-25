@@ -441,6 +441,10 @@ that `harness stances` honours (#294, v0.14.0).
 - A session override never rewrites the user's global selection.
 - Every hook reads the same effective policy that `harness stances` prints.
 - Project configuration may select stances only. Identity, targets and permissions stay user-owned.
+  *Amended 2026-09-25:* a project file may carry any selection key, so it may also switch rules,
+  hooks, skills, workflows and roles and name a mode (#554, FR-15). Identity, targets, permissions,
+  runtime flags, `primitive_roots` and telemetry stay user-owned; a project file that sets one is
+  refused with a message naming the key.
 
 **Out of scope:** stances that weaken an invariant.
 
