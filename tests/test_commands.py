@@ -4,6 +4,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -232,6 +233,29 @@ class CommandContentTests(unittest.TestCase):
         body = split(COMMANDS / "close-out.md")[1]
         self.assertIn("Archive when the invocation already asked for it", body)
         self.assertIn("the checklist and wait", body)
+
+    def test_close_out_asks_once_then_lands_before_it_files(self):
+        """A filing pull request cut after the merges starts from a current default branch."""
+        body = split(COMMANDS / "close-out.md")[1]
+        steps = re.findall(r"^\d+\. \*\*(.+?)\*\*", body, re.M)
+        wanted = ("Batch the follow-ups", "Land what is ready", "File the approved follow-ups",
+                  "Archive, or stop")
+        found = [next((i for i, step in enumerate(steps) if step.startswith(w)), None) for w in wanted]
+        self.assertNotIn(None, found, msg=steps)
+        self.assertEqual(found, sorted(found), msg=steps)
+
+    def test_close_out_lands_what_its_own_filing_wrote_before_it_archives(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("When filing writes tracked files", body)
+        self.assertIn("off the updated default branch", body)
+        self.assertIn("every pull request step 4 opened has merged", body)
+
+    def test_close_out_asks_once_for_the_follow_ups_and_the_merges(self):
+        body = split(COMMANDS / "close-out.md")[1]
+        self.assertIn("then ask once", body)
+        self.assertIn("any step 4 would open and then merge", body)
+        self.assertIn("Step 2's go-ahead is the one it asks for", body)
+        self.assertIn("go-ahead covers filing them and landing what they", body)
 
     def test_ownership_records_the_commands_directory(self):
         ownership = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
