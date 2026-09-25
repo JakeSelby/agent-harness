@@ -512,6 +512,15 @@ bin/harness usage --by decision        # counts, outcome rates and the unlabelle
 The **unlabelled share** is the column to read first: an outcome rate over the two decisions
 that happened to be labelled is not evidence about the point.
 
+An `intent-overlap` row is an edit the write-intent check warned on or denied, and `harness intent
+merge` writes one row per landing saying whether bringing in the base branch conflicted.
+`coordination.repeat_overlap` in `config.json` chooses whether a repeated overlap is denied
+(`deny`, the default) or only warned (`warn`); `harness intent --help` has the commands.
+
+```sh
+bin/harness usage --conflicts          # landing merge conflicts and intent overlaps per week
+```
+
 `harness decisions eval` replays the labelled rows of this file through a question pack and
 reports how closely the judgment tracked them, with a threshold fitted per decision point. What
 it measures, what it writes and what its labels do not prove are in
