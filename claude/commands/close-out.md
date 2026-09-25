@@ -31,7 +31,7 @@ question it exists to ask. Outside a repository steps 3 and 5 do not apply; say 
    branch one was waiting on, a file one holds open, a conclusion that reverses its premise.
    Sharing a group or a repository is not a dependency; where the client cannot, use the handoff.
 7. **Archive, or stop.** Archive when the invocation already asked for it, provided
-   no pull request step 4 opened is still open; otherwise end on the checklist and wait.
+   every pull request step 4 opened has merged; otherwise end on the checklist and wait.
    Never clear or compact first: archiving ends the session, so both only burn the context you
    still need. Clearing belongs to carrying on in the same session, the opposite of this workflow.
 

@@ -248,7 +248,7 @@ class CommandContentTests(unittest.TestCase):
         body = split(COMMANDS / "close-out.md")[1]
         self.assertIn("When filing writes tracked files", body)
         self.assertIn("off the updated default branch", body)
-        self.assertIn("no pull request step 4 opened is still open", body)
+        self.assertIn("every pull request step 4 opened has merged", body)
 
     def test_close_out_asks_once_for_the_follow_ups_and_the_merges(self):
         body = split(COMMANDS / "close-out.md")[1]
