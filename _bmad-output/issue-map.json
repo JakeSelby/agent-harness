@@ -4,7 +4,7 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "bug": 102,
+    "bug": 103,
     "chore": 78,
     "decision": 14,
     "epic": 20,
@@ -6547,6 +6547,19 @@
       "type": "spike",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-SP015.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B102",
+      "github_number": 828,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/828",
+      "title": "sync misreads an aliased stance link as a user redirect when the variant changes",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B102.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
