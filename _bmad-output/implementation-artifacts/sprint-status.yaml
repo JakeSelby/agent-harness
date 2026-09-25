@@ -361,7 +361,7 @@ development_status:
   ah-b082-hook-composition-proves-composition-from: done
   ah-b083-stance-switch-and-custom-stance-switch-only: done
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: done
-  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
+  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: ready-for-dev
   ah-b086-the-100-kb-grade-bash-timing-test-fails-under: done
   ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
   ah-b088-a-role-confinement-refusal-writes-no-decision: backlog
