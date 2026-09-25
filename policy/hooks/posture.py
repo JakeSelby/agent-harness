@@ -21,9 +21,13 @@ variant's JSON sidecar — switches, per-role and per-band rows, the default ban
 reads more files than a stance question needs. No number lives here: an unusable sidecar yields
 the base variant's table and a warning, never a guessed default.
 
+`fingerprint(env)` digests the resolved selection into the profile fingerprint every new ledger
+row carries; see `FINGERPRINT_KEY`.
+
 Import-cheap on purpose: no work at import, JSON reads only, because the dispatcher loads
 this on every tool call.
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -1084,6 +1088,211 @@ def selection(env=None, strict=True, config=None, root=None):
             raise ValueError("module manifest: " + "\nmodule manifest: ".join(errors))
     result["sources"] = sources
     return result
+
+
+# The profile fingerprint (AD-22, AD-23): which profile wrote a ledger row. The configuration it
+# covers is the user keys that reach the model or a hook; installer switches, remote control and
+# integrations change neither. `primitive_roots` is left out because the modules it adds are
+# hashed by content, so one profile on two machines matches. A row that predates the field is
+# unattributed, and the bare arm of a replay, which loads no harness, is `BARE_FINGERPRINT`.
+FINGERPRINT_KEY = "profile_fingerprint"
+FINGERPRINT_CONFIG_KEYS = ("identity", "permissions", "permissions_bypass_acknowledged",
+                           "plan_allow_tools", "telemetry", "governance")
+BARE_FINGERPRINT = "bare"
+_FINGERPRINTS = {}
+
+
+def _unit_files(entry, unit, value, config, root=None):
+    """`[(label, path)]` for the files one unit's content is, across every primitive root.
+
+    The label is the root's position and the path inside it, so a checkout's own location never
+    reaches the digest. A skill is its whole directory; a stance is its selected variant and the
+    sidecar beside it; any other kind is its one file.
+    """
+    directory, pattern = entry.get("directory"), entry.get("pattern")
+    if not directory or not pattern or not _identifier(unit):
+        return []
+    files = []
+    for index, source in enumerate(primitive_roots(config, root, directory)):
+        if pattern == "*/*.md":
+            if not _identifier(value):
+                continue
+            found = [source / unit / (value + suffix) for suffix in (".md", ".json")]
+        elif "/" in pattern:
+            base = source / unit
+            found = sorted(path for path in base.rglob("*") if path.is_file() and not any(
+                part.startswith(".") or part == "__pycache__" for part in path.relative_to(base).parts)) \
+                if base.is_dir() else []
+        else:
+            found = [source / pattern.replace("*", unit)]
+        files += [(str(index) + "/" + path.relative_to(source).as_posix(), path)
+                  for path in found if path.is_file()]
+    return files
+
+
+def _content_digest(files):
+    """The sha256 of the labelled files' bytes, or None when the unit has no file anywhere."""
+    if not files:
+        return None
+    digest = hashlib.sha256()
+    for label, path in files:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = b"\0unreadable"
+        digest.update(label.encode("utf-8") + b"\0" + str(len(data)).encode("ascii") + b"\0" + data)
+    return digest.hexdigest()
+
+
+def _version(root=None):
+    try:
+        return ((root or ROOT) / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def profile(env=None, config=None, root=None):
+    """The document the profile fingerprint digests, resolved non-strict from the one ladder.
+
+    Every switched-on module with its content digest, every stance with its variant and that
+    variant's digest, the configuration values `FINGERPRINT_CONFIG_KEYS` names, and the harness
+    version. A switched-off module is absent, as it is from the session. A mode is not named:
+    what it selects is.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, False) if config is None else config
+    document = selection(env, strict=False, config=config, root=root)
+    modules, stances = {}, {}
+    for kind, entry in selection_kinds(root).items():
+        units = document.get(kind) or {}
+        if entry.get("value") == "switch":
+            on = {unit: _content_digest(_unit_files(entry, unit, None, config, root))
+                  for unit, value in units.items() if value == "on"}
+            if on:
+                modules[kind] = on
+        else:
+            stances.update({unit: {"variant": value,
+                                   "digest": _content_digest(_unit_files(entry, unit, value, config, root))}
+                            for unit, value in units.items() if value})
+    settings = config if isinstance(config, dict) else {}
+    return {"harness_version": _version(root), "modules": modules, "stances": stances,
+            "config": {key: settings[key] for key in FINGERPRINT_CONFIG_KEYS if key in settings}}
+
+
+def _file_state(path):
+    """`(mtime_ns, size)` of a file, or None when it cannot be read: the fingerprint cache's key."""
+    try:
+        state = path.stat()
+    except OSError:
+        return None
+    return (state.st_mtime_ns, state.st_size)
+
+
+def fingerprint(env=None, config=None, root=None):
+    """The profile fingerprint: the sha256 of `profile()` as canonical JSON. See `FINGERPRINT_KEY`.
+
+    Identical inputs give one fingerprint on every run and machine, and any module, stance or
+    setting that differs gives another. Remembered per process for one environment and one state
+    of the configuration files, since a hook stamps it on each row it writes: rewriting the user
+    configuration or a named selection file gives a fresh digest. A module edited under a running
+    process is not seen until the next one, which is where the checkout's edits land.
+    """
+    env = os.environ if env is None else env
+    files = [config_path(env)] + [Path(env[name]).expanduser() for name in
+                                  ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG") if env.get(name)]
+    key = (str(root or ROOT), tuple(sorted((name, value) for name, value in env.items()
+                                           if name in ("HOME", "HARNESS_HOME", MODE_VARIABLE,
+                                                       "HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG")
+                                           or name.startswith(PREFIX))),
+           tuple(_file_state(path) for path in files))
+    if config is None and key in _FINGERPRINTS:
+        return _FINGERPRINTS[key]
+    text = json.dumps(profile(env, config, root), sort_keys=True, separators=(",", ":"))
+    value = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if config is None:
+        _FINGERPRINTS[key] = value
+    return value
+
+
+# Per-module attribution of context tokens (AD-23). Context is shared, so what each module put
+# there is estimated, never measured, and carries AD-12's soft-estimate label and its method.
+# The estimate is of resident text only: what is loaded before the first prompt. A listed kind
+# is resident as its listing entry, its name and description, and its body loads on demand; a
+# hook's context arrives per event at run time and is not estimated here.
+ATTRIBUTION_KEY = "context_attribution"
+SOFT_ESTIMATE = "soft estimate"
+CHARS_PER_TOKEN = 4.0
+ATTRIBUTION_METHOD = ("chars/4 of resident text: a rule or stance variant whole; a skill, role or "
+                      "workflow its name and description")
+LISTED_KINDS = ("skills", "roles", "workflows")
+
+
+def _listed_description(path):
+    """The frontmatter `description` a session lists, folded and literal continuation lines
+    included, read the way `scripts/cost_bench.py` counts it for the static tier."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        return ""
+    if not lines or lines[0].strip() != "---":
+        return ""
+    out, taking = [], False
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line.startswith("description:"):
+            out.append(line.split(":", 1)[1].strip())
+            taking = True
+        elif taking and line[:1] in (" ", "\t"):
+            out.append(line.strip())
+        else:
+            taking = False
+    return " ".join(part for part in out if part and part not in (">", "|", ">-", "|-", ">+", "|+"))
+
+
+def _resident_text(kind, entry, unit, value, config, root=None):
+    """The text one unit keeps resident, from the first primitive root holding it, or None."""
+    directory, pattern = entry.get("directory"), entry.get("pattern")
+    if not directory or not pattern or not _identifier(unit):
+        return None
+    if pattern == "*/*.md" and not _identifier(value):
+        return None
+    for source in primitive_roots(config, root, directory):
+        if pattern == "*/*.md":
+            path = source / unit / (value + ".md")
+        else:
+            path = source / pattern.replace("*", unit)
+        if not path.is_file():
+            continue
+        if kind in LISTED_KINDS:
+            return (_frontmatter(path).get("name") or unit) + ": " + _listed_description(path)
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def context_attribution(env=None, config=None, root=None):
+    """`{"estimand", "method", "modules": {"kind/unit": tokens}}` for the selection in force.
+
+    Resolved non-strict from the ladder `profile()` reads, so one module switched off removes
+    that module's entry and changes no other. Every switched-on module and every stance with
+    resident text has an entry; a unit installed nowhere, and a hook, has none.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, False) if config is None else config
+    document = selection(env, strict=False, config=config, root=root)
+    modules = {}
+    for kind, entry in selection_kinds(root).items():
+        switch = entry.get("value") == "switch"
+        for unit, value in sorted((document.get(kind) or {}).items()):
+            if (switch and value != "on") or not value:
+                continue
+            text = _resident_text(kind, entry, unit, None if switch else value, config, root)
+            if text is not None:
+                modules[kind + "/" + unit] = int(round(len(text) / CHARS_PER_TOKEN))
+    return {"estimand": SOFT_ESTIMATE, "method": ATTRIBUTION_METHOD, "modules": modules}
 
 
 def resolve(env=None, strict=True, table=False):
