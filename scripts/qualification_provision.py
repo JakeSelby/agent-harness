@@ -86,7 +86,11 @@ def clone(out, commit):
         raise SystemExit("the clone is at %s, not the commit asked for" % at)
     (target / CLONE_MARKER).write_text(commit + "\n")
     exclude_marker(target)
-    if git("status", "--porcelain", repo=target).stdout.strip():
+    status = git("status", "--porcelain", repo=target)
+    if status.returncode:
+        raise SystemExit("could not check whether the clone at %s is clean: %s"
+                         % (target, status.stderr.strip()[-300:]))
+    if status.stdout.strip():
         raise SystemExit("the clone at %s is not clean, and the runner inside it refuses a dirty "
                          "checkout" % target)
     return target
