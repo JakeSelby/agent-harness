@@ -9,7 +9,7 @@
     "decision": 14,
     "epic": 20,
     "spike": 16,
-    "story": 265,
+    "story": 266,
     "task": 35
   },
   "items": [
@@ -6436,6 +6436,32 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B100",
+      "github_number": 816,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/816",
+      "title": "/close-out files follow-ups after it lands, so the filing's own changes never merge",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B100.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B101",
+      "github_number": 817,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/817",
+      "title": "fix(remote-control): files an agent sends cannot be opened from the app",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B101.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C076",
       "github_number": 818,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/818",
@@ -6547,6 +6573,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B102.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S265",
+      "github_number": 844,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/844",
+      "title": "Grant agents a standing go-ahead to merge pull requests that clear CodeRabbit review",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S265.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
