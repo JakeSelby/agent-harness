@@ -339,6 +339,21 @@ def arm_profile(arm, env, opts):
         return None
 
 
+def arm_attribution(arm, env, opts):
+    """The per-module context tokens a row of this arm carries, resolved as `arm_profile` resolves
+    the arm's fingerprint: a soft estimate with its method, and no module at all for the bare arm.
+    None when it cannot be resolved."""
+    try:
+        module = catalog.posture_module(ROOT)
+        if arm == "bare":
+            return {"estimand": module.SOFT_ESTIMATE, "method": module.ATTRIBUTION_METHOD, "modules": {}}
+        home = opts.get("home")
+        return module.context_attribution(dict(env, HOME=str(home)) if home else env,
+                                          root=Path(opts.get("profile_root") or opts.get("harness_source") or ROOT))
+    except Exception:
+        return None
+
+
 def arm_admits(arm, opts):
     """What one arm's fence admits beyond its own profile: for the harness arm on a pinned tag, the
     checkout its profile's links lead to. The bare arm is admitted to no harness content ever."""
@@ -1176,6 +1191,7 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
                arm_config_dir=config_label(config, opts.get("home")),
                arm_fingerprint=config_fingerprint(config, opts.get("home")),
                fingerprint_source="launch", profile_fingerprint=arm_profile(arm, env, opts),
+               context_attribution=arm_attribution(arm, env, opts),
                **{kind: None for kind in TOKEN_KINDS})
     workdir = Path(tempfile.mkdtemp(prefix="cost-replay-", dir=opts.get("tmp"))) / "repo"
     reason = unsafe_workdir(workdir, opts["home"])
