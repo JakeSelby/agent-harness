@@ -57,7 +57,8 @@ def judge(event, intents, env=None):
         return None
     first = found[0]
     variant = intents.overlap_variant(env)
-    answer = intents.answer_for(intents.hit(session, first[2], env), variant)
+    worktree = (intents.repository(path) or {}).get("root", "")
+    answer = intents.answer_for(intents.hit(session, worktree, first[2], env), variant)
     intents.log_overlap(answer, first, str(event.get("tool_name")), session, variant,
                         os.environ.get("HARNESS_RUNTIME", ""))
     what = intents.describe(first)

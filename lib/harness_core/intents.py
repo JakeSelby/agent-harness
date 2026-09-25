@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 """The write-intent ledger: parallel writers claim the paths they will edit, before editing them.
 
-One file per session, `~/.local/state/agent-harness/intents/<session>.json`:
+One file per session and worktree, `~/.local/state/agent-harness/intents/<session>--<hash>.json`,
+where the hash is of the worktree root: subagents share their parent's session id, so two sibling
+builders from one session hold two files, never one.
 
     {"schema": 1, "session": "…", "repo": "/abs/repo/.git", "branch": "feat/x",
      "worktree": "/abs/worktrees/repo/task", "paths": ["lib/x.py", "tests/test_x*.py"],
@@ -18,9 +20,10 @@ interpreter. A claim whose pid is dead, or whose worktree has been removed, is s
 removes it, and so does `harness intent sweep`. The second rule is what ends a subagent's claim,
 since its pid is the runtime's and outlives it; landing removes the worktree.
 
-A session's own claims never match its own edits. Own means the same session id, or the same
-runtime process editing inside the worktree it claimed from: subagents of one process share its
-pid, so the pid alone cannot tell two sibling builders apart, while their worktrees can.
+A claim never matches its owner's own edits. Own means an edit inside the worktree the claim was
+made from, by the same session id or the same runtime process. Subagents share both their
+parent's session id and its pid, so neither alone tells two sibling builders apart; the worktree
+does, which is why it is required.
 
 What an overlap does is the `coordination.repeat_overlap` variant in the user config. `deny`, the
 default, warns on the first hit on a path and denies the second in the same session; `warn` never
@@ -31,6 +34,7 @@ can put the two side by side per week. No model judgment anywhere.
 """
 import datetime
 import fnmatch
+import hashlib
 import importlib.util
 import json
 import os
@@ -270,10 +274,16 @@ def matches(pattern, rel):
 
 # ---- claim files ----------------------------------------------------------------------------
 
-def claim_path(session, env=None):
+def slot(session, worktree):
+    """The file name shared by a claim and its hit counter: session plus a worktree hash."""
     if not SESSION.match(str(session or "")):
         raise ValueError("session id must be 1-128 letters, digits, dots, underscores or hyphens")
-    return intents_dir(env) / (session + ".json")
+    digest = hashlib.sha256(str(worktree or "").encode("utf-8")).hexdigest()[:12]
+    return session + "--" + digest + ".json"
+
+
+def claim_path(session, worktree, env=None):
+    return intents_dir(env) / slot(session, worktree)
 
 
 def _write(path, data):
@@ -299,8 +309,8 @@ def claim(paths, cwd=None, session=None, pid=None, env=None, now=None):
     """Add `paths` to this session's claim, creating it. Returns the claim as written.
 
     A re-claim adds to the paths already held, because a builder that touches a file outside its
-    plan re-claims that file and must not drop the rest. Raises ValueError outside a repository,
-    for a path outside the worktree, and for a session already claiming in another repository.
+    plan re-claims that file and must not drop the rest. Raises ValueError outside a repository
+    and for a path outside the worktree.
     """
     cwd = str(cwd or os.getcwd())
     repo = repository(cwd)
@@ -315,11 +325,8 @@ def claim(paths, cwd=None, session=None, pid=None, env=None, now=None):
             raise ValueError("outside the worktree " + repo["root"] + ": " + str(item))
         wanted.append(rel)
     sweep(env)
-    target = claim_path(session, env)
+    target = claim_path(session, repo["root"], env)
     current = _read(target) or {}
-    if current and (current.get("repo") != repo["common"] or current.get("worktree") != repo["root"]):
-        raise ValueError("session " + session + " already claims in " + str(current.get("worktree"))
-                         + "; release it first")
     held = [p for p in current.get("paths", []) if isinstance(p, str)]
     data = {"schema": SCHEMA, "session": session, "repo": repo["common"],
             "branch": repo["branch"], "worktree": repo["root"],
@@ -329,12 +336,19 @@ def claim(paths, cwd=None, session=None, pid=None, env=None, now=None):
     return data
 
 
-def release(session=None, env=None):
-    """Remove this session's claim and hit counter. Returns whether a claim was held."""
+def release(session=None, cwd=None, env=None):
+    """Remove this session's claim in this worktree, and its hit counter. Returns whether one was held.
+
+    A sibling's claim under the same session id, in another worktree, is left alone.
+    """
     session = session or session_key(env)
-    target = claim_path(session, env)
+    repo = repository(str(cwd or os.getcwd()))
+    if repo is None:
+        raise ValueError("not inside a git repository: " + str(cwd or os.getcwd()))
+    name = slot(session, repo["root"])
+    target = intents_dir(env) / name
     held = target.exists()
-    for path in (target, hits_dir(env) / (session + ".json")):
+    for path in (target, hits_dir(env) / name):
         try:
             path.unlink()
         except OSError:
@@ -399,10 +413,11 @@ def _mtime(path):
 
 
 def own(item, session, pid, root):
-    """Whether a claim is this session's own: the same session, or its process in its worktree."""
-    if item.get("session") == session:
-        return True
-    return pid is not None and item.get("pid") == pid and item.get("worktree") == root
+    """Whether a claim is the editor's own: its worktree, and its session id or its process."""
+    if item.get("worktree") != root:
+        return False
+    return (session is not None and item.get("session") == session) or (
+        pid is not None and item.get("pid") == pid)
 
 
 def overlaps(path, session=None, pid=None, cwd=None, env=None):
@@ -430,10 +445,10 @@ def overlaps(path, session=None, pid=None, cwd=None, env=None):
     return found
 
 
-def hit(session, rel, env=None):
-    """Count one overlap on `rel` for `session` and return the count, this one included."""
+def hit(session, worktree, rel, env=None):
+    """Count one overlap on `rel` for `session` editing in `worktree`; return the count so far."""
     safe = session if SESSION.match(str(session or "")) else "unknown"
-    target = hits_dir(env) / (safe + ".json")
+    target = hits_dir(env) / slot(safe, worktree)
     counts = _read(target) or {}
     count = int(counts.get(rel, 0) or 0) + 1
     counts[rel] = count
@@ -629,7 +644,7 @@ def command(args, say):
                 say("  " + pattern)
             return 0
         if action == "release":
-            held = release(args.session, env)
+            held = release(args.session, os.getcwd(), env)
             say("released" if held else "no claim held")
             return 0
         if action == "sweep":

@@ -95,7 +95,7 @@ class Base(unittest.TestCase):
 class ClaimTests(Base):
     def test_claim_writes_the_session_file_with_every_field(self):
         data = self.claim_a("shared.py", "docs/planned.md", "lib/*.py")
-        path = self.home / ".local" / "state" / "agent-harness" / "intents" / "A.json"
+        path = self.home / ".local" / "state" / "agent-harness" / "intents" / intents.slot("A", str(self.a))
         self.assertEqual(json.loads(path.read_text()), data)
         self.assertEqual(data["paths"], ["docs/planned.md", "lib/*.py", "shared.py"])
         self.assertEqual(data["branch"], "a")
@@ -117,14 +117,14 @@ class ClaimTests(Base):
 
     def test_release_removes_the_claim(self):
         self.claim_a("shared.py")
-        self.assertTrue(intents.release("A", self.env))
+        self.assertTrue(intents.release("A", str(self.a), self.env))
         self.assertEqual(intents.claims(self.env), [])
-        self.assertFalse(intents.release("A", self.env))
+        self.assertFalse(intents.release("A", str(self.a), self.env))
 
     def test_a_dead_pid_is_ignored_and_swept(self):
         self.claim_a("shared.py", pid=dead_pid())
-        path = intents.claim_path("A", self.env)
-        self.assertEqual(intents.sweep(self.env), ["A.json"])
+        path = intents.claim_path("A", str(self.a), self.env)
+        self.assertEqual(intents.sweep(self.env), [path.name])
         self.assertFalse(path.exists())
         self.claim_a("shared.py", pid=dead_pid())
         self.assertEqual(intents.overlaps(self.b / "shared.py", "B", None, env=self.env), [])
@@ -134,7 +134,7 @@ class ClaimTests(Base):
         self.claim_a("shared.py")
         git(self.main, "worktree", "remove", str(self.a))
         self.assertEqual(intents.overlaps(self.b / "shared.py", "B", None, env=self.env), [])
-        self.assertFalse(intents.claim_path("A", self.env).exists())
+        self.assertFalse(intents.claim_path("A", str(self.a), self.env).exists())
 
     def test_the_runtime_pid_is_the_runtime_not_the_shell(self):
         self.assertEqual(intents.runtime_pid({"CLAUDE_PID": "4242"}), 4242)
@@ -167,7 +167,7 @@ class OverlapTests(Base):
 
     def test_own_claims_never_match(self):
         self.claim_a("shared.py")
-        self.assertEqual(intents.overlaps(self.b / "shared.py", "A", None, env=self.env), [])
+        self.assertEqual(intents.overlaps(self.a / "shared.py", "A", None, env=self.env), [])
         # One process, its own worktree: a subagent's edit under a different session id.
         self.assertEqual(intents.overlaps(self.a / "shared.py", "X", os.getpid(), env=self.env), [])
         # The same process in a sibling's worktree is a sibling.
@@ -179,6 +179,45 @@ class OverlapTests(Base):
         git(other, "init", "-q")
         intents.claim(["shared.py"], cwd=str(other), session="O", pid=os.getpid(), env=self.env)
         self.assertEqual(intents.overlaps(self.b / "shared.py", "B", None, env=self.env), [])
+
+
+class SharedSessionTests(Base):
+    """Sibling builders spawned by one session carry its session id and its pid."""
+
+    def claim(self, worktree, *paths):
+        return intents.claim(list(paths), cwd=str(worktree), session="S", pid=os.getpid(),
+                             env=self.env)
+
+    def edit(self, worktree, name="shared.py"):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "S",
+                   "cwd": str(worktree), "tool_input": {"file_path": str(worktree / name),
+                                                        "old_string": "x", "new_string": "y"}}
+        return lifecycle.dispatch("claude-code", payload)
+
+    def test_two_worktrees_under_one_session_keep_both_claims(self):
+        self.claim(self.a, "shared.py")
+        self.claim(self.b, "other.py")
+        held = sorted((c["worktree"], tuple(c["paths"])) for c in intents.claims(self.env))
+        self.assertEqual(held, [(str(self.a), ("shared.py",)), (str(self.b), ("other.py",))])
+        self.assertTrue(intents.release("S", str(self.b), self.env))
+        self.assertEqual([c["worktree"] for c in intents.claims(self.env)], [str(self.a)])
+
+    def test_a_sibling_under_the_same_session_is_warned_then_denied(self):
+        os.environ["CLAUDE_PID"] = str(os.getpid())
+        self.claim(self.a, "shared.py")
+        self.claim(self.b, "other.py")
+        self.assertEqual(self.edit(self.a), {})
+        first = self.edit(self.b)
+        self.assertIn("intent-overlap warning", first["hookSpecificOutput"]["additionalContext"])
+        second = self.edit(self.b)
+        self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertEqual([r["deterministic_answer"] for r in self.rows()], ["warn", "deny"])
+
+    def test_hit_counters_are_separate_per_worktree(self):
+        self.assertEqual(intents.hit("S", str(self.a), "shared.py", self.env), 1)
+        self.assertEqual(intents.hit("S", str(self.b), "shared.py", self.env), 1)
+        self.assertEqual(intents.hit("S", str(self.b), "shared.py", self.env), 2)
+        self.assertEqual(intents.hit("S", str(self.a), "shared.py", self.env), 2)
 
 
 class HookTests(Base):
@@ -259,7 +298,7 @@ class CommandTests(Base):
                                   "--pid", str(os.getpid()), cwd=self.a)
         self.assertEqual(code, 0, text)
         self.assertIn("docs/*.md", self.run_cli("intent", "list")[1])
-        self.assertEqual(self.run_cli("intent", "release", "--session", "C")[0], 0)
+        self.assertEqual(self.run_cli("intent", "release", "--session", "C", cwd=self.a)[0], 0)
         self.assertIn("no live claims", self.run_cli("intent", "list")[1])
 
     def test_merge_probe_and_conflict_report(self):
