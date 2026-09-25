@@ -15,7 +15,9 @@ client already uses on this machine (see docs/qualification-runbook.md) and noth
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --from-progress
 
 Each case is appended to a durable log as it finishes, so a killed round costs the case it was
-running and not the round; `--from-progress` rebuilds a record from what survived.
+running and not the round; `--from-progress` rebuilds a record from what survived. Run again at
+the same commit, a round skips every case the log already holds a verdict for, passed or failed,
+and reruns only the unverified and the unfinished.
 """
 import argparse
 import hashlib
@@ -2306,39 +2308,42 @@ def framework_refused(home, data, spawn):
     return notes
 
 
-REWORDING_LIMIT = ("recognition is lexical, so a brief that keeps the layer's prompt file but none "
-                   "of the descriptor's phrases is not refused (tracked in #739)")
+def reworded_refused(home, data, spawn, instructions, notes):
+    """Step 9's second claim: the brief the model writes itself for the layer is refused too.
 
-
-def reworded_probe(home, data, spawn, instructions):
-    """The observed limit of the claim: what the model's own brief for the layer did. Never raises.
-
-    Recorded, never judged: step 9 claims refusal for the framework's own spawn text only, and a
-    rewording is run to show where lexical recognition stops, whichever way it goes.
+    The model is told where the layer's prompt file is and writes the brief in its own words, so
+    it keeps the file, because the subagent must read it, and quotes none of the descriptor's
+    sentences. Recognition must still refuse it (#739). A model that never calls the tool, or
+    whose brief leaves out every declared prompt file, observes nothing about that claim.
     """
     probe = home.session(layer_request(data, spawn, instructions))
     session_id = probe["session_id"]
     calls, readable = agent_calls(home, session_id)
-    head = ("as the observed limit of the claim, not a pass criterion: asked in plain words to "
-            "have a subagent do the %s layer's review of %s, with that layer's instructions at %s "
-            "and no role named, " % (spawn["id"], REVIEW_FILE, instructions))
+    head = ("asked in plain words to have a subagent do the %s layer's review of %s, with that "
+            "layer's instructions at %s and no role named, " % (spawn["id"], REVIEW_FILE,
+                                                                instructions))
     if not calls:
-        return head + ("the model %s, so no reworded brief reached the guard"
-                       % ("made no Agent call" if readable else "left no readable transcript"))
+        raise Unverified(observed(notes, head + "the model %s, so no brief of its own reached "
+                                  "the guard" % ("made no Agent call" if readable
+                                                 else "left no readable transcript")))
     brief = str(calls[0]["input"].get("prompt", ""))
     match = frameworks.classify(brief, calls[0]["input"].get("subagent_type"))
     rows = brief_rows(logged_refusals(home, session_id), brief)
-    ran = len(home.subagents(session_id))
+    wrote = head + "the model wrote its own brief %s" % quoted(brief)
     if rows:
-        outcome = ("it was refused, with %s %s deny row(s) logged for that brief's fingerprint"
-                   % (len(rows), FRAMEWORK_POINT))
-    else:
-        outcome = ("it was not refused: no %s deny was logged for it and it wrote %s subagent "
-                   "transcript(s)" % (FRAMEWORK_POINT, ran))
-    return head + ("the model wrote its own brief %s; %s; the classifier %s; %s"
-                   % (quoted(brief), outcome,
-                      "matched it as `%s`" % match["spawn"] if match else "matched no spawn in it",
-                      REWORDING_LIMIT))
+        return wrote + ("; it was refused, with %s %s deny row(s) logged for that brief's "
+                        "fingerprint, and the classifier matched it as `%s`"
+                        % (len(rows), FRAMEWORK_POINT, match["spawn"] if match else "nothing"))
+    ran = len(home.subagents(session_id))
+    text = frameworks.normalise(brief)
+    if not [name for name in spawn.get("identifiers") or [] if frameworks.normalise(name) in text]:
+        raise Unverified(observed(notes, wrote + "; it names none of the layer's declared prompt "
+                                  "files, so it is outside the claim, and no %s deny was logged "
+                                  "for it" % FRAMEWORK_POINT))
+    raise AssertionError(observed(notes, wrote + "; it was not refused: no %s deny was logged "
+                                  "for it, it wrote %s subagent transcript(s), and the classifier "
+                                  "%s" % (FRAMEWORK_POINT, ran, "matched it as `%s`"
+                                          % match["spawn"] if match else "matched no spawn in it")))
 
 
 def routed_layer(home, data, spawn, instructions, notes):
@@ -2453,11 +2458,10 @@ def case_spawn_confinement(home):
     """docs/compatibility.md step 9: a framework's review layer is confined by what it carries.
 
     Each part is read from what the run wrote. The framework's own spawn text, naming no role, must
-    be refused by name. A brief the model rewrites in its own words is run and recorded as the
-    claim's observed limit, never judged. The same layer through `harness role run` must write
-    isolated worker state and return findings. Two ordinary spawns, one merely mentioning review
-    words and one editing the framework's input roots, must still run, or a guard that refuses
-    everything would read as a pass.
+    be refused by name, and so must the brief the model writes itself for the layer. The same
+    layer through `harness role run` must write isolated worker state and return findings. Two
+    ordinary spawns, one merely mentioning review words and one editing the framework's input
+    roots, must still run, or a guard that refuses everything would read as a pass.
     """
     home.seed()
     home.harness("sync")
@@ -2473,7 +2477,7 @@ def case_spawn_confinement(home):
     (home.project / edited).parent.mkdir(parents=True, exist_ok=True)
     (home.project / edited).write_text("status: open\n")
     notes = framework_refused(home, data, spawn)
-    notes.append(reworded_probe(home, data, spawn, instructions))
+    notes.append(reworded_refused(home, data, spawn, instructions, notes))
     routed_layer(home, data, spawn, instructions, notes)
     ordinary_ran(home, review_words_prompt(), ("review", "diff", "findings"),
                  "an ordinary unnamed spawn whose brief mentions review, a diff and findings in "
@@ -2905,9 +2909,10 @@ CASES = {
     "spawn-confinement": (case_spawn_confinement,
                           "spawn a framework's review layer with its own spawn text and no "
                           "subagent_type, and read the refusal's framework, layer and role-run "
-                          "command from the decision log and the tool result; record what a brief "
-                          "the model rewrites itself did, as the claim's limit; run the same layer "
-                          "through harness role run and read its worker state and findings; and "
+                          "command from the decision log and the tool result; require the brief "
+                          "the model writes itself for the layer to be refused too; run the same "
+                          "layer through harness role run and read its worker state and "
+                          "findings; and "
                           "spawn ordinary work mentioning review words and editing the "
                           "framework's input roots, which must still run"),
     "cost-posture": (case_cost_posture,
@@ -3095,6 +3100,24 @@ def progress_lines(path, header=None):
     return items
 
 
+SETTLED = ("passed", "failed")
+
+
+def settled(items):
+    """Each case whose latest line in `items` is a verdict, mapped to that verdict.
+
+    A resumed round skips these, which is FR-52's "a resumed round skips completed cases". Pass
+    lines already filtered by `progress_lines(path, header)`: the header carries the source
+    commit, so a verdict never carries across candidates. A failure is kept rather than rerun,
+    so the evidence of it survives the resume; an `unverified` case observed nothing and runs
+    again, its new line superseding the old one.
+    """
+    latest = {}
+    for item in items:
+        latest[item["case"]] = item.get("result")
+    return dict((case, result) for case, result in latest.items() if result in SETTLED)
+
+
 NO_OBSERVATION = "no observation was recorded for this case"
 
 
@@ -3215,8 +3238,17 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
         "model_run": model,
     }
     append_routing(progress, header)
+    # A verdict is kept only when this round could reach one itself: on a surface it has not
+    # confirmed, `probe` reads every case as unverified, so a pass an earlier round recorded
+    # under --home-confirmed runs again rather than surviving an unconfirmed resume.
+    kept = ({} if unobserved_note(client, confirmed)
+            else settled(progress_lines(progress, header)))
     results = []
     for name in names:
+        if name in kept:
+            sys.stderr.write("resume: %s already %s at %s; not rerun\n"
+                             % (name, kept[name], header["source_commit"][:12]))
+            continue
         item = (runner(client, name, model, keep, confirmed) if name in CASES
                 else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
         append_case(progress, header, item)

@@ -32,6 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 from harness_core import cache_prefix  # noqa: E402  the ledger's miss ratio, one definition
+from harness_core import catalog  # noqa: E402  the resolver the hooks load, for the profile fingerprint
 
 CHARS_PER_TOKEN = 4.0
 GROWTH_LIMIT = 0.05
@@ -317,6 +318,25 @@ def arm_env(arm, bare_config, stance_cost=None, base=None, harness_config=None):
     if stance_cost and arm != "bare":
         extra["HARNESS_STANCE_COST"] = stance_cost
     return scrubbed_env(extra, base)
+
+
+def arm_profile(arm, env, opts):
+    """The profile fingerprint a row of this arm carries: `bare`, or the harness arm's profile.
+
+    The bare arm loads no harness, so it has no profile to digest and says so by name rather than
+    by a null a reader would take for a row from before the field. The harness arm's is resolved
+    by this checkout's resolver over the checkout the arm's profile was synced from, in the
+    arm's own environment, so a pinned tag is fingerprinted as the tag. None when it cannot be.
+    HOME is the run's `home`, which is the arm's own outside a test."""
+    try:
+        module = catalog.posture_module(ROOT)
+        if arm == "bare":
+            return module.BARE_FINGERPRINT
+        home = opts.get("home")
+        return module.fingerprint(dict(env, HOME=str(home)) if home else env,
+                                  root=Path(opts.get("profile_root") or opts.get("harness_source") or ROOT))
+    except Exception:
+        return None
 
 
 def arm_admits(arm, opts):
@@ -1155,7 +1175,8 @@ def run_one(task, rep, arm, opts, launch=subprocess.run):
                change_note=opts.get("change_note", ""), preflight=opts.get("preflight", "skipped"),
                arm_config_dir=config_label(config, opts.get("home")),
                arm_fingerprint=config_fingerprint(config, opts.get("home")),
-               fingerprint_source="launch", **{kind: None for kind in TOKEN_KINDS})
+               fingerprint_source="launch", profile_fingerprint=arm_profile(arm, env, opts),
+               **{kind: None for kind in TOKEN_KINDS})
     workdir = Path(tempfile.mkdtemp(prefix="cost-replay-", dir=opts.get("tmp"))) / "repo"
     reason = unsafe_workdir(workdir, opts["home"])
     if reason:
@@ -1622,7 +1643,7 @@ def replay_tag(tag, args, common, synced=None):
             "reps": args.reps, "run_cap": args.run_cap, "spend_cap": args.spend_cap,
             "prices": common["prices"], "bare_config": common["bare"],
             "harness_config": harness_config, "harness_source": source,
-            "stance_cost": args.stance_cost,
+            "profile_root": source or common["harness"], "stance_cost": args.stance_cost,
             "raw": args.raw, "tmp": args.tmp, "change_note": args.change_note or "",
             "skip_preflight": args.skip_preflight,
             "stamp": {"date": datetime.date.today().isoformat(), "model": args.model,
