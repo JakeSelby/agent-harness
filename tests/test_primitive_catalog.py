@@ -148,5 +148,5 @@ class CatalogTests(unittest.TestCase):
                 env["HARNESS_STANCE_TESTING"] = "required"
                 self.assertEqual(harness.load_config(env)["stances"]["testing"], "required")
                 project.write_text(json.dumps({"permissions": "bypass"}))
-                with self.assertRaisesRegex(SystemExit, "stances only"):
+                with self.assertRaisesRegex(SystemExit, "selection keys only"):
                     harness.load_config(env)

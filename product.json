@@ -201,7 +201,7 @@
         },
         {
           "name": "User, project, session",
-          "line": "Set a default, override it for one repo, override that for one session.",
+          "line": "Set a default, override it for one repo, override that for one session, and see which layer set each unit with harness selection.",
           "doc": "docs/preferences.md"
         },
         {
@@ -229,14 +229,14 @@
   ],
   "on_the_way": [
     {
-      "title": "Grok and Cursor adapters",
-      "line": "Six runtimes at equal depth is the target, after the measurement loop closes. Cursor and Grok are the next two.",
-      "catalog": "grok"
+      "title": "Measured against bare",
+      "line": "Proof set 1 runs the harness against bare Claude Code, and harness evidence verify re-derives every published figure from its rows, whatever they show.",
+      "issue": 799
     },
     {
-      "title": "Close the loop",
-      "line": "Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.",
-      "issue": 135
+      "title": "The superpowers mode",
+      "line": "One switch hands planning and testing to Superpowers while every hook stays on, and doctor names the mode when it finds the plugin.",
+      "issue": 558
     }
   ],
   "topics": [

@@ -87,7 +87,7 @@ grouped by repository and by the preference variant you had selected at the time
 Reasonable developers disagree about testing, autonomy and how much to delegate. Nine axes, each a named choice: three bind to enforcement today, the rest are prose that swaps cleanly.
 
 - [Stance dimensions and variants](primitives/stances): Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.
-- [User, project, session](docs/preferences.md): Set a default, override it for one repo, override that for one session.
+- [User, project, session](docs/preferences.md): Set a default, override it for one repo, override that for one session, and see which layer set each unit with harness selection.
 - [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
 - [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
 - [Autonomy stances](primitives/stances/autonomy): Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.
@@ -97,9 +97,8 @@ Reasonable developers disagree about testing, autonomy and how much to delegate.
 
 Planned, not promised.
 
-- **Grok and Cursor adapters:** Six runtimes at equal depth is the target, after the measurement loop closes. Cursor and Grok are the next two.
-- **Close the loop:** Jev becomes the controller between measured rules and autonomy: detector generation from rule prose, stance drift, adaptive cost.
-- **The instrument, standalone:** The measurement engine as its own package: run it on your own transcripts and your own rules with no harness installed.
+- **Measured against bare:** Proof set 1 runs the harness against bare Claude Code, and harness evidence verify re-derives every published figure from its rows, whatever they show.
+- **The superpowers mode:** One switch hands planning and testing to Superpowers while every hook stays on, and doctor names the mode when it finds the plugin.
 
 ## The delivery loop
 
@@ -212,7 +211,7 @@ A client's status is not a capability's status. Each cell is derived from that r
 | `voice` | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified | unqualified |
 | tier restriction | enforced | enforced | enforced | advisory | advisory | advisory | advisory | advisory |
 
-The last row is not a qualification state. It says whether the delegation stance's model-tier ceiling is **enforced** (a hook rewrites or refuses the spawn), **advisory** (prompt text only) or **none**, carried advisory by `primitives/skills/delegation-tiering/SKILL.md`, `primitives/stances/delegation/tiered.md`; enforced by `claude/hooks/tier-agent-spawns.py`. `enforced` is narrower than it sounds. It never reaches the session's own model: the `model` settings key is one this harness never writes (`docs/settings-ownership.md`). Within a session it rewrites a spawn only while the selected `delegation` variant is `tiered` — `off` stops the spawn instead, and any other variant leaves it alone — and only while the adapter's class table maps at least two models, since one class is no ladder to move a spawn down. Under every other condition the ceiling is prose, exactly as `advisory` is everywhere.
+The last row is not a qualification state. It says whether the delegation stance's model-tier ceiling is **enforced** (a hook rewrites or refuses the spawn), **advisory** (prompt text only) or **none**, carried advisory by `primitives/skills/delegation-tiering/SKILL.md`, `primitives/stances/delegation/tiered.md`; enforced by `claude/hooks/tier-agent-spawns.py`. `enforced` is narrower than it sounds. It never reaches the session's own model: the `model` settings key is one this harness never writes (`docs/settings-ownership.md`). Within a session it rewrites a spawn only while the selected `delegation` variant is `tiered`. `off` stops the spawn instead, any other variant leaves it alone, and it acts only while the adapter's class table maps at least two models, since one class is no ladder to move a spawn down. Under every other condition the ceiling is prose, exactly as `advisory` is everywhere.
 <!-- harness:compatibility:end -->
 
 ## See one switch reach both adapters

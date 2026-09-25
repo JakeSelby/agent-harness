@@ -117,48 +117,6 @@
       }
     },
     {
-      "id": "usage-prices",
-      "kind": "issue",
-      "source": "issue 344, solved by pull request 352",
-      "parent_sha": "c3140a5c9f1a35e8af4459c30887a8c3f3d2f354",
-      "good_sha": "588bcffd3c1d91ca01293bda58302bce6402777c",
-      "max_turns": 60,
-      "leak_class": "clean",
-      "prompt": [
-        "Fix this issue in the repository you are in. Do not commit; leave the change in the working tree.",
-        "",
-        "# usage: report dollars from a dated, overridable price table",
-        "",
-        "## What is wrong",
-        "",
-        "`harness usage` reports tokens only. Tokens mislead as a cost measure: a change that routes work to a cheaper model can spend more tokens and fewer dollars, and cache reads dominate the token count while costing a fraction of input. Claude Code exports its own dollar figure over OpenTelemetry; Codex does not reliably, and neither helps a local report.",
-        "",
-        "## Done when",
-        "",
-        "- A price file in the repo lists, per model id, USD per million tokens for input, output, cache read and cache write, each entry with an `as_of` date and the primary-source URL it was read from. No entry is written from memory; a model whose price cannot be confirmed is left out.",
-        "- A user can override or add prices in `config.json`.",
-        "- Model ids resolve by exact match after normalisation, so a dated or reseller-prefixed id finds its family and a variant the table does not list is unpriced.",
-        "- `usage` reports a USD column and a count of unpriced runs. An unknown model or a partial row is unpriced, never $0.",
-        "- Where a runtime distinguishes cache-write tiers or reasoning tokens, the mapping onto the four columns is stated in one place.",
-        "- `doctor` warns when the newest `as_of` is older than 90 days.",
-        "- A recorded session whose runtime reported its own cost prices to within 2% of that figure.",
-        "",
-        "## Exit",
-        "",
-        "`bin/harness lint` clean and the tests you add or change passing."
-      ],
-      "tests": {
-        "copy": [
-          "tests/test_usage_prices.py",
-          "tests/test_usage_roles.py"
-        ],
-        "pattern": "test_usage_[pr]*.py",
-        "pythonpath": [
-          "lib"
-        ]
-      }
-    },
-    {
       "id": "import-instructions",
       "kind": "issue",
       "source": "issue 448, solved by pull request 478",
@@ -277,6 +235,55 @@
         "pythonpath": [
           "lib"
         ]
+      }
+    }
+  ],
+  "retired": [
+    {
+      "id": "usage-prices",
+      "retired": "2026-09-25",
+      "reason": "Not passable by an arm that follows its prompt. The held-back tests pin the per-model rates the repository shipped at the good commit and call helper names the prompt never gives, while the prompt forbids writing a price from memory and the fence gives neither arm the web to confirm one. A prompt that supplied those rates and names would hand the arm its held-back check, so the task leaves the set. The manifest's bytes seed a history row's series, so a row from before this change carries a different series from one after it.",
+      "task": {
+        "id": "usage-prices",
+        "kind": "issue",
+        "source": "issue 344, solved by pull request 352",
+        "parent_sha": "c3140a5c9f1a35e8af4459c30887a8c3f3d2f354",
+        "good_sha": "588bcffd3c1d91ca01293bda58302bce6402777c",
+        "max_turns": 60,
+        "leak_class": "clean",
+        "prompt": [
+          "Fix this issue in the repository you are in. Do not commit; leave the change in the working tree.",
+          "",
+          "# usage: report dollars from a dated, overridable price table",
+          "",
+          "## What is wrong",
+          "",
+          "`harness usage` reports tokens only. Tokens mislead as a cost measure: a change that routes work to a cheaper model can spend more tokens and fewer dollars, and cache reads dominate the token count while costing a fraction of input. Claude Code exports its own dollar figure over OpenTelemetry; Codex does not reliably, and neither helps a local report.",
+          "",
+          "## Done when",
+          "",
+          "- A price file in the repo lists, per model id, USD per million tokens for input, output, cache read and cache write, each entry with an `as_of` date and the primary-source URL it was read from. No entry is written from memory; a model whose price cannot be confirmed is left out.",
+          "- A user can override or add prices in `config.json`.",
+          "- Model ids resolve by exact match after normalisation, so a dated or reseller-prefixed id finds its family and a variant the table does not list is unpriced.",
+          "- `usage` reports a USD column and a count of unpriced runs. An unknown model or a partial row is unpriced, never $0.",
+          "- Where a runtime distinguishes cache-write tiers or reasoning tokens, the mapping onto the four columns is stated in one place.",
+          "- `doctor` warns when the newest `as_of` is older than 90 days.",
+          "- A recorded session whose runtime reported its own cost prices to within 2% of that figure.",
+          "",
+          "## Exit",
+          "",
+          "`bin/harness lint` clean and the tests you add or change passing."
+        ],
+        "tests": {
+          "copy": [
+            "tests/test_usage_prices.py",
+            "tests/test_usage_roles.py"
+          ],
+          "pattern": "test_usage_[pr]*.py",
+          "pythonpath": [
+            "lib"
+          ]
+        }
       }
     }
   ]

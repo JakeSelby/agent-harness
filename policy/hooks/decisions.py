@@ -488,8 +488,28 @@ def claim_fields(transcript, cfg=None):
     return {"completion_claim": _capped(text), "completion_claim_sha256": digest(text)}
 
 
+# The log grows compatibly, under the rule `usage-log.py` states for the usage ledger: a change
+# adds a field, a rename ships a fold (`old name: new name`), nothing is removed in place and no
+# old row is rewritten. A row without SCHEMA_KEY predates the version and reads as version 0.
+SCHEMA_KEY = "schema_version"
+SCHEMA_VERSION = 1
+FIELD_FOLDS = {}
+
+
+def fold(row, folds=None):
+    """A copy of `row` with every renamed field under its current name; see usage-log's `fold`."""
+    folds = FIELD_FOLDS if folds is None else folds
+    out = dict(row)
+    for old, new in folds.items():
+        if old in out:
+            value = out.pop(old)
+            out.setdefault(new, value)
+    return out
+
+
 def _append(row, target=None):
     """One line, one `write`. Appending is the only way this file is ever changed."""
+    row = dict(row, **{SCHEMA_KEY: SCHEMA_VERSION})
     target = Path(target) if target else path()
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -613,8 +633,11 @@ def observe_if_logged(identity, outcome, point="", session_id="", target=None, n
     return observe(identity, outcome, point, session_id, target, now)
 
 
-def read_rows(target=None):
-    """Every well-formed record in the log, oldest first. An unreadable file is no rows."""
+def read_rows(target=None, folds=None):
+    """Every well-formed record in the log, folded, oldest first. An unreadable file is no rows.
+
+    A field or a schema version this reader does not know is carried, never refused.
+    """
     target = Path(target) if target else path()
     rows = []
     try:
@@ -626,8 +649,10 @@ def read_rows(target=None):
             row = json.loads(line)
         except ValueError:
             continue
-        if isinstance(row, dict) and row.get("decision_id"):
-            rows.append(row)
+        if isinstance(row, dict):
+            row = fold(row, folds)
+            if row.get("decision_id"):
+                rows.append(row)
     return rows
 
 
