@@ -147,16 +147,65 @@ class EveryIdSwitchesOff(Fixture):
                 self.assertNotIn("grade-bash", loaded)
                 self.assertEqual([d for d in decisions(results) if d], [])
 
-    def test_tier_agent_spawns_off_drops_the_role_confinement_deny_on_both_runtimes(self):
-        spawn = pre("Agent", prompt="look around", subagent_type="gatherer")
+    def test_tier_agent_spawns_off_keeps_the_constrained_role_deny_on_both_runtimes(self):
         for runtime in RUNTIMES:
             with self.subTest(runtime=runtime):
-                self.configure({})
-                self.assertIn("deny", decisions(self.dispatch(runtime, spawn)[1]))
+                # A session per runtime: a refusal is remembered, and a remembered brief is refused.
+                session = "role-" + runtime
+                # The control: a band worker is not a constrained role, so the deny bites on the role.
                 self.configure({"tier-agent-spawns": "off"})
-                with patch.object(lifecycle, "evasion_deny") as evasion:
-                    self.assertNotIn("deny", decisions(self.dispatch(runtime, spawn)[1]))
-                evasion.assert_not_called()
+                self.assertNotIn("deny", decisions(self.dispatch(runtime, dict(pre(
+                    "Agent", prompt="look around", subagent_type="worker-a"), session_id=session))[1]))
+                loaded, results = self.dispatch(runtime, dict(
+                    pre("Agent", prompt="look around", subagent_type="gatherer"), session_id=session))
+                self.assertIn("deny", decisions(results))
+                self.assertNotIn("tier-agent-spawns", loaded)
+
+    def test_tier_agent_spawns_off_keeps_the_marker_deny_on_both_runtimes(self):
+        spawn = pre("Agent", prompt="harness-role: reviewer\nReview the diff at /tmp/d.patch.")
+        for runtime in RUNTIMES:
+            with self.subTest(runtime=runtime):
+                self.configure({"tier-agent-spawns": "off"})
+                self.assertIn("deny", decisions(self.dispatch(runtime, spawn)[1]))
+
+    def test_tier_agent_spawns_off_keeps_the_evasion_deny_on_both_runtimes(self):
+        brief = "Find every caller of load() in the repository and list each one with its file."
+        for runtime in RUNTIMES:
+            with self.subTest(runtime=runtime):
+                self.configure({"tier-agent-spawns": "off"})
+                session = "evasion-" + runtime
+                self.assertNotIn("deny", decisions(self.dispatch(runtime, dict(
+                    pre("Agent", prompt=brief), session_id=session))[1]))
+                self.assertIn("deny", decisions(self.dispatch(runtime, dict(
+                    pre("Agent", prompt=brief, subagent_type="gatherer"), session_id=session))[1]))
+                # The same brief with the role name dropped is refused as the same work.
+                self.assertIn("deny", decisions(self.dispatch(runtime, dict(
+                    pre("Agent", prompt=brief), session_id=session))[1]))
+
+    def test_tier_agent_spawns_off_still_consults_the_framework_classifier(self):
+        refusal = {"hookSpecificOutput": {"permissionDecision": "deny", "permissionDecisionReason": "r"}}
+        self.configure({"tier-agent-spawns": "off"})
+        for runtime in RUNTIMES:
+            with self.subTest(runtime=runtime):
+                with patch.object(lifecycle, "framework_deny", return_value=refusal) as framed:
+                    self.assertIn("deny", decisions(self.dispatch(runtime, pre("Agent", prompt="work"))[1]))
+                framed.assert_called_once()
+
+    def test_tier_agent_spawns_off_keeps_the_workflow_launch_deny_on_both_runtimes(self):
+        named = "await agent('Review the diff at /tmp/d.patch.', { label: 'named', agentType: 'reviewer' });\n"
+        for runtime in RUNTIMES:
+            with self.subTest(runtime=runtime):
+                self.configure({"tier-agent-spawns": "off"})
+                self.assertIn("deny", decisions(self.dispatch(runtime, pre("Workflow", script=named))[1]))
+
+    def test_tier_agent_spawns_off_drops_only_the_integration_notice(self):
+        notice = {"systemMessage": "notice"}
+        for state, calls in (("on", 1), ("off", 0)):
+            with self.subTest(state=state):
+                self.configure({"tier-agent-spawns": state})
+                with patch.object(lifecycle, "descriptor_notice", return_value=notice) as noticed:
+                    self.dispatch("claude-code", pre("Agent", prompt="work"))
+                self.assertEqual(noticed.call_count, calls)
 
     def test_delegation_off_still_denies_with_tier_agent_spawns_off(self):
         os.environ["HARNESS_STANCE_DELEGATION"] = "off"

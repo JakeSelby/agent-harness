@@ -679,7 +679,9 @@ def dispatch(runtime, payload):
 def _dispatch(runtime, payload):
     """Compose the policies for one event. Logic that is not an `invoke` checks its owning id:
     Bash grading, its ask and its decision log are `grade-bash`; plan-mode and read-only allows
-    are `allow-readonly-bash`; role and evasion denials are `tier-agent-spawns`."""
+    are `allow-readonly-bash`; the integration notice is `tier-agent-spawns`. Role confinement,
+    by name, marker, framework mapping or evasion, has no id and runs with every hook off, as the
+    Workflow launch guard does: a switch routes spawns, it never unconfines a role."""
     event = normalize(payload)
     kind, tool = event.get("hook_event_name"), event.get("tool_name")
     if kind == "PreToolUse":
@@ -727,8 +729,7 @@ def _dispatch(runtime, payload):
             inputs = event["tool_input"]
             role_name, prompt = inputs.get("subagent_type"), inputs.get("prompt")
             session = event.get("session_id")
-            spawns = enabled("tier-agent-spawns")
-            fields = constrained_role(role_name) if spawns else None
+            fields = constrained_role(role_name)
             if fields is not None:
                 results.append(confinement_deny(runtime, session, role_name, fields, prompt,
                                                 "subagent_type"))
@@ -740,7 +741,7 @@ def _dispatch(runtime, payload):
             # classifier inferred is not, because a wrong inference remembered is a session that
             # cannot get the corrected brief through. None of this runs where the stance already
             # denies every spawn.
-            if delegation != "off" and spawns:
+            if delegation != "off":
                 if fields is not None:
                     remember_denial(session, role_name, prompt)
                 else:
@@ -754,7 +755,7 @@ def _dispatch(runtime, payload):
                         evaded = framed or evasion_deny(runtime, session, prompt)
                         if evaded is not None:
                             results.append(evaded)
-                notice = descriptor_notice(session)
+                notice = descriptor_notice(session) if enabled("tier-agent-spawns") else None
                 if notice is not None:
                     results.append(notice)
             if delegation == "off":

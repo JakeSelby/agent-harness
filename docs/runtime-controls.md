@@ -87,7 +87,7 @@ and each id is a unit of the `hooks` switch kind in the [selection document](pre
 | `neutralize-tool-output` (core) | PostToolUse |
 | `stage-user-files` | PreToolUse on SendUserFile, Claude Code only |
 | `stop-gate` (core) | Stop |
-| `tier-agent-spawns` | spawn routing, and the role-confinement and evasion denials |
+| `tier-agent-spawns` | band routing of a spawn, and the integration descriptor notice |
 | `usage-feed` | UserPromptSubmit, SubagentStart, SubagentStop and PostToolUse on a spawn, Claude Code only |
 | `usage-log` | SessionEnd |
 | `validate-plan-card` | PostToolUse on a plan file |
@@ -97,6 +97,9 @@ sync: the dispatcher resolves the selection at each event and neither loads nor 
 whose id is `off`. The libraries those modules load (`decisions`, `posture`, `pricing`,
 `telemetry`, `rule-detectors`, `otel-headers`, `filter-lines`) have no id and no switch. Denying
 every spawn under `delegation: off` is the stance's own answer and stays with any id off.
+Role confinement has no id either: the constrained-role, `harness-role:` marker, framework and
+evasion denials and the Workflow launch guard run with every hook off, so switching
+`tier-agent-spawns` off stops band routing and never lets a constrained role run in session.
 
 The four core ids enforce rather than assist. A layer may switch one off only when the user
 configuration sets `"core_switches_acknowledged": true`; `config set`, `sync` and

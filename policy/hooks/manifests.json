@@ -111,7 +111,7 @@
     },
     "tier-agent-spawns": {
       "claims": [
-        "Routes each spawn to the model its role or band names, and refuses a constrained role spawned natively."
+        "Routes each spawn to the model its role or band names; role confinement stays on when this is off."
       ],
       "surface": [
         "hook-events"
