@@ -78,6 +78,11 @@ def resolution(root, config, runtime, name, model=None, prompt=None):
     stances = catalog.resolve_stances(root, config)
     if config["stances"]["delegation"] == "off":
         raise ValueError("delegation is off; perform the work inline or select another stance")
+    selection = session_selection(root)
+    off = switched_off(selection)
+    if name in off["roles"]:
+        raise ValueError("the " + name + " role is switched off in the selection; switch it on or "
+                         "perform the work inline")
     fields, body = catalog.role_contract(root, name)
     if fields["authority"] not in ("read-only", "artifact-write"):
         raise ValueError("workspace-write roles use their normal workflow, not a constrained worker")
@@ -93,7 +98,8 @@ def resolution(root, config, runtime, name, model=None, prompt=None):
         raise ValueError("invalid worker model identifier")
     bindings["model"] = chosen
     parts = [(root / "primitives/instructions.md").read_text()]
-    parts += [p.read_text() for p in sorted((root / "primitives/rules").glob("*.md"))]
+    parts += [p.read_text() for p in sorted((root / "primitives/rules").glob("*.md"))
+              if p.stem not in off["rules"]]
     parts += [p.read_text() for p in stances.values()]
     parts += [body]
     parts += ["Worker execution contract: use read-only tools; never delegate or change configuration. "
@@ -107,9 +113,10 @@ def resolution(root, config, runtime, name, model=None, prompt=None):
         record["budget"] = posture_figures(root, row)
     instructions = "\n\n---\n\n".join(parts)
     skills, docs = policy_reads(root, instructions, catalog.role_skills(root, fields))
+    skills = [path for path in skills if path.name not in off["skills"]]
     return {"fields": fields, "bindings": bindings, "instructions": instructions,
             "skills": skills, "docs": docs, "context": context_estimate(instructions, skills, docs),
-            "posture": record, "budget_sentence": sentence, "selection": session_selection(root)}
+            "posture": record, "budget_sentence": sentence, "selection": selection}
 
 
 def session_selection(root, env=None):
@@ -141,6 +148,17 @@ def session_fingerprint(root, env=None):
         return module.fingerprint(os.environ if env is None else env, root=root) if module else None
     except Exception:
         return None
+
+
+def switched_off(selection):
+    """`{kind: units set off}` for the rules, skills and roles a worker run is built from.
+
+    A worker is a projection like any other, so a unit the launching session switches off is
+    absent from it; a selection nobody could resolve switches nothing off.
+    """
+    selection = selection if isinstance(selection, dict) else {}
+    return {kind: {unit for unit, value in (selection.get(kind) or {}).items() if value == "off"}
+            for kind in ("rules", "skills", "roles")}
 
 
 POLICY_DOC = re.compile(r"docs/[a-z0-9][a-z0-9.-]*\.md")

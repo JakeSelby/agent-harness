@@ -284,6 +284,21 @@ def routable(kind, cwd, session=None, announce=False, transcript=None):
     return definition(kind, cwd) or {}, None
 
 
+def switched_off(posture, role):
+    """Whether the selection in force switches `role` off; a `posture.py` that cannot say means no.
+
+    Sync withholds an `off` role's definition, but a session or project layer can switch one off
+    without a sync, and the file the last sync wrote is still on disk. The selection decides.
+    """
+    reader = getattr(posture, "selection", None)
+    if reader is None:
+        return False
+    try:
+        return (reader(strict=False).get("roles") or {}).get(role) == "off"
+    except Exception:
+        return False
+
+
 def band_route(posture, models, cwd, table=None, session=None, announce=False, transcript=None):
     """`(route, notice)` for a spawn that named nothing; a route is None when nothing routes it.
 
@@ -307,6 +322,9 @@ def band_route(posture, models, cwd, table=None, session=None, announce=False, t
     if band not in getattr(posture, "BANDS", ()):
         return None, None
     worker = posture.BAND_ROLES[band]
+    if switched_off(posture, worker):
+        return None, (worker + " is switched off in the selection, so this spawn is not routed to "
+                      "the variant's default band")
     fields, notice = routable(worker, cwd, session, announce, transcript)
     if fields is None:
         return None, notice
