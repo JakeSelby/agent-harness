@@ -164,7 +164,7 @@
         },
         {
           "name": "Hit rate per rule",
-          "line": "harness usage --rules reports how often each rule fired, by repository and by the variant you had selected, and --by profile splits spend by the profile that wrote each row.",
+          "line": "harness usage --rules reports how often each rule fired, by repository and by the variant you had selected; --by profile splits spend by the profile behind each row.",
           "doc": "docs/usage.md"
         },
         {
