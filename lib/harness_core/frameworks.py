@@ -31,6 +31,8 @@ way to hear that it was wrong.
   follow them", "follow it" in the next sentence). A negated directive, a directive aimed at
   something else, and a sentence that edits, updates or rewrites the file itself are not
   directives; "update your findings" edits something else and leaves the directive standing.
+  The path has to end where the declared one does, so `<path>.bak` is another file, and a
+  trailing "follow the instructions in <other>" names its own file.
 * **phrases** — whole sentences of the framework's own prompt text, distinctive enough that
   quoting one is a coincidence and quoting `corroboration` of them is not. Single generic nouns
   are not phrases: "unified diff" and "list of findings" are what an ordinary fix-up brief says
@@ -309,22 +311,39 @@ def _governs(pattern, before):
     return False
 
 
+# A trailing "the instructions" followed by where they live names its own file, not this one.
+OWN_TARGET = re.compile(r"\s+(?:in|at|from|of|under|inside)\b")
+# The declared path ends where a longer file name would go on: `<path>.bak` is another file.
+PATH_END = r"(?![\w/-]|\.\w)"
+
+
+def _points_back(after):
+    """Whether `after` holds an unnegated directive aimed back at the file before it."""
+    return any(not _names_its_own(found, after) for found in _unnegated(DIRECTIVE_BACK, after))
+
+
+def _names_its_own(found, after):
+    """Whether a trailing "follow the instructions" says where they live, so they are not ours."""
+    said = found.group(0)
+    return said.endswith("instructions") and not said.startswith("as ") and bool(
+        OWN_TARGET.match(after, found.end()))
+
+
 def _directed(value, text):
     """Whether `text` tells the subagent to follow or apply the file named `value`."""
-    needle = normalise(value)
+    path = re.compile(re.escape(normalise(value)) + PATH_END)
     sentences = SENTENCE.split(text)
     for index, sentence in enumerate(sentences):
-        if needle not in sentence:
+        if not path.search(sentence):
             continue
-        parts = sentence.split(needle)
+        parts = path.split(sentence)
         pairs = [(parts[at - 1], parts[at]) for at in range(1, len(parts))]
         if any(_governs(EDIT, before) or _unnegated(EDIT_BACK, after) for before, after in pairs):
             continue
-        if any(_governs(DIRECTIVE, before) or _unnegated(DIRECTIVE_BACK, after)
-               for before, after in pairs):
+        if any(_governs(DIRECTIVE, before) or _points_back(after) for before, after in pairs):
             return True
         following = sentences[index + 1] if index + 1 < len(sentences) else ""
-        if _unnegated(DIRECTIVE_BACK, following) and not _unnegated(EDIT_BACK, following):
+        if _points_back(following) and not _unnegated(EDIT_BACK, following):
             return True
     return False
 

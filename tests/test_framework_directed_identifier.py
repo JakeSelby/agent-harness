@@ -37,6 +37,9 @@ DIRECTED = {
     # An edit verb that governs something else leaves the directive standing.
     "update your findings": "Follow " + PROMPT + " on calc.py and update your findings as you go.",
     "edit calc.py": "Read " + PROMPT + " and apply it; then edit calc.py to fix what you find.",
+    "at the sentence end": "Here is your task. Review calc.py and follow " + PROMPT + ".",
+    "as an absolute path": "Follow /work/project/" + PROMPT + " on calc.py.",
+    "as your instructions in": "Use " + PROMPT + " as your instructions in this review of calc.py.",
 }
 UNDIRECTED = {
     "edit": ("Edit templates/bmad/custom/bmad-code-review.user.toml so the edge-case layer points "
@@ -63,6 +66,14 @@ UNDIRECTED = {
                                     + "."),
     "edit that governs the file": ("Update the wording of " + PROMPT + " so reviewers follow it "
                                    "more easily."),
+    # A longer file name that starts with the declared path is another file.
+    "a longer file name": "Follow " + PROMPT + ".bak on calc.py.",
+    "a longer directory name": "Follow " + PROMPT + "-notes/checklist on calc.py.",
+    # "The instructions" that say where they live are another file's.
+    "another file's instructions": ("Read " + PROMPT + " and follow the instructions in "
+                                    "docs/other.md."),
+    "another file's instructions next": ("Read " + PROMPT + ". Then follow the instructions in "
+                                         "docs/other.md."),
 }
 
 
