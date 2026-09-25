@@ -222,6 +222,15 @@ class EveryIdSwitchesOff(Fixture):
             self.configure({"allow-readonly-bash": "off"})
             self.assertNotIn("allow", decisions(self.dispatch("claude-code", pre("mcp__docs__search"))[1]))
 
+    def test_plan_allow_tools_for_a_workflow_is_keyed_to_allow_readonly_bash(self):
+        launch = pre("Workflow", script="await agent('Look around.', { agentType: 'worker-a' });\n")
+        with patch.object(lifecycle, "investigating", return_value=True), \
+                patch.object(lifecycle, "plan_allowed_tool", return_value=True):
+            self.configure({})
+            self.assertIn("allow", decisions(self.dispatch("claude-code", launch)[1]))
+            self.configure({"allow-readonly-bash": "off"})
+            self.assertNotIn("allow", decisions(self.dispatch("claude-code", launch)[1]))
+
     def test_a_core_hook_off_without_the_acknowledgement_keeps_running(self):
         self.configure({"stop-gate": "off"}, acknowledged=False)
         loaded, _ = self.dispatch("claude-code", {"hook_event_name": "Stop", "session_id": "s"})

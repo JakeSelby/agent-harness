@@ -403,7 +403,8 @@ def workflow_results(runtime, event):
             results.append(role_deny(runtime, named[0], named[1],
                                      "This workflow script " + named[2] + ", and a script's "
                                      "agent() calls run in session, past every spawn guard."))
-    if not results and investigating(runtime, event) and plan_allowed_tool("Workflow"):
+    if not results and enabled("allow-readonly-bash") and investigating(runtime, event) \
+            and plan_allowed_tool("Workflow"):
         results.append({"hookSpecificOutput": {"permissionDecision": "allow",
             "permissionDecisionReason": "Plan-mode research tool named by plan_allow_tools, "
             "run at the permission posture you selected."}})
