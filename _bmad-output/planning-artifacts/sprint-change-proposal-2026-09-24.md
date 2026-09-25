@@ -377,3 +377,53 @@ Mode: batch.
 - **6.4 Sprint status:** [x] Done for AH-D013, regenerated in this PR. [!] Action-needed for the new
   stories' entries, which come with their issue-map entries in step 3.
 - **6.5 Handoff:** [x] Done. Section 5.
+
+## Amendment, 2026-09-24: step 3 filings
+
+Step 3 ran under #787 (AH-C074). Each new story carries its type label, parent epic and milestone, and a story
+file seeded with its Story, Context and value and Acceptance criteria; Design, Tasks and Dev notes wait for
+its delivery pull request.
+
+**New stories:**
+- N1 → AH-S232 → #788, v0.14.0
+- N2 → AH-S233 → #789, v0.14.0
+- N3 → AH-S234 → #790, v0.14.0
+- N4 → AH-S235 → #791, v0.14.0
+- N5 → AH-S236 → #792, v0.14.0
+- N6 → AH-S237 → #793, v0.14.0
+- N7 → AH-S238 → #794, v0.14.0
+- N8 → AH-S239 → #795, v0.15.0
+- N9 → AH-S240 → #796, v0.15.0
+- N10 → AH-S241 → #797, v0.15.0
+- N11 → AH-S242 → #798, v0.15.0
+- N12 → AH-S243 → #799, v0.15.0
+- N13 → AH-S244 → #800, v0.16.0
+- N14 → AH-S245 → #801, v0.16.0
+- N15 → AH-S246 → #802, v0.16.0
+- N16 → AH-S247 → #803, v0.17.0
+- N17 → AH-S248 → #804, v0.17.0
+- N18 → AH-S249 → #805, v0.17.0
+- N19 → AH-S250 → #806, v0.17.0
+- N20 → AH-S251 → #807, v1.0.0
+- C2 → AH-C075 → #808, with no milestone: re-derive the PRD's stale `unreleased` status lines.
+
+**Reserved:**
+- Under #632: #428 AH-S252, #429 AH-B095, #482 AH-S253, and #509 to #514 as AH-S254 to AH-S259.
+- Under #633: #677 AH-B096 and #707 AH-B097.
+- With no parent: #493 AH-S260, #715 AH-SP013, and #531 AH-B098, which is closed but counts as accepted.
+
+**Deviations from the map in section 4.1:**
+1. #559, #560 and #748 sit in v0.15.0 and #562 in v0.14.0, the earlier of the two milestones the map gives
+   each; #802 (N15) absorbs the four-arm extension and #562's four-arm docs.
+2. Epics #552 and #632 carry no milestone. Their windows, v0.14.0 to v0.16.0 and v0.14.0 to v0.17.0, are in
+   `epics.md`, so v0.14.0 can empty when its stories close.
+3. PR #529 closes unmerged and #530 as not planned, both superseded by #787, which reserves #529's issues on
+   current `main`.
+4. #785, filed into v0.14.0 after the map was drawn, stays there; its delivery pull request reserves its ID.
+5. #780 keeps no milestone.
+6. #745 to #751 are not reserved here. Pull request #752 is open and already reserves them as AH-E018,
+   AH-C067, AH-SP010, AH-S227 to AH-S229 and AH-SP011, IDs `main` has skipped so far; section 5's mapping of
+   #745 to #751 completes when it merges. Their milestone moves are made.
+
+**Final milestones:** v0.14.0 holds 43 open issues, v0.15.0 18, v0.16.0 11, v0.17.0 22 and v1.0.0 12;
+59 have none. v0.17.0 is milestone 20.
