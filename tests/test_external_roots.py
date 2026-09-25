@@ -135,7 +135,7 @@ class ExternalRootProjectionTests(unittest.TestCase):
             self.assertEqual(harness.cmd_diff(harness.argparse.Namespace(quiet=False)), 0)
         self.assertNotIn("missing link", out.getvalue())
 
-        repo_link = self.home / ".claude" / "rules" / "harness"
+        repo_link = self.home / ".claude" / "rules" / "harness" / "secrets.md"
         self.assertTrue(repo_link.is_symlink())
         with loud():
             harness.cmd_uninstall(harness.argparse.Namespace())

@@ -58,8 +58,10 @@ this precedence, lowest first:
 
 `harness selection --json` prints the result: every unit of every kind with its value, plus a
 `sources` object in the same shape naming the layer that set each one. That output reads back
-unchanged as a session file. `harness stances` stays as the stance-only view. `sync` projects the
-user's layers only; a project or session layer stays in the session that set it, and an isolated
+unchanged as a session file. `harness stances` stays as the stance-only view;
+`harness config set rules.<name> off` writes one switch, and the same form works for `skills`,
+`workflows` and `roles`. What sync does with an `off` unit is in [the sync model](sync-model.md).
+`sync` projects the user's layers only; a project or session layer stays in the session that set it, and an isolated
 worker records the selection of the session that launched it.
 
 A selection carries selections only. A project, session or mode file holding any other key —
@@ -336,9 +338,9 @@ the default to `config.example.json`, add a row here, and add a line to the CHAN
 
 ## What is deliberately not a stance
 
-The always-loaded rules in `primitives/rules/` do not switch. A rule has to hold whichever way every
-stance is thrown, which is what lets the harness install for someone whose preferences nobody
-knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
+The always-loaded rules in `primitives/rules/` have no variants. You can switch one off in the
+selection, but none changes with a stance: a rule has to hold whichever way every stance is
+thrown, which is what lets the harness install for someone whose preferences nobody knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
 want the opposite, it belongs in `primitives/stances/`, not `primitives/rules/`.
 
 Two rules do not pass that test yet, tracked rather than hidden: `conciseness.md` is comment and
