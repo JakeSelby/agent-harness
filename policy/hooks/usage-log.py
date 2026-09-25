@@ -188,6 +188,80 @@ def usage_path():
     return Path.home() / ".local" / "state" / "agent-harness" / "usage.jsonl"
 
 
+# The ledger grows compatibly: a change adds a field, a rename ships a fold, and nothing is
+# removed in place. Every row written from this version on names the schema it was written
+# under; a row without the key predates it and is read as version 0. Bump the version with any
+# change to what a row carries, and add a rename to FIELD_FOLDS as `old name: new name`, never
+# by rewriting old rows. See docs/usage.md, "Ledger schema".
+SCHEMA_KEY = "schema_version"
+# Version 1 is first released in v0.14.0 and carries every field that release adds,
+# `profile_fingerprint` among them.
+SCHEMA_VERSION = 1
+FIELD_FOLDS = {}
+FINGERPRINT_KEY = "profile_fingerprint"
+_POSTURE = []
+
+
+def profile_fingerprint():
+    """The fingerprint of the profile in force, from `posture.py`; None when it cannot be had.
+
+    A copy of this hook away from its resolver, or a resolver that fails, stamps null: an
+    unattributed row, never a guessed one. The resolver remembers the answer for the process.
+    """
+    if not _POSTURE:
+        _POSTURE.append(sibling("posture", required=False))
+    try:
+        return _POSTURE[0].fingerprint() if _POSTURE[0] else None
+    except Exception:
+        return None
+
+
+def stamped(record):
+    """A copy of `record` naming the schema and the profile. The caller's dict is untouched.
+
+    A record that already names its profile keeps it, null included: a worker's row carries the
+    profile its run started under, and a backfilled row carries only what the ledger already
+    knew, so neither is stamped with the profile of whoever happens to write it.
+    """
+    out = dict(record, **{SCHEMA_KEY: SCHEMA_VERSION})
+    if FINGERPRINT_KEY not in out:
+        out[FINGERPRINT_KEY] = profile_fingerprint()
+    return out
+
+
+def fold(row, folds=None):
+    """A copy of `row` with every renamed field under its current name.
+
+    A field whose current name is already present keeps that value: the row was written after
+    the rename, and the old key is only a leftover. Unknown fields pass through untouched, so a
+    row from a newer writer reads with everything it carries.
+    """
+    folds = FIELD_FOLDS if folds is None else folds
+    out = dict(row)
+    for old, new in folds.items():
+        if old in out:
+            value = out.pop(old)
+            out.setdefault(new, value)
+    return out
+
+
+def ledger_rows(text, folds=None):
+    """The rows a ledger's text holds, folded, oldest first.
+
+    A line that is not a JSON object is skipped rather than fatal, and a row is never refused
+    for a field or a schema version this reader does not know.
+    """
+    rows = []
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(fold(row, folds))
+    return rows
+
+
 def projects_dir():
     return Path.home() / ".claude" / "projects"
 
@@ -624,7 +698,13 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, lin
     # request id — so a reader can tell a row that was deduplicated from one that could not be.
     if idless:
         row["idless_records"] = idless
-    row.update(budget_fields(row["agent_type"]))
+    if workflow:
+        # A Workflow-tool agent is launched by the tool, not spawned: no spawn hook routed it and
+        # no brief stated it a budget, so a role name it happens to carry prices it at nothing.
+        row["unconfined"] = True
+        row.update(dict((key, None) for key in BUDGET_KEYS))
+    else:
+        row.update(budget_fields(row["agent_type"]))
     row.update(summed(per_message))
     return row
 
@@ -636,6 +716,19 @@ UNNAMED_TYPES = ("", "general-purpose")
 # kept; anything else is recorded as the fact that it was something else, because a usage row is
 # a count and must not become a place free text is stored.
 AGENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+
+
+def refused_spawns(agents, errored):
+    """The `Agent` call ids in `errored` that never ran: no subagent row names them.
+
+    A spawn a `PreToolUse` hook denied comes back as an error result and writes no subagent
+    transcript, so counting it as a subagent reports work nobody did. A spawn that ran and then
+    failed also comes back as an error, but it left a transcript whose meta names the call, and
+    it stays counted. A subagent file whose meta names no call is still one row in `agents`,
+    and the session's count is never below that, so it is counted either way.
+    """
+    ran = set(row.get("tool_use_id") for row in agents or [] if row.get("tool_use_id"))
+    return set(use_id for use_id in errored if use_id not in ran)
 
 
 def mark_reroutes(agents, requested):
@@ -884,6 +977,12 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     raw = {} if raw is None else raw
     idless = 0
     models, agent_calls, seen, requested = [], set(), set(), {}
+    # `Agent` calls whose result came back as an error: a spawn a hook refused, or one that
+    # failed after it ran. `refused_spawns` tells the two apart when the row is counted, but
+    # only by subagent files: a session file holding sidechain lines is the older format, where
+    # a spawn that ran and failed has no file either, so there every errored call stays counted.
+    errored_calls = set()
+    legacy_sidechains = False
     briefs = {}
     started = ended = branch = ""
     turns = 0
@@ -913,6 +1012,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
             # turns into this one as sidechain lines. They are that agent's work, so they make
             # no event here; their tokens were spent by this session and are summed as ever.
             sidechain = bool(entry.get("isSidechain"))
+            legacy_sidechains = legacy_sidechains or sidechain
             stamp = entry.get("timestamp") or ""
             if stamp:
                 started = stamp if not started or stamp < started else started
@@ -937,6 +1037,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
                 for block in results:
                     tool_use_id = block.get("tool_use_id") or ""
                     name = tool_names.get(tool_use_id, "")
+                    if name == "Agent" and tool_use_id and block.get("is_error") is True:
+                        errored_calls.add(tool_use_id)
                     text, cut = _result_parts(block.get("content"), name)
                     events.append({"kind": "tool_result", "turn": turn,
                                    "tool_use_id": tool_use_id, "tool_name": name,
@@ -1058,7 +1160,8 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
     for name, _ in CACHE_TIERS:
         if name in totals:
             record[name] = totals[name]
-    record["subagents"] = max(len(agents), len(agent_calls))
+    refused = set() if legacy_sidechains else refused_spawns(agents, errored_calls)
+    record["subagents"] = max(len(agents), len(agent_calls - refused))
     record["turns"] = turns
     # Every record these totals include that nothing identified — neither a message id nor a
     # request id — this session's own and those of the subagent files folded into it, since
@@ -1405,8 +1508,8 @@ def upsert(record, path=None, drop=()):
     upsert alone would leave the old row beside the new one and the ledger would carry the same
     thread twice; naming the stale key is how a reclassification migrates rather than doubles.
     """
-    records = [record] if isinstance(record, dict) else list(
-        {row_key(r): r for r in record}.values())
+    records = [stamped(record)] if isinstance(record, dict) else list(
+        {row_key(r): stamped(r) for r in record}.values())
     drop = set(drop)
     if not records and not drop:
         return Path(path) if path else usage_path()
@@ -1423,12 +1526,14 @@ def upsert(record, path=None, drop=()):
             text = path.read_text(encoding="utf-8")
         except OSError:
             text = ""
+        # An existing row is kept exactly as it was written, and matched on its folded key:
+        # the rewrite replaces records, it does not migrate anyone else's.
         for line in text.splitlines():
             try:
                 row = json.loads(line)
             except Exception:
                 continue
-            if isinstance(row, dict) and row_key(row) not in replaced:
+            if isinstance(row, dict) and row_key(fold(row)) not in replaced:
                 rows.append(row)
         rows.extend(records)
         tmp = path.with_name("{}.{}.tmp".format(path.name, os.getpid()))
@@ -1503,7 +1608,7 @@ def append_row(record, path=None):
         raise RuntimeError("usage lock unavailable; the record was not appended")
     try:
         with path.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record) + "\n")
+            stream.write(json.dumps(stamped(record)) + "\n")
     finally:
         release(lock)
     return path
@@ -1533,12 +1638,8 @@ def recorded(path=None):
     except OSError:
         return {}
     out = {}
-    for line in text.splitlines():
-        try:
-            row = json.loads(line)
-        except Exception:
-            continue
-        if isinstance(row, dict) and row.get("session_id") and (row.get("kind") or "session") == "session":
+    for row in ledger_rows(text):
+        if row.get("session_id") and (row.get("kind") or "session") == "session":
             out[row["session_id"]] = row
     return out
 
@@ -1594,6 +1695,8 @@ def worker_rows(cutoff=0.0):
                # Stamped by `workers.py` when the run started, so a sweep months later still
                # names the version that ran it rather than the version reading the file.
                "harness_version": record.get("harness_version"),
+               # The same for the profile; a run from before the field is unattributed.
+               FINGERPRINT_KEY: record.get(FINGERPRINT_KEY),
                "session_id": record["id"], "agent_id": record["id"],
                "agent_type": record["role"], "repo": os.path.basename(str(record.get("workspace") or "").rstrip("/")),
                "model": record.get("model") or "", "effort": record.get("effort") or "",
@@ -1665,6 +1768,12 @@ def rescan(days=30):
         except (OSError, ValueError):
             pass
         records = scan_all(path, prior=prior.get(ident), rescan=True)
+        # A transcript does not say which profile ran it. A session the ledger already holds
+        # keeps the fingerprint its live row was written with, and its subagents ran under the
+        # same profile; a session it does not is unattributed.
+        known = (prior.get(ident) or {}).get(FINGERPRINT_KEY)
+        for record in records:
+            record[FINGERPRINT_KEY] = known
         if records:
             batch.extend(records)
             found += 1
@@ -1694,6 +1803,8 @@ def main(argv):
         # Role-run workers have no session of their own to end, so the detached worker that
         # records this session also sweeps the recent ones into rows.
         records = scan_all(transcript, session_id, cwd) + worker_rows(time.time() - 30 * 86400)
+        # Stamped here as well as in `upsert`, so what is offered live is what a replay reads.
+        records = [stamped(r) for r in records]
         if records:
             upsert(records)
             export(records)

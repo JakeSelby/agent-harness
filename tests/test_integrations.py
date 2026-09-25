@@ -134,7 +134,7 @@ print(json.dumps({"contract_version": 1, "request_id": r["request_id"],
         project = self.root / "project.json"
         project.write_text(json.dumps(self.cfg))
         with patch.object(harness, "config_path", return_value=self.config_path):
-            with self.assertRaisesRegex(SystemExit, "stances only"):
+            with self.assertRaisesRegex(SystemExit, "selection keys only"):
                 harness.load_config({"HARNESS_PROJECT_CONFIG": str(project)})
 
     def test_argv_with_spaces_and_shell_metacharacters_is_literal(self):

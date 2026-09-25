@@ -441,6 +441,10 @@ that `harness stances` honours (#294, v0.14.0).
 - A session override never rewrites the user's global selection.
 - Every hook reads the same effective policy that `harness stances` prints.
 - Project configuration may select stances only. Identity, targets and permissions stay user-owned.
+  *Amended 2026-09-25:* a project file may carry any selection key, so it may also switch rules,
+  hooks, skills, workflows and roles and name a mode (#554, FR-15). Identity, targets, permissions,
+  runtime flags, `primitive_roots` and telemetry stay user-owned; a project file that sets one is
+  refused with a message naming the key.
 
 **Out of scope:** stances that weaken an invariant.
 
@@ -857,7 +861,8 @@ private logs. A planner returns content, and the harness validates it and publis
 #### FR-41: Confinement however the spawn is named
 A constrained role's work must be refused as a native spawn, whatever name the spawn carries. This includes
 framework review layers. **Status:** partial: implemented (0.11.1, spawn guards); the session-level signal
-is unreleased (#585). The Workflow tool still bypasses it (#576, v0.14.0).
+is unreleased (#585). The Workflow tool's launch is guarded (#576, unreleased); a script's `agent()` calls
+are still not band-routed.
 
 **Consequences (testable):**
 - While a routed review is in flight, an unnamed spawn carrying review work is refused.

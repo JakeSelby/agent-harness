@@ -17,9 +17,8 @@ selected stance through its linked rules; Codex reads the same text in generated
 Use `HARNESS_STANCE_VOICE=scannable bin/harness stances --json` to inspect a session selection.
 Setting an environment variable on a running agent does not itself rewrite its loaded context.
 
-Resolution order is distribution defaults, user configuration, the optional file explicitly
-named by `HARNESS_PROJECT_CONFIG`, then `HARNESS_STANCE_*` session values. Project files can
-select stances only. They cannot change identity, runtime targets or permission configuration.
+Resolution order, and what a project or session file may carry, is the selection document in
+[preferences](preferences.md#the-selection-document).
 
 ## Define a personal stance
 
@@ -145,13 +144,55 @@ after this repository's own rules, and any skills the root carries are linked be
 ones. [The sync model](sync-model.md) covers the ordering, the drift reporting and what
 uninstall takes back.
 
+## Declare a module's manifest
+
+A switch says whether a rule, skill, role, workflow or hook is on. Its manifest says what the
+module is for and how its effect could be told apart from the rest, so a flipped switch can be
+attributed and scored. Shipped modules declare theirs in `primitives/manifests.json`, and hooks
+in `policy/hooks/manifests.json`. A root in `primitive_roots` may carry a `manifests.json` of the
+same shape at its top level. Stance variants are chosen, not switched, and carry none.
+
+```json
+{"schema_version": 1,
+ "rules": {"secrets": {"claims": ["Keeps credentials out of every tracked file."],
+                       "surface": ["resident-context"],
+                       "instruments": ["detector:secrets/secret-in-write"],
+                       "slot": null, "dependencies": [], "conflicts": []}}}
+```
+
+| Field | Holds |
+| --- | --- |
+| `claims` | What the module is for, one or more sentences. |
+| `surface` | Where it reaches the model: `resident-context` (loaded every session, a skill's or role's listing included), `on-demand-context` (loaded when invoked) and `hook-events` (runs at runtime events). |
+| `instruments` | What measures it, such as `detector:<id>` from `policy/hooks/rule-detectors.py`. Empty means unmeasured, and every report says `unmeasured`, never that the module has no effect. |
+| `slot` | `null`, or `{"id": <identifier>, "cedes": true or false}` for an exclusive position. |
+| `dependencies` | `kind/unit` modules that must be switched on while this one is. |
+| `conflicts` | `kind/unit` modules that must not be switched on with this one. |
+
+The resolver, `posture.selection()`, enforces them whenever it runs strictly, so `harness
+selection` and every command that reads a selection refuse, naming each module involved, when:
+
+- a shipped module has no manifest, or a manifest lacks a field or holds a malformed one;
+- a switched-on module depends on one that is off or not installed;
+- two switched-on modules conflict;
+- two switched-on modules claim one slot and neither cedes it;
+- one module is declared in two manifest files.
+
+A module switched off asks nothing of its dependencies and holds no slot. A module from your own
+root may omit its manifest: it resolves and reports as unmeasured, and a root written before
+manifests existed keeps working. A dependency is a module whose absence breaks this one. A
+pointer to further reading is not a dependency. `harness selection` shows each switch unit's
+instruments, or `unmeasured`, beside its value.
+
 ## Contribute shared primitives
 
 Author rules, stances, skills, roles, workflows and presentation under `primitives/`.
 Role instructions and authority are shared; native model/tool settings belong in
 `adapters/<runtime>/bindings.json`. Workflow bodies use `{{arguments}}`; the Claude command
 projection translates that to its native argument syntax. Existing `claude/` source paths are
-compatibility links or generated views, not another authoring home.
+compatibility links or generated views, not another authoring home. A new rule, skill, role or
+workflow also needs its entry in `primitives/manifests.json`
+([above](#declare-a-modules-manifest)).
 
 Run `bin/harness generate` after editing roles, workflows or base instruction templates.
 `bin/harness generate --check` and lint reject projection drift. `bin/harness catalog` emits

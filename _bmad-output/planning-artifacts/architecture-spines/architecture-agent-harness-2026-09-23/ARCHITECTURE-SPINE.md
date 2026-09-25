@@ -130,6 +130,10 @@ flowchart TB
   - `policy/hooks/posture.py` is the only resolver. Its precedence runs from the defaults, through the
     user and project layers, to the session.
   - Project configuration may select stances only.
+    *Amended 2026-09-25:* a project file now carries the whole selection document, so it may also
+    switch rules, hooks, skills, workflows and roles and name a mode (#554). Identity, permissions,
+    runtime flags, `primitive_roots` and telemetry stay user-owned, and a project file that sets one
+    is refused with a message naming the key. Invariants still sit outside every switch.
   - `bin/harness` stops resolving on its own and calls the resolver. #294 and #554 carry that
     migration, and no new code may read the ladder directly. The session hook reports stances through
     `bin/harness stances --json`, so that output keeps its shape across the migration.
@@ -226,6 +230,9 @@ flowchart TB
     - the Workflow tool's `agent()` (#576);
     - the plugin channel, which installs constrained roles as native agents with no hook (the plugin
       follow-up under #634).
+    *Amended 2026-09-25:* the Workflow tool's launch is guarded (#576): the pre-tool hook reads the script
+    and refuses one naming a constrained role, so the remaining gap there is band routing of its
+    `agent()` calls, not confinement.
 
 ### AD-9: Checks bind subagents; decisions flow up [ADOPTED]
 
