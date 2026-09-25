@@ -60,6 +60,14 @@ reviews:
       mode: "off"
     description:
       mode: "off"
+  # No finishing touch that commits to the pull request's branch on its own; /build pushes there.
+  finishing_touches:
+    unit_tests:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
   tools:
     markdownlint:
       enabled: false
