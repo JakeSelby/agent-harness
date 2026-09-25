@@ -28,8 +28,9 @@ way to hear that it was wrong.
   sentence of the framework's own text (#739). The directive is what separates this from a brief
   that edits the file or reads it for some other reason, so it is enough alone. It must govern
   the file: ahead of it and unbroken by a clause, or after it with a pronoun pointing back ("and
-  follow them", "follow it" in the next sentence). A negated directive, a sentence that also
-  edits, updates or rewrites the file, and a directive aimed at something else are not directives.
+  follow them", "follow it" in the next sentence). A negated directive, a directive aimed at
+  something else, and a sentence that edits, updates or rewrites the file itself are not
+  directives; "update your findings" edits something else and leaves the directive standing.
 * **phrases** — whole sentences of the framework's own prompt text, distinctive enough that
   quoting one is a coincidence and quoting `corroboration` of them is not. Single generic nouns
   are not phrases: "unified diff" and "list of findings" are what an ordinary fix-up brief says
@@ -265,7 +266,7 @@ def ignored(directory=None):
 
 # What a sentence says, ahead of the file, to adopt it as the subagent's own instructions, in the
 # base or -ing form an instruction takes. A third-person "follows" or "applied" describes, it does
-# not direct. It governs the file only across a short gap with no clause break (LEAD_GAP).
+# not direct. It governs the file only across a short gap with no clause break.
 DIRECTIVE = re.compile(
     r"\b(?:follow(?:ing)?|apply(?:ing)?|obey(?:ing)?|adher(?:e|ing) to|comply(?:ing)? with"
     r"|abid(?:e|ing) by|carry(?:ing)? out|according to|as (?:instructed|directed|specified|"
@@ -280,11 +281,15 @@ DIRECTIVE_BACK = re.compile(
     r"\b(?:(?:follow(?:ing)?|apply(?:ing)?|obey(?:ing)?) (?:it|them|that file|this file"
     r"|those instructions|these instructions|its instructions|the instructions)"
     r"|use (?:those|these|its|the) instructions|as (?:your |the )?(?:\w+ ){0,2}instructions)\b")
-# Work on the file rather than work under it. Negated ("do not edit it") is still a directive.
-EDIT = re.compile(
-    r"\b(?:edit(?:s|ed|ing)?|modif(?:y|ies|ied|ying)|updat(?:e|es|ed|ing)|rewrit(?:e|es|ing|ten)"
-    r"|rewrote|renam(?:e|es|ed|ing)|delet(?:e|es|ed|ing)|remov(?:e|es|ed|ing)|reword(?:s|ed|ing)?"
-    r"|refactor(?:s|ed|ing)?|lint(?:s|ed|ing)?|amend(?:s|ed|ing)?)\b")
+# Work on the file rather than work under it, when the verb governs the file the way a directive
+# does: "update <path>", or "update it" after it. "Update your findings" edits something else.
+# Negated ("do not edit it") is still a directive.
+EDIT_VERB = (r"(?:edit(?:s|ed|ing)?|modif(?:y|ies|ied|ying)|updat(?:e|es|ed|ing)"
+             r"|rewrit(?:e|es|ing|ten)|rewrote|renam(?:e|es|ed|ing)|delet(?:e|es|ed|ing)"
+             r"|remov(?:e|es|ed|ing)|reword(?:s|ed|ing)?|refactor(?:s|ed|ing)?|lint(?:s|ed|ing)?"
+             r"|amend(?:s|ed|ing)?)")
+EDIT = re.compile(r"\b" + EDIT_VERB + r"\b")
+EDIT_BACK = re.compile(r"\b" + EDIT_VERB + r" (?:it|them|that file|this file)\b")
 NEGATION = re.compile(r"\b(?:not|never|no|without|don't|do not)\s+(?:\w+\s+){0,2}\Z")
 SENTENCE = re.compile(r"(?<=[.!?;])\s+|\s+(?:—|–|-{2})\s+")
 
@@ -294,14 +299,10 @@ def _unnegated(pattern, text):
     return [found for found in pattern.finditer(text) if not NEGATION.search(text[:found.start()])]
 
 
-def _edits(sentence):
-    """Whether a sentence asks for the file to be changed, ignoring a negated edit verb."""
-    return bool(_unnegated(EDIT, sentence))
-
-
-def _leads_to(before):
-    """Whether a directive ends close enough before the file, unbroken by a clause, to govern it."""
-    for found in _unnegated(DIRECTIVE, before):
+def _governs(pattern, before):
+    """Whether a `pattern` verb ends close enough before the file, unbroken by a clause, to govern
+    it."""
+    for found in _unnegated(pattern, before):
         gap = before[found.end():]
         if len(gap.split()) <= LEAD_GAP and not CLAUSE_BREAK.search(gap):
             return True
@@ -313,15 +314,17 @@ def _directed(value, text):
     needle = normalise(value)
     sentences = SENTENCE.split(text)
     for index, sentence in enumerate(sentences):
-        if needle not in sentence or _edits(sentence):
+        if needle not in sentence:
             continue
         parts = sentence.split(needle)
-        for at in range(1, len(parts)):
-            before, after = parts[at - 1], parts[at]
-            if _leads_to(before) or _unnegated(DIRECTIVE_BACK, after):
-                return True
+        pairs = [(parts[at - 1], parts[at]) for at in range(1, len(parts))]
+        if any(_governs(EDIT, before) or _unnegated(EDIT_BACK, after) for before, after in pairs):
+            continue
+        if any(_governs(DIRECTIVE, before) or _unnegated(DIRECTIVE_BACK, after)
+               for before, after in pairs):
+            return True
         following = sentences[index + 1] if index + 1 < len(sentences) else ""
-        if _unnegated(DIRECTIVE_BACK, following) and not _edits(following):
+        if _unnegated(DIRECTIVE_BACK, following) and not _unnegated(EDIT_BACK, following):
             return True
     return False
 

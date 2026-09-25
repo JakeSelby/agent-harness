@@ -34,6 +34,9 @@ DIRECTED = {
     "negated edit": "Follow " + PROMPT + " on calc.py, and do not edit it.",
     "another layer": "Apply review-prompts/blind-hunter.md to the diff in /tmp/change.patch.",
     "as your instructions": "Use " + PROMPT + " as your review instructions for calc.py.",
+    # An edit verb that governs something else leaves the directive standing.
+    "update your findings": "Follow " + PROMPT + " on calc.py and update your findings as you go.",
+    "edit calc.py": "Read " + PROMPT + " and apply it; then edit calc.py to fix what you find.",
 }
 UNDIRECTED = {
     "edit": ("Edit templates/bmad/custom/bmad-code-review.user.toml so the edge-case layer points "
@@ -58,6 +61,8 @@ UNDIRECTED = {
     "per something else": "Explain what " + PROMPT + " does per the docs.",
     "directive in another clause": ("Follow the commit convention, and summarise " + PROMPT
                                     + "."),
+    "edit that governs the file": ("Update the wording of " + PROMPT + " so reviewers follow it "
+                                   "more easily."),
 }
 
 
