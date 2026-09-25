@@ -242,7 +242,11 @@ recognised:
   puts that name there, so it is enough on its own.
 - **identifiers** — a literal only the framework's routed text carries, such as the path of one of
   its prompt files. Never enough alone, because a brief that edits the override templates quotes
-  the same path; an identifier counts only with a phrase beside it.
+  the same path; an identifier counts only with a phrase beside it, or when a sentence tells the
+  subagent to follow or apply it. A client writing the brief itself keeps the prompt file, because
+  the subagent must read it, and drops the framework's sentences, so the directive is what
+  separates the layer's work from a brief that edits the file or reads it for another reason
+  (#739).
 - **phrases** — whole sentences of the framework's own prompt text. One is a coincidence;
   `corroboration` of them, two by default, is not.
 
