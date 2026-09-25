@@ -44,8 +44,8 @@ only after such a probe.
 A throwaway hook that blocks once, in a scratch project on a machine with the harness installed:
 
 1. Register a project-scope `UserPromptSubmit` command hook. While a marker file is absent, it writes the
-   marker and prints `{"decision": "block", "reason": "spike: held once"}`; once the marker exists, it
-   prints nothing.
+   marker, appends the block decision it is about to print to a log file, and prints
+   `{"decision": "block", "reason": "spike: held once"}`; once the marker exists, it prints nothing.
 2. **Blocked session, CLI.** Start a session, send one short prompt, record what the client shows and
    whether the prompt text is offered back, then exit without resending.
 3. **Baseline session, CLI.** With the marker present, start a session, send the same prompt and exit.
@@ -60,8 +60,10 @@ blocked session proves nothing.
 ## Exit criterion
 
 Fixed before the run, per client: the blocked session has **zero** assistant entries and **no** usage row
-carrying model tokens, and the baseline session has at least one of each. A client that passes gets the
-hold; a client that fails gets a warn-only guard in AH-S229.
+carrying model tokens, and the baseline session has at least one of each. A blocked session counts only
+when the marker and the log entry show that the hook ran and emitted the block; without both, the run is
+void and repeats, and is never scored as a failure. A client that passes gets the hold; a client that fails
+gets a warn-only guard in AH-S229.
 
 Whether the prompt text is offered back is recorded but does not decide the exit: AH-S229 saves the held
 prompt for the next session either way.
@@ -96,3 +98,4 @@ uncovered feed events (AD-7).
 ## Change log
 
 - 2026-09-23: written at filing from the approved plan and the hooks reference.
+- 2026-09-25: the hook now logs the block it emits, and a blocked session counts only when the marker and the log show the hook ran, so a client that never invoked it is not scored as failing (review finding on #752).

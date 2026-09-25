@@ -38,14 +38,17 @@ detail a summary drops ([#745](https://github.com/JakeSelby/agent-harness/issues
 1. **Precondition.** Confirm the sessions run with a context window above 400,000 tokens. Claude Code caps
    the effective window at the model's own, so below that the variable changes nothing, and the spike
    ends there.
-2. Set `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000` in the `env` block of the user-scope Claude Code settings
+2. **Baseline.** Before changing anything, save the output of `harness usage --by rebuild --days 7` and
+   list the pull requests merged in those seven days. The report takes only a trailing window, so the
+   week before the trial cannot be reported once the trial has run.
+3. Set `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000` in the `env` block of the user-scope Claude Code settings
    for seven days. It takes a plain integer from 100,000 to 1,000,000, and wins over the `/autocompact`
    command, the `--autocompact` flag and the `autoCompactWindow` setting
    [Source: https://code.claude.com/docs/en/env-vars].
-3. Compare the seven days with the seven days before: `harness usage --by rebuild` for each window, and
-   spend per merged pull request.
-4. The maintainer notes any session that lost the thread after a compaction.
-5. Keep the cold-resume guard's switch unchanged across both windows, so that two changes are not
+4. At the end of the seven days, run `harness usage --by rebuild --days 7` again and compare it, and spend
+   per merged pull request, with the saved baseline.
+5. The maintainer notes any session that lost the thread after a compaction.
+6. Keep the cold-resume guard's switch unchanged across both windows, so that two changes are not
    measured as one.
 
 The two weeks also differ in workload. Spend per merged pull request corrects for that only in part, so
@@ -83,3 +86,4 @@ closes the question, with the reason on #751.
 ## Change log
 
 - 2026-09-23: written at filing from the approved plan and the environment-variable reference.
+- 2026-09-25: the baseline report is saved before the setting changes, because `harness usage --by rebuild` takes only a trailing window (review finding on #752).
