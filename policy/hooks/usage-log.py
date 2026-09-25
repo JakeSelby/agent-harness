@@ -672,7 +672,13 @@ def _agent_row(path, shared=None, budget=None, max_bytes=None, version=None, lin
     # request id — so a reader can tell a row that was deduplicated from one that could not be.
     if idless:
         row["idless_records"] = idless
-    row.update(budget_fields(row["agent_type"]))
+    if workflow:
+        # A Workflow-tool agent is launched by the tool, not spawned: no spawn hook routed it and
+        # no brief stated it a budget, so a role name it happens to carry prices it at nothing.
+        row["unconfined"] = True
+        row.update(dict((key, None) for key in BUDGET_KEYS))
+    else:
+        row.update(budget_fields(row["agent_type"]))
     row.update(summed(per_message))
     return row
 
