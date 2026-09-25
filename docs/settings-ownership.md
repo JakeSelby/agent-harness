@@ -9,9 +9,11 @@ changing the template.
 - **Owned keys**: `outputStyle`, `plansDirectory`, `useAutoModeDuringPlan`,
   `showThinkingSummaries`. Reconciled against the ownership journal; user edits produce conflicts.
 - **Output style**: `outputStyle` comes from the `voice` stance, not from the template. A variant
-  with a file in `claude/output-styles/` installs that style — `scannable` installs `Scannable` —
-  and a variant without one, `answer-card` and `off` today, installs none. `scannable` is
-  likewise the only variant the Codex projection gives presentation material to, which it names
+  with a file in `claude/output-styles/` installs that style, so `scannable` installs `Scannable`.
+  A variant mapped to a Claude Code built-in style installs that style by name; today that is
+  only `concise`, which installs `Concise`. A variant with neither, `answer-card` and `off`
+  today, installs none. Journal ownership is the same for both kinds. `scannable` is the only
+  variant the Codex projection gives presentation material to, which it names
   explicitly, so both runtimes make the same variant mean the same thing. Ownership is what the
   reconciliation journal records the harness writing, never what the style is called: a style you
   chose yourself — including one named `Scannable` you picked before installing — is never

@@ -19,6 +19,18 @@ Code skills, with rubrics, hard gates, escalation rules and asset-licensing gate
 `claude/hooks/rule-detectors.py` imports. Their upstream notices are in `THIRD_PARTY_NOTICES`,
 and `third-party.json` records each one's version, artifact URL and SHA-256.
 
+## concise voice stance — adapted wording (Apache-2.0, MIT)
+
+`primitives/stances/voice/concise.md` adapts short passages from three sources: from
+[openai/codex](https://github.com/openai/codex) (Apache-2.0, commit 1f17a0a04b5c), the Codex CLI
+prompt's "let the shape of the answer match the shape of the problem"; from
+[openai/openai-cookbook](https://github.com/openai/openai-cookbook) (MIT, commit 5986832a5541), the
+tiered length limits of `output_verbosity_spec` in the GPT-5.2 prompting guide; and from
+[garrytan/gstack](https://github.com/garrytan/gstack) (MIT, commit 730a1017d1a1), the bounded
+closer and a good/bad example pair from its voice directive. Modifications: reworded, shortened and
+merged into six reply shapes and seven rules. Upstream licence texts are in `THIRD_PARTY_NOTICES`.
+Claude Code's built-in Concise style is selected by name; none of its text is included.
+
 ## Not included, on purpose
 
 The code of conduct is original text. The Contributor Covenant was not vendored because its

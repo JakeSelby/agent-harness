@@ -2,7 +2,7 @@
 """Score every rule detector against a labelled corpus and fail under the floor.
 
 Two corpora, one registry. The vendored `ruleprobe` wheel ships a labelled corpus for the six
-generic detectors it also ships; `tests/fixtures/detector-corpus/` labels the eleven in
+generic detectors it also ships; `tests/fixtures/detector-corpus/` labels the thirteen in
 `claude/hooks/rule-detectors.py` that are about this repository's own rules. Both are scored
 with the whole registry, so a repository detector that fires on the engine's corpus is a false
 positive there too, and a precision or recall under the floor is a non-zero exit.

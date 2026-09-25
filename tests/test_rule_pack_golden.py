@@ -37,6 +37,8 @@ ROWS = [
     "transcript-hygiene/whole-file-cat",
     "verification/no-verify",
     "voice/banned-opener",
+    "voice/heading-first",
+    "voice/scaffold-leak",
     "voice/second-table",
 ]
 

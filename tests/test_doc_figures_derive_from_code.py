@@ -88,7 +88,7 @@ class DetectorCountTests(unittest.TestCase):
     def test_the_generic_half_is_the_engine_s_and_the_rest_is_this_repository_s(self):
         generic = [d.id for d in RD._GENERIC]
         self.assertEqual(len(generic), 6)
-        self.assertEqual(len(RD.DETECTORS) - len(generic), 11)
+        self.assertEqual(len(RD.DETECTORS) - len(generic), 13)
 
     def test_the_docs_say_how_many_detectors_the_two_corpora_score(self):
         """The wheel's labels and this repository's together name every detector, and the

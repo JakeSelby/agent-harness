@@ -115,7 +115,7 @@
         },
         {
           "name": "Lean context",
-          "line": "Always-loaded instructions are capped at 200 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.",
+          "line": "Always-loaded instructions are capped at 225 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.",
           "doc": "docs/how-it-works.md"
         }
       ]
@@ -127,7 +127,7 @@
       "features": [
         {
           "name": "Voice stances",
-          "line": "Choose answer-card or scannable. Same content, shaped for how you read.",
+          "line": "Choose concise, answer-card or scannable. Same content, shaped for how you read.",
           "doc": "primitives/stances/voice"
         },
         {
@@ -174,7 +174,7 @@
         },
         {
           "name": "What is detected",
-          "line": "Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
+          "line": "Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.",
           "doc": "claude/hooks/rule-detectors.py"
         },
         {

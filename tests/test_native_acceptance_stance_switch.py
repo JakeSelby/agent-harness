@@ -71,8 +71,8 @@ class ScriptedHome(MODULE.Home):
             if os.path.lexists(str(link)):
                 link.unlink()
             os.symlink(str(self.variant(dimension, name)), str(link))
-        style = {"outputStyle": "Scannable"} if self.data["stances"].get("voice") == "scannable" \
-            else {}
+        builtin = {"scannable": "Scannable", "concise": "Concise"}.get(self.data["stances"].get("voice"))
+        style = {"outputStyle": builtin} if builtin else {}
         (self.client_dir / "settings.json").write_text(json.dumps(style))
         return "sync complete"
 

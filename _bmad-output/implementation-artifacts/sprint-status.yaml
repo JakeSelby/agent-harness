@@ -507,8 +507,11 @@ development_status:
   ah-s226-docs-field-scan-credit-claude-md-doctor-and: done
   ah-s231-adopt-coderabbit-review-and-clear-review-bot: ready-for-dev
   ah-s260-usage-feed-surface-a-running-agent-s-spend-mid: backlog
+  ah-s261-feat-voice-concise-voice-with-reply-shapes: ready-for-dev
+  ah-s262-rewrite-the-always-loaded-rules-in-plain: backlog
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-sp013-spike-architecture-which-harness-capabilities: backlog
+  ah-sp014-licence-review-of-the-humanizer-skill-for-drafts: backlog
   ah-t001-give-each-replay-arm-its-own-profile-and: done
   ah-t002-record-the-fields-a-cost-replay-regression-needs: done
   ah-t003-let-the-replay-fence-admit-each-arm-s-own: done

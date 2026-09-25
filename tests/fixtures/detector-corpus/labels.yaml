@@ -1,4 +1,4 @@
-# The labels for this repository's own corpus: the eleven detectors in
+# The labels for this repository's own corpus: the thirteen detectors in
 # `claude/hooks/rule-detectors.py` that are about these rules. The six the vendored engine
 # ships are labelled by the corpus inside the wheel, and `scripts/detector_corpus.py` scores
 # both, so every detector `harness usage --rules` reports has a precision and a recall.
@@ -178,6 +178,69 @@ sessions:
         near: [voice/banned-opener]
         note: the banned opener is in a message that is not the final one of its turn
 
+  - session: voice-scaffold.jsonl
+    note: five replies wearing template labels, and five that mention or merely resemble one
+    labels:
+      - at: "1:-"
+        fire: [voice/scaffold-leak]
+      - at: "2:-"
+        fire: [voice/scaffold-leak]
+        note: a heading is a label too
+      - at: "3:-"
+        fire: [voice/scaffold-leak]
+        note: a label wrapped in bold and followed by a dash
+      - at: "4:-"
+        fire: [voice/scaffold-leak]
+      - at: "5:-"
+        fire: [voice/scaffold-leak]
+        note: a line-leading label closed by a colon
+      - at: "6:-"
+        near: [voice/scaffold-leak]
+        note: the labels in backticks are under discussion, not in use
+      - at: "7:-"
+        near: [voice/scaffold-leak]
+        note: the labels inside a code fence
+      - at: "8:-"
+        near: [voice/scaffold-leak]
+        note: a sentence that starts with the word, with no colon or emphasis after it
+      - at: "9:-"
+        near: [voice/scaffold-leak]
+        note: a fix report may carry its status label, which the stance allows
+      - at: "10:-"
+        near: [voice/scaffold-leak]
+        note: the label is in a message that is not the final one of its turn
+
+  - session: voice-heading-first.jsonl
+    note: five replies that open on a heading, and five that do not
+    labels:
+      - at: "1:-"
+        fire: [voice/heading-first]
+      - at: "2:-"
+        fire: [voice/heading-first]
+      - at: "3:-"
+        fire: [voice/heading-first]
+        note: blank lines before the heading do not hide it
+      - at: "4:-"
+        fire: [voice/heading-first]
+        note: up to three spaces of indent is still a heading
+      - at: "5:-"
+        fire: [voice/heading-first]
+      - at: "6:-"
+        near: [voice/heading-first]
+        note: an issue number is not a heading
+      - at: "7:-"
+        near: [voice/heading-first]
+        note: a heading later in the message
+      - at: "8:-"
+        near: [voice/heading-first]
+        note: a hash with no space after it
+      - at: "9:-"
+        near: [voice/heading-first]
+        note: four spaces of indent is a code line
+      - at: "10:-"
+        near: [voice/heading-first]
+        note: the heading is in a message that is not the final one of its turn
+
   - session: voice-tables.jsonl
     note: five messages with a second table, and five with one table or none
     labels:
@@ -223,7 +286,8 @@ sessions:
         near: [decisions/no-alternatives]
         note: an inline "I recommend" in running prose is not a decision block
       - at: "5:-"
-        fire: [decisions/no-alternatives]
+        fire: [decisions/no-alternatives, voice/heading-first]
+        note: the reply also opens on a heading, which the concise voice counts
       - at: "6:-"
         fire: [decisions/no-alternatives]
       - at: "7:-"

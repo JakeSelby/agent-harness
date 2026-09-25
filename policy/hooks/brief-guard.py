@@ -46,8 +46,9 @@ ROUTING_RUNTIME = "claude-code"
 
 # Written so it matches the detector's own cap pattern; a bound the detector cannot see is
 # not a bound. `tests/test_brief_guard.py` asserts that parity.
-BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
-         "decision. Write anything longer to a file and return its path, not its contents.")
+BOUND = ("\n\nReturn at most 400 words: the result in your first sentence, then only the findings "
+         "that change a decision, in plain sentences or short bullets with no section labels. "
+         "Write anything longer to a file and return its path, not its contents.")
 CAP_NOTE = "the brief stated no return bound, so a 400-word cap was added"
 # The budget sentence carries no notice of its own. Stating the variant's spend is what this hook
 # does on almost every spawn, and an alert on the ordinary case is noise a reader learns to
