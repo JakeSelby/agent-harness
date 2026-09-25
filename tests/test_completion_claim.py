@@ -270,7 +270,8 @@ class StopGateRowTests(unittest.TestCase):
         self.assertEqual(row["deterministic_answer"], "blocked")
         self.assertEqual(sorted(row), ["decision_id", "deterministic_answer", "harness_version",
                                        "input", "input_sha256", "kind", "outcome", "point",
-                                       "runtime", "session_id", "ts"])
+                                       "profile_fingerprint", "runtime", "schema_version",
+                                       "session_id", "ts"])
 
     def test_with_the_switch_on_the_row_carries_the_turns_claim(self):
         self.config({"telemetry": {"completion_claim": True}})

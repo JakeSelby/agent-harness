@@ -40,6 +40,7 @@ POLICIES = {
     "filter-output": "filter-output.py",
     "plan-webfetch": "allow-plan-webfetch.py",
     "tier-spawns": "tier-agent-spawns.py",
+    "stage-files": "stage-user-files.py",
     "brief-guard": "brief-guard.py",
     "plan-card": "validate-plan-card.py",
     "neutralize": "neutralize-tool-output.py",
@@ -137,6 +138,23 @@ class RoutingTests(unittest.TestCase):
         output = result["hookSpecificOutput"]
         self.assertEqual(output["permissionDecision"], "allow")
         self.assertIn("allow-plan-webfetch", output["permissionDecisionReason"])
+
+    def test_a_file_sent_from_outside_the_session_is_staged_inside_it(self):
+        session = self.home / "repo"
+        session.mkdir()
+        report = self.home / "report.md"
+        report.write_text("# findings\n")
+        inputs = {"files": [str(report)], "caption": "the report", "status": "normal"}
+        result = self._dispatch({"hook_event_name": "PreToolUse", "tool_name": "SendUserFile",
+                                 "cwd": str(session), "permission_mode": "default",
+                                 "tool_input": inputs})
+        output = result["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", output)
+        staged = Path(output["updatedInput"]["files"][0])
+        self.assertTrue(staged.resolve().is_relative_to(session.resolve()), msg=staged)
+        self.assertEqual(staged.read_text(), "# findings\n")
+        self.assertEqual(output["updatedInput"]["caption"], "the report")
+        self.assertIn("stage-user-files", result["systemMessage"])
 
     def test_a_bare_spawn_reaches_both_the_tier_ladder_and_the_brief_guard(self):
         result = self._dispatch({"hook_event_name": "PreToolUse", "tool_name": "Agent",

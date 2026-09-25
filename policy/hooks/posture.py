@@ -7,11 +7,12 @@ they are standalone scripts run as subprocesses and share code by loading a sibl
 (`rule-detectors.py` is the precedent); `lifecycle.py` loads this same file by path, so the
 dispatcher and the hooks cannot drift into two answers for one question.
 
-`resolve(env)` returns the stance ladder `docs/primitive-authoring.md` documents, in order: the
-built-in defaults, the user config under `HARNESS_HOME` or `$HOME`, the file named by
-`HARNESS_PROJECT_CONFIG` (which may select stances and nothing else), then `HARNESS_STANCE_*`
-for the session. `strict` says what an unusable file means: the dispatcher wants the error,
-a hook wants the spawn to run anyway, so it passes `strict=False` and takes the layers it
+`selection(env)` resolves every unit of every kind over the selection ladder `docs/preferences.md`
+documents: built-in defaults, the selected mode, the user config under `HARNESS_HOME` or `$HOME`,
+the file `HARNESS_PROJECT_CONFIG` names, the file `HARNESS_SESSION_CONFIG` names, then the
+session's `HARNESS_MODE` and `HARNESS_STANCE_*`. `resolve(env)` and `selected()` read the same
+ladder for stances only. `strict` says what an unusable file means: the dispatcher wants the
+error, a hook wants the spawn to run anyway, so it passes `strict=False` and takes the layers it
 could read.
 
 `cost_table(env)`, and `resolve(env, table=True)`, additionally resolve the active `cost`
@@ -20,9 +21,13 @@ variant's JSON sidecar — switches, per-role and per-band rows, the default ban
 reads more files than a stance question needs. No number lives here: an unusable sidecar yields
 the base variant's table and a warning, never a guessed default.
 
+`fingerprint(env)` digests the resolved selection into the profile fingerprint every new ledger
+row carries; see `FINGERPRINT_KEY`.
+
 Import-cheap on purpose: no work at import, JSON reads only, because the dispatcher loads
 this on every tool call.
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -89,6 +94,19 @@ MAX_MULTIPLIER = 100
 MAX_BUDGET = 10 ** 9
 MAX_NUDGES = 8
 SIDECAR_KEYS = ("schema_version", "extends", "switches", "default_band", "rows")
+# The selection document: `mode`, then one object per kind in `catalog.KINDS`. `sources` is what
+# `harness selection --json` prints beside them; it selects nothing, and is accepted so that the
+# output reads back unchanged as a session file. Shape and precedence: `docs/preferences.md`.
+SELECTION_EXTRA_KEYS = ("mode", "sources")
+SWITCH_STATES = ("on", "off")
+MODE_VARIABLE = "HARNESS_MODE"
+_KINDS = {}
+# A module's manifest (AD-22): what it claims to change, where it reaches the model, what measures
+# it, the one exclusive slot it takes, and the modules it needs or collides with. Authoring
+# contract and vocabulary: `docs/primitive-authoring.md`.
+MANIFEST_FIELDS = ("claims", "surface", "instruments", "slot", "dependencies", "conflicts")
+MANIFEST_FILE = "manifests.json"
+SURFACES = ("resident-context", "on-demand-context", "hook-events")
 
 
 def home(env=None):
@@ -355,22 +373,70 @@ def _user_config(env, strict):
         return {}
 
 
-def _project_config(env, strict):
-    """The file `HARNESS_PROJECT_CONFIG` names, which may carry `stances` and nothing else."""
-    named = env.get("HARNESS_PROJECT_CONFIG")
+def selection_kinds(root=None):
+    """`{kind: catalog entry}` for every selectable kind, read from `catalog.KINDS` by file.
+
+    The catalog is the one definition of a kind, so a new kind is a new entry there and nothing
+    here. A hook copied out of its checkout has no catalog beside it and knows `stances` only,
+    which is the one kind whose defaults this file carries.
+    """
+    key = str(root or ROOT)
+    if key not in _KINDS:
+        kinds = {"stances": {"directory": "stances", "pattern": "*/*.md", "value": "variant"}}
+        path = Path(key) / "lib" / "harness_core" / "catalog.py"
+        if path.is_file():
+            try:
+                spec = importlib.util.spec_from_file_location("harness_catalog_kinds", str(path))
+                loaded = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(loaded)
+                kinds = {name: dict(entry) for name, entry in loaded.KINDS.items()
+                         if entry.get("value") in ("variant", "switch")}
+            except Exception:
+                pass
+        _KINDS[key] = kinds
+    return _KINDS[key]
+
+
+def _selection_file(env, variable, strict, root=None):
+    """The selection document an environment variable names; `{}` when it names none.
+
+    Carries selection keys only. Identity, permissions, runtime flags, `primitive_roots` and
+    telemetry keep their own validation in the user configuration, so a key outside the
+    selection is refused by name rather than ignored.
+    """
+    named = env.get(variable)
     if not named:
         return {}
     try:
         data = json.loads(Path(named).expanduser().read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or set(data) - {"stances"}:
-            raise ValueError("project configuration cannot change runtime authority")
-        # A `stances` value that is not an object selects nothing, as it always has; only a key
-        # the project may not set is worth failing a tool call over.
+        if not isinstance(data, dict):
+            raise ValueError(variable + " names " + named + ", which is not a JSON object")
+        refused(data, variable + " file " + named, root)
+        # A kind whose value is not an object is refused by `selection()` when strict and selects
+        # nothing otherwise; only a key the file may not set drops the whole file.
         return data
     except (OSError, ValueError):
         if strict:
             raise
         return {}
+
+
+def refused(data, where, root=None):
+    """Raise `ValueError` naming every key of `data` a selection document may not carry."""
+    extra = sorted(set(data) - set(SELECTION_EXTRA_KEYS) - set(selection_kinds(root)))
+    if extra:
+        raise ValueError(where + " may carry selection keys only, not " +
+                         ", ".join("'" + key + "'" for key in extra) +
+                         "; identity, permissions, runtime flags, primitive_roots and telemetry "
+                         "stay in the user configuration")
+
+
+def _project_config(env, strict, root=None):
+    return _selection_file(env, "HARNESS_PROJECT_CONFIG", strict, root)
+
+
+def _session_config(env, strict, root=None):
+    return _selection_file(env, "HARNESS_SESSION_CONFIG", strict, root)
 
 
 def overrides(env=None):
@@ -718,12 +784,395 @@ def table_for(stances=None, config=None, strict=True, root=None):
             "class_applies": stances.get("delegation") == "tiered", "warnings": warnings}
 
 
-def _selection(config, env, strict):
+def _mode_of(data):
+    value = data.get("mode") if isinstance(data, dict) else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _mode_file(name, config, strict, root=None):
+    """The document `modes/<name>.json` holds in the first primitive root carrying it, or `{}`.
+
+    No mode ships yet, so an unknown name selects nothing rather than failing.
+    """
+    if not _identifier(name):
+        return {}
+    for directory in primitive_roots(config, root, "modes"):
+        path = directory / (name + ".json")
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError(str(path) + " is not a JSON object")
+            refused(data, "mode file " + str(path), root)
+            return data
+        except (OSError, ValueError):
+            if strict:
+                raise
+            return {}
+    return {}
+
+
+def layers(config, env, strict, root=None):
+    """`(mode, [(source, document)])`, lowest precedence first: the one selection ladder.
+
+    Mode, user configuration, project file, session file, then the session's environment
+    sugar: `HARNESS_MODE` and `HARNESS_STANCE_*` resolve as the session layer's last word. The
+    mode is whichever layer named one last, and its file sits under every explicit layer.
+    """
+    project = _project_config(env, strict, root)
+    session = _session_config(env, strict, root)
+    sugar = {"stances": overrides(env)}
+    if (env.get(MODE_VARIABLE) or "").strip():
+        sugar["mode"] = env[MODE_VARIABLE]
+    explicit = [("user", config if isinstance(config, dict) else {}), ("project", project),
+                ("session", session), ("session", sugar)]
+    mode = None
+    for source, data in explicit:
+        if _mode_of(data):
+            mode = (_mode_of(data), source)
+    ladder = [("mode:" + mode[0], _mode_file(mode[0], config, strict, root))] if mode else []
+    return mode, ladder + explicit
+
+
+def _selection(config, env, strict, root=None):
+    """Every stance's variant in force: the ladder read for `stances` only, without walking units."""
     stances = dict(DEFAULT_STANCES)
-    stances.update(_stances_of(config))
-    stances.update(_stances_of(_project_config(env, strict)))
-    stances.update(overrides(env))
+    for _, data in layers(config, env, strict, root)[1]:
+        stances.update(_stances_of(data))
     return stances
+
+
+def _units(kind, entry, config, root=None):
+    """The installed units of one kind, sorted: stance dimensions, rule, skill or role names."""
+    directory, pattern = entry.get("directory"), entry.get("pattern")
+    if not directory or not pattern:
+        return []
+    names = set()
+    for source in primitive_roots(config, root, directory):
+        names.update(_units_in(source, pattern))
+    return sorted(names)
+
+
+def _units_in(source, pattern):
+    return {path.parent.name if "/" in pattern else path.stem
+            for path in (source.glob(pattern) if source.is_dir() else [])}
+
+
+def _manifest_files(config, root=None):
+    """`[(path, shipped)]`: the catalog's and the hook kernel's files, then each user root's."""
+    base = root or ROOT
+    files = [(base / "primitives" / MANIFEST_FILE, True), (base / "policy" / "hooks" / MANIFEST_FILE, True)]
+    for source in primitive_roots(config, root, "rules")[1:]:
+        files.append((source.parent / MANIFEST_FILE, False))
+    return files
+
+
+def _reference(value, kinds):
+    kind, sep, unit = value.partition("/") if isinstance(value, str) else ("", "", "")
+    return bool(sep) and kind in kinds and _identifier(unit)
+
+
+def validate_manifest(kind, unit, entry, kinds):
+    """The one message `entry` earns as `kind/unit`'s manifest, or None when it is sound.
+
+    `kinds` is the switch kinds a dependency or conflict may name, as `kind/unit`.
+    """
+    name = kind + "/" + unit
+    if not isinstance(entry, dict):
+        return name + " manifest is not an object"
+    unknown = sorted(set(entry) - set(MANIFEST_FIELDS))
+    if unknown:
+        return name + " manifest has unknown field(s): " + ", ".join(unknown)
+    for field in MANIFEST_FIELDS:
+        if field not in entry:
+            return name + " manifest is missing '" + field + "'"
+    strings = lambda value: isinstance(value, list) and all(isinstance(v, str) and v.strip() for v in value)
+    if not strings(entry["claims"]) or not entry["claims"]:
+        return name + " manifest 'claims' is a nonempty list of what the module is for"
+    if not strings(entry["surface"]) or not entry["surface"] or set(entry["surface"]) - set(SURFACES):
+        return name + " manifest 'surface' is a nonempty list drawn from " + ", ".join(SURFACES)
+    if not strings(entry["instruments"]):
+        return name + " manifest 'instruments' is a list of instrument ids, empty when nothing measures it"
+    slot = entry["slot"]
+    if slot is not None and not (isinstance(slot, dict) and set(slot) == {"id", "cedes"}
+                                 and _identifier(slot["id"]) and isinstance(slot["cedes"], bool)):
+        return name + " manifest 'slot' is null or {\"id\": <identifier>, \"cedes\": true|false}"
+    for field in ("dependencies", "conflicts"):
+        refs = entry[field]
+        if not isinstance(refs, list) or not all(_reference(v, kinds) for v in refs):
+            return name + " manifest '" + field + "' is a list of kind/unit, kind one of " + ", ".join(kinds)
+        if name in refs:
+            return name + " manifest '" + field + "' names the module itself"
+    return None
+
+
+def manifests(config=None, root=None, kinds=None):
+    """`({kind: {unit: manifest}}, [refusal])` from every manifest file, each entry validated.
+
+    A shipped file must parse; a user root may carry none. One module declared in two files is a
+    refusal, so a user root cannot rewrite what a shipped module needs or collides with.
+    """
+    kinds = [k for k, e in selection_kinds(root).items() if e.get("value") == "switch"] if kinds is None else kinds
+    declared, origin, errors = {kind: {} for kind in kinds}, {}, []
+    for path, shipped in _manifest_files(config, root):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        except (OSError, ValueError) as exc:
+            errors.append(str(path) + " is not readable JSON: " + str(exc))
+            continue
+        if not isinstance(data, dict) or data.get("schema_version") != 1:
+            errors.append(str(path) + " is not a schema_version 1 manifest file")
+            continue
+        for kind, units in data.items():
+            if kind == "schema_version":
+                continue
+            if kind not in kinds or not isinstance(units, dict):
+                errors.append(str(path) + " declares '" + kind + "', which is not a switch kind")
+                continue
+            for unit, entry in sorted(units.items()):
+                problem = validate_manifest(kind, unit, entry, kinds)
+                if problem:
+                    errors.append(problem)
+                elif unit in declared[kind]:
+                    errors.append(kind + "/" + unit + " has a manifest in both " + origin[kind, unit] +
+                                  " and " + str(path))
+                else:
+                    declared[kind][unit], origin[kind, unit] = entry, str(path)
+    return declared, errors
+
+
+def manifest_refusals(document, declared, required, installed=None):
+    """Every refusal a resolved selection earns from its modules' manifests, as messages.
+
+    `required` is `{kind: units}` that must declare a manifest: the shipped ones. `installed` is
+    `{kind: units}` that exist, for the kinds that have a module directory; a kind without one,
+    such as hooks, counts a unit as present when it declares a manifest. Only switched-on modules
+    take a slot, need a dependency or collide; a module switched off asks nothing.
+    """
+    installed = {} if installed is None else installed
+    errors = []
+    for kind in sorted(required):
+        for unit in sorted(required[kind]):
+            if unit not in declared.get(kind, {}):
+                errors.append(kind + "/" + unit + " has no manifest; declare " +
+                              ", ".join(MANIFEST_FIELDS) + " in " + MANIFEST_FILE)
+    on = {kind + "/" + unit: declared[kind][unit] for kind in sorted(declared)
+          for unit in sorted(declared[kind]) if (document.get(kind) or {}).get(unit) == "on"}
+    slots = {}
+    for name, entry in on.items():
+        for needed in entry["dependencies"]:
+            kind, _, unit = needed.partition("/")
+            if unit not in installed.get(kind, declared.get(kind, {})):
+                errors.append(name + " depends on " + needed + ", which is not installed")
+            elif (document.get(kind) or {}).get(unit) != "on":
+                errors.append(name + " depends on " + needed + ", which is not switched on")
+        for other in entry["conflicts"]:
+            if other in on and (other < name or name not in on[other]["conflicts"]):
+                errors.append(name + " conflicts with " + other + "; switch one of them off")
+        if entry["slot"]:
+            slots.setdefault(entry["slot"]["id"], []).append(name)
+    for slot, names in sorted(slots.items()):
+        # A ceding claimant yields; the slot is refused while two or more still hold it.
+        holders = [name for name in names if not on[name]["slot"]["cedes"]]
+        if len(holders) > 1:
+            errors.append(", ".join(holders) + " each claim the slot '" + slot +
+                          "'; switch one off, or have one declare that it cedes the slot")
+    return errors
+
+
+def measurement(manifest):
+    """How a report shows a module: its instruments, or `unmeasured`, never `no effect`."""
+    instruments = (manifest or {}).get("instruments") or []
+    return "measured by " + ", ".join(instruments) if instruments else "unmeasured"
+
+
+def selection(env=None, strict=True, config=None, root=None):
+    """Every unit of every kind with its value, and the source that set it.
+
+    Returns the selection document — `mode`, then `{kind: {unit: value}}` for each kind in
+    `catalog.KINDS` — plus `sources` in the same shape, each one of `default`, `mode:<name>`,
+    `user`, `project` or `session`, in that precedence. A variant kind's default is the built-in
+    stance or null; a switch kind's is `on`. `config` is the user configuration when the caller
+    has already read it. A kind that is not an object, or a switch value other than `on` or `off`,
+    is an error when strict and selects nothing otherwise; a unit a layer names that nothing installs is still reported.
+    Strict resolution also enforces the switch kinds' manifests (AD-22): a shipped module without
+    one, a field missing or malformed, a switched-on module whose dependency is not on, two that
+    conflict, or two that claim one slot with neither ceding it, is a `ValueError` naming them.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, strict) if config is None else config
+    kinds = selection_kinds(root)
+    mode, ladder = layers(config, env, strict, root)
+    result, sources = {"mode": mode[0] if mode else None}, {"mode": mode[1] if mode else "default"}
+    for kind, entry in kinds.items():
+        switch = entry.get("value") == "switch"
+        result[kind] = {unit: ("on" if switch else DEFAULT_STANCES.get(unit))
+                        for unit in _units(kind, entry, config, root)}
+        if not switch:
+            result[kind].update(DEFAULT_STANCES)
+        sources[kind] = {unit: "default" for unit in result[kind]}
+        for source, data in ladder:
+            if not isinstance(data, dict) or kind not in data:
+                continue
+            chosen = data[kind]
+            if not isinstance(chosen, dict):
+                if strict:
+                    raise ValueError(source + " sets " + kind + " to " + json.dumps(chosen) +
+                                     "; a kind is an object of unit to value")
+                continue
+            for unit, value in chosen.items():
+                value = value.strip() if isinstance(value, str) else value
+                if switch and value not in SWITCH_STATES:
+                    if strict:
+                        shown = "'" + value + "'" if isinstance(value, str) else json.dumps(value)
+                        raise ValueError(source + " sets " + kind + "." + unit + " to " + shown +
+                                         "; a " + kind + " unit is on or off")
+                    continue
+                if not isinstance(value, str) or not value:
+                    continue
+                result[kind][unit], sources[kind][unit] = value, source
+    for kind in kinds:
+        result[kind] = dict(sorted(result[kind].items()))
+        sources[kind] = dict(sorted(sources[kind].items()))
+    if strict:
+        switches = [kind for kind, entry in kinds.items() if entry.get("value") == "switch"]
+        declared, errors = manifests(config, root, switches)
+        base = (root or ROOT) / "primitives"
+        required = {kind: _units_in(base / kinds[kind]["directory"], kinds[kind]["pattern"])
+                    for kind in switches if kinds[kind].get("directory") and kinds[kind].get("pattern")}
+        installed = {kind: set(_units(kind, kinds[kind], config, root)) for kind in required}
+        errors += manifest_refusals(result, declared, required, installed)
+        if errors:
+            raise ValueError("module manifest: " + "\nmodule manifest: ".join(errors))
+    result["sources"] = sources
+    return result
+
+
+# The profile fingerprint (AD-22, AD-23): which profile wrote a ledger row. The configuration it
+# covers is the user keys that reach the model or a hook; installer switches, remote control and
+# integrations change neither. `primitive_roots` is left out because the modules it adds are
+# hashed by content, so one profile on two machines matches. A row that predates the field is
+# unattributed, and the bare arm of a replay, which loads no harness, is `BARE_FINGERPRINT`.
+FINGERPRINT_KEY = "profile_fingerprint"
+FINGERPRINT_CONFIG_KEYS = ("identity", "permissions", "permissions_bypass_acknowledged",
+                           "plan_allow_tools", "telemetry", "governance")
+BARE_FINGERPRINT = "bare"
+_FINGERPRINTS = {}
+
+
+def _unit_files(entry, unit, value, config, root=None):
+    """`[(label, path)]` for the files one unit's content is, across every primitive root.
+
+    The label is the root's position and the path inside it, so a checkout's own location never
+    reaches the digest. A skill is its whole directory; a stance is its selected variant and the
+    sidecar beside it; any other kind is its one file.
+    """
+    directory, pattern = entry.get("directory"), entry.get("pattern")
+    if not directory or not pattern or not _identifier(unit):
+        return []
+    files = []
+    for index, source in enumerate(primitive_roots(config, root, directory)):
+        if pattern == "*/*.md":
+            if not _identifier(value):
+                continue
+            found = [source / unit / (value + suffix) for suffix in (".md", ".json")]
+        elif "/" in pattern:
+            base = source / unit
+            found = sorted(path for path in base.rglob("*") if path.is_file() and not any(
+                part.startswith(".") or part == "__pycache__" for part in path.relative_to(base).parts)) \
+                if base.is_dir() else []
+        else:
+            found = [source / pattern.replace("*", unit)]
+        files += [(str(index) + "/" + path.relative_to(source).as_posix(), path)
+                  for path in found if path.is_file()]
+    return files
+
+
+def _content_digest(files):
+    """The sha256 of the labelled files' bytes, or None when the unit has no file anywhere."""
+    if not files:
+        return None
+    digest = hashlib.sha256()
+    for label, path in files:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = b"\0unreadable"
+        digest.update(label.encode("utf-8") + b"\0" + str(len(data)).encode("ascii") + b"\0" + data)
+    return digest.hexdigest()
+
+
+def _version(root=None):
+    try:
+        return ((root or ROOT) / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def profile(env=None, config=None, root=None):
+    """The document the profile fingerprint digests, resolved non-strict from the one ladder.
+
+    Every switched-on module with its content digest, every stance with its variant and that
+    variant's digest, the configuration values `FINGERPRINT_CONFIG_KEYS` names, and the harness
+    version. A switched-off module is absent, as it is from the session. A mode is not named:
+    what it selects is.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, False) if config is None else config
+    document = selection(env, strict=False, config=config, root=root)
+    modules, stances = {}, {}
+    for kind, entry in selection_kinds(root).items():
+        units = document.get(kind) or {}
+        if entry.get("value") == "switch":
+            on = {unit: _content_digest(_unit_files(entry, unit, None, config, root))
+                  for unit, value in units.items() if value == "on"}
+            if on:
+                modules[kind] = on
+        else:
+            stances.update({unit: {"variant": value,
+                                   "digest": _content_digest(_unit_files(entry, unit, value, config, root))}
+                            for unit, value in units.items() if value})
+    settings = config if isinstance(config, dict) else {}
+    return {"harness_version": _version(root), "modules": modules, "stances": stances,
+            "config": {key: settings[key] for key in FINGERPRINT_CONFIG_KEYS if key in settings}}
+
+
+def _file_state(path):
+    """`(mtime_ns, size)` of a file, or None when it cannot be read: the fingerprint cache's key."""
+    try:
+        state = path.stat()
+    except OSError:
+        return None
+    return (state.st_mtime_ns, state.st_size)
+
+
+def fingerprint(env=None, config=None, root=None):
+    """The profile fingerprint: the sha256 of `profile()` as canonical JSON. See `FINGERPRINT_KEY`.
+
+    Identical inputs give one fingerprint on every run and machine, and any module, stance or
+    setting that differs gives another. Remembered per process for one environment and one state
+    of the configuration files, since a hook stamps it on each row it writes: rewriting the user
+    configuration or a named selection file gives a fresh digest. A module edited under a running
+    process is not seen until the next one, which is where the checkout's edits land.
+    """
+    env = os.environ if env is None else env
+    files = [config_path(env)] + [Path(env[name]).expanduser() for name in
+                                  ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG") if env.get(name)]
+    key = (str(root or ROOT), tuple(sorted((name, value) for name, value in env.items()
+                                           if name in ("HOME", "HARNESS_HOME", MODE_VARIABLE,
+                                                       "HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG")
+                                           or name.startswith(PREFIX))),
+           tuple(_file_state(path) for path in files))
+    if config is None and key in _FINGERPRINTS:
+        return _FINGERPRINTS[key]
+    text = json.dumps(profile(env, config, root), sort_keys=True, separators=(",", ":"))
+    value = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if config is None:
+        _FINGERPRINTS[key] = value
+    return value
 
 
 def resolve(env=None, strict=True, table=False):
@@ -749,7 +1198,7 @@ def cost_table(env=None, strict=False, root=None):
     """
     env = os.environ if env is None else env
     config = _user_config(env, strict)
-    return table_for(_selection(config, env, strict), config, strict=strict, root=root)
+    return table_for(_selection(config, env, strict, root), config, strict=strict, root=root)
 
 
 def selected(name, fallback=None, env=None, strict=True):

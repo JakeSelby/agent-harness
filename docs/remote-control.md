@@ -138,6 +138,27 @@ printed, logged or written anywhere.
 which environment it registered, whether the pointer names that environment and that pid, how long
 it has been unreachable, and how many of its sessions are disconnected.
 
+## Files an agent sends you
+
+In a Remote Control session, `SendUserFile` uploads nothing. The app keeps the file's path and
+asks the session for the file when you open it, and Claude Code serves it only from under the
+directory the session started in, which is the session's worktree under `spawn: worktree`, or a
+directory added to the session. Most other paths fail in the app with "Couldn't load this file".
+Reports, renders and screenshots are routinely written somewhere else: a temp or scratch
+directory, a task worktree, or the main checkout seen from a session's worktree.
+
+The `stage-user-files` policy closes that gap in every Remote Control session the harness hooks
+run in, whether a host here started it or not. Before `SendUserFile` runs, each file from outside
+the session's current working directory is copied to `.agent-harness/outbox/<digest>/<name>`
+there, and the call sends the copy instead; a `stage-user-files: copied …` notice says when that
+happened. The outbox ignores itself in git, so in a repository a copy never reaches `git status`,
+a commit or the lint, and a copy untouched for two weeks is removed the next time a file is
+copied. One call copies at most 64 MiB in about four seconds; a file past either limit, or one
+that cannot be copied, is sent from where it is, with a notice.
+
+The app still reads the file from the session when you open it, so a file sent from a session
+whose worktree has since been removed cannot be opened afterwards.
+
 ## What it will not do
 
 - **Accept workspace trust for you.** The server refuses a folder whose trust dialog was never

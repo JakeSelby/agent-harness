@@ -52,6 +52,18 @@ Every row also names the `harness_version` that wrote it, read from the same `VE
 row carries `null`**: the version that ran a past session is not recoverable from its
 transcript, and stamping today's would make the whole history look like this release.
 
+Every new row, in this ledger and in the decision log, also names
+the **`profile_fingerprint`** of the profile that wrote it: the sha256 of each switched-on
+module's content, the stance variants, the configuration keys that reach the model or a hook
+(`identity`, `permissions`, `permissions_bypass_acknowledged`, `plan_allow_tools`, `telemetry`,
+`governance`) and the harness version. `posture.profile()` builds the document it digests, and
+`posture.fingerprint()` is the one definition. Identical profiles match on any machine, since no
+path reaches the digest; one module, stance or setting apart, they differ. A role worker's row
+carries the profile its run started under, and a replay row carries its arm's, or `bare` for the
+arm that loads no harness. A row from before the field, a rescanned session the ledger did not
+already hold, and a row whose profile could not be resolved carry none or `null`, and read as
+**unattributed**: nothing is ever given a guessed fingerprint.
+
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
 `days`, `raw_vs_deduped` and, when the row has any, `idless_records`.
@@ -68,7 +80,10 @@ response, and a call whose other records do carry a message id joins their slot 
 opening a second one. A record with neither id is unknown rather than a duplicate, so it is not
 deduplicated at all — it is summed as written, and `idless_records` counts how many such records
 the row's totals include, the session's own and those of the subagent files folded into them.
-A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls.
+A row without the field was deduplicated whole. `subagents` counts `Agent` tool calls, less
+any a hook refused: a call whose result is an error and which left no subagent transcript. A
+session file holding sidechain lines is the older format, where a spawn that ran has no file of
+its own, so there every call is counted.
 
 `raw_vs_deduped` is **the measured size of that inflation**: the per-line sum of the four token
 fields over the deduplicated total the row carries, across the same records — the session's own
@@ -138,7 +153,9 @@ role carries** — the same figures `brief-guard` writes into a brief — so an 
 subtraction on one row rather than a join against whatever the cost table says today. They are
 read from the table at the moment the row is written, not from the brief, which no scan can
 see; a role nothing prices, a table that will not build and a Codex subagent all record `null`,
-because a zero would say the spawn was budgeted nothing. `return_path` and
+because a zero would say the spawn was budgeted nothing. A Workflow-tool agent records `null` too,
+whatever role it is named for, and carries `unconfined: true`: the tool launched it, so no spawn
+hook routed it and no brief budgeted it. `return_path` and
 `return_over_budget` measure the return this row's spawn handed back, joined to the parent's
 `Agent` call on the same `tool_use_id`: whether it named a path that existed under the worktree
 or the scratchpad at the moment the row was written (`"resolvable"`, `"unresolvable"`, or
@@ -205,6 +222,25 @@ rollout file has not been observed here — no Codex CLI was installed on the ma
 measured on, and nothing in the rollouts or `~/.codex/logs_*.sqlite` records a hook payload.
 The hook accepts `rollout_path` and `session_path` beside Claude Code's `transcript_path` on
 that chance; the rescan is the path known to work. Run it after a stretch of Codex work.
+
+### Ledger schema
+
+The usage ledger and the decision log are read by releases other than the one that wrote them,
+so both grow compatibly:
+
+- **Every row names its `schema_version`**, from version 1 on. A row without it was written
+  before the field existed and reads as version 0; no old row is rewritten to add it.
+- **Changes are additive.** A new field is added; nothing is removed or retyped in place.
+- **Readers tolerate what they do not know.** A field, a schema version or a value this release
+  has never seen is carried through, never refused, so a newer writer's row reads without
+  error.
+- **A rename ships a fold.** `FIELD_FOLDS` in `usage-log.py` and in `decisions.py` maps each
+  old field name to its new one, and every reader folds on read: an old row's value appears
+  under the new name, and a row carrying both keeps the new one.
+
+`SCHEMA_VERSION` in each of those modules is bumped with any change to what a row carries.
+Version 1 is first released in v0.14.0 and carries every field that release adds,
+`profile_fingerprint` among them.
 
 ## Usage feed
 
@@ -372,9 +408,10 @@ a context token.
 {"kind": "decision", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
  "ts": "2026-09-21T19:41:05Z", "input_sha256": "d20c…", "input": "git push --force origin main",
  "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
- "harness_version": "0.12.0"}
+ "harness_version": "0.12.0", "profile_fingerprint": "5f1c…", "schema_version": 1}
 {"kind": "outcome", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
- "ts": "2026-09-21T19:41:22Z", "outcome": "ran", "harness_version": "0.12.0"}
+ "ts": "2026-09-21T19:41:22Z", "outcome": "ran", "harness_version": "0.12.0",
+ "profile_fingerprint": "5f1c…", "schema_version": 1}
 ```
 
 The file is **append-only**: an outcome is its own record, joined to its decision by
@@ -390,6 +427,8 @@ one field that holds prose is [the completion claim](#the-completion-claim), whi
 | `tier-agent-spawns` | the band worker an unnamed spawn was routed to | not labelled yet |
 | `brief-guard` | what was appended: `cap`, `budget` or `cap+budget` | not labelled yet |
 | `evasion-deny` | `deny`, on a re-spawn of already-refused work | not labelled yet |
+| `role-confinement` | `deny`, on a native spawn naming a constrained role, by `subagent_type` or a `harness-role:` line; `input` leads with the role and which of the two named it | not labelled yet |
+| `workflow-launch` | `allow` or `deny`, on every `Workflow` tool launch | not labelled yet |
 
 An approved Bash command is not *graded*. The harness answers the permission question on a small
 minority of calls, and "it ran" says nothing about whether declining to interrupt was right; a
@@ -544,12 +583,15 @@ bin/harness usage --days 7 --by repo
 bin/harness usage --by model           # a session using two models groups under both, joined
 bin/harness usage --by role            # per agent type: runs, p50/p75/p90 output, p50/p75 usd
 bin/harness usage --by stance --stance cost   # tokens per variant of one stance dimension
+bin/harness usage --by profile         # tokens per profile fingerprint; older rows unattributed
 bin/harness usage --by decision        # hook decisions and their outcomes, above
 bin/harness usage --by provider        # decision-provider calls, priced, above
 bin/harness usage --rescan             # re-read transcripts in the window first, then report
 ```
 
-`--by role` reads the subagent and worker rows. Spend per delegated task is a distribution, not
+`--by role` reads the subagent and worker rows. A row with a `workflow` directory is grouped under
+`(workflow)`, printed last and named in the footer, rather than under its `agent_type`, including
+a row written before the ledger marked such rows `unconfined`. Spend per delegated task is a distribution, not
 a mean, so it prints three points on the curve; `unmeasured` counts the runs whose runtime
 reported no tool-call figure, which are named there rather than averaged in as a zero. A role
 with fewer than 30 runs is marked `n<30` in the `sample` column: a p90 over eight runs is the
@@ -576,7 +618,11 @@ make a newly stamped variant look like the whole history of the ledger. `--rules
 is the hit report below and is unchanged. `--by stance` with neither is refused, since it names
 two different reports and guessing between them would be worse than asking.
 
-The token groupings — `day`, `repo`, `model`, `stance` — sum session and worker rows and never a
+`--by profile` groups tokens by `profile_fingerprint`, so two profiles are told apart by their
+rows alone. A row that carries none groups under `(unattributed)` and is counted there. The
+fingerprint is 64 characters and the label column 34, which still tells profiles apart.
+
+The token groupings — `day`, `repo`, `model`, `stance`, `profile` — sum session and worker rows and never a
 subagent's. A subagent's tokens are already inside its session's total; a role-run worker has
 no session row at all, so leaving it out would hide its spend in every report there is.
 

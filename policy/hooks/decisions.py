@@ -11,9 +11,10 @@ so a reader of the file sees the decision exactly as the hook made it.
     {"kind": "decision", "decision_id": "…", "point": "grade-bash", "session_id": "…",
      "ts": "2026-09-21T18:04:05Z", "input_sha256": "…", "input": "git push --force",
      "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
-     "harness_version": "0.12.0"}
+     "harness_version": "0.12.0", "profile_fingerprint": "…", "schema_version": 1}
     {"kind": "outcome", "decision_id": "…", "point": "grade-bash", "session_id": "…",
-     "ts": "…", "outcome": "ran", "harness_version": "0.12.0"}
+     "ts": "…", "outcome": "ran", "harness_version": "0.12.0", "profile_fingerprint": "…",
+     "schema_version": 1}
 
 `input` is the text the hook judged, capped at MAX_INPUT (2 KiB) — a command or a brief, never
 tool output and never assistant prose. `input_sha256` is over the **uncapped** text, so two
@@ -34,6 +35,7 @@ Every write is wrapped: a logging failure counts in `errors()` and changes no ho
 output or exit status. See docs/usage.md for the report and docs/telemetry.md for the switch.
 """
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -488,8 +490,54 @@ def claim_fields(transcript, cfg=None):
     return {"completion_claim": _capped(text), "completion_claim_sha256": digest(text)}
 
 
+# The log grows compatibly, under the rule `usage-log.py` states for the usage ledger: a change
+# adds a field, a rename ships a fold (`old name: new name`), nothing is removed in place and no
+# old row is rewritten. A row without SCHEMA_KEY predates the version and reads as version 0.
+SCHEMA_KEY = "schema_version"
+# Version 1 is first released in v0.14.0 and carries `profile_fingerprint`; see `usage-log.py`.
+SCHEMA_VERSION = 1
+FIELD_FOLDS = {}
+FINGERPRINT_KEY = "profile_fingerprint"
+_POSTURE = []
+
+
+def profile_fingerprint():
+    """The fingerprint of the profile in force, from the `posture.py` beside this file, or None.
+
+    Loaded by path, as `lifecycle.py` loads this file, and remembered for the process. A copy
+    running away from its resolver, or a resolver that fails, stamps null rather than a guess.
+    """
+    if not _POSTURE:
+        location = Path(os.path.realpath(__file__)).parent / "posture.py"
+        try:
+            spec = importlib.util.spec_from_file_location("harness_decisions_posture", str(location))
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception:
+            module = None
+        _POSTURE.append(module)
+    try:
+        return _POSTURE[0].fingerprint() if _POSTURE[0] else None
+    except Exception:
+        return None
+
+
+def fold(row, folds=None):
+    """A copy of `row` with every renamed field under its current name; see usage-log's `fold`."""
+    folds = FIELD_FOLDS if folds is None else folds
+    out = dict(row)
+    for old, new in folds.items():
+        if old in out:
+            value = out.pop(old)
+            out.setdefault(new, value)
+    return out
+
+
 def _append(row, target=None):
     """One line, one `write`. Appending is the only way this file is ever changed."""
+    row = dict(row, **{SCHEMA_KEY: SCHEMA_VERSION})
+    if FINGERPRINT_KEY not in row:
+        row[FINGERPRINT_KEY] = profile_fingerprint()
     target = Path(target) if target else path()
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -613,8 +661,11 @@ def observe_if_logged(identity, outcome, point="", session_id="", target=None, n
     return observe(identity, outcome, point, session_id, target, now)
 
 
-def read_rows(target=None):
-    """Every well-formed record in the log, oldest first. An unreadable file is no rows."""
+def read_rows(target=None, folds=None):
+    """Every well-formed record in the log, folded, oldest first. An unreadable file is no rows.
+
+    A field or a schema version this reader does not know is carried, never refused.
+    """
     target = Path(target) if target else path()
     rows = []
     try:
@@ -626,8 +677,10 @@ def read_rows(target=None):
             row = json.loads(line)
         except ValueError:
             continue
-        if isinstance(row, dict) and row.get("decision_id"):
-            rows.append(row)
+        if isinstance(row, dict):
+            row = fold(row, folds)
+            if row.get("decision_id"):
+                rows.append(row)
     return rows
 
 
