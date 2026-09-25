@@ -31,6 +31,43 @@ example file, `sync` and `doctor` both say so: what they hold is what the agent 
 you, so a config left unedited has it addressing you by the placeholder. `pronouns` and
 `timezone` are never reported, because `they/them` and `UTC` are answers someone might mean.
 
+## The selection document
+
+Every installed unit is selectable from one JSON shape: `mode`, then one object per kind. A kind
+is `stances`, whose dimensions pick a named variant, or one of the switch kinds `rules`, `hooks`,
+`skills`, `workflows` and `roles`, whose units are `on` or `off` and default to `on`.
+
+```json
+{"mode": "superpowers",
+ "stances": {"testing": "required"},
+ "rules": {"decisions-and-plans": "off"},
+ "hooks": {"validate-plan-card": "off"},
+ "skills": {}, "workflows": {}, "roles": {}}
+```
+
+The same shape is read from five places and resolved by one function, `posture.selection()`, in
+this precedence, lowest first:
+
+1. **`default`** — the built-in stance variants, and `on` for every switch.
+2. **`mode:<name>`** — `modes/<name>.json` in a primitive root, for the mode the highest layer
+   names. No mode ships yet, so an unknown name selects nothing.
+3. **`user`** — `~/.config/agent-harness/config.json`.
+4. **`project`** — the file `HARNESS_PROJECT_CONFIG` names.
+5. **`session`** — the file `HARNESS_SESSION_CONFIG` names, then `HARNESS_MODE` and
+   `HARNESS_STANCE_*`, which are shorthand for the same layer.
+
+`harness selection --json` prints the result: every unit of every kind with its value, plus a
+`sources` object in the same shape naming the layer that set each one. That output reads back
+unchanged as a session file. `harness stances` stays as the stance-only view. `sync` projects the
+user's layers only; a project or session layer stays in the session that set it, and an isolated
+worker records the selection of the session that launched it.
+
+A selection carries selections only. A project, session or mode file holding any other key —
+`identity`, `permissions`, a runtime's `manage` flag, `primitive_roots`, `telemetry` — is refused
+with a message naming the key; those stay top-level in the user configuration with their own
+validation. The kinds themselves, with each one's source directory, value type and projection,
+are the entries of `catalog.KINDS` in `lib/harness_core/catalog.py`.
+
 ## Stances
 
 Each stance is a directory of variants under `primitives/stances/`; config picks one and `sync`
