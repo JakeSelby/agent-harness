@@ -1175,6 +1175,65 @@ def fingerprint(env=None, config=None, root=None):
     return value
 
 
+# Per-module attribution of context tokens (AD-23). Context is shared, so what each module put
+# there is estimated, never measured, and carries AD-12's soft-estimate label and its method.
+# The estimate is of resident text only: what is loaded before the first prompt. A listed kind
+# is resident as its listing entry, its name and description, and its body loads on demand; a
+# hook's context arrives per event at run time and is not estimated here.
+ATTRIBUTION_KEY = "context_attribution"
+SOFT_ESTIMATE = "soft estimate"
+CHARS_PER_TOKEN = 4.0
+ATTRIBUTION_METHOD = ("chars/4 of resident text: a rule or stance variant whole; a skill, role or "
+                      "workflow its name and description")
+LISTED_KINDS = ("skills", "roles", "workflows")
+
+
+def _resident_text(kind, entry, unit, value, config, root=None):
+    """The text one unit keeps resident, from the first primitive root holding it, or None."""
+    directory, pattern = entry.get("directory"), entry.get("pattern")
+    if not directory or not pattern or not _identifier(unit):
+        return None
+    if pattern == "*/*.md" and not _identifier(value):
+        return None
+    for source in primitive_roots(config, root, directory):
+        if pattern == "*/*.md":
+            path = source / unit / (value + ".md")
+        else:
+            path = source / pattern.replace("*", unit)
+        if not path.is_file():
+            continue
+        if kind in LISTED_KINDS:
+            fields = _frontmatter(path)
+            return (fields.get("name") or unit) + ": " + fields.get("description", "")
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def context_attribution(env=None, config=None, root=None):
+    """`{"estimand", "method", "modules": {"kind/unit": tokens}}` for the selection in force.
+
+    Resolved non-strict from the ladder `profile()` reads, so one module switched off removes
+    that module's entry and changes no other. Every switched-on module and every stance with
+    resident text has an entry; a unit installed nowhere, and a hook, has none.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, False) if config is None else config
+    document = selection(env, strict=False, config=config, root=root)
+    modules = {}
+    for kind, entry in selection_kinds(root).items():
+        switch = entry.get("value") == "switch"
+        for unit, value in sorted((document.get(kind) or {}).items()):
+            if (switch and value != "on") or not value:
+                continue
+            text = _resident_text(kind, entry, unit, None if switch else value, config, root)
+            if text is not None:
+                modules[kind + "/" + unit] = int(round(len(text) / CHARS_PER_TOKEN))
+    return {"estimand": SOFT_ESTIMATE, "method": ATTRIBUTION_METHOD, "modules": modules}
+
+
 def resolve(env=None, strict=True, table=False):
     """The posture in force: `{"stances": {dimension: variant}}`, every dimension present.
 
