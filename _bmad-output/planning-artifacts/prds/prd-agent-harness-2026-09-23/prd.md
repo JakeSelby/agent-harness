@@ -861,7 +861,8 @@ private logs. A planner returns content, and the harness validates it and publis
 #### FR-41: Confinement however the spawn is named
 A constrained role's work must be refused as a native spawn, whatever name the spawn carries. This includes
 framework review layers. **Status:** partial: implemented (0.11.1, spawn guards); the session-level signal
-is unreleased (#585). The Workflow tool still bypasses it (#576, v0.14.0).
+is unreleased (#585). The Workflow tool's launch is guarded (#576, unreleased); a script's `agent()` calls
+are still not band-routed.
 
 **Consequences (testable):**
 - While a routed review is in flight, an unnamed spawn carrying review work is refused.
@@ -1314,6 +1315,11 @@ makes stale, in the same pull request:
   - Code uses no syntax newer than 3.9.
   - CI runs the runner's system Python only. The 3.9 floor is proved locally and by the release lifecycle
     runs. A 3.9 check on every pull request is a gap.
+  - **Default taken: amendment 2026-09-25 (#640).** Added after the original run; the lines above are
+    unchanged and dated 2026-09-23. The required `test` check runs `tests/test_python_floor.py` under a real
+    Python 3.9, parsing every tracked Python source, so #640 closes the gap for syntax on every pull
+    request. The new `test-py39` CI job runs the suite under Python 3.9 on every pull request and in the
+    merge queue, and it blocks a merge only once the owner adds it to the branch ruleset's required checks.
 - **NFR-3 Security:**
   - Secrets and private paths never enter tracked code, evidence or planning artifacts.
   - No stance weakens authorization.

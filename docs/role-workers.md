@@ -17,6 +17,15 @@ whose prompt carries such a line is refused whatever `subagent_type` it names or
 is ignored. Both guards are best effort: session state that cannot be read or written means no new
 refusal, never a failed hook, and `delegation: off` keeps its own single refusal.
 
+A Claude Code `Workflow` script's `agent()` calls never reach the spawn hooks, so the guard reads
+the launch instead: the script sent inline, the file at `scriptPath`, or a named workflow under
+`.claude/workflows/` in the working directory or the home directory. A script that names a
+constrained role as a quoted `agentType`, carries a `harness-role:` marker for one, or computes
+`agentType` beside a string literal naming one is refused with the same instruction, and so is a
+script file longer than the 1 MiB the guard reads; `delegation: off` refuses every launch. Each launch is a `workflow-launch` row in the decision log. The guard
+cannot route a script's other agents to a band, and a built-in workflow or a resumed run carries
+no script for it to read.
+
 ## Run and inspect
 
 Write a bounded brief naming the input files, required result shape and allowed scope, then run:
@@ -32,7 +41,10 @@ harness role status <worker-id>
 
 `--prompt-file -` reads the brief from stdin. `--read-dir /path/to/artifacts` grants access to
 additional input directories, such as the framework checkout or review artifacts outside the
-implementation worktree. It never grants writes. Input prompts and results are capped at 1 MiB.
+implementation worktree. It never grants writes, and it refuses `/`, the home directory, a system
+temporary root such as `/tmp`, and any directory above one of them, because each holds other
+runs' files; grant a dedicated subdirectory, such as one made by `mktemp -d`, instead. Input
+prompts and results are capped at 1 MiB.
 These are declared input roots, not a confidentiality boundary: Codex's read-only sandbox can
 read other native-permitted paths. Claude's restricted file tools use the supplied directories.
 The default deadline is 300 seconds; `--timeout` accepts 1–3600 seconds. Interrupting the runner

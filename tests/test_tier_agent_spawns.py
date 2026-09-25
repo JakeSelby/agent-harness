@@ -219,13 +219,15 @@ class TierSpawnsTests(unittest.TestCase):
         self.write_transcript(record("assistant", "claude-opus-5"))
         self.assertIsNone(self.run_hook(self.spawn(prompt="x")))
 
-    def test_off_asks_before_every_spawn(self):
+    def test_off_denies_every_spawn(self):
+        # The stance text says a spawn under `off` is denied outright (issue #687).
         self.config("off")
         self.write_transcript(record("assistant", "claude-opus-5"))
         for tool_input in ({}, {"subagent_type": "gatherer"}, {"model": "opus"}):
             with self.subTest(tool_input=tool_input):
                 out = self.run_hook(self.spawn(prompt="x", **tool_input))["hookSpecificOutput"]
-                self.assertEqual(out["permissionDecision"], "ask")
+                self.assertEqual(out["permissionDecision"], "deny")
+                self.assertIn("change the selected stance", out["permissionDecisionReason"])
                 self.assertNotIn("updatedInput", out)
 
     def test_env_override_beats_config(self):
@@ -233,7 +235,7 @@ class TierSpawnsTests(unittest.TestCase):
         self.assertIsNone(self.run_hook(self.spawn(prompt="x"),
                                         env={"HARNESS_STANCE_DELEGATION": "session-model"}))
         out = self.run_hook(self.spawn(prompt="x"), env={"HARNESS_STANCE_DELEGATION": "off"})
-        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
 
     def test_missing_config_defaults_to_tiered(self):
         (self.home / ".config" / "agent-harness" / "config.json").unlink()

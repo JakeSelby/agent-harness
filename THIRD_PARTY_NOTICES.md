@@ -41,3 +41,8 @@ tooling by BMad Code, LLC. Its runtime and generated skill projections are inten
 redistributed by this repository; only original agent-harness customizations and authored planning
 artifacts are committed. BMad and BMad Method are trademarks of BMad Code, LLC, and no endorsement
 is implied.
+
+The CI workflows run [actions/checkout](https://github.com/actions/checkout) v7.0.1 and
+[actions/setup-python](https://github.com/actions/setup-python) v6.3.0, both MIT-licensed by GitHub,
+Inc. and pinned by full commit SHA in `.github/workflows/`. They execute on GitHub's runners and are
+not redistributed by this repository.

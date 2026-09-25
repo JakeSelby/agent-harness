@@ -29,6 +29,11 @@ over a narrower one.
 - **CI fails when the estimate grows more than 5% over the committed figure.** Trim the growth, or
   add an entry to `benchmarks/allow.json` naming `harness_version`, the new `est_tokens` and a
   `reason`. The entry stops matching as soon as the figure moves again.
+- **Every counted file is priced on its own.** The `files` map gives each file's characters,
+  estimated tokens and dollars, and sums to the totals within rounding. `--check` prints one line
+  per file whose estimate moved since the committed figure, priced on the model with the highest
+  cache-read rate, so a change to one rule reads as that file's delta rather than a moved total.
+  The 5% gate stays on the total.
 - **The caps in `harness lint` are separate.** They bound the worst case — the longest variant of
   every stance — in tokens and in lines, over instructions, rules and stances only; this tracks the
   default selection, output styles and listings included, in tokens and dollars, version by
@@ -58,7 +63,7 @@ run by hand on a release candidate and never in CI.
 ```sh
 python3 scripts/cost_bench.py replay --verify-tasks              # prove every check; calls no model
 python3 scripts/cost_bench.py replay --model <id> --dry-run      # print the schedule
-python3 scripts/cost_bench.py replay --model <id>                # 4 tasks x 2 arms x 2 reps
+python3 scripts/cost_bench.py replay --model <id>                # 7 tasks x 2 arms x 2 reps
 python3 scripts/cost_bench.py replay --model <id> \
     --tag v0.12.0 --tag v0.13.0 --harness-config ~/.claude-bench-harness   # two versions, one run
 ```
@@ -100,11 +105,23 @@ python3 scripts/cost_bench.py replay --model <id> \
   pinned tag's results go in a folder named for it.
 
 - **The arms differ by environment only.** Both get one command line: the same `--model`,
-  `--strict-mcp-config`, `--max-budget-usd 2` and the same sandbox settings, with command network
-  access off. The bare arm adds `CLAUDE_CONFIG_DIR`, pointing at the empty profile. The fence
-  admits each arm's own config directory and `/tmp` for reading and writing, because the
-  repository's suite writes to both and a fence that admitted only the CLI's default would fail
-  the gate for whichever arm was moved to a bench profile.
+  `--strict-mcp-config`, `--max-budget-usd 2`, the task's own `max_turns` as `--max-turns`, and the
+  same sandbox settings, with command network access off. The bare arm adds `CLAUDE_CONFIG_DIR`,
+  pointing at the empty profile. The fence admits each arm's own config directory and `/tmp` for
+  reading and writing, because the repository's suite writes to both and a fence that admitted only
+  the CLI's default would fail the gate for whichever arm was moved to a bench profile.
+- **Neither arm has the web.** `WebFetch` and `WebSearch` run in the CLI's own process, outside the
+  command sandbox, so the fence's empty network list does not reach them; a profile's permission
+  rules do, and the harness profile allows both on documentation domains. The settings every arm
+  launches with therefore deny both tools, and a deny outranks any profile's allow.
+- **The stop gate can fire.** The stop-gate hook runs a gate only in a folder the user trusted, and
+  no one trusts a fresh snapshot. For the length of each scored run, its snapshot is listed in
+  `~/.config/agent-harness/trusted.txt`, where `harness trust` lists roots, and exactly that line
+  is removed afterwards. Every arm's snapshot is listed; the bare arm has no hook to read it.
+- **Every run is captured as `stream-json` with hook events**, the one format that carries the
+  Stop hook's decisions, so each row records `stop_hooks`, how often the hook ran, and
+  `hook_blocks`, how often it refused the stop. A raw file kept in the older single-document form
+  still reads, with both fields `null`.
 - **Each arm's fence is proved before anything is scored.** One capped `-p` run per arm runs
   `bin/harness lint` under that arm's own fence and profile; an arm whose lint is not clean, or
   whose run has a read refused, refuses the whole replay with exit 2 before any scored run
@@ -138,14 +155,19 @@ python3 scripts/cost_bench.py replay --model <id> \
   bare on the same day and model; `benchmarks/history.md` is rendered from it. Compare ratios across
   days, never dollars. The publishable threshold is fixed in the script: the harness costs at most
   85% of bare per passed task while passing no fewer than bare minus one, mean of reps.
-- **What is faked:** single-shot prompts stand in for interactive sessions, two of the four tasks
-  are synthetic, and a tagged run measures the tag's default configuration rather than a
-  configured one.
+- **What is faked:** single-shot prompts stand in for interactive sessions, 2 of the 7 tasks are
+  synthetic, and a tagged run measures the tag's default configuration rather than a configured
+  one.
+- **A task that cannot be passed honestly leaves the set** and moves to the manifest's `retired`
+  list with its reason and date. `usage-prices` left on 2026-09-25: its held-back tests pin live
+  prices and helper names its prompt never gives, and no arm can reach the web to confirm a price.
 
 **Status.** The live tier has produced one uncontaminated result: 1.052 on a four-task set, above
 the 0.85 threshold, so no cost claim is published. Two earlier figures in either direction were
-artifacts of the runner's sandbox and of a test-suite defect, both since fixed. Treat this tier as
-an instrument whose methodology is under review, not as a result; the static tier above is the
+artifacts of the runner's sandbox and of a test-suite defect, both since fixed. A review on
+2026-09-24 found six more ways the arms were unequal or a task unfair: the task count above, the
+turn cap, the stop gate, web access, `usage-prices` and hook capture. Each is fixed as described
+above, and no result has been taken since. Treat this tier as an instrument whose methodology is under review, not as a result; the static tier above is the
 figure to rely on today.
 
 ## Limits

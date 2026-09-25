@@ -56,11 +56,14 @@ LEAKY = {"file_path": "/" + "Users/someone/repos/private/secrets.env",
 
 # Every key a decision row may carry. Pinned rather than sampled: the leak test proves what is
 # absent from the values, and this proves nothing new arrived in the keys.
+# `schema_version` and `profile_fingerprint` are stamped by the ledger's writer, not built by
+# `row()`: see docs/usage.md.
 EXPECTED_KEYS = ("kind", "runtime", "provider", "session_id", "agent_id", "repo", "counterparty",
                  "action_class", "point", "mode", "status", "judgment", "severity",
                  "base_outcome", "advised_outcome", "error", "requested_model", "model",
                  "pack_hash", "request_hash", "ms", "harness_version", "started", "ended",
-                 "input", "output", "cache_read", "cache_write")
+                 "input", "output", "cache_read", "cache_write", "schema_version",
+                 "profile_fingerprint")
 
 
 class _Failing(object):
