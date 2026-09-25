@@ -26,4 +26,7 @@ At release time, `python3 scripts/release_notes.py --changelog <version>` insert
 and Fixed blocks in that order and entries in ascending number within each, then deletes the
 fragments it consumed. `--dry-run` prints the result and changes nothing. It refuses an empty
 set, a malformed name, a version that already has a section, and an Unreleased section that still
-holds hand-written entries.
+holds hand-written entries. The release pull request needs no fragment or waiver of its own: a
+branch whose `CHANGELOG.md` gains a `## [<version>]` section the base lacks, and which deletes
+fragments the base carried, satisfies the lint because it consumes them. A waiver added there
+anyway would outlive the release.
