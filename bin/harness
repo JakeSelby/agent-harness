@@ -169,15 +169,18 @@ SECRET_PATTERNS = getattr(load_detectors(), "SECRET_PATTERNS", [])
 # (https://code.claude.com/docs/en/memory). Codex documents no AGENTS.md limit on its config page,
 # and the harness renders no AGENTS.md for it in any case. What the layer does cost is measured:
 # issue #430 put the harness's live standing context at 12,607 tokens against a bare profile,
-# stable to +/- 15 across eight task pairs. This layer may hold a third of that.
+# stable to +/- 15 across eight task pairs. This layer may hold a third of that, plus the measured
+# size of the `concise` voice stance, which issue #811 added as the longest voice variant.
 MEASURED_STANDING_CONTEXT_TOKENS = 12607  # issue #430, measured from session transcripts
-ALWAYS_LOADED_TOKEN_CAP = MEASURED_STANDING_CONTEXT_TOKENS // 3
+CONCISE_VOICE_STANCE_TOKENS = 620  # issue #811, primitives/stances/voice/concise.md at chars / 4
+ALWAYS_LOADED_TOKEN_CAP = MEASURED_STANDING_CONTEXT_TOKENS // 3 + CONCISE_VOICE_STANCE_TOKENS
 # Characters per token, the same tokenizer-free approximation `scripts/cost_bench.py` uses; the
 # tests assert the two agree. Good for a cap and a trend, never for billing.
 CHARS_PER_TOKEN = 4.0
 # The secondary guard. A layer under the token cap but sprawling over hundreds of short lines is
-# still hard to read and hard to obey, so the line count stays bounded too.
-ALWAYS_LOADED_CAP = 200
+# still hard to read and hard to obey, so the line count stays bounded too. Issue #811 raised it
+# from 200 to 225 for the `concise` voice stance.
+ALWAYS_LOADED_CAP = 225
 
 NAME_FORBIDDEN_DIRS = {"claude", "vscode", "codex", "templates", "primitives", "adapters"}
 NAME_FORBIDDEN_FILES = {"config.example.json"}
@@ -436,13 +439,20 @@ _hook_marker = reconcile.hook_marker
 _is_harness_entry = reconcile.is_harness_hook_entry
 
 
+# Claude Code's own output styles a `voice` variant selects by name; no style text is copied.
+BUILTIN_OUTPUT_STYLES = {"concise": "Concise"}
+
+
 def harness_output_styles() -> Dict[str, str]:
     """The output styles this checkout ships, as voice variant -> the style's own name.
 
-    `claude/output-styles/<variant>.md` is the whole registry: a `voice` variant gets an output
-    style when a file is named after it. A variant with no file imposes its shape through its
-    stance text alone; `scannable` is the only variant with presentation material on either
-    runtime today, and the Codex projection names it explicitly in `render_codex_agents`.
+    `claude/output-styles/<variant>.md` is the file-backed registry: a `voice` variant gets an
+    output style when a file is named after it. A variant may instead select one of Claude Code's
+    built-in styles through `BUILTIN_OUTPUT_STYLES`; those are kept out of this function because
+    the unrecorded-journal strip removes every name it returns, and a user's own built-in choice
+    must survive that. A variant with neither imposes its shape through its stance text alone;
+    `scannable` is the only variant with presentation material on Codex, and the Codex
+    projection names it explicitly in `render_codex_agents`.
     """
     styles: Dict[str, str] = {}
     for path in sorted((REPO / "claude" / "output-styles").glob("*.md")):
@@ -461,7 +471,9 @@ def harness_output_styles() -> Dict[str, str]:
 def voice_output_style(cfg: Dict[str, Any]) -> Optional[str]:
     """The output style the configured `voice` selects, or `None` when it selects none."""
     variant = (cfg.get("stances") or {}).get("voice")
-    return harness_output_styles().get(variant) if variant else None
+    if not variant:
+        return None
+    return harness_output_styles().get(variant) or BUILTIN_OUTPUT_STYLES.get(variant)
 
 
 OUTPUT_STYLE_PATH = json.dumps(["outputStyle"])
@@ -1385,12 +1397,17 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         style = voice_output_style(cfg)
         merged = merge_claude_settings(live, template, cfg, retired=retired_allow_rules(applied, template),
                                        installed=was_installed)
+        # A built-in style the user had already chosen is theirs, not an install: selecting the
+        # variant that maps to it writes nothing, so it is not journaled as harness-applied and a
+        # later switch away or an uninstall leaves it where it was.
+        owned_style = None if (style in BUILTIN_OUTPUT_STYLES.values() and was_installed != style
+                               and live.get("outputStyle") == style) else style
         ownership = read_json(REPO / "claude" / "OWNERSHIP.json") or {}
         # `outputStyle` is listed only while the harness has something to say about it: the
         # style the voice stance selects, or one it installed for an earlier selection and is
         # now taking back out. A style the user chose is neither written nor recorded as owned.
         owned_paths = [[k] for k in ownership.get("claude", {}).get("owned_keys", [])
-                       if k != "outputStyle" or style is not None or was_installed is not None]
+                       if k != "outputStyle" or owned_style is not None or was_installed is not None]
         owned_paths += [["permissions", "allow"], ["permissions", "defaultMode"]]
         hook_paths = [["hooks", event] for event in template.get("hooks", {})]
         owned_paths += hook_paths
@@ -1407,7 +1424,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
             say("  native  telemetry.native no longer names claude-code; removing the Claude "
                 "telemetry settings sync added")
         store.json(settings_file, merged, owned_paths, hook_lists=hook_paths)
-        applied["claude"] = claude_projection(merged, template, installed=style)
+        applied["claude"] = claude_projection(merged, template, installed=owned_style)
         applied["template"] = claude_projection(merge_claude_settings({}, template, cfg), template,
                                                 installed=style)
 

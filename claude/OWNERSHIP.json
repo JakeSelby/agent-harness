@@ -2,7 +2,7 @@
   "_comment": "What `harness sync` may write and what it must never touch. Everything not listed as owned is left exactly as found.",
   "claude": {
     "owned_keys": ["outputStyle", "plansDirectory", "useAutoModeDuringPlan", "showThinkingSummaries"],
-    "output_style": "Owned conditionally, from the `voice` stance rather than from the template: a variant with a file in claude/output-styles/ installs that style, a variant without one installs none and removes the style a previous selection installed. Ownership is what the reconciliation journal records having been written, never the style's name, so a value the harness did not write — including one it also ships — is the user's and is never rewritten, removed or reported as drift.",
+    "output_style": "Owned conditionally, from the `voice` stance rather than from the template: a variant with a file in claude/output-styles/ installs that style, a variant mapped to a Claude Code built-in style (today only `concise`, mapped to `Concise`) installs that style by name, a variant with neither installs none and removes the style a previous selection installed. Ownership is what the reconciliation journal records having been written, never the style's name, so a value the harness did not write — including one it also ships — is the user's and is never rewritten, removed or reported as drift.",
     "posture_keys": ["permissions.defaultMode"],
     "allow_rules": "every entry in settings.template.json permissions.allow, merged as a set; entries the user added are kept; an entry a previous template added and this one dropped is removed",
     "agents": "every file in claude/agents/, linked into ~/.claude/agents/",

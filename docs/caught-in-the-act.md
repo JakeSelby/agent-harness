@@ -76,7 +76,7 @@ exists only because the number was being kept before the hook shipped.
 
 ## What the instrument cannot show yet
 
-- **Detector validity is measured for seventeen detectors of seventeen, against a synthetic
+- **Detector validity is measured for nineteen detectors of nineteen, against a synthetic
   corpus.** The vendored `ruleprobe` wheel labels the detectors the engine ships and
   `tests/fixtures/detector-corpus/` labels the ones written for this repository's own rules, and
   the `corpus` job runs `scripts/detector_corpus.py --floor 0.9` over both on every pull request

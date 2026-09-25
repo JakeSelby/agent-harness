@@ -31,8 +31,9 @@ SESSION = "fixture-session"
 
 # What `brief-guard` printed before budgets existed: the cap on a brief that states none, and
 # silence for everything else. A variant with no budgets must still print exactly this.
-BOUND = ("\n\nReturn at most 400 words: a one-line verdict first, then only what changes a "
-         "decision. Write anything longer to a file and return its path, not its contents.")
+BOUND = ("\n\nReturn at most 400 words: the result in your first sentence, then only the findings "
+         "that change a decision, in plain sentences or short bullets with no section labels. "
+         "Write anything longer to a file and return its path, not its contents.")
 CAP_MESSAGE = "harness:brief-guard: the brief stated no return bound, so a 400-word cap was added"
 
 

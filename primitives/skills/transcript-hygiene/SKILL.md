@@ -41,7 +41,7 @@ did not ask for, and the worst offenders are tool output and relayed subagent re
   block, not lightly edited. The harness already renders the agent's own row.
 - **Never echo the brief you sent.** The user has no reason to read a prompt they did not write.
 - **No arrival narration.** Not "both research threads are back", not "the agents have
-  returned". Start with the verdict; the reader does not need the machinery.
+  returned". Shape the reply by the `voice` stance; the reader does not need the machinery.
 
 ## The tool description is the action log
 

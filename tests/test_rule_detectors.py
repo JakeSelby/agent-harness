@@ -20,7 +20,8 @@ spec = importlib.util.spec_from_file_location("rule_detectors", MODULE)
 rd = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rd)
 
-STANCES = {"commits": "conventional-attributed", "voice": "scannable"}
+# `concise` turns every voice detector on, the concise-only ones included.
+STANCES = {"commits": "conventional-attributed", "voice": "concise"}
 FAKE_KEY = "AKIA" + "Q" * 16
 
 
@@ -195,6 +196,45 @@ CASES = {
         ([say("| a | b |\n| - | - |\n\ntext\n\n| c | d |\n| - | - |")], 1),
         ([say("| a | b |\n| - | - |\n\ntext")], 0),
         ([say("no tables here")], 0),
+    ],
+    "voice/scaffold-leak": [
+        ([say("Done.\n\n**What changed**\n\n- the hook")], 1),
+        ([say("Done.\n\n## What you need to do\n\nRun the sync.")], 1),
+        ([say("- **Still open:** the Linux client.")], 1),
+        # A colon after the closing bold is the commonest template form.
+        ([say("**What changed**: the hook")], 1),
+        ([say("- **Still open**: the Linux client.")], 1),
+        ([say("Done.\n\n## **What changed:**\n\n- the hook")], 1),
+        ([say("Why: the cache was stale.")], 1),
+        ([say("What Changed:\n- the hook")], 1),
+        ([say("**What changed** \u2014 the fix")], 1),
+        ([say("The Catch: it costs a line.")], 1),
+        # One hit per message, however many labels it wears.
+        ([say("**What changed**\n\n**Verification**\n\n**Still open**")], 1),
+        ([say("Merged #214, Fix the login redirect loop.")], 0),
+        ([say("Why this matters: nothing, the style is prose.")], 0),
+        ([say("I fixed the redirect loop. The tests pass.")], 0),
+        # A fix report may carry its status label; the stance allows it.
+        ([say("Fixed: the redirect loop. The tests pass.")], 0),
+        ([say("The path is **Unverified** until CI runs.")], 0),
+        ([say("Why *not* cache it? The key changes per run.")], 0),
+        ([say("Why __init__.py loads twice: it is imported under two names.")], 0),
+        ([say("The pipeline has three stages:\n- Build\n- Verification\n- Deploy")], 0),
+        # Mentioned, not worn.
+        ([say("The old template used `**What changed**` as a label.")], 0),
+        ([say("It printed \"Why:\" before the line.")], 0),
+        ([say("Here is the template:\n```md\n**What changed**\nWhy:\n```\nIt is gone.")], 0),
+        ([say("Here is the template:\n~~~md\n**What changed**\nWhy:\n~~~\nIt is gone.")], 0),
+        # A tilde fence is not closed by backticks.
+        ([say("~~~\nexample\n```\n**What changed**\n~~~")], 0),
+        ([say("**What changed**", final=False)], 0),
+    ],
+    "voice/heading-first": [
+        ([say("# Summary\n\nThe hook fires first.")], 1),
+        ([say("\n\n  ## Result\n\ntext")], 1),
+        ([say("The hook fires first.\n\n## Detail\n\ntext")], 0),
+        ([say("#214 merged.")], 0),
+        ([say("# Summary", final=False)], 0),
     ],
     "decisions/no-alternatives": [
         ([say("**Recommend narrow.** The substrate is the defensible thing.")], 1),
@@ -391,6 +431,17 @@ class StanceTests(unittest.TestCase):
         self.assertIn("voice/banned-opener", rd.run(banned, STANCES))
         self.assertEqual(rd.run(banned, {"voice": "off"}), {})
         self.assertIn("voice/banned-opener", rd.run(banned, {"voice": "answer-card"}))
+
+    def test_the_concise_detectors_are_silent_under_every_other_voice(self):
+        events = [say("# Report\n\n**What changed**\n\n- the hook")]
+        hits = rd.run(events, {"voice": "concise"})
+        self.assertIn("voice/scaffold-leak", hits)
+        self.assertIn("voice/heading-first", hits)
+        for variant in ("scannable", "answer-card", "off"):
+            with self.subTest(voice=variant):
+                hits = rd.run(events, {"voice": variant})
+                self.assertNotIn("voice/scaffold-leak", hits)
+                self.assertNotIn("voice/heading-first", hits)
 
     def test_the_trailer_detector_needs_the_attributed_variant(self):
         plain = rd.run(self.COMMIT, {"commits": "conventional"})
