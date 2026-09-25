@@ -142,6 +142,13 @@ class Refusals(Fixture):
         self.shipped["skills"]["s1"]["slot"] = {"id": "planning", "cedes": False}
         self.assertEqual(self.resolve()["rules"]["r1"], "on")
 
+    def test_one_ceding_claimant_does_not_excuse_two_that_hold_the_slot(self):
+        self.shipped["rules"]["r1"]["slot"] = {"id": "planning", "cedes": True}
+        self.shipped["rules"]["r2"]["slot"] = {"id": "planning", "cedes": False}
+        self.shipped["skills"]["s1"]["slot"] = {"id": "planning", "cedes": False}
+        message = self.refused("rules/r2, skills/s1 each claim the slot 'planning'")
+        self.assertNotIn("rules/r1", message)
+
     def test_a_slot_held_by_a_switched_off_module_is_free(self):
         self.shipped["rules"]["r1"]["slot"] = {"id": "planning", "cedes": False}
         self.hooks["hooks"]["h1"]["slot"] = {"id": "planning", "cedes": False}
@@ -159,6 +166,11 @@ class Refusals(Fixture):
     def test_a_dependency_nothing_installs_fails(self):
         self.shipped["roles"]["o1"]["dependencies"] = ["skills/absent"]
         self.refused("roles/o1 depends on skills/absent")
+
+    def test_a_dependency_a_layer_switches_on_but_nothing_installs_fails(self):
+        self.shipped["roles"]["o1"]["dependencies"] = ["skills/absent"]
+        self.session["skills"] = {"absent": "on"}
+        self.refused("roles/o1 depends on skills/absent, which is not installed")
 
     def test_a_switched_off_module_asks_nothing_of_its_dependencies(self):
         self.shipped["workflows"]["w1"]["dependencies"] = ["roles/o1"]

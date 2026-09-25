@@ -940,12 +940,15 @@ def manifests(config=None, root=None, kinds=None):
     return declared, errors
 
 
-def manifest_refusals(document, declared, required):
+def manifest_refusals(document, declared, required, installed=None):
     """Every refusal a resolved selection earns from its modules' manifests, as messages.
 
-    `required` is `{kind: units}` that must declare a manifest: the shipped ones. Only switched-on
-    modules take a slot, need a dependency or collide; a module switched off asks nothing.
+    `required` is `{kind: units}` that must declare a manifest: the shipped ones. `installed` is
+    `{kind: units}` that exist, for the kinds that have a module directory; a kind without one,
+    such as hooks, counts a unit as present when it declares a manifest. Only switched-on modules
+    take a slot, need a dependency or collide; a module switched off asks nothing.
     """
+    installed = {} if installed is None else installed
     errors = []
     for kind in sorted(required):
         for unit in sorted(required[kind]):
@@ -958,7 +961,9 @@ def manifest_refusals(document, declared, required):
     for name, entry in on.items():
         for needed in entry["dependencies"]:
             kind, _, unit = needed.partition("/")
-            if (document.get(kind) or {}).get(unit) != "on":
+            if unit not in installed.get(kind, declared.get(kind, {})):
+                errors.append(name + " depends on " + needed + ", which is not installed")
+            elif (document.get(kind) or {}).get(unit) != "on":
                 errors.append(name + " depends on " + needed + ", which is not switched on")
         for other in entry["conflicts"]:
             if other in on and (other < name or name not in on[other]["conflicts"]):
@@ -966,8 +971,10 @@ def manifest_refusals(document, declared, required):
         if entry["slot"]:
             slots.setdefault(entry["slot"]["id"], []).append(name)
     for slot, names in sorted(slots.items()):
-        if len(names) > 1 and not any(on[name]["slot"]["cedes"] for name in names):
-            errors.append(", ".join(names) + " each claim the slot '" + slot +
+        # A ceding claimant yields; the slot is refused while two or more still hold it.
+        holders = [name for name in names if not on[name]["slot"]["cedes"]]
+        if len(holders) > 1:
+            errors.append(", ".join(holders) + " each claim the slot '" + slot +
                           "'; switch one off, or have one declare that it cedes the slot")
     return errors
 
@@ -1032,7 +1039,8 @@ def selection(env=None, strict=True, config=None, root=None):
         base = (root or ROOT) / "primitives"
         required = {kind: _units_in(base / kinds[kind]["directory"], kinds[kind]["pattern"])
                     for kind in switches if kinds[kind].get("directory") and kinds[kind].get("pattern")}
-        errors += manifest_refusals(result, declared, required)
+        installed = {kind: set(_units(kind, kinds[kind], config, root)) for kind in required}
+        errors += manifest_refusals(result, declared, required, installed)
         if errors:
             raise ValueError("module manifest: " + "\nmodule manifest: ".join(errors))
     result["sources"] = sources
