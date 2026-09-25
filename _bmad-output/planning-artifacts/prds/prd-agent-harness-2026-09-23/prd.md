@@ -1311,8 +1311,8 @@ makes stale, in the same pull request:
   - CI runs the runner's system Python only. The 3.9 floor is proved locally and by the release lifecycle
     runs. A 3.9 check on every pull request is a gap.
   - **Default taken: amendment 2026-09-25 (#640).** Added after the original run; the lines above are
-    unchanged and dated 2026-09-23. `tests/test_python_floor.py` parses every tracked Python source with
-    the 3.9 grammar inside the required `test` check, so #640 closes the gap for syntax on every pull
+    unchanged and dated 2026-09-23. The required `test` check runs `tests/test_python_floor.py` under a real
+    Python 3.9, parsing every tracked Python source, so #640 closes the gap for syntax on every pull
     request. The new `test-py39` CI job runs the suite under Python 3.9 on every pull request and in the
     merge queue, and it blocks a merge only once the owner adds it to the branch ruleset's required checks.
 - **NFR-3 Security:**

@@ -57,6 +57,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # The floor parse runs under a real 3.9: a newer parser honours `feature_version` only in
+      # part (3.12's f-string grammar ignores it). The interpreter stays off PATH, so the steps
+      # below still run the runner's system Python.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        id: floor
+        with:
+          python-version: "3.9"
+          update-environment: false
+      - name: Syntax at the Python 3.9 floor
+        env:
+          FLOOR_PYTHON: ${{ steps.floor.outputs.python-path }}
+        run: '"$FLOOR_PYTHON" -m unittest tests.test_python_floor -v'
       - name: Unit tests
         run: python3 -m unittest discover -s tests -v
       - name: Static context figure has not grown unexplained

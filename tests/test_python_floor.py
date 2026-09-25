@@ -1,13 +1,15 @@
 """Python 3.9 is the floor: no tracked source may use newer syntax, and CI runs the suite under it.
 
-The parse runs under whatever Python runs the suite, so the required `test` check fails on
-3.9-incompatible syntax even though the `test-py39` job that runs the suite under 3.9 itself
-is not a required check.
+Only a 3.9 interpreter makes the parse exact: a newer one honours `feature_version` in part, and
+3.12's f-string grammar ignores it. The required `test` job therefore runs this module under a real
+3.9 before the suite, so it fails on 3.9-incompatible syntax even though `test-py39`, which runs the
+whole suite under 3.9, is not a required check.
 """
 
 import ast
 import re
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -48,6 +50,16 @@ class SyntaxFloorTests(unittest.TestCase):
         self.assertIsNotNone(floor_error("match x:\n    case 1:\n        pass\n"))
         self.assertIsNone(floor_error("if (n := 1):\n    pass\n"))
 
+    def test_the_floor_interpreter_rejects_what_newer_parsers_let_through(self):
+        # From 3.12 the parser accepts reused quotes inside an f-string whatever
+        # `feature_version` says, so the parse is exact only on 3.9, which the required `test`
+        # job provides.
+        reused_quotes = 'd = {}\nx = f"{d["k"]}"\n'
+        if sys.version_info[:2] == FLOOR:
+            self.assertIsNotNone(floor_error(reused_quotes))
+        elif sys.version_info >= (3, 12):
+            self.assertIsNone(floor_error(reused_quotes))
+
     def test_the_source_list_includes_extensionless_entry_points(self):
         names = {path.relative_to(ROOT).as_posix() for path in python_sources()}
         self.assertIn("bin/harness", names)
@@ -64,11 +76,21 @@ class SyntaxFloorTests(unittest.TestCase):
 
 
 class FloorJobTests(unittest.TestCase):
-    def job(self):
+    def job(self, name="test-py39"):
         text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        match = re.search(r"(?ms)^  test-py39:\n(.*?)(?=^  [A-Za-z_-]+:\n|\Z)", text)
-        self.assertIsNotNone(match, "ci.yml has no test-py39 job")
+        match = re.search(r"(?ms)^  " + re.escape(name) + r":\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", text)
+        self.assertIsNotNone(match, "ci.yml has no {} job".format(name))
         return text, match.group(1)
+
+    def test_the_required_job_parses_under_a_real_floor_interpreter(self):
+        _, job = self.job("test")
+        setup = re.search(r"(?ms)^      - uses: actions/setup-python@[0-9a-f]{40} # v\d.*?(?=^      - )", job)
+        self.assertIsNotNone(setup, "the test job installs no floor interpreter")
+        self.assertRegex(setup.group(0), r'(?m)^          python-version: "3\.9"$')
+        self.assertRegex(setup.group(0), r"(?m)^          update-environment: false$")
+        self.assertIn("FLOOR_PYTHON: ${{ steps.floor.outputs.python-path }}", job)
+        self.assertIn('run: \'"$FLOOR_PYTHON" -m unittest tests.test_python_floor -v\'', job)
+        self.assertLess(job.index("tests.test_python_floor"), job.index("name: Unit tests"))
 
     def test_the_job_runs_the_suite_under_the_floor_interpreter(self):
         _, job = self.job()
