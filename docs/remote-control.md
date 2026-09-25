@@ -140,12 +140,19 @@ it has been unreachable, and how many of its sessions are disconnected.
 
 ## Files an agent sends you
 
-In a Remote Control session, `SendUserFile` uploads nothing. The app keeps the file's path and
-asks the session for the file when you open it, and Claude Code serves it only from under the
-directory the session started in, which is the session's worktree under `spawn: worktree`, or a
-directory added to the session. Most other paths fail in the app with "Couldn't load this file".
-Reports, renders and screenshots are routinely written somewhere else: a temp or scratch
-directory, a task worktree, or the main checkout seen from a session's worktree.
+In Claude Code 2.1.280 a session a host starts has no upload route of its own, so a file the agent
+sends with `SendUserFile` reaches the app as "not delivered: this session is not on a project
+thread", and the iOS app shows its card greyed out. Every host the harness installs therefore
+sets `CLAUDE_CODE_BRIEF_UPLOAD=1`, which its sessions inherit: with it set, the file is uploaded
+with the account the host is signed in to, and the card opens. The variable is undocumented, so a
+client update may drop it. Set it to `""` in a folder's `env` to turn uploads off for that host.
+A host picks up the change only when `install` next rewrites its agent.
+
+A file that is not uploaded is one the app may still ask the session for, and Claude Code serves
+it only from under the directory the session started in, which is the session's worktree under
+`spawn: worktree`, or a directory added to the session. Most other paths fail in the app with
+"Couldn't load this file". Reports, renders and screenshots are routinely written somewhere else:
+a temp or scratch directory, a task worktree, or the main checkout seen from a session's worktree.
 
 The `stage-user-files` policy closes that gap in every Remote Control session the harness hooks
 run in, whether a host here started it or not. Before `SendUserFile` runs, each file from outside
