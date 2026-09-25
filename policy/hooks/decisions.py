@@ -11,10 +11,11 @@ so a reader of the file sees the decision exactly as the hook made it.
     {"kind": "decision", "decision_id": "…", "point": "grade-bash", "session_id": "…",
      "ts": "2026-09-21T18:04:05Z", "input_sha256": "…", "input": "git push --force",
      "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
-     "harness_version": "0.12.0", "profile_fingerprint": "…", "schema_version": 1}
+     "harness_version": "0.12.0", "profile_fingerprint": "…", "module": "hooks/grade-bash",
+     "schema_version": 1}
     {"kind": "outcome", "decision_id": "…", "point": "grade-bash", "session_id": "…",
      "ts": "…", "outcome": "ran", "harness_version": "0.12.0", "profile_fingerprint": "…",
-     "schema_version": 1}
+     "module": "hooks/grade-bash", "schema_version": 1}
 
 `input` is the text the hook judged, capped at MAX_INPUT (2 KiB) — a command or a brief, never
 tool output and never assistant prose. `input_sha256` is over the **uncapped** text, so two
@@ -46,6 +47,23 @@ from pathlib import Path
 # The points that write. Named here so the report can list a point that has not fired yet, and
 # so a typo in a call site is a test failure rather than a silent new group.
 POINTS = ("grade-bash", "stop-gate", "tier-agent-spawns", "brief-guard", "evasion-deny")
+
+# The module that owns each point's decision (AD-23): the hook id whose logic made it, named as a
+# selection reference, `hooks/<id>`. Role confinement, framework and evasion refusals, the
+# Workflow launch guard and the integration notice all run in the spawn path `tier-agent-spawns`
+# owns. A point no hook owns, such as `decision-provider`, names `null` rather than a guess.
+MODULE_KEY = "module"
+POINT_MODULES = {
+    "grade-bash": "hooks/grade-bash",
+    "stop-gate": "hooks/stop-gate",
+    "tier-agent-spawns": "hooks/tier-agent-spawns",
+    "brief-guard": "hooks/brief-guard",
+    "evasion-deny": "hooks/tier-agent-spawns",
+    "role-confinement": "hooks/tier-agent-spawns",
+    "framework-spawn": "hooks/tier-agent-spawns",
+    "workflow-launch": "hooks/tier-agent-spawns",
+    "integration-descriptor": "hooks/tier-agent-spawns",
+}
 
 # 2 KiB. Far past any command or the head of a brief, and small enough that a session's worth of
 # rows stays a file a person can read. The hash is over the uncapped text, so the cap loses
@@ -522,6 +540,11 @@ def profile_fingerprint():
         return None
 
 
+def module_of(point):
+    """The `hooks/<id>` that owns decisions at `point`, or None for a point no hook owns."""
+    return POINT_MODULES.get(point) if isinstance(point, str) else None
+
+
 def fold(row, folds=None):
     """A copy of `row` with every renamed field under its current name; see usage-log's `fold`."""
     folds = FIELD_FOLDS if folds is None else folds
@@ -538,6 +561,8 @@ def _append(row, target=None):
     row = dict(row, **{SCHEMA_KEY: SCHEMA_VERSION})
     if FINGERPRINT_KEY not in row:
         row[FINGERPRINT_KEY] = profile_fingerprint()
+    if MODULE_KEY not in row:
+        row[MODULE_KEY] = module_of(row.get("point"))
     target = Path(target) if target else path()
     target.parent.mkdir(parents=True, exist_ok=True)
     try:

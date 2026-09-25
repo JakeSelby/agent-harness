@@ -230,6 +230,9 @@ flowchart TB
     - the Workflow tool's `agent()` (#576);
     - the plugin channel, which installs constrained roles as native agents with no hook (the plugin
       follow-up under #634).
+    *Amended 2026-09-25:* the Workflow tool's launch is guarded (#576): the pre-tool hook reads the script
+    and refuses one naming a constrained role, so the remaining gap there is band routing of its
+    `agent()` calls, not confinement.
 
 ### AD-9: Checks bind subagents; decisions flow up [ADOPTED]
 
