@@ -5,11 +5,11 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 20,
-    "story": 262,
+    "story": 263,
     "task": 32,
     "bug": 99,
     "chore": 76,
-    "spike": 14,
+    "spike": 15,
     "decision": 14
   },
   "items": [
@@ -6287,6 +6287,32 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S261.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S262",
+      "github_number": 813,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/813",
+      "title": "Rewrite the always-loaded rules in plain language",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S262.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-SP014",
+      "github_number": 814,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/814",
+      "title": "Licence review of the humanizer skill for drafts",
+      "type": "spike",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-SP014.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
