@@ -64,6 +64,24 @@ arm that loads no harness. A row from before the field, a rescanned session the 
 already hold, and a row whose profile could not be resolved carry none or `null`, and read as
 **unattributed**: nothing is ever given a guessed fingerprint.
 
+A session row also carries **`context_attribution`**: which module put how many tokens into the
+session's context. Context is shared, so this is an estimate, and the field says so:
+
+```json
+"context_attribution": {"estimand": "soft estimate",
+  "method": "chars/4 of resident text: a rule or stance variant whole; a skill, role or workflow its name and description",
+  "modules": {"rules/secrets": 222, "stances/voice": 106, "skills/sandbox": 65, "roles/builder": 60}}
+```
+
+Each key is a selection reference, `kind/unit`, for every switched-on module and every stance
+with text resident before the first prompt. A skill, role or workflow is resident as its listing
+entry, and its body loads on demand, so only the entry counts. A hook's context arrives per event
+and is not estimated here; the decision log attributes what a hook decided instead.
+`posture.context_attribution()` is the one definition, so one module switched off removes that
+module's entry and changes no other, while the fingerprint changes with it. A replay row carries
+its arm's attribution, with no module for the bare arm. A rescanned session keeps what the ledger
+already held and otherwise carries no field, never this minute's selection.
+
 **`kind: "session"`** — `session_id`, `repo`, `branch`, `models`, `started`, `ended`, `input`,
 `output`, `cache_read`, `cache_write`, `subagents`, `turns`, `effort`, `effort_source`,
 `days`, `raw_vs_deduped` and, when the row has any, `idless_records`.
@@ -240,7 +258,7 @@ so both grow compatibly:
 
 `SCHEMA_VERSION` in each of those modules is bumped with any change to what a row carries.
 Version 1 is first released in v0.14.0 and carries every field that release adds,
-`profile_fingerprint` among them.
+`profile_fingerprint`, `context_attribution` and `module` among them.
 
 ## Usage feed
 
@@ -408,11 +426,18 @@ a context token.
 {"kind": "decision", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
  "ts": "2026-09-21T19:41:05Z", "input_sha256": "d20c…", "input": "git push --force origin main",
  "deterministic_answer": "ask", "outcome": null, "runtime": "claude-code",
- "harness_version": "0.12.0", "profile_fingerprint": "5f1c…", "schema_version": 1}
+ "harness_version": "0.12.0", "profile_fingerprint": "5f1c…", "module": "hooks/grade-bash",
+ "schema_version": 1}
 {"kind": "outcome", "decision_id": "e38a…", "point": "grade-bash", "session_id": "s-1",
  "ts": "2026-09-21T19:41:22Z", "outcome": "ran", "harness_version": "0.12.0",
- "profile_fingerprint": "5f1c…", "schema_version": 1}
+ "profile_fingerprint": "5f1c…", "module": "hooks/grade-bash", "schema_version": 1}
 ```
+
+`module` names the hook that owns the decision, as `hooks/<id>`: `grade-bash`, `stop-gate` and
+`brief-guard` their own, and every refusal or notice on the spawn path, role confinement,
+framework and evasion refusals, the Workflow launch guard and the integration notice included,
+`hooks/tier-agent-spawns`. A point no hook owns, such as `decision-provider`, names `null`.
+`POINT_MODULES` in `decisions.py` is the map.
 
 The file is **append-only**: an outcome is its own record, joined to its decision by
 `decision_id` when the report reads it, and no line is ever rewritten. `input` is the text the

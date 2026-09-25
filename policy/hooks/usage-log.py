@@ -229,6 +229,39 @@ def stamped(record):
     return out
 
 
+ATTRIBUTION_KEY = "context_attribution"
+
+
+def context_attribution():
+    """Per-module context tokens for the selection in force, from `posture.py`; None without it.
+
+    A soft estimate, labelled with its method: see `posture.context_attribution`.
+    """
+    if not _POSTURE:
+        _POSTURE.append(sibling("posture", required=False))
+    try:
+        return _POSTURE[0].context_attribution() if _POSTURE[0] else None
+    except Exception:
+        return None
+
+
+def attributed(record, prior=None, rescan=False):
+    """Give a session row its context attribution: the ledger's own, a live read, or none.
+
+    The same rule as the fingerprint's. A transcript does not say which modules its session
+    loaded, so a rescan keeps what the ledger already holds for that session and otherwise
+    leaves the field out, rather than attributing a past session to this minute's selection.
+    """
+    known = prior.get(ATTRIBUTION_KEY) if isinstance(prior, dict) else None
+    if isinstance(known, dict):
+        record[ATTRIBUTION_KEY] = known
+    elif not rescan:
+        value = context_attribution()
+        if value is not None:
+            record[ATTRIBUTION_KEY] = value
+    return record
+
+
 def fold(row, folds=None):
     """A copy of `row` with every renamed field under its current name.
 
@@ -1195,6 +1228,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         record["stances"] = stances()
         if rescan:
             record["stances_source"] = "rescan"
+    attributed(record, prior, rescan)
     try:
         module = detectors()
         record["counts"] = module.counts(events)
@@ -1468,6 +1502,7 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
               "cache_read": None, "cache_write": None, "parse_failures": malformed}
     if rescan and not (prior or {}).get("stances"):
         record["stances_source"] = "rescan"
+    attributed(record, prior, rescan)
     codex_totals(record, totals)
     chosen = dominant(weights) or effort
     record["effort"] = chosen or None
