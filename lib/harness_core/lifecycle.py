@@ -216,16 +216,20 @@ def marker_role(prompt):
 # usually sits inside a string literal, bounded by a quote or a `\n` escape rather than a newline.
 WORKFLOW_POINT = "workflow-launch"
 WORKFLOW_AGENT_TYPE = re.compile(r"\bagentType\b")
-WORKFLOW_AGENT_VALUE = re.compile(r"""['"]?\s*[:=]\s*(['"`])([^'"`\\\n]*)\1""")
+# A literal counts only when it is the whole value: `'worker-a' && 'reviewer'` is computed.
+WORKFLOW_AGENT_VALUE = re.compile(r"""['"]?\s*[:=]\s*(['"`])([^'"`\\\n]*)\1(?=\s*(?:[,;)\]}]|$))""")
 WORKFLOW_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 WORKFLOW_LITERAL = re.compile(r"""(['"`])([a-z][a-z0-9-]*)\1""")
 WORKFLOW_MARKER = re.compile(r"""(?:^|\\n|['"`])[ \t]*harness-role:[ \t]*([a-z][a-z0-9-]*)[ \t]*"""
                              r"""(?=$|\\n|\\r|['"`])""", re.M)
 WORKFLOW_SCRIPT_MAX = 1024 * 1024
+# A file longer than the read limit runs in full but cannot be judged in full, so it is refused.
+WORKFLOW_TOO_LARGE = object()
 
 
 def workflow_script(event):
-    """The text a `Workflow` launch will run, or None when this hook cannot read it.
+    """The text a `Workflow` launch will run, None when this hook cannot read it, or
+    `WORKFLOW_TOO_LARGE` for a file past `WORKFLOW_SCRIPT_MAX` characters.
 
     The runtime takes `scriptPath` over `script` over `name`; a name resolves to a file under a
     `.claude/workflows/` directory, project first. A built-in workflow and a resume by run id
@@ -247,7 +251,8 @@ def workflow_script(event):
         try:
             if candidate.is_file():
                 with open(str(candidate), encoding="utf-8", errors="replace") as stream:
-                    return stream.read(WORKFLOW_SCRIPT_MAX)
+                    text = stream.read(WORKFLOW_SCRIPT_MAX + 1)
+                return WORKFLOW_TOO_LARGE if len(text) > WORKFLOW_SCRIPT_MAX else text
         except OSError:
             continue
     return None
@@ -268,7 +273,7 @@ def workflow_role(script):
     computed = False
     for mention in WORKFLOW_AGENT_TYPE.finditer(script):
         match = WORKFLOW_AGENT_VALUE.match(script, mention.end())
-        if match is None:
+        if match is None or "${" in match.group(2):
             computed = True
             continue
         fields = constrained_role(match.group(2))
@@ -296,7 +301,12 @@ def workflow_results(runtime, event):
     """
     results = []
     script = workflow_script(event)
-    if selected("delegation", "tiered") == "off":
+    if script is WORKFLOW_TOO_LARGE:
+        results.append({"hookSpecificOutput": {"permissionDecision": "deny",
+            "permissionDecisionReason": "This workflow script is longer than the "
+            + str(WORKFLOW_SCRIPT_MAX) + " characters the guard reads, so the constrained roles "
+            "it names cannot be checked; split it or send it inline."}})
+    elif selected("delegation", "tiered") == "off":
         results.append({"hookSpecificOutput": {"permissionDecision": "deny",
             "permissionDecisionReason": "Delegation is off, and every agent() call in a workflow "
             "script is a spawn; perform the work inline or change the selected stance."}})
@@ -313,7 +323,7 @@ def workflow_results(runtime, event):
     module = decisions()
     if module is not None:
         denied = any(r["hookSpecificOutput"].get("permissionDecision") == "deny" for r in results)
-        text = script if script is not None else json.dumps(event.get("tool_input") or {}, sort_keys=True)
+        text = script if isinstance(script, str) else json.dumps(event.get("tool_input") or {}, sort_keys=True)
         module.record(WORKFLOW_POINT, "deny" if denied else "allow", text, event, runtime)
     return results
 

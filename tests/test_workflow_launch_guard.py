@@ -28,6 +28,9 @@ COMPUTED = ("const kinds = ['worker-b', 'reviewer'];\n"
             "for (const k of kinds) await agent('Look at it.', { agentType: k });\n")
 COMPUTED_BANDS = ("const kinds = ['worker-b', 'worker-c'];\n"
                   "for (const agentType of kinds) await agent('Look at it.', { agentType });\n")
+COMPOUND = "await agent('Look at it.', { agentType: 'worker-a' && 'reviewer' });\n"
+INTERPOLATED = ("const role = 'reviewer';\n"
+                "await agent('Look at it.', { agentType: `${role}` });\n")
 PROSE = "await agent('Act as a careful reviewer of docs/releasing.md.', { label: 'reviewer' });\n"
 
 
@@ -53,9 +56,11 @@ class WorkflowLaunchTests(unittest.TestCase):
         patch.object(module, "_CONFIG", [{}]).start()
         self.log = self.base / ".local" / "state" / "agent-harness" / "decisions.jsonl"
 
-    def launch(self, runtime="claude-code", cwd=None, **inputs):
+    def launch(self, runtime="claude-code", cwd=None, mode=None, **inputs):
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Workflow",
                    "session_id": "wf-session", "cwd": str(cwd or self.base), "tool_input": inputs}
+        if mode is not None:
+            payload["permission_mode"] = mode
         return lifecycle.dispatch(runtime, payload)
 
     def rows(self):
@@ -118,6 +123,36 @@ class WorkflowLaunchTests(unittest.TestCase):
         result = self.launch(script=COMPUTED)
         self.assertEqual(decision(result), "deny")
         self.assertIn("computes agentType", reason(result))
+
+    def test_a_literal_that_is_not_the_whole_value_counts_as_computed(self):
+        for script in (COMPOUND, INTERPOLATED):
+            with self.subTest(script=script[:40]):
+                result = self.launch(script=script)
+                self.assertEqual(decision(result), "deny")
+                self.assertIn("computes agentType", reason(result))
+
+    def test_a_script_file_past_the_read_limit_is_refused(self):
+        path = self.base / "long.js"
+        padding = "// " + "x" * lifecycle.WORKFLOW_SCRIPT_MAX + "\n"
+        path.write_text(BANDS_ONLY + padding + NAMED, encoding="utf-8")
+        result = self.launch(scriptPath=str(path))
+        self.assertEqual(decision(result), "deny")
+        self.assertIn("longer than", reason(result))
+        self.assertIn("long.js", self.rows()[0]["input"], "the row carries the tool input")
+        path.write_text(BANDS_ONLY, encoding="utf-8")
+        self.assertNotEqual(decision(self.launch(scriptPath=str(path))), "deny")
+
+    def test_plan_mode_allows_a_listed_workflow_unless_the_guard_refuses_it(self):
+        config = self.base / ".config" / "agent-harness" / "config.json"
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({"permissions": "bypass", "plan_allow_tools": ["Workflow"]}),
+                          encoding="utf-8")
+        allowed = self.launch(mode="plan", script=BANDS_ONLY)
+        self.assertEqual(decision(allowed), "allow")
+        self.assertIn("plan_allow_tools", reason(allowed))
+        self.assertEqual(decision(self.launch(mode="plan", script=NAMED)), "deny")
+        self.assertIsNone(decision(self.launch(script=BANDS_ONLY)), "outside plan mode")
+        self.assertEqual([r["deterministic_answer"] for r in self.rows()], ["allow", "deny", "allow"])
 
     def test_a_marker_naming_no_constrained_role_says_nothing(self):
         script = "await agent('harness-role: worker-b\\nDo the thing.');\n"

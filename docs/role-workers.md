@@ -21,8 +21,8 @@ A Claude Code `Workflow` script's `agent()` calls never reach the spawn hooks, s
 the launch instead: the script sent inline, the file at `scriptPath`, or a named workflow under
 `.claude/workflows/` in the working directory or the home directory. A script that names a
 constrained role as a quoted `agentType`, carries a `harness-role:` marker for one, or computes
-`agentType` beside a string literal naming one is refused with the same instruction; `delegation:
-off` refuses every launch. Each launch is a `workflow-launch` row in the decision log. The guard
+`agentType` beside a string literal naming one is refused with the same instruction, and so is a
+script file longer than the 1 MiB the guard reads; `delegation: off` refuses every launch. Each launch is a `workflow-launch` row in the decision log. The guard
 cannot route a script's other agents to a band, and a built-in workflow or a resumed run carries
 no script for it to read.
 
