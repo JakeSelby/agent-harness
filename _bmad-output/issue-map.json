@@ -6436,6 +6436,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B100",
+      "github_number": 816,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/816",
+      "title": "/close-out files follow-ups after it lands, so the filing's own changes never merge",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B100.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-C076",
       "github_number": 818,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/818",
