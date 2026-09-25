@@ -186,7 +186,9 @@ class Kinds(unittest.TestCase):
     def test_every_kind_names_its_directory_value_and_projection(self):
         for kind, entry in catalog.KINDS.items():
             with self.subTest(kind=kind):
-                self.assertEqual(set(entry), {"directory", "pattern", "value", "projection"})
+                # `hooks` has no directory, so the catalog enumerates its units instead.
+                extra = {"units"} if kind == "hooks" else set()
+                self.assertEqual(set(entry), {"directory", "pattern", "value", "projection"} | extra)
                 self.assertIn(entry["value"], ("variant", "switch", None))
         self.assertEqual(SELECTABLE, ["hooks", "roles", "rules", "skills", "stances", "workflows"])
         self.assertEqual(sorted(posture.selection_kinds(REPO)), SELECTABLE)
@@ -195,10 +197,9 @@ class Kinds(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             self.assertEqual(list(posture.selection_kinds(Path(temp))), ["stances"])
 
-    def test_the_primitive_catalog_lists_only_kinds_with_a_directory(self):
+    def test_the_primitive_catalog_lists_kinds_with_a_directory_and_the_hook_ids(self):
         kinds = {entry["kind"] for entry in catalog.catalog(REPO)["primitives"]}
-        self.assertNotIn("hooks", kinds)
-        self.assertTrue({"rules", "stances", "skills", "roles", "workflows"} <= kinds)
+        self.assertTrue({"rules", "stances", "skills", "roles", "workflows", "hooks"} <= kinds)
 
 
 class Consumers(unittest.TestCase):

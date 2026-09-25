@@ -60,7 +60,7 @@ this precedence, lowest first:
 `sources` object in the same shape naming the layer that set each one. That output reads back
 unchanged as a session file. `harness stances` stays as the stance-only view;
 `harness config set rules.<name> off` writes one switch, and the same form works for `skills`,
-`workflows` and `roles`. It refuses a switch that would leave an `on` module depending on an
+`workflows` and `roles`, and for the `hooks` ids in [runtime controls](runtime-controls.md#hook-ids). It refuses a switch that would leave an `on` module depending on an
 `off` one, so switch the dependent off first. What sync does with an `off` unit is in
 [the sync model](sync-model.md).
 `sync` projects the user's layers only; a project or session layer stays in the session that set it, and an isolated

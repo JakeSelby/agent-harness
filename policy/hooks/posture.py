@@ -96,6 +96,11 @@ SIDECAR_KEYS = ("schema_version", "extends", "switches", "default_band", "rows")
 SELECTION_EXTRA_KEYS = ("mode", "sources")
 SWITCH_STATES = ("on", "off")
 MODE_VARIABLE = "HARNESS_MODE"
+# Hooks a layer may switch off only when the user configuration sets `CORE_ACK` true. The same
+# four ids as `catalog.CORE_HOOKS`, held here too because a hook copied out of its checkout has no
+# catalog; a test keeps the two equal.
+CORE_HOOKS = ("brief-guard", "grade-bash", "neutralize-tool-output", "stop-gate")
+CORE_ACK = "core_switches_acknowledged"
 _KINDS = {}
 # A module's manifest (AD-22): what it claims to change, where it reaches the model, what measures
 # it, the one exclusive slot it takes, and the modules it needs or collides with. Authoring
@@ -840,7 +845,13 @@ def _selection(config, env, strict, root=None):
 
 
 def _units(kind, entry, config, root=None):
-    """The installed units of one kind, sorted: stance dimensions, rule, skill or role names."""
+    """The installed units of one kind, sorted: stance dimensions, rule, skill or role names.
+
+    A kind the catalog enumerates, `hooks`, counts each listed id whose module is in this checkout.
+    """
+    if entry.get("units"):
+        base = (root or ROOT) / "policy" / "hooks"
+        return sorted(unit for unit in entry["units"] if (base / (unit + ".py")).is_file())
     directory, pattern = entry.get("directory"), entry.get("pattern")
     if not directory or not pattern:
         return []
@@ -979,6 +990,20 @@ def manifest_refusals(document, declared, required, installed=None):
     return errors
 
 
+def core_refusals(document, sources, config):
+    """One message per core hook `document` switches off while the user has not acknowledged it.
+
+    The acknowledgement is read from the user configuration only: a project, session or mode file
+    cannot carry it, so no file a repository ships can turn enforcement off on its own authority.
+    """
+    if (config or {}).get(CORE_ACK) is True:
+        return []
+    hooks = document.get("hooks") or {}
+    return [(sources.get("hooks") or {}).get(unit, "a layer") + " switches the core hook " + unit +
+            " off; set " + CORE_ACK + " true in the user configuration to allow it"
+            for unit in CORE_HOOKS if hooks.get(unit) == "off"]
+
+
 def measurement(manifest):
     """How a report shows a module: its instruments, or `unmeasured`, never `no effect`."""
     instruments = (manifest or {}).get("instruments") or []
@@ -994,6 +1019,8 @@ def selection(env=None, strict=True, config=None, root=None):
     stance or null; a switch kind's is `on`. `config` is the user configuration when the caller
     has already read it. A kind that is not an object, or a switch value other than `on` or `off`,
     is an error when strict and selects nothing otherwise; a unit a layer names that nothing installs is still reported.
+    So is a core hook switched off without `core_switches_acknowledged` true in the user
+    configuration, which resolves `on` when not strict (`core_refusals`).
     Strict resolution also enforces the switch kinds' manifests (AD-22): a shipped module without
     one, a field missing or malformed, a switched-on module whose dependency is not on, two that
     conflict, or two that claim one slot with neither ceding it, is a `ValueError` naming them.
@@ -1030,6 +1057,14 @@ def selection(env=None, strict=True, config=None, root=None):
                 if not isinstance(value, str) or not value:
                     continue
                 result[kind][unit], sources[kind][unit] = value, source
+    refusals = core_refusals(result, sources, config)
+    if refusals and strict:
+        raise ValueError("\n".join(refusals))
+    if refusals:
+        # A hook resolving non-strictly keeps enforcing: an unacknowledged `off` is not one.
+        for unit in CORE_HOOKS:
+            if result.get("hooks", {}).get(unit) == "off":
+                result["hooks"][unit], sources["hooks"][unit] = "on", "default"
     for kind in kinds:
         result[kind] = dict(sorted(result[kind].items()))
         sources[kind] = dict(sorted(sources[kind].items()))
@@ -1040,6 +1075,10 @@ def selection(env=None, strict=True, config=None, root=None):
         required = {kind: _units_in(base / kinds[kind]["directory"], kinds[kind]["pattern"])
                     for kind in switches if kinds[kind].get("directory") and kinds[kind].get("pattern")}
         installed = {kind: set(_units(kind, kinds[kind], config, root)) for kind in required}
+        # Hooks have no module directory, so `installed` keeps counting one as present when it
+        # declares a manifest; each hook this checkout ships must declare one.
+        required.update({kind: set(_units(kind, kinds[kind], config, root))
+                         for kind in switches if kinds[kind].get("units")})
         errors += manifest_refusals(result, declared, required, installed)
         if errors:
             raise ValueError("module manifest: " + "\nmodule manifest: ".join(errors))

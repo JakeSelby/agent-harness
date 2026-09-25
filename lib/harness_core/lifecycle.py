@@ -82,7 +82,34 @@ def normalize(payload):
     return event
 
 
+# The hooks selection for the dispatch in progress, so one event resolves the ladder once.
+_SWITCHES = []
+
+
+def switches():
+    """`{hook id: "on"|"off"}` from the selection, resolved as a hook resolves it: not strictly.
+
+    A selection that will not resolve leaves every hook on, and a core hook switched off without
+    its acknowledgement resolves `on` (`posture.core_refusals`), so a broken file never turns
+    enforcement off.
+    """
+    if _SWITCHES:
+        return _SWITCHES[-1]
+    try:
+        return load("posture").selection(strict=False).get("hooks") or {}
+    except Exception:
+        return {}
+
+
+def enabled(name):
+    """Whether hook id `name` is on. Ids are `catalog.HOOK_IDS`, the same on every runtime."""
+    return switches().get(name) != "off"
+
+
 def invoke(name, event):
+    """Run policy module `name` on `event`; `{}`, without loading it, when its id is off."""
+    if not enabled(name):
+        return {}
     module = load(name)
     output = io.StringIO()
     old = sys.stdin
@@ -490,6 +517,17 @@ def patch_paths(event):
 def dispatch(runtime, payload):
     if runtime not in ("claude-code", "codex"):
         raise ValueError("unknown runtime")
+    _SWITCHES.append(switches())
+    try:
+        return _dispatch(runtime, payload)
+    finally:
+        _SWITCHES.pop()
+
+
+def _dispatch(runtime, payload):
+    """Compose the policies for one event. Logic that is not an `invoke` checks its owning id:
+    Bash grading, its ask and its decision log are `grade-bash`; plan-mode and read-only allows
+    are `allow-readonly-bash`; role and evasion denials are `tier-agent-spawns`."""
     event = normalize(payload)
     kind, tool = event.get("hook_event_name"), event.get("tool_name")
     if kind == "PreToolUse":
@@ -498,14 +536,18 @@ def dispatch(runtime, payload):
         if tool == "SendUserFile" and runtime == "claude-code":
             results.append(invoke("stage-user-files", event))
         if tool == "Bash":
-            grader = load("grade-bash")
-            if grader.ro is None:
+            grading, readonly = enabled("grade-bash"), enabled("allow-readonly-bash")
+            grader = load("grade-bash") if grading or readonly else None
+            if grader is not None and grader.ro is None:
                 raise RuntimeError("command classifier unavailable")
             # Shared stance resolution includes explicit project and session selections.
             variant = selected("autonomy", "execute")
-            command, confirmed = grader.strip_marker(event["tool_input"]["command"])
-            grade, verb, target, family = grader.grade_text(command, event.get("cwd", ""))
-            asked = bool(grade) and not confirmed and grade >= grader.THRESHOLDS.get(variant, 1)
+            command, confirmed = event["tool_input"]["command"], False
+            grade = verb = target = family = None
+            if grader is not None:
+                command, confirmed = grader.strip_marker(command)
+                grade, verb, target, family = grader.grade_text(command, event.get("cwd", ""))
+            asked = grading and bool(grade) and not confirmed and grade >= grader.THRESHOLDS.get(variant, 1)
             if asked:
                 decision = "deny" if runtime == "codex" or event.get("permission_mode") in grader.DENY_MODES else "ask"
                 results.append({"hookSpecificOutput": {"permissionDecision": decision,
@@ -514,8 +556,8 @@ def dispatch(runtime, payload):
             # ones native plan mode prompts on: a script the grammar cannot read through, a
             # scratch redirect, a test run. Under an open posture the first is investigation and
             # the second is not, and the autonomy stance still outranks both when it already asked.
-            plan = investigating(runtime, event)
-            if grade == 0:
+            plan = readonly and investigating(runtime, event)
+            if readonly and grade == 0:
                 results.append({"hookSpecificOutput": {"permissionDecision": "allow"}})
             elif plan and not asked and grade == 1:
                 results.append({"hookSpecificOutput": {"permissionDecision": "allow",
@@ -526,13 +568,15 @@ def dispatch(runtime, payload):
                     "planning. Plan mode widens investigation, not the build. "
                     + grader.reason(grade, verb, target, family, variant)}})
             results.append(invoke("filter-output", event))
-            log_bash_decision(runtime, event, results, command, confirmed)
+            if grading:
+                log_bash_decision(runtime, event, results, command, confirmed)
         elif tool == "Agent":
             delegation = selected("delegation", "tiered")
             inputs = event["tool_input"]
             role_name, prompt = inputs.get("subagent_type"), inputs.get("prompt")
             session = event.get("session_id")
-            fields = constrained_role(role_name)
+            spawns = enabled("tier-agent-spawns")
+            fields = constrained_role(role_name) if spawns else None
             if fields is not None:
                 results.append(confinement_deny(runtime, session, role_name, fields, prompt,
                                                 "subagent_type"))
@@ -544,7 +588,7 @@ def dispatch(runtime, payload):
             # classifier inferred is not, because a wrong inference remembered is a session that
             # cannot get the corrected brief through. None of this runs where the stance already
             # denies every spawn.
-            if delegation != "off":
+            if delegation != "off" and spawns:
                 if fields is not None:
                     remember_denial(session, role_name, prompt)
                 else:
@@ -570,14 +614,14 @@ def dispatch(runtime, payload):
                 results.append(invoke("brief-guard", event))
         elif tool == "WebFetch":
             results.append(invoke("allow-plan-webfetch", event))
-        elif investigating(runtime, event) and plan_allowed_tool(tool):
+        elif enabled("allow-readonly-bash") and investigating(runtime, event) and plan_allowed_tool(tool):
             results.append({"hookSpecificOutput": {"permissionDecision": "allow",
                 "permissionDecisionReason": "Plan-mode research tool named by plan_allow_tools, "
                 "run at the permission posture you selected."}})
         return encode_pre(runtime, payload, event, results)
     if kind == "PostToolUse":
         contexts = []
-        if tool == "Bash":
+        if tool == "Bash" and enabled("grade-bash"):
             log_bash_outcome(runtime, event)
         if selected("plan-ceremony", "review-card") == "review-card":
             for path in patch_paths(event):
@@ -610,6 +654,8 @@ def dispatch(runtime, payload):
         log = decisions()
         if log is not None:
             log.close_session(event.get("session_id") or "")
+        if not enabled("usage-log"):
+            return {}
         module = load("usage-log")
         old = sys.stdin
         try:
