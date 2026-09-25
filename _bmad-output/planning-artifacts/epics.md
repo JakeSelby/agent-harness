@@ -34,15 +34,15 @@ How to read it:
 | Stances and selection (FR-2, FR-14 to FR-16) | AH-E002, AH-E011, AH-E017 |
 | Configuration lifecycle (FR-4, FR-5, FR-17, FR-18, FR-66, FR-69, FR-70) | AH-E001, AH-E005, AH-E008, AH-E015 |
 | Measured rules (FR-19 to FR-22, FR-67) | AH-E009, AH-E013, AH-E003 |
-| Ledger, pricing and telemetry (FR-11, FR-23 to FR-27) | delivered without an epic (0.12); AH-E017 for the schema rule |
-| Cost posture and delegation (FR-28 to FR-34) | delivered without an epic (0.11); AH-E013, AH-E015 |
+| Ledger, pricing and telemetry (FR-11, FR-23 to FR-27) | delivered without an epic (0.12); AH-E017 for the schema rule; AH-E018 for rebuild attribution |
+| Cost posture and delegation (FR-28 to FR-34) | delivered without an epic (0.11); AH-E013, AH-E015, AH-E018 |
 | Guardrails (FR-35 to FR-39) | AH-E015 |
 | Role workers and the delivery loop (FR-40 to FR-44, FR-68) | AH-E001, AH-E015 |
 | Framework integrations (FR-45, FR-46) | delivered without an epic (#585, #591); viewer under AH-E002 |
 | Decision providers (FR-47 to FR-50) | AH-E003 |
 | Compatibility, qualification and release (FR-6, FR-7, FR-12, FR-51 to FR-54) | AH-E005, AH-E014, AH-E006 |
 | Cost benchmarks (FR-55 to FR-58) | AH-E013, AH-E011 |
-| Session operations (FR-8, FR-59 to FR-63) | AH-E001, AH-E002, AH-E015, AH-E017 |
+| Session operations (FR-8, FR-59 to FR-63) | AH-E001, AH-E002, AH-E015, AH-E017, AH-E018 |
 | Public planning (FR-9, FR-64, FR-65) | AH-E004, AH-E012, AH-E016 |
 
 ## Epics
@@ -419,6 +419,19 @@ How to read it:
   - AH-S211 [#644](https://github.com/JakeSelby/agent-harness/issues/644): Ledger rows carry a schema version and readers tolerate unknown fields (open)
   - AH-C054 [#645](https://github.com/JakeSelby/agent-harness/issues/645): One kernel helper for atomic whole-file rewrites that keeps file mode (open)
   - AH-S212 [#646](https://github.com/JakeSelby/agent-harness/issues/646): Remote Control: pin the verified client versions and warn in doctor outside them (open)
+
+### AH-E018: Cut cache-rebuild spend in long interactive sessions ([#745](https://github.com/JakeSelby/agent-harness/issues/745), open)
+
+- **Milestones:** v0.15.0 to v0.17.0
+- **Goal:** Idle-over-an-hour cache rebuilds below 5% of long-session spend, from 10.7%, with rebuilds measured by cause.
+- **Covers:** FR-23, FR-24, FR-32, FR-59
+- **Stories:**
+  - AH-C067 [#746](https://github.com/JakeSelby/agent-harness/issues/746): Reserve IDs and write story files for the cache-rebuild epic (open)
+  - AH-SP010 [#747](https://github.com/JakeSelby/agent-harness/issues/747): Spike: does a UserPromptSubmit block hold the prompt in the CLI and VS Code? (open)
+  - AH-S227 [#748](https://github.com/JakeSelby/agent-harness/issues/748): harness usage --by rebuild: attribute cache rebuilds to causes (open)
+  - AH-S228 [#749](https://github.com/JakeSelby/agent-harness/issues/749): Refresh the handoff at task boundaries in /land and /close-out (open)
+  - AH-S229 [#750](https://github.com/JakeSelby/agent-harness/issues/750): Cold-resume guard: hold one prompt after a long idle on a large context (open)
+  - AH-SP011 [#751](https://github.com/JakeSelby/agent-harness/issues/751): Spike: one-week trial of an earlier auto-compact window (open)
 
 ## Completed work with no epic
 
