@@ -85,7 +85,35 @@ def clone(out, commit):
     if at != commit:
         raise SystemExit("the clone is at %s, not the commit asked for" % at)
     (target / CLONE_MARKER).write_text(commit + "\n")
+    exclude_marker(target)
+    status = git("status", "--porcelain", repo=target)
+    if status.returncode:
+        raise SystemExit("could not check whether the clone at %s is clean: %s"
+                         % (target, status.stderr.strip()[-300:]))
+    if status.stdout.strip():
+        raise SystemExit("the clone at %s is not clean, and the runner inside it refuses a dirty "
+                         "checkout" % target)
     return target
+
+
+def exclude_marker(target):
+    """Keep the marker out of the clone's status, so the runner inside the clone accepts it.
+
+    The runner refuses a checkout with any `git status --porcelain` output, and a round drives
+    the runner from this clone. The exclusion is the clone's own `.git/info/exclude`, never a
+    tracked `.gitignore`: the clone must stay byte-identical to the commit under qualification.
+    Fixing it here rather than in the runner reaches every round at once, since the runner that
+    executes is the frozen commit's, while this script runs from the operator's checkout.
+    """
+    exclude = Path(git("rev-parse", "--git-path", "info/exclude", repo=target).stdout.strip())
+    if not exclude.is_absolute():
+        exclude = target / exclude
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    existing = exclude.read_text() if exclude.is_file() else ""
+    line = "/" + CLONE_MARKER
+    if line not in existing.splitlines():
+        separator = "" if not existing or existing.endswith("\n") else "\n"
+        exclude.write_text(existing + separator + line + "\n")
 
 
 def bmad(out):

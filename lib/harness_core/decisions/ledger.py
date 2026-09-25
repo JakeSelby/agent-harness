@@ -22,7 +22,6 @@ A call whose usage nobody reported is `partial`, which is how the pricing table 
 judgment was free.
 """
 import hashlib
-import json
 import os
 import re
 import time
@@ -201,12 +200,5 @@ def rows(path=None) -> List[Dict[str, Any]]:
             text = stream.read()
     except (OSError, AttributeError):
         return []
-    out = []
-    for line in text.splitlines():
-        try:
-            parsed = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(parsed, dict) and parsed.get("kind") == KIND:
-            out.append(parsed)
-    return out
+    # The ledger's own reader, so a renamed field is folded here as it is everywhere else.
+    return [row for row in module.ledger_rows(text) if row.get("kind") == KIND]

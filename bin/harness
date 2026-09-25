@@ -4033,6 +4033,19 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
 # --------------------------------------------------------------------------- telemetry
 
 
+def usage_ledger(path: Path) -> List[Dict[str, Any]]:
+    """The usage ledger's rows, oldest first, read by the hook that writes them.
+
+    `ledger_rows` folds renamed fields and carries fields and schema versions it does not know,
+    so a row from a newer writer is read rather than refused; see `SCHEMA_VERSION` in
+    `usage-log.py`. An absent file is no rows.
+    """
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+    return load_hook_module("usage-log", required=True).ledger_rows(text)
+
+
 def load_hook_module(name: str, root: Path = REPO, required: bool = False):
     """A module from `root`'s hook directory, or None when it has none.
 
@@ -4107,14 +4120,7 @@ def cmd_usage_export(args: argparse.Namespace) -> int:
             "telemetry.export is off; set it to \"otlp\" in ~/.config/agent-harness/config.json "
             "to send rows, or re-run with --dry-run to count what a replay would send")
     path = state_dir() / "usage.jsonl"
-    rows: List[Dict[str, Any]] = []
-    for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict) and since <= (row.get("ended") or "")[:10] <= until:
-            rows.append(row)
+    rows = [row for row in usage_ledger(path) if since <= (row.get("ended") or "")[:10] <= until]
     batch_count = sum(1 for _ in module.batches(rows))
     window = f"{since}..{until if until != '9999-12-31' else 'today'}"
     if args.dry_run:
@@ -4282,6 +4288,10 @@ def provider_report(rows: List[Dict[str, Any]], days: int,
 
 
 ROLE_MIN_RUNS = 30
+# The `--by role` bucket for Workflow-tool agents, which the tool launched rather than a spawn:
+# no spawn hook routed them and no brief budgeted them, so a role name they carry is not a run
+# of that role, and counting it as one would move the percentiles a budget is re-seeded from.
+WORKFLOW_BUCKET = "(workflow)"
 
 
 def measured_share(rows: List[Dict[str, Any]], field: str, value: Any,
@@ -4320,11 +4330,16 @@ def role_report(rows: List[Dict[str, Any]], days: int,
     role whose returns are all one-line verdicts prints `-` for `path` rather than `0%`, which
     would read as a role that wrote paths and got them all wrong. A row from before the
     measurement existed, a Codex row and a return nothing could be joined to are `-` too.
+
+    A row with a `workflow` directory is grouped under `WORKFLOW_BUCKET`, printed last, whatever
+    its `agent_type` says, and never priced against that role's budget. That holds for a row
+    written before the ledger marked such rows `unconfined`, since the directory is the evidence.
     """
     table = {} if table is None else table
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
-        groups.setdefault(row.get("agent_type") or "(unnamed)", []).append(row)
+        key = WORKFLOW_BUCKET if row.get("workflow") else (row.get("agent_type") or "(unnamed)")
+        groups.setdefault(key, []).append(row)
     if not groups:
         say(f"no subagent or worker runs recorded in the last {days} day(s); "
             "run `harness usage --rescan` to backfill them from transcripts")
@@ -4336,7 +4351,7 @@ def role_report(rows: List[Dict[str, Any]], days: int,
     say(head)
     say("-" * len(head))
     unpriced = 0
-    for key in sorted(groups):
+    for key in sorted(groups, key=lambda name: (name == WORKFLOW_BUCKET, name)):
         group = groups[key]
         output = sorted(int(r["output"]) for r in group if isinstance(r.get("output"), int))
         tools = sorted(int(r["tool_calls"]) for r in group if isinstance(r.get("tool_calls"), int))
@@ -4359,6 +4374,9 @@ def role_report(rows: List[Dict[str, Any]], days: int,
         say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}{mark:>8}")
     say(f"unpriced: {unpriced} run(s), unknown model or partial tokens" if unpriced
         else "unpriced: none")
+    if WORKFLOW_BUCKET in groups:
+        say(f"{WORKFLOW_BUCKET}: {len(groups[WORKFLOW_BUCKET])} Workflow-tool run(s), unconfined; "
+            "not counted as spawns of any role and priced against no role budget")
     return 0
 
 
@@ -4451,14 +4469,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
     # measured ratio — a Codex row, which says `unknown`, a worker row, or a row written
     # before the field existed, which carries no key at all — is counted as unknown.
     dedup_raw, dedup_counted, dedup_runs, dedup_unknown = 0.0, 0, 0, 0
-    ledger: List[Dict[str, Any]] = []
-    for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict):
-            ledger.append(row)
+    ledger = usage_ledger(path)
     if by == "prefix":
         # Read-only and retrospective: `cache_prefix` derives the miss ratio from the cache
         # fields these rows already carry and names where it stepped. Nothing is priced.
