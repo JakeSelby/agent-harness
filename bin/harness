@@ -3160,6 +3160,8 @@ def coerce_config_value(key: str, value: str) -> Any:
         resolve_stances(cfg)
         return value
     if head in SYNC_SWITCH_KINDS:
+        if not tail:
+            raise SystemExit(f"a {head} switch names its unit: harness config set {head}.<name> on|off")
         if value not in ("on", "off"):
             raise SystemExit(f"a {head} unit is on or off; got '{value}'")
         return value

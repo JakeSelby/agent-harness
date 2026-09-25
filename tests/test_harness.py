@@ -393,6 +393,8 @@ class SwitchKindSyncTests(TempHome):
             harness.config_set("rules.decisions-and-plans", "maybe")
         with self.assertRaises(SystemExit):
             harness.config_set("rules.no-such-rule", "off")
+        with self.assertRaises(SystemExit):
+            harness.config_set("rules", "off")
 
     def test_selection_reports_the_effective_count_and_the_lint_figure_does_not_move(self):
         before = harness.always_loaded_lines(REPO)[0]
