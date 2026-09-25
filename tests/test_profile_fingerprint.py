@@ -168,6 +168,16 @@ class FingerprintTests(Home):
         posture._FINGERPRINTS.clear()
         self.assertEqual(self.fingerprint(self.root), base)
 
+    def test_a_rewritten_configuration_or_selection_file_is_not_served_from_the_cache(self):
+        base = self.fingerprint(self.root)
+        self.config({"telemetry": {"export": "on"}})
+        configured = self.fingerprint(self.root)
+        self.assertNotEqual(configured, base)
+        env = self.session_file({})
+        empty = self.fingerprint(self.root, **env)
+        self.session.write_text(json.dumps({"rules": {"beta": "off"}}), encoding="utf-8")
+        self.assertNotEqual(self.fingerprint(self.root, **env), empty)
+
     def test_the_harness_version_changes_it(self):
         other = checkout(Path(self.tmp.name) / "other", version="1.0.1")
         self.assertNotEqual(self.fingerprint(other), self.fingerprint(self.root))
@@ -270,6 +280,14 @@ class ReaderTests(Home):
         self.assertIn(harness.UNATTRIBUTED, report)
         self.assertIn("c" * 34, report)
         self.assertEqual(self.lines(self.usage)[0], old)
+
+    def test_a_fingerprint_that_is_not_a_string_reads_unattributed(self):
+        self.usage.write_text("".join(json.dumps(session_row(name, **{KEY: value})) + "\n"
+                                      for name, value in (("list", ["x"]), ("dict", {"a": 1}),
+                                                          ("number", 7))), encoding="utf-8")
+        report = self.usage_report("profile")
+        self.assertIn(harness.UNATTRIBUTED, report)
+        self.assertNotIn("['x']", report)
 
     def test_a_reader_from_before_the_field_still_reads_a_new_row(self):
         usage_log.upsert(session_row("s-1"), path=self.usage)

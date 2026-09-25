@@ -4401,8 +4401,10 @@ def cmd_usage(args: argparse.Namespace) -> int:
             key = stance_key(row, stance)
         elif by == "profile":
             # A row from before the fingerprint, or one whose profile could not be resolved, is
-            # unattributed: it is never grouped under a fingerprint it was not written with.
-            key = row.get("profile_fingerprint") or UNATTRIBUTED
+            # unattributed: it is never grouped under a fingerprint it was not written with. A
+            # value that is not a string is unattributed too, rather than an unhashable key.
+            value = row.get("profile_fingerprint")
+            key = value if isinstance(value, str) and value else UNATTRIBUTED
         else:
             key = ended[:10]
         acc = groups.setdefault(key, [0, 0, 0, 0, 0, 0.0])

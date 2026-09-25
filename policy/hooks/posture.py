@@ -1140,18 +1140,32 @@ def profile(env=None, config=None, root=None):
             "config": {key: settings[key] for key in FINGERPRINT_CONFIG_KEYS if key in settings}}
 
 
+def _file_state(path):
+    """`(mtime_ns, size)` of a file, or None when it cannot be read: the fingerprint cache's key."""
+    try:
+        state = path.stat()
+    except OSError:
+        return None
+    return (state.st_mtime_ns, state.st_size)
+
+
 def fingerprint(env=None, config=None, root=None):
     """The profile fingerprint: the sha256 of `profile()` as canonical JSON. See `FINGERPRINT_KEY`.
 
     Identical inputs give one fingerprint on every run and machine, and any module, stance or
-    setting that differs gives another. Remembered per process for one environment, because a
-    hook stamps it on each row it writes and the profile cannot change under a running hook.
+    setting that differs gives another. Remembered per process for one environment and one state
+    of the configuration files, since a hook stamps it on each row it writes: rewriting the user
+    configuration or a named selection file gives a fresh digest. A module edited under a running
+    process is not seen until the next one, which is where the checkout's edits land.
     """
     env = os.environ if env is None else env
+    files = [config_path(env)] + [Path(env[name]).expanduser() for name in
+                                  ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG") if env.get(name)]
     key = (str(root or ROOT), tuple(sorted((name, value) for name, value in env.items()
                                            if name in ("HOME", "HARNESS_HOME", MODE_VARIABLE,
                                                        "HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG")
-                                           or name.startswith(PREFIX))))
+                                           or name.startswith(PREFIX))),
+           tuple(_file_state(path) for path in files))
     if config is None and key in _FINGERPRINTS:
         return _FINGERPRINTS[key]
     text = json.dumps(profile(env, config, root), sort_keys=True, separators=(",", ":"))
