@@ -49,7 +49,7 @@ dimension.
 | `testing` | `required`, `pragmatic`, `off` | `required` |
 | `autonomy` | `execute`, `confirm-writes`, `ask` | `execute` |
 | `cost` | `frugal`, `balanced`, `max` | `balanced` |
-| `voice` | `scannable`, `answer-card`, `off` | `scannable` |
+| `voice` | `scannable`, `concise`, `answer-card`, `off` | `scannable` |
 
 `harness config set stances.testing off` checks the variant exists before writing, and names
 the options when it does not.
@@ -255,9 +255,12 @@ session's own effort rather than by spawning. What each variant sets is above, u
 
 **Voice.** `voice` governs how a reply is laid out, and nothing about what the work is. `scannable`
 defers to the Scannable output style: verdict first, registers separated, at most one table. It is
-the only variant that carries presentation material, on either runtime; under `answer-card` and
-`off` a sync installs no output style and takes back out the one a previous selection left, while
-an output style you chose yourself is left exactly as it is, whatever it is called.
+the only variant that ships presentation material of its own, on either runtime. `concise` picks
+each reply's shape by its purpose, from six shapes, and holds every reply to the same few rules; on
+Claude Code it also selects the built-in Concise output style by name, and on Codex the stance
+text alone carries it. Under `answer-card` and `off` a sync installs no output style and takes
+back out the one a previous selection left, while an output style you chose yourself is left
+exactly as it is, whatever it is called.
 `answer-card` is for reading on a phone — the answer in the first line, then why, the catch, and the
 alternatives, about 150 words, no tables, with the reasoning left in the file it links rather than
 re-argued in the message. It wins over the output style where the two differ. `off` imposes no shape
@@ -293,9 +296,10 @@ stance is thrown, which is what lets the harness install for someone whose prefe
 knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
 want the opposite, it belongs in `primitives/stances/`, not `primitives/rules/`.
 
-Two rules do not pass that test yet, tracked rather than hidden. `voice-and-format.md` hard-wires
-the Scannable output style (#68), and `conciseness.md` is comment and doc style. `cache-hygiene.md`
-is cost-dimension content the `cost` stance already points at.
+One rule does not pass that test yet, tracked rather than hidden: `conciseness.md` is comment and
+doc style. `voice-and-format.md` no longer hard-wires the Scannable reply template (#811); it keeps
+only the subagent brief's return shape, which no variant can carry. `cache-hygiene.md` is
+cost-dimension content the `cost` stance already points at.
 
 ## Extend your choices
 

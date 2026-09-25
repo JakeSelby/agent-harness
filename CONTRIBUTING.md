@@ -100,7 +100,7 @@ Every instruction has one right home. First match wins:
 6. **Short, generic, wanted on every turn** → `primitives/rules/<topic>.md`. Rules cost every user
    context on every turn, so the bar is high; the usual outcome is one sentence folded into an
    existing rule. `CLAUDE.md` plus every rule plus the longest variant of each stance is capped at
-   200 lines and `bin/harness lint` enforces it, so a rule carries its operative lines and points
+   225 lines and `bin/harness lint` enforces it, so a rule carries its operative lines and points
    at the skill holding the reasoning.
 
 ## What will not be merged

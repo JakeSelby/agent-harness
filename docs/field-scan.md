@@ -163,7 +163,7 @@ Stated as narrowly as the evidence allows. Each line names the file that impleme
 
 The section that decides whether the rest is credible.
 
-- **Detector validity is measured for seventeen detectors of seventeen.** The vendored
+- **Detector validity is measured for nineteen detectors of nineteen.** The vendored
   `ruleprobe` wheel ships a labelled corpus and a `validity.py` scorer for the generic detectors
   the engine itself ships; `tests/fixtures/detector-corpus/` labels the rest, five positives and
   five near-misses each bar `research/search-over-cap`, whose positive costs a whole

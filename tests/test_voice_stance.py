@@ -24,7 +24,7 @@ loader.exec_module(harness)
 VOICE = REPO / "primitives" / "stances" / "voice"
 RULE = REPO / "claude" / "rules" / "voice-and-format.md"
 # The longest variant is what the always-loaded cap charges, so it is what the budget bounds.
-LONGEST_VARIANT = 9
+LONGEST_VARIANT = 33
 
 
 class TempHome(unittest.TestCase):
@@ -53,10 +53,10 @@ class TempHome(unittest.TestCase):
 
 
 class VoiceStanceTests(TempHome):
-    def test_dimension_is_registered_with_three_variants(self):
+    def test_dimension_is_registered_with_four_variants(self):
         self.assertIn("voice", harness.STANCE_NAMES)
         self.assertEqual(sorted(p.stem for p in VOICE.glob("*.md")),
-                         ["answer-card", "off", "scannable"])
+                         ["answer-card", "concise", "off", "scannable"])
 
     def test_default_is_scannable(self):
         cfg = harness.load_config(env={})
@@ -98,6 +98,11 @@ class VoiceBudgetTests(unittest.TestCase):
         self.assertNotIn("Scannable", text)
 
     def test_each_variant_names_the_shape_it_imposes(self):
-        self.assertIn("at most one table", (VOICE / "scannable.md").read_text())
-        self.assertIn("no\ntables", (VOICE / "answer-card.md").read_text())
-        self.assertIn("No imposed voice", (VOICE / "off.md").read_text())
+        """Native acceptance reads "no tables" or "at most one table" from the resolved voice."""
+        def flat(name):
+            return " ".join((VOICE / name).read_text().split())
+        self.assertIn("at most one table", flat("scannable.md"))
+        self.assertIn("no tables", flat("answer-card.md"))
+        self.assertIn("no tables", flat("concise.md"))
+        self.assertIn("the Concise style wins", flat("concise.md"))
+        self.assertIn("No imposed voice", flat("off.md"))

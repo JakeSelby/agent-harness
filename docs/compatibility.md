@@ -199,6 +199,11 @@ other qualification host and no hosted runner. What each target needs on that ho
 - **`claude-code-cli-linux`.** npm's `@anthropic-ai/claude-code` at the pinned version (0.11.1
   recorded `2.1.278`), in the same container and authenticated the same way, the variable passed
   in by name with `docker run -e`.
+- **The `concise` voice's output style.** `concise` selects Claude Code's built-in `Concise`
+  output style by name. It was verified present in Claude Code 2.1.280; earlier versions,
+  including the pinned Linux client (`2.1.278`), are unverified, and so is whether bridge and
+  Agent SDK sessions apply `outputStyle`. Where the style is missing, the stance text still carries
+  the reply shapes.
 
 The [runbook](qualification-runbook.md#target-hosts) has the commands that establish each of
 these before a round, and `python3 scripts/smoke_tier.py --targets <ids>` refuses the round at

@@ -314,6 +314,59 @@ def second_table(events, ctx):
     return hits
 
 
+# The `concise` voice forbids the scaffold other voices used: a reply template's section labels.
+# Status words are not in the list, because the stance allows them when reporting a fix. A label
+# counts only in label position: closed by a colon (after closing bold or not), wrapped whole in
+# bold, or standing as a heading. A bare word at the end of a line is a list item or prose.
+_SCAFFOLD_LABELS = (r"(?:What changed|What you need to know|What you need to do|Still open|"
+                    r"Verification|Why|The catch|Catch|Alternatives)")
+_LIST_MARKER = r"^\s{0,3}(?:(?:[-*+]|\d+[.)])\s+)?"
+SCAFFOLD_LABEL_RE = re.compile(
+    _LIST_MARKER + _SCAFFOLD_LABELS + r"\s*:"
+    r"|" + _LIST_MARKER + r"(\*\*|__)\s*" + _SCAFFOLD_LABELS + r"\s*:?\s*\1"
+    r"|^\s{0,3}#{1,6}\s+(?:\*\*|__)?" + _SCAFFOLD_LABELS + r"(?:\*\*|__)?\s*:?\s*#*\s*$",
+    re.IGNORECASE)
+HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
+
+
+def _unfenced_lines(text):
+    """Every line outside a fenced code block, by the same closing rule as `_fenced_lines`."""
+    out, opener = [], None
+    for line in (text or "").split("\n"):
+        match = _FENCE_RE.match(line)
+        if opener is None:
+            if match:
+                opener = len(match.group(1))
+            else:
+                out.append(line)
+        elif match and len(match.group(1)) >= opener and not match.group(2).strip():
+            opener = None
+    return out
+
+
+def scaffold_leak(events, ctx):
+    """A final message that wears a reply template's section labels, outside code fences; a
+    backticked or quoted mention is not a label. One hit per message."""
+    hits = []
+    for event in ctx.finals:
+        for line in _unfenced_lines(text_of(event.get("text"))):
+            line = _unmarked(line)
+            if SCAFFOLD_LABEL_RE.search(line):
+                hits.append(hit(event, tool_use_id=False))
+                break
+    return hits
+
+
+def heading_first(events, ctx):
+    """A final message whose first non-blank line is a markdown heading."""
+    hits = []
+    for event in ctx.finals:
+        lines = [l for l in text_of(event.get("text")).split("\n") if l.strip()]
+        if lines and HEADING_RE.match(lines[0]):
+            hits.append(hit(event, tool_use_id=False))
+    return hits
+
+
 def recommendation_without_alternative(events, ctx):
     """A final message that decides between courses and names only one. The rule asks for
     "the alternatives with their honest case", so a batched `Decisions` block or a
@@ -383,6 +436,7 @@ def denied_by_grade(events, ctx):
 
 _COMMITS_ON = ("commits", None)  # any variant but `off`
 _VOICE_ON = ("voice", None)  # the shape is the stance's; `off` imposes none
+_VOICE_CONCISE = ("voice", ("concise",))  # shapes only the `concise` voice forbids
 _COMMITS_ATTRIBUTED = ("commits", ("conventional-attributed",))
 
 # The six the engine ships, re-registered under this file's `Detector` so every entry in the
@@ -397,6 +451,10 @@ _REGISTRY = _GENERIC + [
     Detector("research/search-over-cap", "research-and-verification", "session", search_over_cap),
     Detector("voice/banned-opener", "voice-and-format", "assistant-final", banned_opener, _VOICE_ON),
     Detector("voice/second-table", "voice-and-format", "assistant-final", second_table, _VOICE_ON),
+    Detector("voice/scaffold-leak", "voice-and-format", "assistant-final", scaffold_leak,
+             _VOICE_CONCISE),
+    Detector("voice/heading-first", "voice-and-format", "assistant-final", heading_first,
+             _VOICE_CONCISE),
     Detector("decisions/no-alternatives", "decisions-and-plans", "assistant-final",
              recommendation_without_alternative),
     Detector("autonomy/confirmed-irreversible", "autonomy", "bash", confirmed_irreversible),

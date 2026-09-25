@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "epic": 20,
-    "story": 231,
+    "story": 262,
     "task": 32,
     "bug": 95,
     "chore": 74,
@@ -5806,6 +5806,19 @@
       "type": "decision",
       "native_type": "Task",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-D013.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S261",
+      "github_number": 811,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/811",
+      "title": "feat(voice): concise voice with reply shapes chosen by purpose",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S261.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

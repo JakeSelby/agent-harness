@@ -54,13 +54,13 @@ A hard cap cuts an agent off after it has already spent the tokens. I'd rather t
 - [Band workers](claude/agents/worker-a.md): A spawn that names no role gets a right-sized worker instead of your most expensive model.
 - [A budget in every brief](claude/hooks/brief-guard.py): Each subagent is told its expected tokens and tool calls. Finish if you're close, otherwise return what you have.
 - [Live usage feed](docs/usage.md): The orchestrator sees what each turn and each subagent cost, and hears once when its context passes the size your stance sets. A decision log records what a hook decided.
-- [Lean context](docs/how-it-works.md): Always-loaded instructions are capped at 200 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.
+- [Lean context](docs/how-it-works.md): Always-loaded instructions are capped at 225 lines, and lint fails the commit past that. Noisy tool output is filtered before it lands in the transcript.
 
 ### Answers and plans you can actually read
 
 Most agent output is a wall of text. This puts the verdict first and the ask where you can find it.
 
-- [Voice stances](primitives/stances/voice): Choose answer-card or scannable. Same content, shaped for how you read.
+- [Voice stances](primitives/stances/voice): Choose concise, answer-card or scannable. Same content, shaped for how you read.
 - [Scannable output style](claude/output-styles/scannable.md): Verdict first, action items in one place, and status in plain words: Fixed, Partially fixed, Not fixed, Unverified.
 - [Review Card plans](primitives/skills/plan-authoring): Every plan opens with a one-screen card and stops at a build gate until you say build.
 - [Bounded subagent returns](primitives/skills/transcript-hygiene): Subagents come back with findings and a word cap, not their whole transcript.
@@ -77,7 +77,7 @@ grouped by repository and by the preference variant you had selected at the time
 - [Detector or reason](primitives/rules): Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.
 - [Hit rate per rule](docs/usage.md): harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.
 - [Cache prefix held](docs/usage.md): harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.
-- [What is detected](claude/hooks/rule-detectors.py): Seventeen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
+- [What is detected](claude/hooks/rule-detectors.py): Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
 - [Caught in the act](docs/field-scan.md): The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.
 - [Exports where you already look](docs/telemetry.md): The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.
 
@@ -122,7 +122,7 @@ harness; each choice can be changed independently, and you can add your own dime
 | Delegation | `tiered`, `session-model`, `off` |
 | Testing | `required`, `pragmatic`, `off` |
 | Cost posture | `frugal`, `balanced`, `max` |
-| Reply shape | `scannable`, `answer-card`, `off` |
+| Reply shape | `scannable`, `concise`, `answer-card`, `off` |
 | Plan ceremony | `review-card`, `light` |
 | Commits | `conventional-attributed`, `conventional`, `as-you-go`, `off` |
 | Licensing | `permissive-commercial`, `open-source`, `off` |
