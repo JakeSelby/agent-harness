@@ -66,11 +66,13 @@ contract are in `docs/bmad-governance.md`, which every BMad workflow loads.
 CodeRabbit reviews pull requests into `main`, as `.coderabbit.yaml` configures it. On every pull
 request, work through its review with `/build` step 6 and without asking first: push fixes to the
 branch, reply in its threads and resolve them, and request each further pass with
-`@coderabbitai review`, since a push never starts one. A pass has finished when the `CodeRabbit`
-commit status reads `success: Review completed`, seven to eleven minutes after it starts, so allow
-fifteen. The `Review skipped` status it posts on every push is not a pass, and neither is the empty
-review each of its thread replies creates. Comments in the review body, outside the diff or marked
-as nitpicks, are findings too: fix them, or answer them in a pull request comment.
+`@coderabbitai review`, since a push never starts one. Request the first pass the same way when
+automatic review skips the pull request, as it does drafts, `chore(release)` titles and Dependabot.
+A pass has finished when the `CodeRabbit` commit status reads `success: Review completed`, seven to
+eleven minutes after it starts, so allow fifteen. The `Review skipped` status it posts on every push
+is not a pass, and neither is the empty review each of its thread replies creates. Comments in the
+review body, outside the diff or marked as nitpicks, are findings too: fix them, or answer them in a
+pull request comment.
 
 **These conditions are the go-ahead `/land` asks for.** Merge a pull request from a branch of this
 repository, never from a fork, without asking once all three hold:
