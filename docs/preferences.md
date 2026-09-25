@@ -110,9 +110,9 @@ questions that follow; every stance is still asked, so a preset is a starting po
 personal script. It leaves `delegation`, `autonomy` and `cost` alone, because how work is spread,
 how far it runs unattended and what it costs are the same questions whatever the work is.
 
-The topic rules are not switchable and do not have presets; a rule about repositories, tests or
-pull requests simply does not apply when the task is not code work, and the always-loaded preamble
-says so.
+The topic rules have no variants or presets, though each can be switched off in the selection; a
+rule about repositories, tests or pull requests simply does not apply when the task is not code
+work, and the always-loaded preamble says so.
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
 `HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start
