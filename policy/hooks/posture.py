@@ -7,11 +7,12 @@ they are standalone scripts run as subprocesses and share code by loading a sibl
 (`rule-detectors.py` is the precedent); `lifecycle.py` loads this same file by path, so the
 dispatcher and the hooks cannot drift into two answers for one question.
 
-`resolve(env)` returns the stance ladder `docs/primitive-authoring.md` documents, in order: the
-built-in defaults, the user config under `HARNESS_HOME` or `$HOME`, the file named by
-`HARNESS_PROJECT_CONFIG` (which may select stances and nothing else), then `HARNESS_STANCE_*`
-for the session. `strict` says what an unusable file means: the dispatcher wants the error,
-a hook wants the spawn to run anyway, so it passes `strict=False` and takes the layers it
+`selection(env)` resolves every unit of every kind over the selection ladder `docs/preferences.md`
+documents: built-in defaults, the selected mode, the user config under `HARNESS_HOME` or `$HOME`,
+the file `HARNESS_PROJECT_CONFIG` names, the file `HARNESS_SESSION_CONFIG` names, then the
+session's `HARNESS_MODE` and `HARNESS_STANCE_*`. `resolve(env)` and `selected()` read the same
+ladder for stances only. `strict` says what an unusable file means: the dispatcher wants the
+error, a hook wants the spawn to run anyway, so it passes `strict=False` and takes the layers it
 could read.
 
 `cost_table(env)`, and `resolve(env, table=True)`, additionally resolve the active `cost`
@@ -89,6 +90,13 @@ MAX_MULTIPLIER = 100
 MAX_BUDGET = 10 ** 9
 MAX_NUDGES = 8
 SIDECAR_KEYS = ("schema_version", "extends", "switches", "default_band", "rows")
+# The selection document: `mode`, then one object per kind in `catalog.KINDS`. `sources` is what
+# `harness selection --json` prints beside them; it selects nothing, and is accepted so that the
+# output reads back unchanged as a session file. Shape and precedence: `docs/preferences.md`.
+SELECTION_EXTRA_KEYS = ("mode", "sources")
+SWITCH_STATES = ("on", "off")
+MODE_VARIABLE = "HARNESS_MODE"
+_KINDS = {}
 
 
 def home(env=None):
@@ -355,22 +363,70 @@ def _user_config(env, strict):
         return {}
 
 
-def _project_config(env, strict):
-    """The file `HARNESS_PROJECT_CONFIG` names, which may carry `stances` and nothing else."""
-    named = env.get("HARNESS_PROJECT_CONFIG")
+def selection_kinds(root=None):
+    """`{kind: catalog entry}` for every selectable kind, read from `catalog.KINDS` by file.
+
+    The catalog is the one definition of a kind, so a new kind is a new entry there and nothing
+    here. A hook copied out of its checkout has no catalog beside it and knows `stances` only,
+    which is the one kind whose defaults this file carries.
+    """
+    key = str(root or ROOT)
+    if key not in _KINDS:
+        kinds = {"stances": {"directory": "stances", "pattern": "*/*.md", "value": "variant"}}
+        path = Path(key) / "lib" / "harness_core" / "catalog.py"
+        if path.is_file():
+            try:
+                spec = importlib.util.spec_from_file_location("harness_catalog_kinds", str(path))
+                loaded = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(loaded)
+                kinds = {name: dict(entry) for name, entry in loaded.KINDS.items()
+                         if entry.get("value") in ("variant", "switch")}
+            except Exception:
+                pass
+        _KINDS[key] = kinds
+    return _KINDS[key]
+
+
+def _selection_file(env, variable, strict, root=None):
+    """The selection document an environment variable names; `{}` when it names none.
+
+    Carries selection keys only. Identity, permissions, runtime flags, `primitive_roots` and
+    telemetry keep their own validation in the user configuration, so a key outside the
+    selection is refused by name rather than ignored.
+    """
+    named = env.get(variable)
     if not named:
         return {}
     try:
         data = json.loads(Path(named).expanduser().read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or set(data) - {"stances"}:
-            raise ValueError("project configuration cannot change runtime authority")
-        # A `stances` value that is not an object selects nothing, as it always has; only a key
-        # the project may not set is worth failing a tool call over.
+        if not isinstance(data, dict):
+            raise ValueError(variable + " names " + named + ", which is not a JSON object")
+        refused(data, variable + " file " + named, root)
+        # A kind whose value is not an object is refused by `selection()` when strict and selects
+        # nothing otherwise; only a key the file may not set drops the whole file.
         return data
     except (OSError, ValueError):
         if strict:
             raise
         return {}
+
+
+def refused(data, where, root=None):
+    """Raise `ValueError` naming every key of `data` a selection document may not carry."""
+    extra = sorted(set(data) - set(SELECTION_EXTRA_KEYS) - set(selection_kinds(root)))
+    if extra:
+        raise ValueError(where + " may carry selection keys only, not " +
+                         ", ".join("'" + key + "'" for key in extra) +
+                         "; identity, permissions, runtime flags, primitive_roots and telemetry "
+                         "stay in the user configuration")
+
+
+def _project_config(env, strict, root=None):
+    return _selection_file(env, "HARNESS_PROJECT_CONFIG", strict, root)
+
+
+def _session_config(env, strict, root=None):
+    return _selection_file(env, "HARNESS_SESSION_CONFIG", strict, root)
 
 
 def overrides(env=None):
@@ -718,12 +774,124 @@ def table_for(stances=None, config=None, strict=True, root=None):
             "class_applies": stances.get("delegation") == "tiered", "warnings": warnings}
 
 
-def _selection(config, env, strict):
+def _mode_of(data):
+    value = data.get("mode") if isinstance(data, dict) else None
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _mode_file(name, config, strict, root=None):
+    """The document `modes/<name>.json` holds in the first primitive root carrying it, or `{}`.
+
+    No mode ships yet, so an unknown name selects nothing rather than failing.
+    """
+    if not _identifier(name):
+        return {}
+    for directory in primitive_roots(config, root, "modes"):
+        path = directory / (name + ".json")
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError(str(path) + " is not a JSON object")
+            refused(data, "mode file " + str(path), root)
+            return data
+        except (OSError, ValueError):
+            if strict:
+                raise
+            return {}
+    return {}
+
+
+def layers(config, env, strict, root=None):
+    """`(mode, [(source, document)])`, lowest precedence first: the one selection ladder.
+
+    Mode, user configuration, project file, session file, then the session's environment
+    sugar: `HARNESS_MODE` and `HARNESS_STANCE_*` resolve as the session layer's last word. The
+    mode is whichever layer named one last, and its file sits under every explicit layer.
+    """
+    project = _project_config(env, strict, root)
+    session = _session_config(env, strict, root)
+    sugar = {"stances": overrides(env)}
+    if (env.get(MODE_VARIABLE) or "").strip():
+        sugar["mode"] = env[MODE_VARIABLE]
+    explicit = [("user", config if isinstance(config, dict) else {}), ("project", project),
+                ("session", session), ("session", sugar)]
+    mode = None
+    for source, data in explicit:
+        if _mode_of(data):
+            mode = (_mode_of(data), source)
+    ladder = [("mode:" + mode[0], _mode_file(mode[0], config, strict, root))] if mode else []
+    return mode, ladder + explicit
+
+
+def _selection(config, env, strict, root=None):
+    """Every stance's variant in force: the ladder read for `stances` only, without walking units."""
     stances = dict(DEFAULT_STANCES)
-    stances.update(_stances_of(config))
-    stances.update(_stances_of(_project_config(env, strict)))
-    stances.update(overrides(env))
+    for _, data in layers(config, env, strict, root)[1]:
+        stances.update(_stances_of(data))
     return stances
+
+
+def _units(kind, entry, config, root=None):
+    """The installed units of one kind, sorted: stance dimensions, rule, skill or role names."""
+    directory, pattern = entry.get("directory"), entry.get("pattern")
+    if not directory or not pattern:
+        return []
+    names = set()
+    for source in primitive_roots(config, root, directory):
+        for path in source.glob(pattern) if source.is_dir() else []:
+            names.add(path.parent.name if "/" in pattern else path.stem)
+    return sorted(names)
+
+
+def selection(env=None, strict=True, config=None, root=None):
+    """Every unit of every kind with its value, and the source that set it.
+
+    Returns the selection document — `mode`, then `{kind: {unit: value}}` for each kind in
+    `catalog.KINDS` — plus `sources` in the same shape, each one of `default`, `mode:<name>`,
+    `user`, `project` or `session`, in that precedence. A variant kind's default is the built-in
+    stance or null; a switch kind's is `on`. `config` is the user configuration when the caller
+    has already read it. A kind that is not an object, or a switch value other than `on` or `off`,
+    is an error when strict and selects nothing otherwise; a unit a layer names that nothing installs is still reported.
+    """
+    env = os.environ if env is None else env
+    config = _user_config(env, strict) if config is None else config
+    kinds = selection_kinds(root)
+    mode, ladder = layers(config, env, strict, root)
+    result, sources = {"mode": mode[0] if mode else None}, {"mode": mode[1] if mode else "default"}
+    for kind, entry in kinds.items():
+        switch = entry.get("value") == "switch"
+        result[kind] = {unit: ("on" if switch else DEFAULT_STANCES.get(unit))
+                        for unit in _units(kind, entry, config, root)}
+        if not switch:
+            result[kind].update(DEFAULT_STANCES)
+        sources[kind] = {unit: "default" for unit in result[kind]}
+        for source, data in ladder:
+            if not isinstance(data, dict) or kind not in data:
+                continue
+            chosen = data[kind]
+            if not isinstance(chosen, dict):
+                if strict:
+                    raise ValueError(source + " sets " + kind + " to " + json.dumps(chosen) +
+                                     "; a kind is an object of unit to value")
+                continue
+            for unit, value in chosen.items():
+                value = value.strip() if isinstance(value, str) else value
+                if switch and value not in SWITCH_STATES:
+                    if strict:
+                        shown = "'" + value + "'" if isinstance(value, str) else json.dumps(value)
+                        raise ValueError(source + " sets " + kind + "." + unit + " to " + shown +
+                                         "; a " + kind + " unit is on or off")
+                    continue
+                if not isinstance(value, str) or not value:
+                    continue
+                result[kind][unit], sources[kind][unit] = value, source
+    for kind in kinds:
+        result[kind] = dict(sorted(result[kind].items()))
+        sources[kind] = dict(sorted(sources[kind].items()))
+    result["sources"] = sources
+    return result
 
 
 def resolve(env=None, strict=True, table=False):
@@ -749,7 +917,7 @@ def cost_table(env=None, strict=False, root=None):
     """
     env = os.environ if env is None else env
     config = _user_config(env, strict)
-    return table_for(_selection(config, env, strict), config, strict=strict, root=root)
+    return table_for(_selection(config, env, strict, root), config, strict=strict, root=root)
 
 
 def selected(name, fallback=None, env=None, strict=True):

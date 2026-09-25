@@ -31,6 +31,43 @@ example file, `sync` and `doctor` both say so: what they hold is what the agent 
 you, so a config left unedited has it addressing you by the placeholder. `pronouns` and
 `timezone` are never reported, because `they/them` and `UTC` are answers someone might mean.
 
+## The selection document
+
+Every installed unit is selectable from one JSON shape: `mode`, then one object per kind. A kind
+is `stances`, whose dimensions pick a named variant, or one of the switch kinds `rules`, `hooks`,
+`skills`, `workflows` and `roles`, whose units are `on` or `off` and default to `on`.
+
+```json
+{"mode": "superpowers",
+ "stances": {"testing": "required"},
+ "rules": {"decisions-and-plans": "off"},
+ "hooks": {"validate-plan-card": "off"},
+ "skills": {}, "workflows": {}, "roles": {}}
+```
+
+The same shape is read from five places and resolved by one function, `posture.selection()`, in
+this precedence, lowest first:
+
+1. **`default`** — the built-in stance variants, and `on` for every switch.
+2. **`mode:<name>`** — `modes/<name>.json` in a primitive root, for the mode the highest layer
+   names. No mode ships yet, so an unknown name selects nothing.
+3. **`user`** — `~/.config/agent-harness/config.json`.
+4. **`project`** — the file `HARNESS_PROJECT_CONFIG` names.
+5. **`session`** — the file `HARNESS_SESSION_CONFIG` names, then `HARNESS_MODE` and
+   `HARNESS_STANCE_*`, which are shorthand for the same layer.
+
+`harness selection --json` prints the result: every unit of every kind with its value, plus a
+`sources` object in the same shape naming the layer that set each one. That output reads back
+unchanged as a session file. `harness stances` stays as the stance-only view. `sync` projects the
+user's layers only; a project or session layer stays in the session that set it, and an isolated
+worker records the selection of the session that launched it.
+
+A selection carries selections only. A project, session or mode file holding any other key —
+`identity`, `permissions`, a runtime's `manage` flag, `primitive_roots`, `telemetry` — is refused
+with a message naming the key; those stay top-level in the user configuration with their own
+validation. The kinds themselves, with each one's source directory, value type and projection,
+are the entries of `catalog.KINDS` in `lib/harness_core/catalog.py`.
+
 ## Stances
 
 Each stance is a directory of variants under `primitives/stances/`; config picks one and `sync`
@@ -111,6 +148,14 @@ Select one with `harness config set stances.cost frugal`, or for a single sessio
 `HARNESS_STANCE_COST=frugal claude`. To write your own, put a `.md` and a sidecar in your
 primitive root, `extends` a shipped variant and change only the cells you care about;
 [primitive-authoring.md](primitive-authoring.md) has the worked example and the schema.
+
+Compaction is the one place a variant overrides an always-loaded rule. `cache-hygiene.md` says
+to start a fresh session rather than compact, unless the selected `cost` stance allows compaction;
+the variant's `compaction` switch is what decides. Under `max` (`compact-allowed`) a compaction
+is the stance working, so the `cache-hygiene/compact` detector does not count it there, and it
+still counts one under `frugal`, `balanced`, `off` or no selection, where the rule stands. A
+session override (`HARNESS_STANCE_COST=max`) lifts the rule for that session only; `harness sync`
+never writes it into the user configuration or the global projections.
 
 Two things a variant never wins against. A `role_bindings.<runtime>.<role>` entry in your config
 always beats the row, because you named the role yourself. And a role whose contract says
