@@ -55,7 +55,8 @@ No budget, threshold, model name or role name lives here: every number comes fro
 table, every switch from `switches.turn_feed`, `switches.nudge_at`, `switches.session_nudge_at`
 and `switches.max_parallel`.
 A variant that sets none of them feeds nothing. Any failure at all emits nothing and exits 0,
-and no line the feed emits is ever a decision.
+and no line the feed emits is ever a decision. The fresh-session nudge is a recommendation, so
+saying it also records an adherence event, which `adherence.py` later answers.
 """
 import errno
 import hashlib
@@ -209,7 +210,7 @@ def new_state():
             "journal_offset": 0, "running": {}, "pending": [], "counted": [],
             "figures": {}, "unsummed": {}, "open": [], "pruned": 0, "said_turn": None,
             "rounds": {}, "said_unknown": [], "said_measure": False,
-            "context": None, "said_nudge": []}
+            "context": None, "said_nudge": [], "turns": 0}
 
 
 def load_state(path):
@@ -228,7 +229,7 @@ def load_state(path):
         for name, blank in new_state()[key].items():
             if not isinstance(state[key].get(name), int) or isinstance(state[key].get(name), bool):
                 state[key][name] = blank
-    for key in ("offset", "size", "journal_offset", "pruned"):
+    for key in ("offset", "size", "journal_offset", "pruned", "turns"):
         if not isinstance(state.get(key), int) or isinstance(state.get(key), bool):
             state[key] = 0
     if not isinstance(state.get("running"), dict):
@@ -531,7 +532,7 @@ def advance(state, transcript, save=None, budget=READ_BUDGET):
             seen = state.get("inode") is not None
             kept = {key: state[key] for key in
                     ("journal_offset", "running", "pending", "counted", "figures", "unsummed",
-                     "subagents", "pruned", "rounds", "said_unknown", "said_nudge")}
+                     "subagents", "pruned", "rounds", "said_unknown", "said_nudge", "turns")}
             state = dict(new_state(), **kept)
             state["inode"], state["head"] = inode, head
             state["offset"] = max(0, size - COLD_TAIL)
@@ -1296,6 +1297,17 @@ def session_line(state, thresholds):
             "handoff, start a fresh session")
 
 
+def record_adherence(recommendation, session_id, turn, env):
+    """Record a recommendation this feed emitted. Nothing it does can change what the feed says."""
+    module = sibling("adherence")
+    if module is None:
+        return
+    try:
+        module.emit(recommendation, session_id, turn, env)
+    except Exception:
+        pass
+
+
 def shows(mode, ratio, nudges):
     """Whether a subagent's line is worth a line. `thresholds` wants the smallest nudge met."""
     if mode == "every-turn":
@@ -1537,6 +1549,9 @@ def on_prompt(payload, env):
         if not held:
             return None
         state = refresh(state_file, journal_file, resolved)
+        # The session's prompt count, which an adherence event names as its turn. Before the
+        # read, so a read that gives up still counts the prompt it gave up on.
+        state["turns"] += 1
         prune(state_file.parent, state, state_file.name.split(".", 1)[0])
         state = advance(state, payload.get("transcript_path"),
                         save=lambda current: save_state(state_file, current))
@@ -1549,6 +1564,7 @@ def on_prompt(payload, env):
         nudge = session_line(state, session_nudges(table))
         if nudge:
             lines.append(nudge)
+            record_adherence("fresh-session", payload.get("session_id"), state["turns"], env)
         note = width_line(running_now(state), width)
         if note:
             lines.append(note)
