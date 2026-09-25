@@ -30,8 +30,9 @@ Lowest first; each layer overrides the ones before it:
    `HARNESS_SESSION_CONFIG` name, then `HARNESS_MODE` and `HARNESS_STANCE_*`.
 
 The `init` layer is how a mode takes effect after a default `harness init`. `config.json` records
-the stances init chose for you under `init_defaults`; `harness config set stances.NAME` removes
-that stance from the list, making it yours, above any mode. A config written before modes existed
+the stances init chose for you, with the value it wrote, under `init_defaults`. A stance counts as
+init's only while it still holds that value: `harness config set stances.NAME`, or editing the
+value in `config.json`, makes it yours, above any mode. A config written before modes existed
 has no `init_defaults`, so every stance in it counts as typed: delete a stance from `stances`, or
 from both lists, to let a mode set it.
 

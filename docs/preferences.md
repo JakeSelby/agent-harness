@@ -38,7 +38,7 @@ is `stances`, whose dimensions pick a named variant, or one of the switch kinds 
 `skills`, `workflows` and `roles`, whose units are `on` or `off` and default to `on`.
 
 ```json
-{"mode": "superpowers",
+{"mode": "minimal",
  "stances": {"testing": "required"},
  "rules": {"decisions-and-plans": "off"},
  "hooks": {"validate-plan-card": "off"},

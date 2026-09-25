@@ -851,6 +851,8 @@ def validate_mode(name, data, config, root=None):
                 errors.append(label + ", which is not an installed " + kind + " unit")
             elif entry.get("value") == "switch" and value not in SWITCH_STATES:
                 errors.append(label + " to " + json.dumps(value) + "; a " + kind + " unit is on or off")
+            elif entry.get("value") == "variant" and not (isinstance(value, str) and value.strip()):
+                errors.append(label + " to " + json.dumps(value) + "; a " + kind + " unit names a variant")
     core = sorted(unit for unit, value in (data.get("hooks") or {}).items()
                   if unit in CORE_HOOKS and value == "off") if isinstance(data.get("hooks"), dict) else []
     if core and (config or {}).get(CORE_ACK) is not True:
@@ -885,16 +887,21 @@ def _mode_file(name, config, strict, root=None):
 
 
 def _init_split(config):
-    """`(typed, defaults)`: the user configuration without, and with only, what init defaulted."""
+    """`(typed, defaults)`: the user configuration without, and with only, what init defaulted.
+
+    A unit counts as init's default only while it still holds the value init recorded for it, so
+    a value edited in `config.json` afterwards is typed and stays above the mode.
+    """
     listed = config.get(INIT_DEFAULTS)
     if not isinstance(listed, dict):
         return config, {}
     typed, defaults = dict(config), {}
     for kind, names in listed.items():
         chosen = config.get(kind)
-        if not isinstance(chosen, dict) or not isinstance(names, list):
+        if not isinstance(chosen, dict) or not isinstance(names, dict):
             continue
-        moved = {unit: chosen[unit] for unit in names if isinstance(unit, str) and unit in chosen}
+        moved = {unit: chosen[unit] for unit, recorded in names.items()
+                 if unit in chosen and chosen[unit] == recorded}
         if moved:
             defaults[kind] = moved
             typed[kind] = {unit: value for unit, value in chosen.items() if unit not in moved}

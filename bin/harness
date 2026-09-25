@@ -3145,6 +3145,12 @@ def cmd_viewer(args: argparse.Namespace) -> int:
 
 
 def _ask(prompt: str, default: str, choices: Optional[List[str]] = None, required: bool = False) -> str:
+    return _ask_entry(prompt, default, choices, required)[0]
+
+
+def _ask_entry(prompt: str, default: str, choices: Optional[List[str]] = None,
+               required: bool = False) -> Tuple[str, bool]:
+    """`_ask`'s answer, and whether it came from pressing Enter rather than typing it."""
     if choices:
         print(f"  {prompt}: {' · '.join(choices)}")
     label = "  " if choices else f"  {prompt}"
@@ -3161,7 +3167,7 @@ def _ask(prompt: str, default: str, choices: Optional[List[str]] = None, require
         if choices and value not in choices:
             print(f"    not one of: {', '.join(choices)}")
             continue
-        return value
+        return value, not raw
 
 
 def _detect_timezone() -> str:
@@ -3190,15 +3196,17 @@ def _detect_git_name() -> str:
 def mark_init_defaults(cfg: Dict[str, Any], names: Any) -> None:
     """Record `names` as stances init wrote as defaults, which resolve below a mode (AD-2).
 
-    The key and its precedence are `posture.INIT_DEFAULTS`; `docs/modes.md` has the rule.
+    Each name keeps the value init wrote, so a value edited by hand later counts as typed. The
+    key and its precedence are `posture.INIT_DEFAULTS`; `docs/modes.md` has the rule.
     """
-    cfg["init_defaults"] = {"stances": sorted(names)}
+    stances = cfg.get("stances", {})
+    cfg["init_defaults"] = {"stances": {name: stances[name] for name in sorted(names) if name in stances}}
 
 
 def unmark_init_default(cfg: Dict[str, Any], name: str) -> None:
     listed = cfg.get("init_defaults")
-    if isinstance(listed, dict) and isinstance(listed.get("stances"), list):
-        listed["stances"] = [item for item in listed["stances"] if item != name]
+    if isinstance(listed, dict) and isinstance(listed.get("stances"), dict):
+        listed["stances"].pop(name, None)
 
 
 def init_defaults(args: argparse.Namespace, path: Path) -> int:
@@ -3272,13 +3280,15 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("\nPreferences. Every one has a default; Enter takes it.")
     print("They are described in docs/preferences.md and can be changed later.\n")
     stances = cfg.setdefault("stances", {})
-    offered = {}
+    entered = []
     for name in STANCE_NAMES:
         variants = stance_variants(name)
-        offered[name] = defaults.get(name, variants[0])
-        stances[name] = _ask(name, offered[name], variants)
-    # Enter took the offered value, which a mode may replace; a different answer is a choice.
-    mark_init_defaults(cfg, [name for name in STANCE_NAMES if stances[name] == offered[name]])
+        stances[name], took_default = _ask_entry(name, defaults.get(name, variants[0]), variants)
+        if took_default:
+            entered.append(name)
+    # Enter took the offered value, which a mode may replace; a typed answer is a choice, even
+    # when it names the offered value.
+    mark_init_defaults(cfg, entered)
     write_json_atomic(path, cfg)
     print(f"\nwrote {path}")
     print("next: bin/harness sync")

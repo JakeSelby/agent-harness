@@ -76,7 +76,8 @@ class Resolution(unittest.TestCase):
     def test_resolution_runs_default_init_mode_user_project_session(self):
         self.mode("order", stances={"licensing": "off", "build-vs-buy": "off", "commits": "off",
                                     "testing": "off", "voice": "off"})
-        user = self.user(mode="order", init_defaults={"stances": ["licensing", "build-vs-buy"]},
+        user = self.user(mode="order", init_defaults={"stances": {"licensing": "permissive-commercial",
+                                                                 "build-vs-buy": "off"}},
                          stances={"licensing": "permissive-commercial", "build-vs-buy": "off",
                                   "commits": "conventional", "testing": "pragmatic", "voice": "concise",
                                   "cost": "frugal"})
@@ -97,11 +98,20 @@ class Resolution(unittest.TestCase):
                                                           "voice": "session"}})
 
     def test_an_init_default_with_no_mode_still_resolves_as_the_users(self):
-        user = self.user(init_defaults={"stances": ["testing"]}, stances={"testing": "pragmatic"})
+        user = self.user(init_defaults={"stances": {"testing": "pragmatic"}}, stances={"testing": "pragmatic"})
         result = self.resolve(user=user)
         self.assertEqual((result["stances"]["testing"], result["sources"]["stances"]["testing"]),
                          ("pragmatic", "init"))
         self.assertEqual(result["shadowed"], {})
+
+    def test_a_default_edited_in_the_file_after_init_is_typed_and_beats_the_mode(self):
+        self.mode("order", stances={"testing": "off"})
+        user = self.user(mode="order", init_defaults={"stances": {"testing": "pragmatic"}},
+                         stances={"testing": "required"})
+        result = self.resolve(user=user)
+        self.assertEqual((result["stances"]["testing"], result["sources"]["stances"]["testing"]),
+                         ("required", "user"))
+        self.assertEqual(result["shadowed"], {"stances": {"testing": "user"}})
 
     def test_harness_mode_selects_for_one_session_without_touching_the_user_layer(self):
         self.mode("quiet", stances={"voice": "off"})
@@ -136,6 +146,8 @@ class Resolution(unittest.TestCase):
                  (dict(schema_version=2, description="d"), "schema_version"),
                  (dict(schema_version=1, description=" "), "description"),
                  (dict(schema_version=1, description="d", rules={"secrets": "maybe"}), "on or off"),
+                 (dict(schema_version=1, description="d", stances={"testing": None}), "names a variant"),
+                 (dict(schema_version=1, description="d", stances={"testing": ""}), "names a variant"),
                  (dict(schema_version=1, description="d", rules=["secrets"]), "a kind is an object"))
         for data, message in cases:
             with self.subTest(data=data):
@@ -242,7 +254,7 @@ class CommandLine(unittest.TestCase):
 
     def test_init_marks_every_stance_it_wrote_as_a_default(self):
         cfg = self.init()
-        self.assertEqual(cfg["init_defaults"], {"stances": sorted(cfg["stances"])})
+        self.assertEqual(cfg["init_defaults"], {"stances": cfg["stances"]})
 
     def test_interactive_init_marks_only_the_answers_enter_took(self):
         first = harness.STANCE_NAMES[0]
@@ -254,7 +266,23 @@ class CommandLine(unittest.TestCase):
             with loud():
                 harness.cmd_init(argparse.Namespace(force=False))
         cfg = json.loads(harness.config_path().read_text())
-        self.assertEqual(cfg["init_defaults"]["stances"], sorted(set(harness.STANCE_NAMES) - {first}))
+        self.assertEqual(sorted(cfg["init_defaults"]["stances"]), sorted(set(harness.STANCE_NAMES) - {first}))
+
+    def test_interactive_init_counts_a_typed_offered_value_as_a_choice(self):
+        first = harness.STANCE_NAMES[0]
+        offered = dict(harness.example_config().get("stances", {}),
+                       **harness.STANCE_PRESETS["software"]).get(first, harness.stance_variants(first)[0])
+        answers = iter(["A Name", "", "Does a thing", "", "UTC", "", "", offered]
+                       + [""] * (len(harness.STANCE_NAMES) - 1))
+        with unittest.mock.patch("builtins.input", lambda _prompt: next(answers)), \
+             unittest.mock.patch.object(harness.sys.stdin, "isatty", return_value=True), \
+             unittest.mock.patch.object(harness, "_detect_github", return_value=""):
+            with loud():
+                harness.cmd_init(argparse.Namespace(force=False))
+        cfg = json.loads(harness.config_path().read_text())
+        self.assertEqual(cfg["stances"][first], offered)
+        self.assertNotIn(first, cfg["init_defaults"]["stances"])
+        self.assertEqual(sorted(cfg["init_defaults"]["stances"]), sorted(set(harness.STANCE_NAMES) - {first}))
 
     def test_setting_a_stance_by_hand_takes_it_out_of_the_defaults(self):
         self.init()
@@ -267,7 +295,7 @@ class CommandLine(unittest.TestCase):
         harness.config_set("mode", "minimal")
         cfg = json.loads(harness.config_path().read_text())
         self.assertEqual(cfg["mode"], "minimal")
-        self.assertEqual(cfg["init_defaults"]["stances"], sorted(cfg["stances"]))
+        self.assertEqual(cfg["init_defaults"]["stances"], cfg["stances"])
 
     def test_config_set_refuses_an_unknown_mode_and_writes_nothing(self):
         self.init()
