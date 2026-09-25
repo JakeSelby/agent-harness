@@ -313,6 +313,47 @@ def policy_reference(work, docs):
     return reference
 
 
+def temporary_roots():
+    """The shared temporary directories of this machine, resolved: every run's scratch lands here."""
+    candidates = ["/tmp", "/var/tmp", tempfile.gettempdir(), os.environ.get("TMPDIR") or "/tmp"]
+    return {Path(path).resolve() for path in candidates}
+
+
+def broad_read_root(path):
+    """Why `path` is too broad to grant a worker, or None when it is narrow enough.
+
+    A read root is everything a worker may open, so a shared root hands it every other run's
+    files: a blind review given `/tmp` could read the earlier report naming its planted defects
+    (issue #772). Refused are `/`, the home directory, each system temporary root, and any
+    directory above one of them; a dedicated subdirectory of any of these is accepted.
+    """
+    path = Path(path)
+    home = Path.home().resolve()
+    roots = [(Path("/"), "the filesystem root")]
+    roots += [(temp, "a system temporary root") for temp in sorted(temporary_roots())]
+    roots.append((home, "the home directory"))
+    for root, what in roots:
+        if path == root:
+            return what
+        if path in root.parents:
+            return "above " + what + " " + str(root)
+    return None
+
+
+def granted_roots(read_dirs):
+    """The caller's `--read-dir` values resolved, refusing any that is not a narrow directory."""
+    roots = [Path(path).resolve(strict=True) for path in read_dirs]
+    for path in roots:
+        if not path.is_dir():
+            raise ValueError("--read-dir must name an existing directory")
+        reason = broad_read_root(path)
+        if reason:
+            raise ValueError("--read-dir " + str(path) + " is " + reason + ", which would let the worker "
+                             "read every other run's files; put the inputs in a dedicated directory, such "
+                             "as one made by `mktemp -d /tmp/harness-inputs.XXXXXX`, and grant that instead")
+    return roots
+
+
 def run(root, config, runtime, name, workspace, prompt, state_root, model=None, artifact=None, timeout=300, read_dirs=()):
     if os.name != "posix" or not 1 <= timeout <= 3600:
         raise ValueError("workers require POSIX and a timeout between 1 and 3600 seconds")
@@ -321,9 +362,7 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     workspace = Path(workspace).resolve(strict=True)
     if not workspace.is_dir():
         raise ValueError("worker workspace must be a directory")
-    read_roots = [Path(path).resolve(strict=True) for path in read_dirs]
-    if any(not path.is_dir() for path in read_roots):
-        raise ValueError("--read-dir must name an existing directory")
+    read_roots = granted_roots(read_dirs)
     ready = resolution(root, config, runtime, name, model, prompt)
     fields, bindings, instructions = ready["fields"], ready["bindings"], ready["instructions"]
     skills, docs = ready["skills"], ready["docs"]
