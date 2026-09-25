@@ -6369,6 +6369,19 @@
       "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S231",
+      "github_number": 785,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/785",
+      "title": "Adopt CodeRabbit review and clear review-bot threads before merge",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S231.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
     }
   ]
 }

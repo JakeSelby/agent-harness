@@ -504,6 +504,7 @@ development_status:
   ah-s224-scripted-cases-drive-the-cli-with-the-contract: done
   ah-s225-round-2-unverified-cases-observe-what-happened: done
   ah-s226-docs-field-scan-credit-claude-md-doctor-and: done
+  ah-s231-adopt-coderabbit-review-and-clear-review-bot: ready-for-dev
   ah-s260-usage-feed-surface-a-running-agent-s-spend-mid: backlog
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-sp013-spike-architecture-which-harness-capabilities: backlog
