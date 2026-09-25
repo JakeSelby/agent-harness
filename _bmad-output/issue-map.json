@@ -9,7 +9,7 @@
     "decision": 14,
     "epic": 20,
     "spike": 16,
-    "story": 265,
+    "story": 266,
     "task": 35
   },
   "items": [
@@ -6573,6 +6573,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B102.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S265",
+      "github_number": 844,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/844",
+      "title": "Grant agents a standing go-ahead to merge pull requests that clear CodeRabbit review",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S265.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
