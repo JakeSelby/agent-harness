@@ -4078,6 +4078,10 @@ def provider_report(rows: List[Dict[str, Any]], days: int,
 
 
 ROLE_MIN_RUNS = 30
+# The `--by role` bucket for Workflow-tool agents, which the tool launched rather than a spawn:
+# no spawn hook routed them and no brief budgeted them, so a role name they carry is not a run
+# of that role, and counting it as one would move the percentiles a budget is re-seeded from.
+WORKFLOW_BUCKET = "(workflow)"
 
 
 def measured_share(rows: List[Dict[str, Any]], field: str, value: Any,
@@ -4116,11 +4120,16 @@ def role_report(rows: List[Dict[str, Any]], days: int,
     role whose returns are all one-line verdicts prints `-` for `path` rather than `0%`, which
     would read as a role that wrote paths and got them all wrong. A row from before the
     measurement existed, a Codex row and a return nothing could be joined to are `-` too.
+
+    A row with a `workflow` directory is grouped under `WORKFLOW_BUCKET`, printed last, whatever
+    its `agent_type` says, and never priced against that role's budget. That holds for a row
+    written before the ledger marked such rows `unconfined`, since the directory is the evidence.
     """
     table = {} if table is None else table
     groups: Dict[str, List[Dict[str, Any]]] = {}
     for row in rows:
-        groups.setdefault(row.get("agent_type") or "(unnamed)", []).append(row)
+        key = WORKFLOW_BUCKET if row.get("workflow") else (row.get("agent_type") or "(unnamed)")
+        groups.setdefault(key, []).append(row)
     if not groups:
         say(f"no subagent or worker runs recorded in the last {days} day(s); "
             "run `harness usage --rescan` to backfill them from transcripts")
@@ -4132,7 +4141,7 @@ def role_report(rows: List[Dict[str, Any]], days: int,
     say(head)
     say("-" * len(head))
     unpriced = 0
-    for key in sorted(groups):
+    for key in sorted(groups, key=lambda name: (name == WORKFLOW_BUCKET, name)):
         group = groups[key]
         output = sorted(int(r["output"]) for r in group if isinstance(r.get("output"), int))
         tools = sorted(int(r["tool_calls"]) for r in group if isinstance(r.get("tool_calls"), int))
@@ -4155,6 +4164,9 @@ def role_report(rows: List[Dict[str, Any]], days: int,
         say(f"{key[:30]:<30}{len(group):>6}" + "".join(cells) + f"{gaps or '-':>12}{mark:>8}")
     say(f"unpriced: {unpriced} run(s), unknown model or partial tokens" if unpriced
         else "unpriced: none")
+    if WORKFLOW_BUCKET in groups:
+        say(f"{WORKFLOW_BUCKET}: {len(groups[WORKFLOW_BUCKET])} Workflow-tool run(s), unconfined; "
+            "not counted as spawns of any role and priced against no role budget")
     return 0
 
 
