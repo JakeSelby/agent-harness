@@ -43,6 +43,8 @@ SCOPES = {
                      "variant config.example.json selects, for the default selection",
     "listings": "one description line per agent, skill and command the session lists",
     "worst_case_est_tokens": "the same files with the longest variant of every stance dimension",
+    "files": "each always-loaded and listed file on its own, the same set `total` sums; its "
+             "est_tokens are rounded per file, so they sum to the total within rounding",
     "note": "`harness lint` counts a narrower set against its caps: instructions, rules and the "
             "longest stance variant, with no output style and no listings",
 }
@@ -165,8 +167,15 @@ def measure(root=ROOT):
     listings = _group(root, listed, _description)
     total = _sum(always + listings)
     version = root / "VERSION"
+    models = _cache_rates(root)
+    files = {}
+    for group, rows in (("always_loaded", always), ("listings", listings)):
+        for row in rows:
+            tokens = row["chars"] / CHARS_PER_TOKEN
+            files[row["path"]] = {"group": group, "chars": row["chars"],
+                                  "est_tokens": int(round(tokens)), "usd": price(root, tokens, models)}
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "harness_version": version.read_text(encoding="utf-8").strip() if version.is_file() else "",
         "chars_per_token": CHARS_PER_TOKEN,
         "scopes": SCOPES,
@@ -175,29 +184,71 @@ def measure(root=ROOT):
         "total": total,
         "worst_case_est_tokens": _sum(worst + listings)["est_tokens"],
         "largest": sorted(always + listings, key=lambda r: (-r["chars"], r["path"]))[:5],
-        "usd": price(root, total["est_tokens"]),
+        "usd": price(root, total["est_tokens"], models),
+        "files": files,
     }
 
 
-def price(root, tokens):
-    """USD the counted layer costs per model: written to the cache once, then read every turn."""
+def _cache_rates(root):
+    """The models the static figure is priced on: Anthropic ones with both cache rates."""
     table = root / "policy" / "prices.json"
     models = json.loads(table.read_text(encoding="utf-8")).get("models", {}) if table.is_file() else {}
-    out = {}
-    for name, row in sorted(models.items()):
-        if name.startswith("claude-") and "cache_write" in row and "cache_read" in row:
-            out[name] = {"session_start": round(tokens * row["cache_write"] / 1e6, 6),
-                         "later_turn": round(tokens * row["cache_read"] / 1e6, 6)}
-    return out
+    return {name: row for name, row in sorted(models.items())
+            if name.startswith("claude-") and "cache_write" in row and "cache_read" in row}
 
 
-def check(root=ROOT):
+def price(root, tokens, models=None):
+    """USD the counted layer costs per model: written to the cache once, then read every turn."""
+    models = _cache_rates(root) if models is None else models
+    return {name: {"session_start": round(tokens * row["cache_write"] / 1e6, 6),
+                   "later_turn": round(tokens * row["cache_read"] / 1e6, 6)}
+            for name, row in sorted(models.items())}
+
+
+def file_deltas(root=ROOT, now=None):
+    """One line per file whose estimate moved since the committed figure, largest move first.
+
+    Dollars are priced on the model with the highest cache-read rate, named on each line, so a
+    line states the most a change can cost per turn rather than an average over models.
+    """
+    committed = root / STATIC
+    if not committed.is_file():
+        return []
+    before = json.loads(committed.read_text(encoding="utf-8")).get("files")
+    if before is None:
+        return ["%s has no per-file figures; run `scripts/cost_bench.py static --write` at the next "
+                "release to record them" % STATIC.as_posix()]
+    now = measure(root) if now is None else now
+    after = now["files"]
+    moved = []
+    for path in sorted(set(before) | set(after)):
+        delta = (after.get(path, {}).get("est_tokens", 0)
+                 - before.get(path, {}).get("est_tokens", 0))
+        if delta:
+            moved.append((path, delta))
+    if not moved:
+        return []
+    models = _cache_rates(root)
+    name = max(models, key=lambda m: (models[m]["cache_read"], m)) if models else ""
+    lines = []
+    for path, delta in sorted(moved, key=lambda item: (-abs(item[1]), item[0])):
+        state = " (new)" if path not in before else " (removed)" if path not in after else ""
+        line = "%s%s %+d tokens" % (path, state, delta)
+        if name:
+            row = models[name]
+            line += ", %+.6f USD per session start, %+.6f USD per later turn on %s" % (
+                delta * row["cache_write"] / 1e6, delta * row["cache_read"] / 1e6, name)
+        lines.append(line)
+    return lines
+
+
+def check(root=ROOT, now=None):
     """Errors when the estimate has grown past the limit over the committed figure, unexplained."""
     committed = root / STATIC
     if not committed.is_file():
         return ["%s is missing; run `scripts/cost_bench.py static --write`" % STATIC.as_posix()]
     before = json.loads(committed.read_text(encoding="utf-8"))["total"]["est_tokens"]
-    now = measure(root)
+    now = measure(root) if now is None else now
     after = now["total"]["est_tokens"]
     if after <= before * (1 + GROWTH_LIMIT):
         return []
@@ -1622,7 +1673,8 @@ def main(argv=None):
     static = sub.add_parser("static", help="count the always-loaded layer and the session listings")
     mode = static.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="refresh %s" % STATIC.as_posix())
-    mode.add_argument("--check", action="store_true", help="fail on unexplained growth")
+    mode.add_argument("--check", action="store_true", help="print each file's delta and fail on "
+                      "unexplained growth of the total")
     run = sub.add_parser("replay", help="run the pinned tasks against bare and harness; spends usage")
     run.add_argument("--tasks", default=str(ROOT / TASKS))
     run.add_argument("--task", action="append", help="run only this task id; repeatable")
@@ -1671,7 +1723,10 @@ def main(argv=None):
     if args.command == "backfill":
         return cmd_backfill(args)
     if args.check:
-        errors = check(ROOT)
+        now = measure(ROOT)
+        for line in file_deltas(ROOT, now):
+            print("cost-bench: " + line)
+        errors = check(ROOT, now)
         for error in errors:
             print("cost-bench: " + error, file=sys.stderr)
         return 1 if errors else 0
