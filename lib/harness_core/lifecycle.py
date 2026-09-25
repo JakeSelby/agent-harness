@@ -222,7 +222,9 @@ WORKFLOW_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 WORKFLOW_LITERAL = re.compile(r"""(['"`])([a-z][a-z0-9-]*)\1""")
 # A literal with an escape in it, such as `'re\u0076iewer'`, which evaluates to a role name.
 WORKFLOW_ESCAPED = re.compile(r"""(['"`])((?:(?!\1)[^\\\n])*\\.(?:(?!\1)[^\\\n]|\\.)*)\1""")
-WORKFLOW_ESCAPE = re.compile(r"""\\(?:u\{([0-9A-Fa-f]{1,6})\}|u([0-9A-Fa-f]{4})|x([0-9A-Fa-f]{2})|(.))""")
+WORKFLOW_ESCAPE = re.compile(r"""\\(?:u\{([0-9A-Fa-f]{1,6})\}|u([0-9A-Fa-f]{4})|x([0-9A-Fa-f]{2})|([nrtvfb0])|(.))""",
+                             re.S)
+WORKFLOW_CONTROL = {"n": "\n", "r": "\r", "t": "\t", "v": "\v", "f": "\f", "b": "\b", "0": "\0"}
 WORKFLOW_MARKER = re.compile(r"""(?:^|\\n|['"`])[ \t]*harness-role:[ \t]*([a-z][a-z0-9-]*)[ \t]*"""
                              r"""(?=$|\\n|\\r|['"`])""", re.M)
 WORKFLOW_SCRIPT_MAX = 1024 * 1024
@@ -261,18 +263,37 @@ def workflow_script(event):
     return None
 
 
-def workflow_literal(text):
-    """A JavaScript string literal's body with its escapes decoded."""
+def workflow_literal(text, keep_quoting=False):
+    """`text` with its JavaScript escapes decoded: a literal's body, or with `keep_quoting` a
+    whole script, where a quote or backslash escape stays escaped so literals keep their bounds."""
     def decode(match):
         code = match.group(1) or match.group(2) or match.group(3)
         if code is not None:
             return chr(min(int(code, 16), 0x10FFFF))
-        return match.group(4)
+        if match.group(4) is not None:
+            return WORKFLOW_CONTROL[match.group(4)]
+        return match.group(0) if keep_quoting else match.group(5)
     return WORKFLOW_ESCAPE.sub(decode, text)
 
 
 def workflow_role(script):
     """`(name, fields, how)` for the first constrained role a workflow script names, else None.
+
+    The script is read twice, as written and with its escapes decoded, because an escaped key
+    (`agent\\u0054ype`) or an escaped newline around a `harness-role:` line reads as the plain
+    form once JavaScript evaluates it. See `workflow_role_in` for one reading.
+    """
+    if not isinstance(script, str):
+        return None
+    named = workflow_role_in(script)
+    decoded = workflow_literal(script, keep_quoting=True)
+    if named is None and decoded != script:
+        named = workflow_role_in(decoded)
+    return named
+
+
+def workflow_role_in(script):
+    """The constrained role one reading of a workflow script names, as `workflow_role` returns it.
 
     A quoted `agentType` value is read directly. Any other mention of `agentType` — a computed
     value, a shorthand property — cannot be, so then any whole string literal naming a
@@ -281,8 +302,6 @@ def workflow_role(script):
     refusing, as `constrained_role` does for a contract it cannot load. A marker is matched as `marker_role` matches one, a standalone
     declaration naming a constrained shared role.
     """
-    if not isinstance(script, str):
-        return None
     computed = False
     for mention in WORKFLOW_AGENT_TYPE.finditer(script):
         match = WORKFLOW_AGENT_VALUE.match(script, mention.end())

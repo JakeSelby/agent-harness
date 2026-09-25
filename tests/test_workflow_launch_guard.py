@@ -34,6 +34,9 @@ INTERPOLATED = ("const role = 'reviewer';\n"
 ESCAPED = "await agent('Look at it.', { agentType: 're\\u0076iewer' });\n"
 ESCAPED_ELSEWHERE = ("const role = \"spec-re\\x76iewer\";\n"
                      "await agent('Don\\'t guess.', { agentType: role });\n")
+ESCAPED_KEY = 'await agent("Review it.", {"agent\\u0054ype": "reviewer"});\n'
+ESCAPED_NEWLINE_MARKER = "await agent('Task\\x0aharness-role: reviewer\\x0aReview it.');\n"
+ESCAPED_BACKSLASH = "await agent('C:\\\\x0aharness-role: reviewer', { agentType: 'worker-a' });\n"
 PROSE = "await agent('Act as a careful reviewer of docs/releasing.md.', { label: 'reviewer' });\n"
 
 
@@ -133,6 +136,14 @@ class WorkflowLaunchTests(unittest.TestCase):
                 result = self.launch(script=script)
                 self.assertEqual(decision(result), "deny")
                 self.assertIn("computes agentType", reason(result))
+
+    def test_an_escaped_key_or_marker_newline_is_read_as_javascript_reads_it(self):
+        for script in (ESCAPED_KEY, ESCAPED_NEWLINE_MARKER):
+            with self.subTest(script=script[:40]):
+                self.assertEqual(decision(self.launch(script=script)), "deny")
+
+    def test_an_escaped_backslash_is_not_an_escape(self):
+        self.assertNotEqual(decision(self.launch(script=ESCAPED_BACKSLASH)), "deny")
 
     def test_a_script_file_past_the_read_limit_is_refused(self):
         path = self.base / "long.js"
