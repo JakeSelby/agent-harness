@@ -32,8 +32,8 @@ jobs:
       # Advisory: this job is deliberately absent from the branch ruleset's required checks
       # while it is decided whether a red tier may block a freeze. The credential probe is left
       # out because this runner holds no client credential; it belongs on the host that will run
-      # a qualification round. No job in this workflow pins an interpreter, so this one runs the
-      # same Python as `test`; the 3.9 floor is proved by running the suite locally under it.
+      # a qualification round. It runs the runner's system Python, as `test` does; `test-py39`
+      # holds the 3.9 floor.
       - name: Deterministic pre-qualification checks
         run: python3 scripts/smoke_tier.py --skip credentials
 
@@ -68,3 +68,20 @@ jobs:
           mkdir -p ~/.config/agent-harness
           cp config.example.json ~/.config/agent-harness/config.json
           python3 bin/harness sync --dry-run
+
+  test-py39:
+    name: test-py39
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # The suite under the 3.9 floor, beside `test` rather than inside it, so a 3.9-only failure
+      # reads as a floor break. `test` already fails on 3.9-incompatible syntax through
+      # tests/test_python_floor.py; this job adds the stdlib and runtime behaviour a parse cannot
+      # see. Whether it blocks a merge is the branch ruleset's call, not this file's.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.9"
+      - name: Unit tests under Python 3.9
+        run: python -m unittest discover -s tests -v
