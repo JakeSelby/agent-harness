@@ -11,8 +11,8 @@ app refuses most of what they send with "Couldn't load this file".
 A file whose real path is outside the hook's working directory, which Claude Code keeps inside
 the session's working directories, is copied to `.agent-harness/outbox/<digest>/<name>` there,
 and the path is rewritten to the copy. The digest covers the source's real path, size and
-modification time, so sending an unchanged file again reuses its copy and a changed file gets a
-new one. The outbox carries a `.gitignore` that ignores everything in it, so in a repository a
+modification and change times, so sending an unchanged file again reuses its copy and any rewrite,
+even one that restores the modification time, gets a new one. The outbox carries a `.gitignore` that ignores everything in it, so in a repository a
 copy never shows in `git status`, a commit or the lint. Directories untouched for KEEP_DAYS are
 removed when something new is staged, and `harness task` leaves the outbox out of its fingerprint.
 
@@ -61,7 +61,7 @@ def outbox(root):
 
 
 def stage(source, info, box):
-    key = "%s\0%d\0%d" % (source, info.st_size, info.st_mtime_ns)
+    key = "%s\0%d\0%d\0%d" % (source, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
     folder = box / hashlib.sha256(key.encode("utf-8", "surrogateescape")).hexdigest()[:16]
     target = folder / source.name
     if folder.is_symlink() or target.is_symlink():

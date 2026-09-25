@@ -21,7 +21,7 @@ from pathlib import Path
 from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
-HOOK = REPO / "claude" / "hooks" / "stage-user-files.py"
+HOOK = REPO / "policy" / "hooks" / "stage-user-files.py"
 OWNERSHIP = json.loads((REPO / "claude" / "OWNERSHIP.json").read_text())
 
 _spec = importlib.util.spec_from_file_location("stage_user_files", HOOK)
@@ -170,6 +170,17 @@ class StageUserFilesTests(unittest.TestCase):
         self.assertEqual(first.read_bytes(), b"\x89PNG first")
         self.assertEqual(second.read_bytes(), b"\x89PNG second, longer")
 
+    def test_a_same_size_rewrite_with_its_timestamps_restored_gets_a_new_copy(self):
+        before = self.shot.stat()
+        first = Path(self.sent(self.send(str(self.shot)))[0])
+        time.sleep(0.05)  # past the coarsest change-time granularity a kernel keeps
+        self.shot.write_bytes(b"\x89PNG fresh")
+        os.utime(str(self.shot), ns=(before.st_atime_ns, before.st_mtime_ns))
+        second = Path(self.sent(self.send(str(self.shot)))[0])
+        self.assertNotEqual(second, first)
+        self.assertEqual(first.read_bytes(), b"\x89PNG first")
+        self.assertEqual(second.read_bytes(), b"\x89PNG fresh")
+
     def test_staging_prunes_old_copies_and_nothing_else(self):
         self.box.mkdir(parents=True)
         stale = time.time() - (stage_user_files.KEEP_DAYS + 1) * 86400
@@ -201,7 +212,7 @@ class StageUserFilesTests(unittest.TestCase):
         other = self.elsewhere / "other.md"
         other.write_text("other")
         info = other.resolve().stat()
-        key = "%s\0%d\0%d" % (other.resolve(), info.st_size, info.st_mtime_ns)
+        key = "%s\0%d\0%d\0%d" % (other.resolve(), info.st_size, info.st_mtime_ns, info.st_ctime_ns)
         digest = stage_user_files.hashlib.sha256(key.encode()).hexdigest()[:16]
         decoy = self.base / "decoy"
         decoy.mkdir()
