@@ -13,8 +13,10 @@ any of the three is missing, say which and stop. Merging is approval-gated — g
 go-ahead before the merge — and this command never tags and never deploys.
 
 1. **Verify the head that will merge.** Every required check green on the current head, not on an
-   earlier push; where the repository runs an issue-ownership or closing-link check, confirm that
-   it passed on that same head. A pending, failing or stale check stops the workflow, named.
+   earlier push; where the repository runs an issue-ownership or closing-link check, confirm that it
+   passed on that same head. A pending, failing or stale check stops the workflow, named. So does an
+   unresolved review thread (GraphQL `reviewThreads`): name it and stop. A fix belongs to `/build`,
+   before approval, and a human's thread is theirs to resolve.
 2. **Merge it** with `gh pr merge --squash --delete-branch`, into the default branch.
 3. **Fast-forward the shared checkout** on its default branch with `git pull --ff-only`. Anything
    other than a fast-forward means the branch diverged: stop and report it, never merge locally.
