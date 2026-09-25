@@ -473,8 +473,8 @@ def compatibility_capability_table(root, data):
             + ". `enforced` is narrower than it sounds. It never reaches the session's own model: "
             "the `model` settings key is one this harness never writes "
             "(`docs/settings-ownership.md`). Within a session it rewrites a spawn only while the "
-            "selected `delegation` variant is `tiered` — `off` stops the spawn instead, and any "
-            "other variant leaves it alone — and only while the adapter's class table maps at "
+            "selected `delegation` variant is `tiered`. `off` stops the spawn instead, any other "
+            "variant leaves it alone, and it acts only while the adapter's class table maps at "
             "least two models, since one class is no ladder to move a spawn down. Under every "
             "other condition the ceiling is prose, exactly as `advisory` is everywhere.")
     return ["A client's status is not a capability's status. Each cell is derived from that "
