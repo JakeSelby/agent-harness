@@ -3162,8 +3162,6 @@ def coerce_config_value(key: str, value: str) -> Any:
     if head in SYNC_SWITCH_KINDS:
         if value not in ("on", "off"):
             raise SystemExit(f"a {head} unit is on or off; got '{value}'")
-        if tail not in load_selection(env={})[head]:
-            raise SystemExit(f"{head} has no unit '{tail}'; `harness selection` lists every unit")
         return value
     if key == "primitive_roots":
         roots = json.loads(value)
@@ -3240,6 +3238,14 @@ def config_set(key: str, value: Optional[str]) -> int:
             parts = (key.split(".") if key.startswith(("integrations.", "governance."))
                      else key.split(".", 1))
             reconcile.assign(cfg, parts, {"present": True, "value": coerced})
+            if parts[0] in SYNC_SWITCH_KINDS:
+                # Resolved as it will be written: a switch that breaks a module dependency is
+                # refused, and one that repairs a selection the resolver already refuses goes in.
+                unset = deepcopy(cfg)
+                unset[parts[0]].pop(parts[1])
+                if parts[1] not in load_selection(env={}, user=unset)[parts[0]]:
+                    raise SystemExit(f"{parts[0]} has no unit '{parts[1]}'; `harness selection` lists every unit")
+                load_selection(env={}, user=cfg)
             if key.startswith("integrations."):
                 selected = integrations.selection(cfg)
                 if parts[-1] == "adapter":

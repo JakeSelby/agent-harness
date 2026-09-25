@@ -344,6 +344,7 @@ class SwitchKindSyncTests(TempHome):
             self.assertTrue(path.exists(), str(path))
         self.switch("skills", "plan-authoring", "off")
         self.switch("workflows", "land", "off")
+        self.switch("workflows", "review", "off")  # the review workflow depends on the reviewer
         self.switch("roles", "reviewer", "off")
         self.assertEqual(self.sync(), 0)
         for path in paths:
@@ -352,7 +353,8 @@ class SwitchKindSyncTests(TempHome):
         self.assertTrue((cd / "skills" / "delegation-tiering").is_symlink())
         self.assertTrue((cd / "agents" / "builder.md").exists())
         self.assertEqual(harness._diff_lines(), [])
-        for kind, unit in (("skills", "plan-authoring"), ("workflows", "land"), ("roles", "reviewer")):
+        for kind, unit in (("skills", "plan-authoring"), ("workflows", "land"), ("roles", "reviewer"),
+                           ("workflows", "review")):
             self.switch(kind, unit, "on")
         self.assertEqual(self.sync(), 0)
         for path in paths:
@@ -360,6 +362,7 @@ class SwitchKindSyncTests(TempHome):
         self.assertEqual(harness._diff_lines(), [])
 
     def test_an_off_role_a_cost_row_moves_is_neither_rendered_nor_linked(self):
+        self.switch("workflows", "research", "off")  # research depends on worker-a
         self.switch("roles", "worker-a", "off")
         with redirect_stdout(io.StringIO()):
             self.assertEqual(harness.config_set("stances.cost", "frugal"), 0)
@@ -369,6 +372,21 @@ class SwitchKindSyncTests(TempHome):
         self.assertFalse((self.home / ".codex" / "agents" / "worker-a.toml").exists())
         self.assertTrue((self.home / ".claude" / "agents" / "worker-b.md").exists())
         self.assertEqual(harness._diff_lines(), [])
+
+    def test_a_switch_that_breaks_a_dependency_is_refused_and_one_that_repairs_it_is_written(self):
+        self.switch("workflows", "land", "on")  # writes the configuration the refusal must leave alone
+        before = harness.config_path().read_text()
+        with redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            harness.config_set("roles.reviewer", "off")
+        self.assertIn("workflows/review depends on roles/reviewer", str(refused.exception))
+        self.assertEqual(harness.config_path().read_text(), before)
+        cfg = json.loads(before)
+        cfg.setdefault("roles", {})["reviewer"] = "off"
+        harness.config_path().write_text(json.dumps(cfg))
+        with self.assertRaises(SystemExit):
+            harness.load_selection(env={})
+        self.switch("roles", "reviewer", "on")
+        self.assertEqual(harness.load_selection(env={})["roles"]["reviewer"], "on")
 
     def test_a_switch_value_or_unit_config_set_cannot_apply_is_refused(self):
         with self.assertRaises(SystemExit):
