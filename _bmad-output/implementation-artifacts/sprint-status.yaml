@@ -227,7 +227,7 @@ development_status:
   ah-s234-attribute-context-tokens-and-hook-decisions-to: backlog
   ah-s235-zero-footprint-observation-watching-the-bare-arm: backlog
   ah-s236-adherence-events-record-each-recommendation-and: backlog
-  ah-s237-replay-fix-the-six-defects-that-keep-the-two: backlog
+  ah-s237-replay-fix-the-six-defects-that-keep-the-two: ready-for-dev
   ah-s238-an-evidence-standard-and-a-pre-registration: backlog
   ah-s239-replay-cost-of-pass-and-pass-rate-with-paired: backlog
   ah-s240-replay-a-task-set-sized-by-power-analysis-long: backlog
@@ -246,7 +246,7 @@ development_status:
 
   ah-e014-qualify-a-release-in-one-round-and-let-its: in-progress
   ah-b073-a-resumed-qualification-round-reruns-completed: ready-for-dev
-  ah-b096-provisioning-leaves-an-untracked-marker-in-the: backlog
+  ah-b096-provisioning-leaves-an-untracked-marker-in-the: ready-for-dev
   ah-b097-cli-ergonomics-found-by-the-first-live: backlog
   ah-c043-qualify-the-required-cli-targets-and-restore-the: done
   ah-c052-open-the-0-13-0-candidate: done
@@ -361,7 +361,7 @@ development_status:
   ah-b082-hook-composition-proves-composition-from: done
   ah-b083-stance-switch-and-custom-stance-switch-only: done
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: done
-  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
+  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: ready-for-dev
   ah-b086-the-100-kb-grade-bash-timing-test-fails-under: done
   ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
   ah-b088-a-role-confinement-refusal-writes-no-decision: backlog
@@ -374,6 +374,7 @@ development_status:
   ah-b098-grade-bash-timing-test-fails-on-wall-clock-under: done
   ah-b099-fix-output-style-scannable-drops-claude-code-s: ready-for-dev
   ah-b100-close-out-files-follow-ups-after-it-lands-so-the: ready-for-dev
+  ah-b101-fix-remote-control-files-an-agent-sends-cannot: ready-for-dev
   ah-b102-sync-misreads-an-aliased-stance-link-as-a-user: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
@@ -515,6 +516,7 @@ development_status:
   ah-s262-rewrite-the-always-loaded-rules-in-plain: backlog
   ah-s263-name-the-review-complete-signal-in-build-step-6: backlog
   ah-s264-say-whether-land-waits-on-checks-that-are-not: backlog
+  ah-s265-grant-agents-a-standing-go-ahead-to-merge-pull: ready-for-dev
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-sp013-spike-architecture-which-harness-capabilities: backlog
   ah-sp014-licence-review-of-the-humanizer-skill-for-drafts: backlog

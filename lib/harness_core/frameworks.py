@@ -20,7 +20,20 @@ way to hear that it was wrong.
   the framework puts that name there, so this alone is enough.
 * **identifiers** — a literal only the framework's routed text carries, such as the path of one of
   its prompt files. Never enough alone: a brief that edits the override templates, or that asks a
-  worker to read one of those files, quotes the same path. An identifier needs a phrase beside it.
+  worker to read one of those files, quotes the same path. An identifier needs a phrase beside
+  it, or a directive.
+* **directed identifiers** — an identifier in a sentence that tells the subagent to follow or
+  apply it: "read the instructions at <path> and follow them exactly". A client that writes the
+  brief itself keeps the prompt file, because the subagent has to read it, and drops every
+  sentence of the framework's own text (#739). The directive is what separates this from a brief
+  that edits the file or reads it for some other reason, so it is enough alone. It must govern
+  the file: ahead of it and unbroken by a clause, or after it with a pronoun pointing back ("and
+  follow them", "follow it" in a later sentence while the ones between still talk about the
+  file). A negated directive, a directive aimed at
+  something else, and a sentence that edits, updates or rewrites the file itself are not
+  directives; "update your findings" edits something else and leaves the directive standing.
+  The path has to end where the declared one does, so `<path>.bak` is another file, and a
+  trailing "follow the instructions in <other>" names its own file.
 * **phrases** — whole sentences of the framework's own prompt text, distinctive enough that
   quoting one is a coincidence and quoting `corroboration` of them is not. Single generic nouns
   are not phrases: "unified diff" and "list of findings" are what an ordinary fix-up brief says
@@ -254,18 +267,107 @@ def ignored(directory=None):
     return _loaded(directory)[1]
 
 
+# What a sentence says, ahead of the file, to adopt it as the subagent's own instructions, in the
+# base or -ing form an instruction takes. A third-person "follows" or "applied" describes, it does
+# not direct. It governs the file only across a short gap with no clause break.
+DIRECTIVE = re.compile(
+    r"\b(?:follow(?:ing)?|apply(?:ing)?|obey(?:ing)?|adher(?:e|ing) to|comply(?:ing)? with"
+    r"|abid(?:e|ing) by|carry(?:ing)? out|according to|as (?:instructed|directed|specified|"
+    r"described|set out|laid out) (?:in|by)|per (?:the|those|these|its|that|this|their)\b"
+    r"|your (?:\w+ ){0,2}(?:instructions|methodology|guidelines|checklist|rubric|procedure))\b")
+LEAD_GAP = 6
+CLAUSE_BREAK = re.compile(r"[,:()]|\b(?:and|then|but|or|while|after|before)\b")
+# The directive after the file, later in its sentence or in the next one, which counts only when
+# it points back at the file: "read <path> and follow it", not "read <path> and use it as a
+# fixture".
+DIRECTIVE_BACK = re.compile(
+    r"\b(?:(?:follow(?:ing)?|apply(?:ing)?|obey(?:ing)?) (?:it|them|that file|this file"
+    r"|those instructions|these instructions|its instructions|the instructions)"
+    r"|use (?:those|these|its|the) instructions|as (?:your |the )?(?:\w+ ){0,2}instructions)\b")
+# Work on the file rather than work under it, when the verb governs the file the way a directive
+# does: "update <path>", or "update it" after it. "Update your findings" edits something else.
+# Negated ("do not edit it") is still a directive.
+EDIT_VERB = (r"(?:edit(?:s|ed|ing)?|modif(?:y|ies|ied|ying)|updat(?:e|es|ed|ing)"
+             r"|rewrit(?:e|es|ing|ten)|rewrote|renam(?:e|es|ed|ing)|delet(?:e|es|ed|ing)"
+             r"|remov(?:e|es|ed|ing)|reword(?:s|ed|ing)?|refactor(?:s|ed|ing)?|lint(?:s|ed|ing)?"
+             r"|amend(?:s|ed|ing)?)")
+EDIT = re.compile(r"\b" + EDIT_VERB + r"\b")
+EDIT_BACK = re.compile(r"\b" + EDIT_VERB + r" (?:it|them|that file|this file)\b")
+NEGATION = re.compile(r"\b(?:not|never|no|without|don't|do not)\s+(?:\w+\s+){0,2}\Z")
+SENTENCE = re.compile(r"(?<=[.!?;])\s+|\s+(?:—|–|-{2})\s+")
+
+
+def _unnegated(pattern, text):
+    """The matches of `pattern` in `text` not cancelled by a "not", "never" or "without" before."""
+    return [found for found in pattern.finditer(text) if not NEGATION.search(text[:found.start()])]
+
+
+def _governs(pattern, before):
+    """Whether a `pattern` verb ends close enough before the file, unbroken by a clause, to govern
+    it."""
+    for found in _unnegated(pattern, before):
+        gap = before[found.end():]
+        if len(gap.split()) <= LEAD_GAP and not CLAUSE_BREAK.search(gap):
+            return True
+    return False
+
+
+# A directive in a later sentence still points back at the file while each sentence between keeps
+# talking about it: "Read <path>. These instructions define the layer. Follow them precisely."
+FOLLOW_REACH = 3
+ANAPHOR = re.compile(r"\b(?:(?:these|those|its|the) instructions|(?:that|this|the) file)\b")
+# A trailing "the instructions" followed by where they live names its own file, not this one.
+OWN_TARGET = re.compile(r"\s+(?:in|at|from|of|under|inside)\b")
+# The declared path ends where a longer file name would go on: `<path>.bak` is another file.
+PATH_END = r"(?![\w/-]|\.\w)"
+
+
+def _points_back(after):
+    """Whether `after` holds an unnegated directive aimed back at the file before it."""
+    return any(not _names_its_own(found, after) for found in _unnegated(DIRECTIVE_BACK, after))
+
+
+def _names_its_own(found, after):
+    """Whether a trailing "follow the instructions" says where they live, so they are not ours."""
+    said = found.group(0)
+    return said.endswith("instructions") and not said.startswith("as ") and bool(
+        OWN_TARGET.match(after, found.end()))
+
+
+def _directed(value, text):
+    """Whether `text` tells the subagent to follow or apply the file named `value`."""
+    path = re.compile(re.escape(normalise(value)) + PATH_END)
+    sentences = SENTENCE.split(text)
+    for index, sentence in enumerate(sentences):
+        if not path.search(sentence):
+            continue
+        parts = path.split(sentence)
+        pairs = [(parts[at - 1], parts[at]) for at in range(1, len(parts))]
+        if any(_governs(EDIT, before) or _unnegated(EDIT_BACK, after) for before, after in pairs):
+            continue
+        if any(_governs(DIRECTIVE, before) or _points_back(after) for before, after in pairs):
+            return True
+        for following in sentences[index + 1:index + 1 + FOLLOW_REACH]:
+            if _points_back(following) and not _unnegated(EDIT_BACK, following):
+                return True
+            if not ANAPHOR.search(following):
+                break
+    return False
+
+
 def _score(spawn, text, agent):
-    """`(agents, identifiers, phrases)` this spawn entry matched."""
+    """`(agents, directed, identifiers, phrases)` this spawn entry matched."""
     agents = 1 if agent and agent in [a.casefold() for a in spawn.get("agents", [])] else 0
-    identifiers = sum(1 for value in spawn.get("identifiers", []) if normalise(value) in text)
+    named = [value for value in spawn.get("identifiers", []) if normalise(value) in text]
+    directed = sum(1 for value in named if _directed(value, text))
     phrases = sum(1 for value in spawn.get("phrases", []) if normalise(value) in text)
-    return agents, identifiers, phrases
+    return agents, directed, len(named), phrases
 
 
 def _recognised(score, corroboration):
     """Whether this much evidence refuses a spawn. The rule, in one place, for the one caller."""
-    agents, identifiers, phrases = score
-    if agents:
+    agents, directed, identifiers, phrases = score
+    if agents or directed:
         return True
     if identifiers and phrases:
         return True
