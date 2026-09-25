@@ -36,15 +36,16 @@ class ResumeTests(unittest.TestCase):
             return runner(client, name, model, keep, confirmed)
         return run
 
-    def run_round(self, runner, names=None, commit="a" * 40):
+    def run_round(self, runner, names=None, commit="a" * 40, client=CLIENT, confirmed=()):
         self.ran = []
         with patch.object(MODULE, "client_version", return_value="9.9.9"), \
                 patch.object(MODULE, "git", side_effect=lambda *args: "" if args[0] == "status"
                              else commit), \
                 patch.dict(MODULE.CASES, {name: (None, "stub") for name in CASES}, clear=True), \
                 redirect_stderr(io.StringIO()) as err:
-            data = MODULE.record(CLIENT, names or CASES, "cheapest", False,
-                                 runner=self.counting(runner), progress=self.progress)
+            data = MODULE.record(client, names or CASES, "cheapest", False,
+                                 runner=self.counting(runner), progress=self.progress,
+                                 confirmed=confirmed)
         return data, err.getvalue()
 
     def lines(self):
@@ -79,6 +80,23 @@ class ResumeTests(unittest.TestCase):
         data, _ = self.run_round(verdict("passed"))
         self.assertEqual(self.ran, CASES)
         self.assertEqual(data["cases"], {name: "passed" for name in CASES})
+
+    def test_a_confirmed_pass_is_not_kept_when_the_resume_is_unconfirmed(self):
+        unobserved = "codex-cli-macos"
+        self.run_round(verdict("passed"), names=[CASES[0]], client=unobserved,
+                       confirmed=[unobserved])
+        _, err = self.run_round(verdict("unverified"), client=unobserved)
+        self.assertEqual(self.ran, CASES)
+        self.assertEqual(err, "")
+        self.assertEqual(self.lines()[-len(CASES)]["result"], "unverified")
+
+    def test_a_confirmed_pass_is_kept_when_the_resume_is_confirmed_too(self):
+        unobserved = "codex-cli-macos"
+        self.run_round(verdict("passed"), names=[CASES[0]], client=unobserved,
+                       confirmed=[unobserved])
+        _, err = self.run_round(verdict("passed"), client=unobserved, confirmed=[unobserved])
+        self.assertEqual(self.ran, CASES[1:])
+        self.assertIn("resume: %s already passed" % CASES[0], err)
 
     def test_the_latest_line_for_a_case_decides_whether_it_is_settled(self):
         head = {"case": CASES[0], "source_commit": "a" * 40}

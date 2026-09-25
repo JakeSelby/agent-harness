@@ -221,7 +221,9 @@ A round started again with the same arguments at the same commit resumes from th
 whose latest line is `passed` or `failed` is not run again, and the runner says so on stderr for
 each one. A failure is kept so its evidence stays intact; an `unverified` case, which observed
 nothing, and a case the kill interrupted both run again. The log's header carries the source
-commit, client version and routing, so a verdict never skips a case for a different candidate. To
+commit, client version and routing, so a verdict never skips a case for a different candidate. A
+resume without `--home-confirmed` on a surface that needs it keeps no verdict, since it could only
+read `unverified` itself, so every case runs again. To
 retry a failed case at the same commit, give the round a fresh `--progress` log.
 
 The saving this buys is the issue's estimate, not a measurement: workers ran 0.7×–1.8× their 82K

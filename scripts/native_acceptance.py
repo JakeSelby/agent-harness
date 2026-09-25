@@ -3235,7 +3235,11 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
         "model_run": model,
     }
     append_routing(progress, header)
-    kept = settled(progress_lines(progress, header))
+    # A verdict is kept only when this round could reach one itself: on a surface it has not
+    # confirmed, `probe` reads every case as unverified, so a pass an earlier round recorded
+    # under --home-confirmed runs again rather than surviving an unconfirmed resume.
+    kept = ({} if unobserved_note(client, confirmed)
+            else settled(progress_lines(progress, header)))
     results = []
     for name in names:
         if name in kept:
