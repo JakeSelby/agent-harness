@@ -41,7 +41,10 @@ harness role status <worker-id>
 
 `--prompt-file -` reads the brief from stdin. `--read-dir /path/to/artifacts` grants access to
 additional input directories, such as the framework checkout or review artifacts outside the
-implementation worktree. It never grants writes. Input prompts and results are capped at 1 MiB.
+implementation worktree. It never grants writes, and it refuses `/`, the home directory, a system
+temporary root such as `/tmp`, and any directory above one of them, because each holds other
+runs' files; grant a dedicated subdirectory, such as one made by `mktemp -d`, instead. Input
+prompts and results are capped at 1 MiB.
 These are declared input roots, not a confidentiality boundary: Codex's read-only sandbox can
 read other native-permitted paths. Claude's restricted file tools use the supplied directories.
 The default deadline is 300 seconds; `--timeout` accepts 1–3600 seconds. Interrupting the runner
