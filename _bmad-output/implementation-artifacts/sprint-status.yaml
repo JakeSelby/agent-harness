@@ -246,7 +246,7 @@ development_status:
 
   ah-e014-qualify-a-release-in-one-round-and-let-its: in-progress
   ah-b073-a-resumed-qualification-round-reruns-completed: ready-for-dev
-  ah-b096-provisioning-leaves-an-untracked-marker-in-the: backlog
+  ah-b096-provisioning-leaves-an-untracked-marker-in-the: ready-for-dev
   ah-b097-cli-ergonomics-found-by-the-first-live: backlog
   ah-c043-qualify-the-required-cli-targets-and-restore-the: done
   ah-c052-open-the-0-13-0-candidate: done
