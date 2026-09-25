@@ -58,7 +58,7 @@
         },
         {
           "name": "Shared primitives",
-          "line": "Rules, skills, roles and workflows live in one place and sync into each runtime's native settings.",
+          "line": "Rules, skills, roles and workflows live in one place and sync into each runtime's native settings. Switch one off and sync leaves it out of both.",
           "doc": "docs/sync-model.md"
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "name": "Hit rate per rule",
-          "line": "harness usage --rules reports how often each rule fired, grouped by repository and by the preference variant you had selected at the time.",
+          "line": "harness usage --rules reports how often each rule fired, by repository and by the variant you had selected; --by profile splits spend by the profile behind each row.",
           "doc": "docs/usage.md"
         },
         {

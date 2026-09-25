@@ -15,7 +15,9 @@ client already uses on this machine (see docs/qualification-runbook.md) and noth
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --from-progress
 
 Each case is appended to a durable log as it finishes, so a killed round costs the case it was
-running and not the round; `--from-progress` rebuilds a record from what survived.
+running and not the round; `--from-progress` rebuilds a record from what survived. Run again at
+the same commit, a round skips every case the log already holds a verdict for, passed or failed,
+and reruns only the unverified and the unfinished.
 """
 import argparse
 import hashlib
@@ -3098,6 +3100,24 @@ def progress_lines(path, header=None):
     return items
 
 
+SETTLED = ("passed", "failed")
+
+
+def settled(items):
+    """Each case whose latest line in `items` is a verdict, mapped to that verdict.
+
+    A resumed round skips these, which is FR-52's "a resumed round skips completed cases". Pass
+    lines already filtered by `progress_lines(path, header)`: the header carries the source
+    commit, so a verdict never carries across candidates. A failure is kept rather than rerun,
+    so the evidence of it survives the resume; an `unverified` case observed nothing and runs
+    again, its new line superseding the old one.
+    """
+    latest = {}
+    for item in items:
+        latest[item["case"]] = item.get("result")
+    return dict((case, result) for case, result in latest.items() if result in SETTLED)
+
+
 NO_OBSERVATION = "no observation was recorded for this case"
 
 
@@ -3218,8 +3238,17 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
         "model_run": model,
     }
     append_routing(progress, header)
+    # A verdict is kept only when this round could reach one itself: on a surface it has not
+    # confirmed, `probe` reads every case as unverified, so a pass an earlier round recorded
+    # under --home-confirmed runs again rather than surviving an unconfirmed resume.
+    kept = ({} if unobserved_note(client, confirmed)
+            else settled(progress_lines(progress, header)))
     results = []
     for name in names:
+        if name in kept:
+            sys.stderr.write("resume: %s already %s at %s; not rerun\n"
+                             % (name, kept[name], header["source_commit"][:12]))
+            continue
         item = (runner(client, name, model, keep, confirmed) if name in CASES
                 else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
         append_case(progress, header, item)

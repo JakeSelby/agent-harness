@@ -59,8 +59,12 @@ this precedence, lowest first:
 
 `harness selection --json` prints the result: every unit of every kind with its value, plus a
 `sources` object in the same shape naming the layer that set each one. That output reads back
-unchanged as a session file. `harness stances` stays as the stance-only view. `sync` projects the
-user's layers only; a project or session layer stays in the session that set it, and an isolated
+unchanged as a session file. `harness stances` stays as the stance-only view;
+`harness config set rules.<name> off` writes one switch, and the same form works for `skills`,
+`workflows` and `roles`. It refuses a switch that would leave an `on` module depending on an
+`off` one, so switch the dependent off first. What sync does with an `off` unit is in
+[the sync model](sync-model.md).
+`sync` projects the user's layers only; a project or session layer stays in the session that set it, and an isolated
 worker records the selection of the session that launched it.
 
 A selection carries selections only. A project, session or mode file holding any other key —
@@ -107,9 +111,9 @@ questions that follow; every stance is still asked, so a preset is a starting po
 personal script. It leaves `delegation`, `autonomy` and `cost` alone, because how work is spread,
 how far it runs unattended and what it costs are the same questions whatever the work is.
 
-The topic rules are not switchable and do not have presets; a rule about repositories, tests or
-pull requests simply does not apply when the task is not code work, and the always-loaded preamble
-says so.
+The topic rules have no variants or presets, though each can be switched off in the selection; a
+rule about repositories, tests or pull requests simply does not apply when the task is not code
+work, and the always-loaded preamble says so.
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
 `HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start
@@ -337,9 +341,9 @@ the default to `config.example.json`, add a row here, and add a line to the CHAN
 
 ## What is deliberately not a stance
 
-The always-loaded rules in `primitives/rules/` do not switch. A rule has to hold whichever way every
-stance is thrown, which is what lets the harness install for someone whose preferences nobody
-knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
+The always-loaded rules in `primitives/rules/` have no variants. You can switch one off in the
+selection, but none changes with a stance: a rule has to hold whichever way every stance is
+thrown, which is what lets the harness install for someone whose preferences nobody knows. Apply the same test in reverse before adding one: if a competent engineer could reasonably
 want the opposite, it belongs in `primitives/stances/`, not `primitives/rules/`.
 
 Two rules do not pass that test yet, tracked rather than hidden: `conciseness.md` is comment and

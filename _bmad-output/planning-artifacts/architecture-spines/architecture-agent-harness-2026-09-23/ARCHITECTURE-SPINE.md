@@ -239,6 +239,9 @@ flowchart TB
     - the Workflow tool's `agent()` (#576);
     - the plugin channel, which installs constrained roles as native agents with no hook (the plugin
       follow-up under #634).
+    *Amended 2026-09-25:* the Workflow tool's launch is guarded (#576): the pre-tool hook reads the script
+    and refuses one naming a constrained role, so the remaining gap there is band routing of its
+    `agent()` calls, not confinement.
 
 ### AD-9: Checks bind subagents; decisions flow up [ADOPTED]
 
@@ -469,6 +472,11 @@ flowchart TB
   - **Registration:** observation has its own registered hook entry point beside `hook.py`, and is not
     routed through the dispatcher. It reads which events each runtime raises from the same event table
     AD-7 names as the one declaration, so the two entry points cannot disagree on events.
+    *Amended 2026-09-25, confirmed by the owner on 2026-09-25:* #791 ships the entry point, its registration
+    built from that table and the bare arm's install, but `harness sync` does not yet register it beside
+    `hook.py`. Registering it would start a second process on every hook event for every user, make Codex
+    users re-trust their hooks, and break tests that assume one entry per event. A follow-up issue adds
+    opt-in registration; until then only `bare_install` writes it, and nothing outside the tests calls that.
   - **Failure:** it fails open and silent. On any exception it exits 0 with no output, never a deny, a
     block or a `systemMessage`. The error goes to a local error log only.
   - In the bare arm, only the observation-only path is installed.
