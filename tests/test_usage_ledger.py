@@ -179,9 +179,13 @@ class VersionStamp(LedgerTest):
                 {"type": "result", "subtype": "success", "is_error": False, "result": "done"}))
             return 0
 
+        # Run from inside a client session, `CLAUDECODE` would send the stand-in client through
+        # the token-only preflight (#759); this test is about the version stamp, not that.
+        session = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         with patch.object(workers.shutil, "which", return_value="/native/cli"), \
                 patch.object(workers.subprocess, "check_output", return_value="fixture-version"), \
-                patch.object(workers, "execute", side_effect=fake):
+                patch.object(workers, "execute", side_effect=fake), \
+                patch.dict(os.environ, session, clear=True):
             result = workers.run(REPO, copy.deepcopy(CFG), "claude-code", "reviewer", workspace,
                                  "Inspect the fixture", state, model="fixture-model")
         self.assertEqual(result["harness_version"], VERSION)

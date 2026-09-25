@@ -205,8 +205,12 @@ def resolve(root, config, runtime, name, model=None):
     return ready["fields"], ready["bindings"], ready["instructions"]
 
 
-def environment(original, work):
-    # Authentication remains available to the native client; customization and loader overrides do not.
+def passthrough(original):
+    """The caller's variables a worker keeps: authentication, locale, proxies and certificates.
+
+    Customization and loader overrides are dropped. `environment` builds on this, and an adapter's
+    `refusal` checks the same set, so the preflight sees exactly the credentials the worker gets.
+    """
     exact = {"PATH", "LANG", "LC_ALL", "TERM", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR",
              "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"}
     auth_prefixes = ("OPENAI_", "ANTHROPIC_", "AWS_", "GOOGLE_", "AZURE_")
@@ -214,6 +218,11 @@ def environment(original, work):
     for name in ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"):
         if name in original:
             env[name] = original[name]
+    return env
+
+
+def environment(original, work):
+    env = passthrough(original)
     env.update(HOME=str(work / "home"), XDG_CONFIG_HOME=str(work / "home/.config"),
                XDG_STATE_HOME=str(work / "home/.local/state"), XDG_CACHE_HOME=str(work / "home/.cache"))
     Path(env["HOME"]).mkdir(mode=0o700)
@@ -336,6 +345,12 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     if not executable:
         raise ValueError("native CLI is not installed: " + RUNTIMES[runtime])
     version = subprocess.check_output([executable, "--version"], text=True, timeout=15).strip()
+    # A client that cannot authenticate is refused here, before any record or directory exists,
+    # rather than launched to fail with the runtime's own login prompt (issue #759).
+    refusal = getattr(native, "refusal", None)
+    reason = refusal(executable, dict(os.environ), passthrough(os.environ)) if refusal else None
+    if reason:
+        raise ValueError(reason)
     state_root = Path(state_root)
     if state_root.is_symlink():
         raise ValueError("worker state directory cannot be a symlink")

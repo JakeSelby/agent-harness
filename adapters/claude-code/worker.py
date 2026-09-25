@@ -1,16 +1,54 @@
 """Claude worker tools are read-only; safe mode preserves native authentication."""
 import json
+import subprocess
 from pathlib import Path
 
+# Cloud providers authenticate through their own credential chains, which `claude auth status`
+# does not report as a login; a worker under one of these is launched unchecked, as before.
+CLOUD_PROVIDERS = ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")
+TOKEN_ONLY = ("refused before launch: the Claude worker would not authenticate. This command runs "
+              "inside a Claude Code session, which strips CLAUDE_CODE_OAUTH_TOKEN from its tool "
+              "subprocesses, and no other credential or stored login reaches the worker. Run "
+              "`harness role run` from a shell that exports CLAUDE_CODE_OAUTH_TOKEN, or log the "
+              "client in with `claude auth login` so its stored login is found.")
 
-def prepare(executable, work, root, workspace, read_roots, instructions, bindings, original, env):
-    # Preserve login/keychain discovery, while safe/restricted modes suppress user customization.
+
+def identity(original, env):
+    """Keep the operator's home and user, so the client finds its stored login and keychain."""
     env["HOME"] = original.get("HOME", str(Path.home()))
     # Native macOS keychain lookup includes the user identity, independently of HOME.
     if "USER" in original:
         env["USER"] = original["USER"]
     if "CLAUDE_CONFIG_DIR" in original:
         env["CLAUDE_CONFIG_DIR"] = original["CLAUDE_CONFIG_DIR"]
+
+
+def refusal(executable, original, env):
+    """Why a worker launched from this process would fail to authenticate, or None to launch.
+
+    Only a process inside a Claude Code session is checked (`CLAUDECODE` is set there): the client
+    strips `CLAUDE_CODE_OAUTH_TOKEN` from its tool subprocesses, so a token-only session hands a
+    worker nothing. The client's own `auth status` answers under the worker's environment; its
+    output names the account, so it is parsed for `loggedIn` alone and never printed or kept. A
+    check that cannot run refuses too: the token is never written anywhere to work around it.
+    """
+    if not original.get("CLAUDECODE") or any(env.get(name) for name in CLOUD_PROVIDERS):
+        return None
+    env = dict(env)
+    identity(original, env)
+    try:
+        done = subprocess.run([executable, "auth", "status", "--json"], env=env, text=True,
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, timeout=30)
+        logged_in = done.returncode == 0 and json.loads(done.stdout).get("loggedIn") is True
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        return TOKEN_ONLY + " (`claude auth status` could not confirm a login.)"
+    return None if logged_in else TOKEN_ONLY
+
+
+def prepare(executable, work, root, workspace, read_roots, instructions, bindings, original, env):
+    # Preserve login/keychain discovery, while safe/restricted modes suppress user customization.
+    identity(original, env)
     (work / "instructions.md").write_text(instructions)
     command = [executable, "-p", "--safe-mode", "--restricted", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                "--setting-sources", "", "--tools", "Read,Grep,Glob", "--permission-mode", "dontAsk",
