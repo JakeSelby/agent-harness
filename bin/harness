@@ -16,6 +16,9 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     harness lint    [PATH]
     harness usage   [--days N] [--by day|repo|model|role|stance|decision|provider|prefix] [--stance NAME] [--rescan]
     harness usage   --rules [--by rule|repo|stance] [--days N] [--rescan]
+    harness usage   --conflicts [--days N]
+    harness intent  claim PATH... | release | check [PATH...] | list [--all] | sweep
+    harness intent  merge [clean|conflicted] [--base REF]
     harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
     harness worktree audit [REPO]
     harness worktree remove NAME [REPO] [--merged] [--also-clear NAME]
@@ -54,6 +57,7 @@ from harness_core import reconcile, lifecycle, tasks, compatibility, workers, in
 from harness_core import frameworks
 from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
+from harness_core import intents
 from harness_core import changelog as changelog_fragments
 from harness_core import decision as decisions_provider
 # The opt-in block for a provider that leaves the machine. Importing the controls does not
@@ -2080,11 +2084,11 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
         say(f"  restore {global_gitignore_path()}")
     if remove_local_bin_from_path():
         say(f"  restore {home() / '.zprofile'}")
-    # The usage feed's per-session files and the session registry are harness state, not the
-    # user's: an offset, counts, agent type names and the registry each session started with,
-    # all written by this install. The usage log and the decision log stay, because they are the
+    # The usage feed's per-session files, the session registry and the write-intent claims are
+    # harness state, not the user's: an offset, counts, agent type names, the registry each
+    # session started with and the paths it claimed, all written by this install. The usage log and the decision log stay, because they are the
     # measurement history `harness usage` reports and nobody else writes them.
-    for name in ("feed", "sessions"):
+    for name in ("feed", "sessions", "intents"):
         directory = state_dir() / name
         if directory.is_dir():
             shutil.rmtree(str(directory), ignore_errors=True)
@@ -4243,6 +4247,15 @@ def cmd_usage(args: argparse.Namespace) -> int:
         return cmd_usage_export(args)
     path = state_dir() / "usage.jsonl"
     by = getattr(args, "by", "day")
+    if getattr(args, "conflicts", False):
+        # Landing merges and intent overlaps per week, from the decision log: lib/harness_core/intents.py.
+        if by != "day" or getattr(args, "rules", False) or getattr(args, "stance", None):
+            print("usage --conflicts reports landing merges per week; --by, --rules and --stance "
+                  "do not apply", file=sys.stderr)
+            return 2
+        for line in intents.conflict_report(args.days):
+            say(line)
+        return 0
     if by == "decision":
         # A different file and a different question: what the hooks decided, not what the
         # session spent. Neither `--rules` nor `--stance` says anything about it.
@@ -4917,7 +4930,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--rules", action="store_true",
                    help="report rule-detector hits instead of tokens (--by rule, repo or stance)")
     p.add_argument("--rescan", action="store_true", help="re-read transcripts from the window first, then report")
+    p.add_argument("--conflicts", action="store_true",
+                   help="landing merge conflicts and intent overlaps per week, from the decision log")
     p.set_defaults(func=cmd_usage)
+
+    p = sub.add_parser("intent", help="claim the paths this session will write, so a sibling's overlap is caught")
+    intent_sub = p.add_subparsers(dest="intent_action", required=True)
+    q = intent_sub.add_parser("claim", help="claim paths or globs, existing or planned, in this worktree")
+    q.add_argument("paths", nargs="+")
+    q.add_argument("--session", help="session id (default: the runtime's)")
+    q.add_argument("--pid", type=int, help="runtime process id (default: detected)")
+    q = intent_sub.add_parser("release", help="drop this session's claim")
+    q.add_argument("--session")
+    q = intent_sub.add_parser("check", help="exit 1 when a path overlaps a live sibling's claim (default: changed files)")
+    q.add_argument("paths", nargs="*")
+    q.add_argument("--session")
+    q = intent_sub.add_parser("list", help="live claims in this repository")
+    q.add_argument("--all", action="store_true", help="every repository")
+    intent_sub.add_parser("sweep", help="remove claims whose process is dead")
+    q = intent_sub.add_parser("merge", help="record whether merging the base branch conflicted, for usage --conflicts")
+    q.add_argument("result", nargs="?", choices=list(intents.MERGE_RESULTS),
+                   help="the observed result (default: probe with git merge-tree)")
+    q.add_argument("--base", default="origin/main")
+    p.set_defaults(func=lambda a: intents.command(a, say))
 
     p = sub.add_parser("keychain", help="give a disposable HOME its own default keychain before a client is launched under it (macOS)")
     p.add_argument("home")

@@ -78,7 +78,7 @@
         },
         {
           "name": "A worktree per agent",
-          "line": "Parallel agents do not step on your checkout or on each other.",
+          "line": "Parallel agents do not step on your checkout or on each other. Each claims the paths it will write, and an edit to a live sibling's claim is warned, then denied.",
           "doc": "primitives/skills/worktree-per-agent"
         }
       ]
