@@ -29,6 +29,11 @@ over a narrower one.
 - **CI fails when the estimate grows more than 5% over the committed figure.** Trim the growth, or
   add an entry to `benchmarks/allow.json` naming `harness_version`, the new `est_tokens` and a
   `reason`. The entry stops matching as soon as the figure moves again.
+- **Every counted file is priced on its own.** The `files` map gives each file's characters,
+  estimated tokens and dollars, and sums to the totals within rounding. `--check` prints one line
+  per file whose estimate moved since the committed figure, priced on the model with the highest
+  cache-read rate, so a change to one rule reads as that file's delta rather than a moved total.
+  The 5% gate stays on the total.
 - **The caps in `harness lint` are separate.** They bound the worst case — the longest variant of
   every stance — in tokens and in lines, over instructions, rules and stances only; this tracks the
   default selection, output styles and listings included, in tokens and dollars, version by

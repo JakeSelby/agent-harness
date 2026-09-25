@@ -190,7 +190,7 @@ development_status:
   ah-s202-replay-arms-as-built-profiles-with-pair-parity: ready-for-dev
   ah-s203-the-first-four-arm-live-set: ready-for-dev
   ah-s204-copy-the-layer-under-your-agents-skills: ready-for-dev
-  ah-s232-module-manifest-claims-surface-instruments-slot: backlog
+  ah-s232-module-manifest-claims-surface-instruments-slot: ready-for-dev
   ah-s244-the-slot-model-and-the-adapter-contract: backlog
   ah-s246-the-four-arm-bench-and-layer-swaps: backlog
   ah-sp009-does-a-headless-superpowers-session-finish-a: ready-for-dev
@@ -223,7 +223,7 @@ development_status:
   ah-s138-record-the-first-live-cost-replay-results: done
   ah-s194-trim-the-harness-s-12-607-token-standing-context: ready-for-dev
   ah-s215-tighten-the-two-detectors-the-corpus-records: ready-for-dev
-  ah-s233-stamp-the-profile-fingerprint-on-every-ledger: backlog
+  ah-s233-stamp-the-profile-fingerprint-on-every-ledger: ready-for-dev
   ah-s234-attribute-context-tokens-and-hook-decisions-to: backlog
   ah-s235-zero-footprint-observation-watching-the-bare-arm: backlog
   ah-s236-adherence-events-record-each-recommendation-and: backlog
@@ -237,7 +237,7 @@ development_status:
   ah-s250-an-external-task-set-from-harbor-after-a: backlog
   ah-s252-replay-charges-the-user-s-personal-layer-to-the: backlog
   ah-s253-record-the-cli-s-own-account-of-the-loaded: backlog
-  ah-s254-price-every-rule-stance-variant-skill-and-agent: backlog
+  ah-s254-price-every-rule-stance-variant-skill-and-agent: ready-for-dev
   ah-s255-replay-stored-transcripts-through-the-rule: backlog
   ah-s256-run-every-hook-against-recorded-tool-calls-under: backlog
   ah-s257-add-a-micro-task-tier-on-a-cheap-model-that: backlog
@@ -361,14 +361,14 @@ development_status:
   ah-b082-hook-composition-proves-composition-from: done
   ah-b083-stance-switch-and-custom-stance-switch-only: done
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: done
-  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: backlog
+  ah-b085-a-framework-layer-brief-the-orchestrator-rewords: ready-for-dev
   ah-b086-the-100-kb-grade-bash-timing-test-fails-under: done
   ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
-  ah-b088-a-role-confinement-refusal-writes-no-decision: backlog
-  ah-b089-the-confinement-refusal-names-a-harness-command: backlog
-  ah-b090-qualification-provisioning-installs-bmad-without: backlog
+  ah-b088-a-role-confinement-refusal-writes-no-decision: ready-for-dev
+  ah-b089-the-confinement-refusal-names-a-harness-command: ready-for-dev
+  ah-b090-qualification-provisioning-installs-bmad-without: ready-for-dev
   ah-b091-harness-role-run-accepts-a-read-directory-as: ready-for-dev
-  ah-b092-a-release-pull-request-cannot-pass-the-changelog: backlog
+  ah-b092-a-release-pull-request-cannot-pass-the-changelog: ready-for-dev
   ah-b093-bmad-issue-sync-new-files-the-issue-then-fails: backlog
   ah-b094-harness-worktree-remove-cannot-remove-a-worktree: done
   ah-b098-grade-bash-timing-test-fails-on-wall-clock-under: done
