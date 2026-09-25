@@ -135,6 +135,14 @@ It supplies shared instructions explicitly; ambient user/project customization i
 Managed native policies still apply. The worker has no shell, write, external-connector or
 delegation tools. If its brief needs a diff or online evidence, the caller supplies those as files.
 
+Run from inside a Claude Code session, where `CLAUDECODE` is set, a Claude worker is checked
+before launch: the client's own `claude auth status` runs under the worker's environment from an
+empty directory, and a failed or unconfirmed login refuses the run with no worker state written.
+Claude Code strips `CLAUDE_CODE_OAUTH_TOKEN` from its tool subprocesses, so a session logged in
+with that token alone hands a worker nothing. Run `harness role run` from a shell that exports the token, or log
+the client in with `claude auth login`. The harness never writes the token anywhere to work
+around it. Workers on Bedrock, Vertex or Foundry are launched unchecked.
+
 No isolated worker reaches the network, whatever its role declares: the Codex adapter disables
 hosted search under a read-only sandbox and the Claude adapter grants `Read`, `Grep` and `Glob`
 only. A worker that can both read a workspace and fetch is a worker that can carry what it read

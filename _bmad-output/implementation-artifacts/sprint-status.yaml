@@ -363,7 +363,7 @@ development_status:
   ah-b084-spawn-confinement-checks-less-than-step-9-asks: done
   ah-b085-a-framework-layer-brief-the-orchestrator-rewords: ready-for-dev
   ah-b086-the-100-kb-grade-bash-timing-test-fails-under: done
-  ah-b087-an-isolated-worker-launched-from-a-token-only: backlog
+  ah-b087-an-isolated-worker-launched-from-a-token-only: ready-for-dev
   ah-b088-a-role-confinement-refusal-writes-no-decision: ready-for-dev
   ah-b089-the-confinement-refusal-names-a-harness-command: ready-for-dev
   ah-b090-qualification-provisioning-installs-bmad-without: ready-for-dev
