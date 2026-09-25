@@ -187,7 +187,7 @@ class HooksUseIt(unittest.TestCase):
         self.config(elsewhere, {"delegation": "off"})
         out = self.run_hook(HOOKS / "tier-agent-spawns.py", self.spawn(),
                             {"HARNESS_HOME": str(elsewhere)})
-        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
         # Prove the filter bites: without it the hook reads $HOME, which selects no variant.
         self.assertIsNone(self.run_hook(HOOKS / "tier-agent-spawns.py", self.spawn(), {}))
 
