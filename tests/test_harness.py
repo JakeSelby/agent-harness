@@ -418,10 +418,11 @@ class ContextCapTests(TempHome):
         self.assertEqual(harness.check_context_cap(empty), [])
 
     def test_the_token_cap_derives_from_the_measured_standing_context(self):
-        """The number is a third of #430's measured figure, not a round one someone liked."""
+        """A third of #430's measured figure plus #811's measured stance, not a round number."""
         self.assertEqual(harness.MEASURED_STANDING_CONTEXT_TOKENS, 12607)
         self.assertEqual(harness.ALWAYS_LOADED_TOKEN_CAP,
-                         harness.MEASURED_STANDING_CONTEXT_TOKENS // 3)
+                         harness.MEASURED_STANDING_CONTEXT_TOKENS // 3
+                         + harness.CONCISE_VOICE_STANCE_TOKENS)
         self.assertEqual(harness.CHARS_PER_TOKEN, cost_bench.CHARS_PER_TOKEN)
 
     def test_the_cap_comment_cites_its_source(self):

@@ -24,7 +24,7 @@ loader.exec_module(harness)
 TEMPLATE = json.loads((REPO / "claude" / "settings.template.json").read_text())
 VOICE = REPO / "primitives" / "stances" / "voice"
 # What each shipped variant must produce; `None` is "install no style at all".
-EXPECTED = {"scannable": "Scannable", "answer-card": None, "off": None}
+EXPECTED = {"scannable": "Scannable", "concise": "Concise", "answer-card": None, "off": None}
 USER_STYLE = "My Own Style"
 
 
@@ -47,8 +47,10 @@ class VariantsTests(unittest.TestCase):
                     self.assertNotIn("outputStyle", merged)
 
     def test_the_style_name_is_read_from_the_style_file(self):
+        """Only file-backed styles are in the registry; built-in ones are selected by name."""
         styles = harness.harness_output_styles()
         self.assertEqual(styles["scannable"], "Scannable")
+        self.assertFalse(set(styles) & set(harness.BUILTIN_OUTPUT_STYLES))
         for stem, name in styles.items():
             with self.subTest(style=stem):
                 text = (REPO / "claude" / "output-styles" / (stem + ".md")).read_text()
@@ -80,6 +82,18 @@ class PreservationTests(unittest.TestCase):
                 self.assertEqual(merged["outputStyle"], "Scannable")
         self.assertEqual(harness.strip_claude_settings(live, TEMPLATE, None)["outputStyle"], "Scannable")
 
+    def test_a_user_s_own_concise_survives_an_unrecorded_uninstall(self):
+        """The pre-journal strip removes only file-backed names, never a built-in one."""
+        live = {"model": "m", "outputStyle": "Concise"}
+        stripped = harness.strip_claude_settings(live, TEMPLATE, harness.UNRECORDED)
+        self.assertEqual(stripped["outputStyle"], "Concise")
+
+    def test_switching_away_from_concise_removes_the_style_the_harness_installed(self):
+        live = harness.merge_claude_settings({}, TEMPLATE, cfg_with("concise"))
+        self.assertEqual(live["outputStyle"], "Concise")
+        merged = harness.merge_claude_settings(live, TEMPLATE, cfg_with("off"), installed="Concise")
+        self.assertNotIn("outputStyle", merged)
+
     def test_uninstall_strips_our_style_and_keeps_the_user_s(self):
         ours = harness.merge_claude_settings({"model": "m"}, TEMPLATE, cfg_with("scannable"))
         self.assertNotIn("outputStyle", harness.strip_claude_settings(ours, TEMPLATE, "Scannable"))
@@ -98,15 +112,21 @@ class PreservationTests(unittest.TestCase):
 class RuntimeAgreementTests(unittest.TestCase):
     """Whatever a variant means, it means the same on both runtimes."""
 
-    def test_codex_appends_its_presentation_exactly_where_claude_installs_a_style(self):
+    def test_codex_appends_the_scannable_presentation_exactly_when_the_variant_is_scannable(self):
         marker = str(REPO / "primitives" / "presentation" / "scannable.md")
         for variant in EXPECTED:
             with self.subTest(variant=variant):
-                cfg = cfg_with(variant)
-                stances = harness.resolve_stances(cfg)
+                stances = harness.resolve_stances(cfg_with(variant))
                 codex_has = marker in harness.render_codex_agents(stances, None)
-                claude_has = harness.voice_output_style(cfg) is not None
-                self.assertEqual(codex_has, claude_has)
+                self.assertEqual(codex_has, variant == "scannable")
+
+    def test_codex_under_concise_carries_the_stance_body(self):
+        """Claude Code also gets the built-in style; Codex gets the same stance text alone."""
+        stances = harness.resolve_stances(cfg_with("concise"))
+        text = harness.render_codex_agents(stances, None)
+        body = (VOICE / "concise.md").read_text(encoding="utf-8").strip()
+        self.assertIn("# Voice: concise", text)
+        self.assertIn(body.splitlines()[-1], text)
 
 
 class SyncTests(unittest.TestCase):
@@ -156,6 +176,36 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(settings["model"], "m")
         self.assertEqual(self.sync()["outputStyle"], USER_STYLE)
         self.assertEqual([l for l in harness._diff_lines() if "outputStyle" in l], [])
+
+    def adopt_concise_then_switch(self, away, kept):
+        """Selecting `concise` over a `Concise` the user already chose adopts nothing: the value
+        was theirs, so a switch away and an uninstall both leave it where it was."""
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        self.settings.write_text(json.dumps({"outputStyle": "Concise", "model": "m"}))
+        self.select("concise")
+        self.assertEqual(self.sync()["outputStyle"], "Concise")
+        self.assertEqual(self.sync()["outputStyle"], "Concise")
+        self.assertEqual([l for l in harness._diff_lines() if "outputStyle" in l], [])
+        self.select(away)
+        self.assertEqual(self.sync()["outputStyle"], kept)
+        harness.cmd_uninstall(harness.argparse.Namespace())
+        self.assertEqual(json.loads(self.settings.read_text())["outputStyle"], "Concise")
+
+    def test_a_user_s_own_concise_survives_selecting_concise_then_off(self):
+        self.adopt_concise_then_switch("off", "Concise")
+
+    def test_a_user_s_own_concise_survives_selecting_concise_then_answer_card(self):
+        self.adopt_concise_then_switch("answer-card", "Concise")
+
+    def test_a_user_s_own_concise_survives_selecting_concise_then_scannable(self):
+        """Scannable is installed over it, and the uninstall restores the user's Concise."""
+        self.adopt_concise_then_switch("scannable", "Scannable")
+
+    def test_concise_the_harness_installed_is_taken_back_out(self):
+        self.select("concise")
+        self.assertEqual(self.sync()["outputStyle"], "Concise")
+        self.select("off")
+        self.assertNotIn("outputStyle", self.sync())
 
     def test_a_style_the_user_chose_before_installing_survives_a_sync_and_an_uninstall(self):
         """Our own style name, chosen by the user first: the journal has never recorded it."""

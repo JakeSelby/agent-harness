@@ -64,7 +64,7 @@ class LabelCoverageTests(unittest.TestCase):
 
     def test_each_repository_detector_has_a_positive_and_a_negative(self):
         tallies = counted()
-        self.assertEqual(len(OWN), 11)
+        self.assertEqual(len(OWN), 13)
         for detector_id in OWN:
             positives, negatives = tallies.get(detector_id, (0, 0))
             self.assertGreater(positives, 0, msg=detector_id)

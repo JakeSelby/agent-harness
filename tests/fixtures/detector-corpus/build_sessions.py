@@ -278,6 +278,60 @@ def tables():
     return b
 
 
+def scaffold():
+    """`voice/scaffold-leak`: a reply template's section labels, worn."""
+    b = Builder("voice-scaffold")
+    b.user("what did the parser change?")
+    b.say("Done.\n\n**What changed**\n\n- the parser reads the new header")
+    b.user("anything for me to do?")
+    b.say("One thing.\n\n## What you need to do\n\nRe-run the sync.")
+    b.user("is the flag work finished?")
+    b.say("Mostly.\n\n**What you need to know** \u2014 the renderer is done, the adapter is not.")
+    b.user("and the cache?")
+    b.say("- **Still open:** the Linux client has not been checked.")
+    b.user("why did the build break?")
+    b.say("Why: the lockfile pinned a yanked release.")
+    b.user("what did the old template look like?")
+    b.say("It used `**What changed**` and `**Still open**` as its labels.")
+    b.user("show me the template")
+    b.say("Here it is:\n\n```md\n**What changed**\nWhy:\n```\n\nNone of it is used now.")
+    b.user("why is the flag off?")
+    b.say("Why this matters is simple: the renderer has no fallback.")
+    b.user("did the fix land?")
+    b.say("Fixed: the redirect loop, and the tests pass.")
+    b.user("summarise the review")
+    b.say("**What changed**\n\nthe draft, not the final")
+    b.say("The review asked for one rename, and it is done.")
+    return b
+
+
+def headings():
+    """`voice/heading-first`: a final message that opens on a markdown heading."""
+    b = Builder("voice-heading-first")
+    b.user("how did the run go?")
+    b.say("# Run report\n\nEvery job is green.")
+    b.user("and the migration?")
+    b.say("## Migration\n\nIt adds one column.")
+    b.user("the adapters?")
+    b.say("\n\n### Adapters\n\nBoth pinned.")
+    b.user("the nightly?")
+    b.say("   #### Nightly\n\nGreen twice.")
+    b.user("the review?")
+    b.say("###### Review\n\nOne rename asked for.")
+    b.user("the pull request?")
+    b.say("#214 merged, Fix the login redirect loop.")
+    b.user("the details?")
+    b.say("Every job is green.\n\n## Detail\n\nThe slowest took four minutes.")
+    b.user("the tag?")
+    b.say("#hashtag-style text is not a heading.")
+    b.user("the code?")
+    b.say("    # an indented code line\n\nThat is the comment in the script.")
+    b.user("the summary?")
+    b.say("# Draft heading")
+    b.say("The summary is one line: all green.")
+    return b
+
+
 def decisions():
     """`decisions/no-alternatives`: a decision named with no other course beside it."""
     b = Builder("decisions-alternatives")
@@ -399,7 +453,7 @@ def build():
             search("research-search-spread", 201, per_line=70),
             search("research-search-at-cap", 200, per_line=200),
             search("research-search-mixed-tools", 150, fetches=60, per_line=150),
-            openers(), tables(), decisions(), confirmed(), denied(), commits()]
+            openers(), tables(), scaffold(), headings(), decisions(), confirmed(), denied(), commits()]
     return sorted(session.save() for session in made)
 
 

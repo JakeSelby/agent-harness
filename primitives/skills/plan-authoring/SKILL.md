@@ -231,23 +231,23 @@ always-loaded context was capped. These are the paragraphs they used to carry, w
 
 ### Voice and output format
 
-The **Scannable** output style at `~/.claude/output-styles/scannable.md` governs the main
-conversation. It does not reach subagents, which run their own system prompt. Close that gap
-two ways.
+*Replaced on 2026-09-24 by #811.* The paragraphs that stood here described the Scannable style's
+What changed template and status words as the contract for relays and subagent briefs. The
+`voice` stance now owns reply shape and the `brief-guard` hook appends the subagent return shape;
+the earlier text is in this file's git history.
 
-**Relaying a subagent's report.** Never paste an agent's prose through, verbatim or lightly
-edited — synthesize it into your own answer under the Scannable contract: verdict first, action
-items under their own heading, paragraphs capped at three sentences, status stated with the
-literal words *Fixed / Partially fixed / Not fixed / Unverified*. A finding that does not change
-what the user does is cut, not reformatted. See `transcript-hygiene.md`.
+The selected `voice` variant governs the main conversation. On Claude Code, `concise` and
+`scannable` also set an output style, which reaches only the main conversation and its forks;
+other subagents run their own system prompt and inherit no voice. So a relayed report is
+rewritten in the selected voice's shape, a finding that does not change what the reader does is
+cut, and every subagent brief carries its return shape.
 
-**Spawning a subagent whose output the user reads directly.** Put the shape in the prompt:
-"Report back as: one-line verdict, then **What changed** / **What you need to do** / **Still
-open** / **Verification**. No process narration." Subagents inherit no format; the shape must
-be in the brief.
+The voice files are written in plain prose with few bold labels because a prompt's formatting
+tends to carry into the reply; see Anthropic's prompting guidance on controlling response format
+(https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices).
 
-**Plan files and other markdown deliverables** follow the same rules — verdict-first sections,
-bolded lead-ins, file paths as workspace-relative markdown links rather than backticks. Anything
+**Plan files and other markdown deliverables** follow the same rules — the selected voice,
+file paths as workspace-relative markdown links rather than backticks. Anything
 the user reads in order to approve work — plan, proposal, design doc, handoff, research summary —
 opens with the Review Card from the `plan-authoring` skill when the `plan-ceremony` stance is
 `review-card`, with the detail below the rule, and is handed over in that skill's chat-message
@@ -281,6 +281,9 @@ labels also truncate and cannot carry evidence or trade-offs.
 A chooser is reserved for trivial forks where the option labels alone carry full meaning.
 
 Batch related decisions into one block.
+
+*Amended on 2026-09-24 by #811:* the block may still close the message, but the reply's first two
+lines say that a decision is waiting.
 
 ### Pointing at an option is not a decision
 

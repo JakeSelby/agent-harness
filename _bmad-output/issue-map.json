@@ -6085,19 +6085,6 @@
       "provenance": "authored"
     },
     {
-      "bmad_id": "AH-S231",
-      "github_number": 785,
-      "github_url": "https://github.com/JakeSelby/agent-harness/issues/785",
-      "title": "Adopt CodeRabbit review and clear review-bot threads before merge",
-      "type": "story",
-      "native_type": "Feature",
-      "artifact_path": "_bmad-output/implementation-artifacts/AH-S231.md",
-      "parent_bmad_id": null,
-      "parent_github_number": null,
-      "lifecycle": "active",
-      "provenance": "authored"
-    },
-    {
       "bmad_id": "AH-C074",
       "github_number": 787,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/787",
@@ -6384,6 +6371,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S231",
+      "github_number": 785,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/785",
+      "title": "Adopt CodeRabbit review and clear review-bot threads before merge",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S231.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B099",
       "github_number": 810,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/810",
@@ -6391,6 +6391,45 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B099.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S261",
+      "github_number": 811,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/811",
+      "title": "feat(voice): concise voice with reply shapes chosen by purpose",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S261.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S262",
+      "github_number": 813,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/813",
+      "title": "Rewrite the always-loaded rules in plain language",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S262.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-SP014",
+      "github_number": 814,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/814",
+      "title": "Licence review of the humanizer skill for drafts",
+      "type": "spike",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-SP014.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",

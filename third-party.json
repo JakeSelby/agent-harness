@@ -26,6 +26,45 @@
       "runtime_dependencies": [],
       "notice": "THIRD_PARTY_NOTICES",
       "file": "lib/vendor/ruleprobe-0.1.0-py3-none-any.whl"
+    },
+    {
+      "name": "openai/codex",
+      "version": "1f17a0a04b5c53ef2ea89b7d874764139321b26a",
+      "source": "https://github.com/openai/codex",
+      "artifact_url": "https://raw.githubusercontent.com/openai/codex/1f17a0a04b5c53ef2ea89b7d874764139321b26a/codex-rs/models-manager/models.json",
+      "sha256": "a5e25107506f0934cb62144c093c72bf8c7fa5de1436f4aa02fe54769d789618",
+      "license": "Apache-2.0",
+      "rightsholder": "OpenAI",
+      "modifications": "One sentence of the gpt-5.5 base instructions, \"let the shape of the answer match the shape of the problem\", reworded into the concise voice stance.",
+      "runtime_dependencies": [],
+      "notice": "THIRD_PARTY_NOTICES",
+      "file": "primitives/stances/voice/concise.md"
+    },
+    {
+      "name": "openai/openai-cookbook",
+      "version": "5986832a554169dc87285b1b0b396941f235a62e",
+      "source": "https://github.com/openai/openai-cookbook",
+      "artifact_url": "https://raw.githubusercontent.com/openai/openai-cookbook/5986832a554169dc87285b1b0b396941f235a62e/examples/gpt-5/gpt-5-2_prompting_guide.ipynb",
+      "sha256": "f69f0584fcd9851149225283fbcd89773d0626ce37cf389fa9ffae28f0d60d71",
+      "license": "MIT",
+      "rightsholder": "OpenAI",
+      "modifications": "The tiered length limits of output_verbosity_spec in the GPT-5.2 prompting guide, reworded and merged into the concise voice stance's reply shapes.",
+      "runtime_dependencies": [],
+      "notice": "THIRD_PARTY_NOTICES",
+      "file": "primitives/stances/voice/concise.md"
+    },
+    {
+      "name": "garrytan/gstack",
+      "version": "730a1017d1a15a8c0c214b820b3865b6e2a32547",
+      "source": "https://github.com/garrytan/gstack",
+      "artifact_url": "https://raw.githubusercontent.com/garrytan/gstack/730a1017d1a15a8c0c214b820b3865b6e2a32547/scripts/resolvers/preamble/generate-voice-directive.ts",
+      "sha256": "c6e24ec0b303c2611e9f76825f5e5bd0011b7f3c57356b4735637948aa3408ce",
+      "license": "MIT",
+      "rightsholder": "Garry Tan",
+      "modifications": "The bounded closer's \"if the explanation outgrows the change, cut the explanation\" and a good/bad example pair from the voice directive, reworded and shortened in the concise voice stance.",
+      "runtime_dependencies": [],
+      "notice": "THIRD_PARTY_NOTICES",
+      "file": "primitives/stances/voice/concise.md"
     }
   ]
 }
