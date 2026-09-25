@@ -353,6 +353,19 @@ def trust_path(home):
 
 
 @contextlib.contextmanager
+def _trust_lock(folder):
+    """An exclusive lock on the trust file's folder, so two replays never interleave their
+    updates. The folder is locked rather than the file, because the cleanup replaces the file."""
+    import fcntl
+    fd = os.open(str(folder), os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+@contextlib.contextmanager
 def trusted_run(workdir, home):
     """The snapshot listed where `harness trust` lists roots, for this run only.
 
@@ -361,26 +374,29 @@ def trusted_run(workdir, home):
     harness arm is measured without one of its own behaviours. Every arm's snapshot is listed,
     the bare one included, which has no hook to read it, so the arms still differ by profile
     alone. Afterwards exactly the line added is removed, through an atomic write, and every
-    other root the file holds is kept as it was."""
+    other root the file holds is kept as it was. Both updates hold `_trust_lock`, so replays
+    running at once cannot restore a root another removed; `harness trust` takes no lock."""
     path, root = trust_path(home), str(Path(workdir).resolve())
     path.parent.mkdir(parents=True, exist_ok=True)
-    existed = path.exists()
-    unterminated = existed and path.stat().st_size and not path.read_bytes().endswith(b"\n")
-    with open(str(path), "a", encoding="utf-8") as handle:
-        handle.write(("\n" if unterminated else "") + root + "\n")
+    with _trust_lock(path.parent):
+        existed = path.exists()
+        unterminated = existed and path.stat().st_size and not path.read_bytes().endswith(b"\n")
+        with open(str(path), "a", encoding="utf-8") as handle:
+            handle.write(("\n" if unterminated else "") + root + "\n")
     try:
         yield root
     finally:
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines(True)
-        except OSError:
-            lines = []
-        kept = [line for line in lines if line.strip() != root]
-        if not existed and not "".join(kept).strip():
-            with contextlib.suppress(OSError):
-                path.unlink()
-        elif len(kept) != len(lines):
-            atomic_write(path, "".join(kept).encode("utf-8"))
+        with _trust_lock(path.parent):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines(True)
+            except OSError:
+                lines = []
+            kept = [line for line in lines if line.strip() != root]
+            if not existed and not "".join(kept).strip():
+                with contextlib.suppress(OSError):
+                    path.unlink()
+            elif len(kept) != len(lines):
+                atomic_write(path, "".join(kept).encode("utf-8"))
 
 
 def _git(repo, *args):

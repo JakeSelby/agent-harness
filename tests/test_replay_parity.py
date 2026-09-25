@@ -5,9 +5,11 @@ import json
 import re
 import subprocess
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from test_cost_bench import BENCH, TASK, Launch, call, options, result
 from test_harness import REPO
@@ -125,6 +127,32 @@ class StopGateTrustTests(unittest.TestCase):
                                                         json.dumps(result())])
             self.assertEqual(rows[0]["error_kind"], "timeout")
             self.assertFalse(path.exists())
+
+    def test_overlapping_cleanups_neither_restore_a_root_nor_drop_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first, second = Path(tmp, "a"), Path(tmp, "b")
+            first.mkdir(), second.mkdir()
+            path = BENCH.trust_path(tmp)
+            path.parent.mkdir(parents=True)
+            path.write_text("/kept\n", encoding="utf-8")
+            runs = [BENCH.trusted_run(first, tmp), BENCH.trusted_run(second, tmp)]
+            for run in runs:
+                run.__enter__()
+            real, waited = BENCH.atomic_write, []
+
+            def slow_write(target, data):
+                # The second cleanup starts while the first is between its read and its write.
+                if not waited:
+                    other = threading.Thread(target=runs[1].__exit__, args=(None, None, None))
+                    other.start()
+                    other.join(0.5)
+                    waited.append(other)
+                    self.assertTrue(other.is_alive())  # it waits for the lock, it does not read
+                real(target, data)
+            with mock.patch.object(BENCH, "atomic_write", slow_write):
+                runs[0].__exit__(None, None, None)
+                waited[0].join(5)
+            self.assertEqual(path.read_text(encoding="utf-8"), "/kept\n")
 
     def test_a_run_ending_on_a_red_gate_records_the_stop_hooks_feedback(self):
         red = stream(call(None, ["Bash"]), hook(stdout=BLOCK), call(None, ["Bash"]),
