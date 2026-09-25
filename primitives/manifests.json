@@ -1,0 +1,602 @@
+{
+  "schema_version": 1,
+  "rules": {
+    "cache-hygiene": {
+      "claims": [
+        "Keeps the cached prompt prefix stable mid-task, so a session stays cache-warm."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:cache-hygiene/compact",
+        "detector:cache-hygiene/model-switch"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "conciseness": {
+      "claims": [
+        "Explains each decision once, in code and docs, and points to it everywhere else."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "decisions-and-plans": {
+      "claims": [
+        "Puts a substantive decision in a written decision block and builds only on explicit approval."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:decisions/no-alternatives"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "delegation": {
+      "claims": [
+        "Bounds every subagent brief and keeps writes single-threaded."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:delegation/executed-from-summary"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "research-and-verification": {
+      "claims": [
+        "Budgets web search and proves a filter or a result before trusting it."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:research/search-over-cap"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "secrets": {
+      "claims": [
+        "Keeps credentials out of every tracked file."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:secrets/git-add-secret-file",
+        "detector:secrets/secret-in-write"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "transcript-hygiene": {
+      "claims": [
+        "Reads narrowly and caps what enters the transcript."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:transcript-hygiene/model-wrote-no-cap",
+        "detector:transcript-hygiene/unfiltered-find",
+        "detector:transcript-hygiene/whole-file-cat"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "verification": {
+      "claims": [
+        "Runs the repository's own gates locally before any pull request."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:verification/no-verify"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "voice-and-format": {
+      "claims": [
+        "Puts the output shape in every brief and honors the user's voice profile."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [
+        "detector:voice/banned-opener",
+        "detector:voice/heading-first",
+        "detector:voice/scaffold-leak",
+        "detector:voice/second-table"
+      ],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "working-style": {
+      "claims": [
+        "Reports honestly, verifies before claiming, and preserves history."
+      ],
+      "surface": [
+        "resident-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    }
+  },
+  "skills": {
+    "api-verification": {
+      "claims": [
+        "Proves a search, filter or API answer is real before it is relied on."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "architecture-viewer": {
+      "claims": [
+        "Opens or updates an architecture diagram in the selected viewer."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "code-quality-instruments": {
+      "claims": [
+        "Measures whether a test suite is any good, not only that it passes."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "delegation-tiering": {
+      "claims": [
+        "Decides whether to spawn a subagent, and on which tier and effort."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "design-loop": {
+      "claims": [
+        "Raises the visual quality of a rendered surface through scored, independent critique."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [
+        "roles/designer",
+        "roles/design-judge"
+      ],
+      "conflicts": []
+    },
+    "harness-authoring": {
+      "claims": [
+        "Places a new instruction at the right layer, then syncs and lints it."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "licensing-review": {
+      "claims": [
+        "Verifies third-party material is safe to ship under the licensing stance."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "migration-safety": {
+      "claims": [
+        "Writes, reviews or applies a schema migration without destroying data."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "plan-authoring": {
+      "claims": [
+        "Writes a plan the reviewer approves, under the Review Card contract."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "sandbox": {
+      "claims": [
+        "Fences an autonomous or long-running agent loop."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "spike-contract": {
+      "claims": [
+        "Frames a spike so its result is a decision against a numeric exit criterion."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "transcript-hygiene": {
+      "claims": [
+        "Bounds what subagents return and what tool output enters the transcript."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "upstream-contribution": {
+      "claims": [
+        "Contributes to a repository the user does not own without burning maintainer trust."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "workflow-status": {
+      "claims": [
+        "Shows the progress of background workflow runs."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "worktree-per-agent": {
+      "claims": [
+        "Isolates each agent's work in its own worktree off the default branch."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    }
+  },
+  "roles": {
+    "builder": {
+      "claims": [
+        "Implements one issue or plan in its own worktree, with tests, and commits once locally."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "design-judge": {
+      "claims": [
+        "Scores a render against the design loop's rubric and hard gates."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [
+        "skills/design-loop"
+      ],
+      "conflicts": []
+    },
+    "designer": {
+      "claims": [
+        "Implements one pass of visual design work toward a locked target."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [
+        "skills/design-loop",
+        "skills/licensing-review"
+      ],
+      "conflicts": []
+    },
+    "gatherer": {
+      "claims": [
+        "Gathers and summarizes a named list of files, read-only and offline."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "log-compressor": {
+      "claims": [
+        "Compresses a log to its failures, its summary line and its exit status."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "planner": {
+      "claims": [
+        "Writes a reviewable plan file that meets the Review Card contract."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "reviewer": {
+      "claims": [
+        "Reviews a diff adversarially in a fresh context, findings only."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "spec-reviewer": {
+      "claims": [
+        "Checks a diff against what was asked for and returns scope deviations only."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "worker-a": {
+      "claims": [
+        "Runs band A work: extraction, reformatting, classification and bounded greps."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "worker-b": {
+      "claims": [
+        "Runs band B work: bounded multi-step work with a named guard."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "worker-c": {
+      "claims": [
+        "Runs band C work: branching, synthesis and long-horizon coding."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    }
+  },
+  "workflows": {
+    "build": {
+      "claims": [
+        "Implements an approved plan or issue in a worktree, runs the gate and opens the pull request."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [
+        "roles/builder"
+      ],
+      "conflicts": []
+    },
+    "close-out": {
+      "claims": [
+        "Closes a finished session: sweeps, lands, files follow-ups and hands off."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "handoff": {
+      "claims": [
+        "Writes the repository handoff file for the next session."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "land": {
+      "claims": [
+        "Merges an approved pull request and cleans up its worktree and branch."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "plan": {
+      "claims": [
+        "Turns a topic or issue into a plan the reviewer approves in the plan pane."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [
+        "roles/planner"
+      ],
+      "conflicts": []
+    },
+    "research": {
+      "claims": [
+        "Answers a research question with parallel read-only gatherers and one digest."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [
+        "roles/gatherer",
+        "roles/worker-a",
+        "roles/worker-b"
+      ],
+      "conflicts": []
+    },
+    "review": {
+      "claims": [
+        "Reviews the branch's diff for scope, then quality, in two fresh contexts."
+      ],
+      "surface": [
+        "resident-context",
+        "on-demand-context"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [
+        "roles/spec-reviewer",
+        "roles/reviewer"
+      ],
+      "conflicts": []
+    }
+  }
+}

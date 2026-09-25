@@ -97,6 +97,12 @@ SELECTION_EXTRA_KEYS = ("mode", "sources")
 SWITCH_STATES = ("on", "off")
 MODE_VARIABLE = "HARNESS_MODE"
 _KINDS = {}
+# A module's manifest (AD-22): what it claims to change, where it reaches the model, what measures
+# it, the one exclusive slot it takes, and the modules it needs or collides with. Authoring
+# contract and vocabulary: `docs/primitive-authoring.md`.
+MANIFEST_FIELDS = ("claims", "surface", "instruments", "slot", "dependencies", "conflicts")
+MANIFEST_FILE = "manifests.json"
+SURFACES = ("resident-context", "on-demand-context", "hook-events")
 
 
 def home(env=None):
@@ -840,9 +846,136 @@ def _units(kind, entry, config, root=None):
         return []
     names = set()
     for source in primitive_roots(config, root, directory):
-        for path in source.glob(pattern) if source.is_dir() else []:
-            names.add(path.parent.name if "/" in pattern else path.stem)
+        names.update(_units_in(source, pattern))
     return sorted(names)
+
+
+def _units_in(source, pattern):
+    return {path.parent.name if "/" in pattern else path.stem
+            for path in (source.glob(pattern) if source.is_dir() else [])}
+
+
+def _manifest_files(config, root=None):
+    """`[(path, shipped)]`: the catalog's and the hook kernel's files, then each user root's."""
+    base = root or ROOT
+    files = [(base / "primitives" / MANIFEST_FILE, True), (base / "policy" / "hooks" / MANIFEST_FILE, True)]
+    for source in primitive_roots(config, root, "rules")[1:]:
+        files.append((source.parent / MANIFEST_FILE, False))
+    return files
+
+
+def _reference(value, kinds):
+    kind, sep, unit = value.partition("/") if isinstance(value, str) else ("", "", "")
+    return bool(sep) and kind in kinds and _identifier(unit)
+
+
+def validate_manifest(kind, unit, entry, kinds):
+    """The one message `entry` earns as `kind/unit`'s manifest, or None when it is sound.
+
+    `kinds` is the switch kinds a dependency or conflict may name, as `kind/unit`.
+    """
+    name = kind + "/" + unit
+    if not isinstance(entry, dict):
+        return name + " manifest is not an object"
+    unknown = sorted(set(entry) - set(MANIFEST_FIELDS))
+    if unknown:
+        return name + " manifest has unknown field(s): " + ", ".join(unknown)
+    for field in MANIFEST_FIELDS:
+        if field not in entry:
+            return name + " manifest is missing '" + field + "'"
+    strings = lambda value: isinstance(value, list) and all(isinstance(v, str) and v.strip() for v in value)
+    if not strings(entry["claims"]) or not entry["claims"]:
+        return name + " manifest 'claims' is a nonempty list of what the module is for"
+    if not strings(entry["surface"]) or not entry["surface"] or set(entry["surface"]) - set(SURFACES):
+        return name + " manifest 'surface' is a nonempty list drawn from " + ", ".join(SURFACES)
+    if not strings(entry["instruments"]):
+        return name + " manifest 'instruments' is a list of instrument ids, empty when nothing measures it"
+    slot = entry["slot"]
+    if slot is not None and not (isinstance(slot, dict) and set(slot) == {"id", "cedes"}
+                                 and _identifier(slot["id"]) and isinstance(slot["cedes"], bool)):
+        return name + " manifest 'slot' is null or {\"id\": <identifier>, \"cedes\": true|false}"
+    for field in ("dependencies", "conflicts"):
+        refs = entry[field]
+        if not isinstance(refs, list) or not all(_reference(v, kinds) for v in refs):
+            return name + " manifest '" + field + "' is a list of kind/unit, kind one of " + ", ".join(kinds)
+        if name in refs:
+            return name + " manifest '" + field + "' names the module itself"
+    return None
+
+
+def manifests(config=None, root=None, kinds=None):
+    """`({kind: {unit: manifest}}, [refusal])` from every manifest file, each entry validated.
+
+    A shipped file must parse; a user root may carry none. One module declared in two files is a
+    refusal, so a user root cannot rewrite what a shipped module needs or collides with.
+    """
+    kinds = [k for k, e in selection_kinds(root).items() if e.get("value") == "switch"] if kinds is None else kinds
+    declared, origin, errors = {kind: {} for kind in kinds}, {}, []
+    for path, shipped in _manifest_files(config, root):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        except (OSError, ValueError) as exc:
+            errors.append(str(path) + " is not readable JSON: " + str(exc))
+            continue
+        if not isinstance(data, dict) or data.get("schema_version") != 1:
+            errors.append(str(path) + " is not a schema_version 1 manifest file")
+            continue
+        for kind, units in data.items():
+            if kind == "schema_version":
+                continue
+            if kind not in kinds or not isinstance(units, dict):
+                errors.append(str(path) + " declares '" + kind + "', which is not a switch kind")
+                continue
+            for unit, entry in sorted(units.items()):
+                problem = validate_manifest(kind, unit, entry, kinds)
+                if problem:
+                    errors.append(problem)
+                elif unit in declared[kind]:
+                    errors.append(kind + "/" + unit + " has a manifest in both " + origin[kind, unit] +
+                                  " and " + str(path))
+                else:
+                    declared[kind][unit], origin[kind, unit] = entry, str(path)
+    return declared, errors
+
+
+def manifest_refusals(document, declared, required):
+    """Every refusal a resolved selection earns from its modules' manifests, as messages.
+
+    `required` is `{kind: units}` that must declare a manifest: the shipped ones. Only switched-on
+    modules take a slot, need a dependency or collide; a module switched off asks nothing.
+    """
+    errors = []
+    for kind in sorted(required):
+        for unit in sorted(required[kind]):
+            if unit not in declared.get(kind, {}):
+                errors.append(kind + "/" + unit + " has no manifest; declare " +
+                              ", ".join(MANIFEST_FIELDS) + " in " + MANIFEST_FILE)
+    on = {kind + "/" + unit: declared[kind][unit] for kind in sorted(declared)
+          for unit in sorted(declared[kind]) if (document.get(kind) or {}).get(unit) == "on"}
+    slots = {}
+    for name, entry in on.items():
+        for needed in entry["dependencies"]:
+            kind, _, unit = needed.partition("/")
+            if (document.get(kind) or {}).get(unit) != "on":
+                errors.append(name + " depends on " + needed + ", which is not switched on")
+        for other in entry["conflicts"]:
+            if other in on and (other < name or name not in on[other]["conflicts"]):
+                errors.append(name + " conflicts with " + other + "; switch one of them off")
+        if entry["slot"]:
+            slots.setdefault(entry["slot"]["id"], []).append(name)
+    for slot, names in sorted(slots.items()):
+        if len(names) > 1 and not any(on[name]["slot"]["cedes"] for name in names):
+            errors.append(", ".join(names) + " each claim the slot '" + slot +
+                          "'; switch one off, or have one declare that it cedes the slot")
+    return errors
+
+
+def measurement(manifest):
+    """How a report shows a module: its instruments, or `unmeasured`, never `no effect`."""
+    instruments = (manifest or {}).get("instruments") or []
+    return "measured by " + ", ".join(instruments) if instruments else "unmeasured"
 
 
 def selection(env=None, strict=True, config=None, root=None):
@@ -854,6 +987,9 @@ def selection(env=None, strict=True, config=None, root=None):
     stance or null; a switch kind's is `on`. `config` is the user configuration when the caller
     has already read it. A kind that is not an object, or a switch value other than `on` or `off`,
     is an error when strict and selects nothing otherwise; a unit a layer names that nothing installs is still reported.
+    Strict resolution also enforces the switch kinds' manifests (AD-22): a shipped module without
+    one, a field missing or malformed, a switched-on module whose dependency is not on, two that
+    conflict, or two that claim one slot with neither ceding it, is a `ValueError` naming them.
     """
     env = os.environ if env is None else env
     config = _user_config(env, strict) if config is None else config
@@ -890,6 +1026,15 @@ def selection(env=None, strict=True, config=None, root=None):
     for kind in kinds:
         result[kind] = dict(sorted(result[kind].items()))
         sources[kind] = dict(sorted(sources[kind].items()))
+    if strict:
+        switches = [kind for kind, entry in kinds.items() if entry.get("value") == "switch"]
+        declared, errors = manifests(config, root, switches)
+        base = (root or ROOT) / "primitives"
+        required = {kind: _units_in(base / kinds[kind]["directory"], kinds[kind]["pattern"])
+                    for kind in switches if kinds[kind].get("directory") and kinds[kind].get("pattern")}
+        errors += manifest_refusals(result, declared, required)
+        if errors:
+            raise ValueError("module manifest: " + "\nmodule manifest: ".join(errors))
     result["sources"] = sources
     return result
 
