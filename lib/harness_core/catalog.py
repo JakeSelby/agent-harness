@@ -29,7 +29,7 @@ KINDS = {
     "workflows": {"directory": "workflows", "pattern": "*.md", "value": "switch",
                   "projection": "command and generated skill"},
     "hooks": {"directory": None, "pattern": None, "units": HOOK_IDS, "value": "switch",
-              "projection": "lifecycle dispatch"},
+              "projection": "settings hook"},
     "presentation": {"directory": "presentation", "pattern": "*.md", "value": None, "projection": "output style"},
 }
 # Capability classes, strongest first. A shared role names the class its work needs; each
