@@ -28,7 +28,8 @@
       "worker.py"
     ],
     "runtime_files": [
-      "hook.py"
+      "hook.py",
+      "observe.py"
     ]
   },
   "clients": [
