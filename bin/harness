@@ -311,6 +311,10 @@ def say(msg: str) -> None:
 # --------------------------------------------------------------------------- config
 
 
+# The environment a session scopes its own selection with; sync projects user defaults without it.
+SESSION_SCOPED = ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG", "HARNESS_MODE", "HARNESS_PERMISSIONS")
+
+
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     env = os.environ if env is None else env
     base = read_json(REPO / "config.example.json") or {}
@@ -323,20 +327,13 @@ def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
             cfg[key].update(value)
         else:
             cfg[key] = value
-    cfg.setdefault("stances", {})
     cfg.setdefault("identity", {})
-    project_file = env.get("HARNESS_PROJECT_CONFIG")
-    if project_file:
-        project = read_json(Path(project_file).expanduser()) or {}
-        if set(project) - {"stances"}:
-            raise SystemExit("project config may select stances only; user config owns identity, targets and permissions")
-        if not isinstance(project.get("stances", {}), dict):
-            raise SystemExit("project stances must be an object")
-        cfg["stances"].update(project.get("stances", {}))
+    # The stances in force come from the one resolver, over every layer of the selection ladder.
+    stances = cfg.get("stances") if isinstance(cfg.get("stances"), dict) else {}
+    cfg["stances"] = dict(stances, **load_selection(env, user)["stances"])
+    cfg["stances"] = {name: value for name, value in cfg["stances"].items() if value is not None}
     for key, value in env.items():
-        if key.startswith("HARNESS_STANCE_"):
-            cfg["stances"][key[len("HARNESS_STANCE_"):].lower().replace("_", "-")] = value
-        elif key.startswith("HARNESS_IDENTITY_"):
+        if key.startswith("HARNESS_IDENTITY_"):
             cfg["identity"][key[len("HARNESS_IDENTITY_"):].lower()] = value
         elif key == "HARNESS_PERMISSIONS":
             cfg["permissions"] = value
@@ -345,6 +342,23 @@ def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         elif key == "HARNESS_MANAGE_CODEX":
             cfg.setdefault("codex", {})["manage"] = value not in ("0", "false", "no")
     return cfg
+
+
+def load_selection(env: Optional[Dict[str, str]] = None, user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Every unit of every kind with its value and source, from `posture.selection`.
+
+    `user` is the user configuration when the caller has read it; the resolver reads it
+    otherwise. Strict, because a command that acts on a selection must not act on part of one.
+    """
+    env = os.environ if env is None else env
+    module = load_posture()
+    if module is None:
+        raise SystemExit("this checkout has no selection resolver (policy/hooks/posture.py)")
+    try:
+        user = (read_json(config_path()) or {}) if user is None else user
+        return module.selection(env, strict=True, config=user, root=REPO)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(str(exc))
 
 
 def example_config() -> Dict[str, Any]:
@@ -1186,7 +1200,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         return 1
     dry = args.dry_run
     session_keys = [key for key in os.environ if key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
-                    or key in ("HARNESS_PROJECT_CONFIG", "HARNESS_PERMISSIONS")]
+                    or key in SESSION_SCOPED]
     cfg = load_config({key: value for key, value in os.environ.items() if key not in session_keys})
     # A root the caller is about to register, so `import` can show the projection of a root the
     # configuration does not carry yet. Nothing else sets it, and a dry run is the only user.
@@ -1553,7 +1567,7 @@ def _diff_lines() -> List[str]:
             lines.append(f"broken link {p}{origin}")
     cfg = load_config({key: value for key, value in os.environ.items()
                        if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
-                       and key not in ("HARNESS_PROJECT_CONFIG", "HARNESS_PERMISSIONS")})
+                       and key not in SESSION_SCOPED})
     template = runtime_template()
     applied = read_json(applied_path()) or {}
     live = read_json(claude_dir() / "settings.json") or {}
@@ -2416,6 +2430,8 @@ def cmd_stances(args: argparse.Namespace) -> int:
             "stances": {name: {"variant": path.stem, "source": str(path),
                                 "behavior": path.read_text(encoding="utf-8").strip()}
                         for name, path in choices.items()}}
+    data["sources"] = {name: source for name, source in load_selection()["sources"]["stances"].items()
+                       if name in data["stances"]}
     data["adapter_coverage"] = compatibility.coverage(REPO, choices)
     data["conflicts"] = stance_conflicts(cfg)
     posture = load_posture()
@@ -2443,6 +2459,24 @@ def cmd_stances(args: argparse.Namespace) -> int:
         if data["conflicts"]:
             say("stance conflict: `harness sync` refuses this selection; change one of the two.")
         say("Native runtime restrictions still apply; stance guidance is not proof of enforcement.")
+    return 0
+
+
+def cmd_selection(args: argparse.Namespace) -> int:
+    """Print every unit of every kind with its value and source; the shape is `docs/preferences.md`'s.
+
+    The JSON is a selection document, so it reads back unchanged as a `HARNESS_SESSION_CONFIG`.
+    """
+    data = load_selection()
+    if args.json:
+        print(json.dumps(data, indent=2))
+        return 0
+    say("mode=" + (data["mode"] or "none") + " (" + data["sources"]["mode"] + ")")
+    for kind, units in data.items():
+        if kind in ("mode", "sources"):
+            continue
+        for unit, value in units.items():
+            say(kind + "." + unit + "=" + str(value) + " (" + data["sources"][kind][unit] + ")")
     return 0
 
 
@@ -4827,6 +4861,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = sub.add_parser("stances", help="show resolved personal stance switches and their behavior")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_stances)
+
+    p = sub.add_parser("selection", help="show every unit of every kind with its value and the layer that set it")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_selection)
 
     p = sub.add_parser("decide", help="ask the selected decision provider about one action class")
     p.add_argument("--action", required=True, choices=list(decisions_provider.ACTION_CLASSES),

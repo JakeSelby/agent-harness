@@ -109,7 +109,24 @@ def resolution(root, config, runtime, name, model=None, prompt=None):
     skills, docs = policy_reads(root, instructions, catalog.role_skills(root, fields))
     return {"fields": fields, "bindings": bindings, "instructions": instructions,
             "skills": skills, "docs": docs, "context": context_estimate(instructions, skills, docs),
-            "posture": record, "budget_sentence": sentence}
+            "posture": record, "budget_sentence": sentence, "selection": session_selection(root)}
+
+
+def session_selection(root, env=None):
+    """The selection the launching session resolves, recorded with the run; None without a resolver.
+
+    The worker's own environment is scrubbed, so it never re-reads a session file or
+    `HARNESS_STANCE_*`: the stances its instructions carry are the launching session's, and this
+    record is the evidence. Non-strict, because evidence must never stop a run the stance ladder
+    already allowed.
+    """
+    module = catalog.posture_module(root)
+    if module is None:
+        return None
+    try:
+        return module.selection(os.environ if env is None else env, strict=False, root=root)
+    except Exception:
+        return None
 
 
 POLICY_DOC = re.compile(r"docs/[a-z0-9][a-z0-9.-]*\.md")
@@ -340,7 +357,7 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
               # The runner supervising this worker, so a reader can tell a live run from one whose
               # process died mid-flight; `orphaned()` decides, and never without the start token.
               "pid": os.getpid(), "pid_start": process_start(os.getpid()),
-              "stances": config["stances"], "posture": ready["posture"],
+              "stances": config["stances"], "selection": ready["selection"], "posture": ready["posture"],
               "policy_sha256": hashlib.sha256(instructions.encode()).hexdigest(),
               "qualification": "unqualified", "authority": "result data only; no transferred approvals"}
     status_path = run_dir / "status.json"
