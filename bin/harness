@@ -3829,6 +3829,19 @@ def rule_report(rows: List[Dict[str, Any]], by: str, days: int) -> int:
 # --------------------------------------------------------------------------- telemetry
 
 
+def usage_ledger(path: Path) -> List[Dict[str, Any]]:
+    """The usage ledger's rows, oldest first, read by the hook that writes them.
+
+    `ledger_rows` folds renamed fields and carries fields and schema versions it does not know,
+    so a row from a newer writer is read rather than refused; see `SCHEMA_VERSION` in
+    `usage-log.py`. An absent file is no rows.
+    """
+    if not path.exists():
+        return []
+    text = path.read_text(encoding="utf-8")
+    return load_hook_module("usage-log", required=True).ledger_rows(text)
+
+
 def load_hook_module(name: str, root: Path = REPO, required: bool = False):
     """A module from `root`'s hook directory, or None when it has none.
 
@@ -3903,14 +3916,7 @@ def cmd_usage_export(args: argparse.Namespace) -> int:
             "telemetry.export is off; set it to \"otlp\" in ~/.config/agent-harness/config.json "
             "to send rows, or re-run with --dry-run to count what a replay would send")
     path = state_dir() / "usage.jsonl"
-    rows: List[Dict[str, Any]] = []
-    for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict) and since <= (row.get("ended") or "")[:10] <= until:
-            rows.append(row)
+    rows = [row for row in usage_ledger(path) if since <= (row.get("ended") or "")[:10] <= until]
     batch_count = sum(1 for _ in module.batches(rows))
     window = f"{since}..{until if until != '9999-12-31' else 'today'}"
     if args.dry_run:
@@ -4247,14 +4253,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
     # measured ratio — a Codex row, which says `unknown`, a worker row, or a row written
     # before the field existed, which carries no key at all — is counted as unknown.
     dedup_raw, dedup_counted, dedup_runs, dedup_unknown = 0.0, 0, 0, 0
-    ledger: List[Dict[str, Any]] = []
-    for line in (path.read_text(encoding="utf-8").splitlines() if path.exists() else []):
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict):
-            ledger.append(row)
+    ledger = usage_ledger(path)
     if by == "prefix":
         # Read-only and retrospective: `cache_prefix` derives the miss ratio from the cache
         # fields these rows already carry and names where it stepped. Nothing is priced.
