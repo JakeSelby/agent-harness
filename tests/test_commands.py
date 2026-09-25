@@ -175,6 +175,7 @@ class CommandContentTests(unittest.TestCase):
         self.assertIn("Answer the review bot", body)
         self.assertIn("say so if none arrives", body)
         self.assertIn("one more review", body)
+        self.assertIn("wait again", body)
         self.assertIn("resolveReviewThread", body)
         self.assertIn("never yours to resolve", body)
 

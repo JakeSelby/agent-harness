@@ -37,8 +37,8 @@ stop at the local commit, and report the branch as ready to push.
    first review of this pull request, and say so if none arrives. Then take each unresolved bot
    thread as a finding: fix it in the worktree, rerun the gate and push, or reply with the reason it
    does not apply. Then resolve the thread (GraphQL `reviewThreads`, then `resolveReviewThread`).
-   After pushing a fix, ask the bot for one more review, such as a `@coderabbitai review` comment.
-   Two rounds at most; report whatever remains. A human's thread is never yours to resolve.
+   After pushing a fix, ask for one more review, such as `@coderabbitai review`, and wait again. Two
+   rounds at most; report whatever remains. A human's thread is never yours to resolve.
 
 Report the pull request URL, the tail of your own gate run, the bot threads answered and any
 still open, and anything else still open: a decision taken on the user's behalf, a step left
