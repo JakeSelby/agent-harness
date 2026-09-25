@@ -402,8 +402,8 @@ def _selection_file(env, variable, strict, root=None):
         if not isinstance(data, dict):
             raise ValueError(variable + " names " + named + ", which is not a JSON object")
         refused(data, variable + " file " + named, root)
-        # A kind whose value is not an object selects nothing, as it always has; only a key the
-        # file may not set is worth failing a tool call over.
+        # A kind whose value is not an object is refused by `selection()` when strict and selects
+        # nothing otherwise; only a key the file may not set drops the whole file.
         return data
     except (OSError, ValueError):
         if strict:
@@ -852,8 +852,8 @@ def selection(env=None, strict=True, config=None, root=None):
     `catalog.KINDS` — plus `sources` in the same shape, each one of `default`, `mode:<name>`,
     `user`, `project` or `session`, in that precedence. A variant kind's default is the built-in
     stance or null; a switch kind's is `on`. `config` is the user configuration when the caller
-    has already read it. A switch value other than `on` or `off` is an error when strict and
-    selects nothing otherwise; a unit a layer names that nothing installs is still reported.
+    has already read it. A kind that is not an object, or a switch value other than `on` or `off`,
+    is an error when strict and selects nothing otherwise; a unit a layer names that nothing installs is still reported.
     """
     env = os.environ if env is None else env
     config = _user_config(env, strict) if config is None else config
@@ -869,6 +869,11 @@ def selection(env=None, strict=True, config=None, root=None):
         sources[kind] = {unit: "default" for unit in result[kind]}
         for source, data in ladder:
             chosen = data.get(kind) if isinstance(data, dict) else None
+            if chosen is not None and not isinstance(chosen, dict):
+                if strict:
+                    raise ValueError(source + " sets " + kind + " to a " + type(chosen).__name__ +
+                                     "; a kind is an object of unit to value")
+                continue
             for unit, value in (chosen.items() if isinstance(chosen, dict) else ()):
                 value = value.strip() if isinstance(value, str) else None
                 if not isinstance(unit, str) or not value:

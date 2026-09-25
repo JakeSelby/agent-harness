@@ -148,6 +148,16 @@ class Ladder(unittest.TestCase):
             self.resolve(HARNESS_PROJECT_CONFIG=project)
         self.assertEqual(self.resolve(strict=False, HARNESS_PROJECT_CONFIG=project)["rules"]["secrets"], "on")
 
+    def test_a_kind_is_an_object(self):
+        for variable in ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG"):
+            with self.subTest(variable=variable):
+                named = self.file("layer.json", {"rules": [], "stances": {"testing": "off"}})
+                with self.assertRaisesRegex(ValueError, "rules to a list"):
+                    self.resolve(**{variable: named})
+                # A hook drops only the malformed kind and keeps the rest of the file.
+                result = self.resolve(strict=False, **{variable: named})
+                self.assertEqual((result["rules"]["secrets"], result["stances"]["testing"]), ("on", "off"))
+
     def test_the_output_reads_back_unchanged_as_a_session_file(self):
         project = self.file("project.json", {"rules": {"secrets": "off"}, "stances": {"testing": "off"}})
         first = self.resolve(HARNESS_PROJECT_CONFIG=project)
