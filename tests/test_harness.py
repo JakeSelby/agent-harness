@@ -334,6 +334,15 @@ class SwitchKindSyncTests(TempHome):
         self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 0)
         self.assertEqual(Path(os.readlink(cd / "rules" / "harness")), mine)
 
+    def test_uninstall_leaves_a_rules_directory_the_user_already_had(self):
+        rules = self.home / ".claude" / "rules" / "harness"
+        rules.mkdir(parents=True)
+        self.assertEqual(self.sync(), 0)
+        self.assertTrue((rules / "secrets.md").is_symlink())
+        self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 0)
+        self.assertTrue(rules.is_dir() and not rules.is_symlink())
+        self.assertEqual(list(rules.iterdir()), [])
+
     def test_an_off_skill_workflow_and_role_leave_no_projection_in_either_home(self):
         self.assertEqual(self.sync(), 0)
         cd, codex, agents_skills = self.home / ".claude", self.home / ".codex", self.home / ".agents" / "skills"

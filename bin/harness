@@ -997,6 +997,10 @@ def migrate_rules_link(path: Path, target: Path, manifest: Dict[str, Any], dry: 
         if dry:
             return True
     if not dry:
+        # Journaled only when sync makes the directory, so uninstall leaves one the user had.
+        if not path.exists() and not any(i.get("path") == str(path) for i in manifest.get("migrated", [])):
+            _record(manifest, "migrated", {"path": str(path), "prior": {"type": "absent"},
+                                           "applied": {"type": "directory"}})
         path.mkdir(parents=True, exist_ok=True)
     return False
 
@@ -2188,7 +2192,9 @@ def _cmd_uninstall_unlocked(args: argparse.Namespace) -> int:
     # The per-rule directory goes now, before adopted files return, so a path the user had there
     # before the harness comes back instead of reading as occupied. A file the user added keeps it.
     rules_home = claude_dir() / "rules" / RULES_DIR
-    if rules_home.is_dir() and not rules_home.is_symlink():
+    made = any(i.get("path") == str(rules_home) and (i.get("applied") or {}).get("type") == "directory"
+               for i in manifest.get("migrated", []))
+    if made and rules_home.is_dir() and not rules_home.is_symlink():
         try:
             rules_home.rmdir()
             say(f"  remove  {rules_home}")
