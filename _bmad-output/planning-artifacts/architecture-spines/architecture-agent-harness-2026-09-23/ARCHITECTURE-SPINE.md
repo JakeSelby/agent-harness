@@ -460,11 +460,11 @@ flowchart TB
   - **Registration:** observation has its own registered hook entry point beside `hook.py`, and is not
     routed through the dispatcher. It reads which events each runtime raises from the same event table
     AD-7 names as the one declaration, so the two entry points cannot disagree on events.
-    *Amended 2026-09-25, proposed and awaiting the owner:* #791 ships the entry point, its registration
+    *Amended 2026-09-25, confirmed by the owner on 2026-09-25:* #791 ships the entry point, its registration
     built from that table and the bare arm's install, but `harness sync` does not yet register it beside
     `hook.py`. Registering it would start a second process on every hook event for every user, make Codex
-    users re-trust their hooks, and break tests that assume one entry per event. Until the owner decides,
-    only `bare_install` writes its registration, and nothing outside the tests calls that yet.
+    users re-trust their hooks, and break tests that assume one entry per event. A follow-up issue adds
+    opt-in registration; until then only `bare_install` writes it, and nothing outside the tests calls that.
   - **Failure:** it fails open and silent. On any exception it exits 0 with no output, never a deny, a
     block or a `systemMessage`. The error goes to a local error log only.
   - In the bare arm, only the observation-only path is installed.
