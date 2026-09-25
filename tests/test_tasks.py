@@ -1,10 +1,16 @@
 """Continuation across runtime names preserves data and rejects stale writers."""
+import importlib.util
 import json
 from pathlib import Path
 import unittest
 import test_stop_gate as gate_fixture
 from test_harness import harness
 from harness_core import tasks
+
+_spec = importlib.util.spec_from_file_location(
+    "stage_user_files", Path(__file__).resolve().parent.parent / "policy" / "hooks" / "stage-user-files.py")
+stage_user_files = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(stage_user_files)
 
 
 class TaskTests(unittest.TestCase):
@@ -49,6 +55,16 @@ class TaskTests(unittest.TestCase):
         tasks.save(self.repo, {"objective": "Continue"}, "claude-code", 1)
         (directory / "progress.md").write_text("New findings")
         self.assertEqual(tasks.read(self.repo)["status"], "stale")
+
+    def test_files_staged_for_a_remote_control_client_leave_the_handoff_current(self):
+        self.repo = self.repo.resolve()
+        tasks.save(self.repo, {"objective": "Show the render"}, "claude-code")
+        render = self.home / "render.png"
+        render.write_bytes(b"png")
+        result = stage_user_files.decide({"tool_name": "SendUserFile", "cwd": str(self.repo),
+                                          "tool_input": {"files": [str(render)]}})
+        self.assertTrue(Path(result["hookSpecificOutput"]["updatedInput"]["files"][0]).is_file())
+        self.assertEqual(tasks.read(self.repo)["status"], "current")
 
     def test_tracked_task_bookkeeping_does_not_invalidate_its_own_save(self):
         self.repo = self.repo.resolve()

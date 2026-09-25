@@ -869,7 +869,7 @@ def ensure_link(path: Path, target: Path, manifest: Dict[str, Any], dry: bool, a
             _record(manifest, "links", entry())
             return
         previous = next((entry for entry in manifest.get("links", []) if entry["path"] == str(path)), None)
-        if previous and str(current) not in (previous["target"], previous.get("pending_from")):
+        if previous and not (_leads_to(path, previous["target"]) or _leads_to(path, previous.get("pending_from"))):
             report.append(f"{path} was redirected after sync; preserving the user's link")
             return
         if managed or adopt:
