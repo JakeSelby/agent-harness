@@ -23,21 +23,22 @@ def identity(original, env):
         env["CLAUDE_CONFIG_DIR"] = original["CLAUDE_CONFIG_DIR"]
 
 
-def refusal(executable, original, env):
+def refusal(executable, original, env, cwd):
     """Why a worker launched from this process would fail to authenticate, or None to launch.
 
     Only a process inside a Claude Code session is checked (`CLAUDECODE` is set there): the client
     strips `CLAUDE_CODE_OAUTH_TOKEN` from its tool subprocesses, so a token-only session hands a
     worker nothing. The client's own `auth status` answers under the worker's environment; its
     output names the account, so it is parsed for `loggedIn` alone and never printed or kept. A
-    check that cannot run refuses too: the token is never written anywhere to work around it.
+    check that cannot run refuses too: the token is never written anywhere to work around it. It
+    runs from `cwd`, an empty directory like the worker's, so no project's settings answer for it.
     """
     if not original.get("CLAUDECODE") or any(env.get(name) for name in CLOUD_PROVIDERS):
         return None
     env = dict(env)
     identity(original, env)
     try:
-        done = subprocess.run([executable, "auth", "status", "--json"], env=env, text=True,
+        done = subprocess.run([executable, "auth", "status", "--json"], env=env, cwd=cwd, text=True,
                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, timeout=30)
         logged_in = done.returncode == 0 and json.loads(done.stdout).get("loggedIn") is True

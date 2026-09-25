@@ -30,7 +30,8 @@ case "$1" in
         echo '{"loggedIn": false, "authMethod": "none"}'; exit 1 ;;
 esac
 touch "$(dirname "$0")/launched"
-exit 1
+echo '{"type":"result","subtype":"success","is_error":false,"result":"done"}'
+exit 0
 """
 
 
@@ -109,6 +110,19 @@ class RefusalTests(unittest.TestCase):
         self.assertNotIn("CLAUDE_CODE_SESSION_ID", env)
         self.assertEqual(auth.call_args[1]["stderr"], subprocess.DEVNULL)
 
+    def test_the_check_runs_from_an_empty_directory_and_not_the_caller_project(self):
+        seen = []
+
+        def status(*a, **k):
+            seen.append((k["cwd"], os.listdir(k["cwd"])))
+            return completed('{"loggedIn": true}')
+        self.run_worker(status)
+        cwd, entries = seen[0]
+        self.assertTrue(os.path.basename(cwd).startswith("harness-worker-auth-"))
+        self.assertNotEqual(os.path.realpath(cwd), os.path.realpath(os.getcwd()))
+        self.assertEqual(entries, [])
+        self.assertFalse(os.path.exists(cwd))
+
     def test_a_check_that_cannot_run_or_answer_refuses(self):
         def missing(*a, **k):
             raise FileNotFoundError("claude")
@@ -177,6 +191,7 @@ class CommandTests(unittest.TestCase):
     def test_an_exported_token_passes_the_check_and_the_worker_launches(self):
         os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = "token-fixture"
         code, err = self.role_run()
+        self.assertEqual(code, 0, err)
         self.assertTrue((self.bin / "launched").exists())
         self.assertNotIn("refused before launch", err)
         self.assertNotIn("token-fixture", err)

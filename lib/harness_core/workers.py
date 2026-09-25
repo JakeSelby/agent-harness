@@ -348,7 +348,10 @@ def run(root, config, runtime, name, workspace, prompt, state_root, model=None, 
     # A client that cannot authenticate is refused here, before any record or directory exists,
     # rather than launched to fail with the runtime's own login prompt (issue #759).
     refusal = getattr(native, "refusal", None)
-    reason = refusal(executable, dict(os.environ), passthrough(os.environ)) if refusal else None
+    reason = None
+    if refusal:
+        with tempfile.TemporaryDirectory(prefix="harness-worker-auth-", dir="/tmp") as empty:
+            reason = refusal(executable, dict(os.environ), passthrough(os.environ), empty)
     if reason:
         raise ValueError(reason)
     state_root = Path(state_root)
