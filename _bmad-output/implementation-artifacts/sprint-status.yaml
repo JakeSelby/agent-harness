@@ -332,6 +332,7 @@ development_status:
   ah-b092-a-release-pull-request-cannot-pass-the-changelog: backlog
   ah-b093-bmad-issue-sync-new-files-the-issue-then-fails: backlog
   ah-b094-harness-worktree-remove-cannot-remove-a-worktree: backlog
+  ah-b099-fix-output-style-scannable-drops-claude-code-s: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
