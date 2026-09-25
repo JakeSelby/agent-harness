@@ -33,6 +33,7 @@ DIRECTED = {
     "adhere": "Check calc.py, adhering to " + PROMPT + " throughout.",
     "negated edit": "Follow " + PROMPT + " on calc.py, and do not edit it.",
     "another layer": "Apply review-prompts/blind-hunter.md to the diff in /tmp/change.patch.",
+    "as your instructions": "Use " + PROMPT + " as your review instructions for calc.py.",
 }
 UNDIRECTED = {
     "edit": ("Edit templates/bmad/custom/bmad-code-review.user.toml so the edge-case layer points "
@@ -47,6 +48,16 @@ UNDIRECTED = {
     "third person": "Tell me whether a reviewer who follows " + PROMPT + " would miss overflow.",
     "follow elsewhere": ("Count the lines of " + PROMPT + ". Then run the gate and report the "
                          "count."),
+    # A directive that is negated, or that governs something other than the file, is not one.
+    "negated next sentence": "Read " + PROMPT + ". Do not follow it; just list its headings.",
+    "according to something else": ("Check whether " + PROMPT + " is formatted according to "
+                                    "the house template."),
+    "your checklist after the file": ("Read " + PROMPT + " and tell me if it matches your review "
+                                      "checklist."),
+    "use it as a fixture": "Copy " + PROMPT + " to /tmp/x.md. Then use it as a fixture in a test.",
+    "per something else": "Explain what " + PROMPT + " does per the docs.",
+    "directive in another clause": ("Follow the commit convention, and summarise " + PROMPT
+                                    + "."),
 }
 
 
