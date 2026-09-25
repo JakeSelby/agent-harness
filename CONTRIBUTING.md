@@ -156,6 +156,12 @@ One maintainer reviews every PR, usually within a week. Expect questions about w
 change lands on and whether it is generic. Small, single-concern PRs go fastest. The maintainer
 may push small edits to your branch before merging; you will see them in the PR.
 
+CodeRabbit also reviews every PR into `main`, forks included, once when it opens, or when a draft is
+marked ready. Treat its comments as you would a reviewer's: push a fix, or reply with why one
+doesn't apply, then resolve the thread, because `main` won't merge while a review thread is open.
+Comment `@coderabbitai review` for another pass after you push. Its comments are advice, and where
+you disagree with it, the maintainer decides.
+
 ## Licensing of contributions
 
 By opening a pull request you agree that your contribution is licensed under the MIT licence

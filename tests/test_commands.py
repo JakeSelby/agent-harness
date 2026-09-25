@@ -18,7 +18,7 @@ loader.exec_module(harness)
 
 COMMANDS = REPO / "claude" / "commands"
 EXPECTED = ["build.md", "close-out.md", "handoff.md", "land.md", "plan.md", "research.md", "review.md"]
-MAX_BODY_LINES = 35
+MAX_BODY_LINES = 40
 
 
 def split(path):
@@ -163,6 +163,21 @@ class CommandContentTests(unittest.TestCase):
         self.assertIn("gh pr merge --squash --delete-branch", body)
         self.assertIn("current head", body)
         self.assertIn("issue-ownership", body)
+
+    def test_land_stops_on_an_unresolved_review_thread(self):
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("unresolved review thread", body)
+        self.assertIn("reviewThreads", body)
+
+    def test_build_answers_the_review_bot_and_leaves_human_threads_alone(self):
+        """Resolving a human's thread would hide feedback nobody has answered."""
+        body = split(COMMANDS / "build.md")[1]
+        self.assertIn("Answer the review bot", body)
+        self.assertIn("say so if none arrives", body)
+        self.assertIn("one more review", body)
+        self.assertIn("wait again", body)
+        self.assertIn("resolveReviewThread", body)
+        self.assertIn("never yours to resolve", body)
 
     def test_land_cleans_up_only_through_the_reversible_commands(self):
         """The refusals are the safety check; a forced form would delete unreviewed work."""
