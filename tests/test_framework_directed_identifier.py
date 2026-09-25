@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: MIT
+"""A brief that tells the subagent to follow a framework's layer prompt file is that layer's work,
+however the client worded it (#739). The 0.13.0 qualification observed a model write such a brief
+itself: it kept the prompt file and quoted none of the descriptor's sentences, and it ran unconfined.
+A brief that edits the file, or reads it for another reason, still runs.
+Run: python3 -m unittest discover tests
+"""
+import os
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from test_harness import REPO  # noqa: F401  (puts lib/ on the path)
+from harness_core import frameworks, lifecycle
+
+PROMPT = "_bmad/review-prompts/edge-case-hunter.md"
+# The brief the model wrote in the 0.13.0 round, from the macOS evidence, trimmed at its tail.
+OBSERVED = (
+    "We're running a BMad Method multi-layer code review on a file called calc.py, located in the "
+    "current project directory. You are acting as the \"edge-case-hunter\" review layer of that "
+    "process. Before doing anything else, read the review instructions for this layer from "
+    + PROMPT + " (in the current project directory) and follow them exactly — that file "
+    "defines your review methodology, focus areas, and expected output format for this layer. Then "
+    "read calc.py in the current project directory and perform the edge-case-hunter review on it "
+    "per those instructions. Report back your findings."
+)
+DIRECTED = {
+    "apply": "Read the review-layer instructions at " + PROMPT + " and apply them to calc.py.",
+    "next sentence": "The instructions live at " + PROMPT + ". Read them and follow them exactly.",
+    "per": "Review calc.py per the checklist in " + PROMPT + ".",
+    "as instructed": "Go over calc.py as instructed in " + PROMPT + ", then report.",
+    "your instructions": "Your review instructions are in " + PROMPT + ": read that file first.",
+    "adhere": "Check calc.py, adhering to " + PROMPT + " throughout.",
+    "negated edit": "Follow " + PROMPT + " on calc.py, and do not edit it.",
+    "another layer": "Apply review-prompts/blind-hunter.md to the diff in /tmp/change.patch.",
+}
+UNDIRECTED = {
+    "edit": ("Edit templates/bmad/custom/bmad-code-review.user.toml so the edge-case layer points "
+             "at review-prompts/edge-case-hunter.md rather than the old path, then run harness "
+             "bmad check."),
+    "update that mentions follow": ("Update " + PROMPT + " so it tells the reviewer to follow the "
+                                    "house style."),
+    "summarise": "Read " + PROMPT + " and summarise what it asks for in three bullets.",
+    "unrelated next sentence": ("Summarise " + PROMPT + " in three bullets. Follow the "
+                                "repository's commit convention."),
+    "edit then apply": "Reword " + PROMPT + ". Then apply it to the other layers as well.",
+    "third person": "Tell me whether a reviewer who follows " + PROMPT + " would miss overflow.",
+    "follow elsewhere": ("Count the lines of " + PROMPT + ". Then run the gate and report the "
+                         "count."),
+}
+
+
+class DirectedIdentifierTests(unittest.TestCase):
+    def classify(self, text):
+        return frameworks.classify(text, None)
+
+    def test_the_brief_the_model_wrote_live_is_the_review_layer(self):
+        match = self.classify(OBSERVED)
+        self.assertIsNotNone(match)
+        self.assertEqual((match["spawn"], match["role"]), ("code-review-layer", "reviewer"))
+
+    def test_it_carries_none_of_the_descriptor_sentences(self):
+        # What makes this the regression: the classifier had only the prompt file to go on.
+        spawn = frameworks.descriptors()[0]["spawns"][0]
+        text = frameworks.normalise(OBSERVED)
+        self.assertEqual(frameworks._score(spawn, text, "")[3], 0)
+        self.assertEqual(frameworks._score(spawn, text, "")[1], 1)
+
+    def test_a_directive_in_any_wording_is_recognised(self):
+        for name, brief in DIRECTED.items():
+            with self.subTest(name=name):
+                match = self.classify(brief)
+                self.assertIsNotNone(match, msg=brief)
+                self.assertEqual(match["role"], "reviewer")
+
+    def test_a_brief_that_edits_or_merely_reads_the_file_is_not(self):
+        for name, brief in UNDIRECTED.items():
+            with self.subTest(name=name):
+                self.assertIsNone(self.classify(brief), msg=brief)
+
+    def test_a_directive_with_no_declared_prompt_file_is_not(self):
+        self.assertIsNone(self.classify("Follow the review checklist in docs/review.md on calc.py."))
+
+
+class DirectedRefusalTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.addCleanup(patch.stopall)
+        patch.dict(os.environ, {"HOME": temp.name, "PATH": os.environ["PATH"],
+                                "HARNESS_STANCE_DELEGATION": "tiered"}, clear=True).start()
+
+    def spawn(self, prompt, session):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": session,
+                   "tool_input": {"prompt": prompt}}
+        return lifecycle.dispatch("claude-code", payload).get("hookSpecificOutput", {})
+
+    def test_the_refusal_is_the_one_the_framework_s_own_text_gets(self):
+        spawn = frameworks.descriptors()[0]["spawns"][0]
+        own = self.spawn(" ".join(spawn["phrases"]), "own")
+        reworded = self.spawn(OBSERVED, "reworded")
+        self.assertEqual(reworded.get("permissionDecision"), "deny")
+        self.assertEqual(reworded.get("permissionDecisionReason"),
+                         own.get("permissionDecisionReason"))
+        self.assertIn("harness role run reviewer", reworded["permissionDecisionReason"])
+
+    def test_an_edit_of_the_prompt_file_still_runs(self):
+        answer = self.spawn(UNDIRECTED["update that mentions follow"], "edit")
+        self.assertNotEqual(answer.get("permissionDecision"), "deny")
+
+
+if __name__ == "__main__":
+    unittest.main()
