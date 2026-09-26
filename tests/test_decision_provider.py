@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from isolation import without_harness_vars
+from isolation import isolate_home, without_harness_vars
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "lib"))
@@ -36,6 +36,10 @@ class Base(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.addCleanup(self.tmp.cleanup)
         self.ledger = self.root / "decisions.jsonl"
+        # The user-level policy is found through HOME, so the real one must be out of reach.
+        saved = dict(os.environ)
+        self.addCleanup(lambda: (os.environ.clear(), os.environ.update(saved)))
+        isolate_home(self.root)
 
     def policy(self, data):
         path = self.root / "governance.json"
@@ -47,6 +51,10 @@ class Base(unittest.TestCase):
         path = self.policy(data) if data is not None else self.root / "missing.json"
         return decision.LocalProvider(root=str(self.root), policy_path=str(path),
                                       variant=variant, target=str(self.ledger))
+
+    def named(self, path=None, layer="repository policy"):
+        """The suffix a rule match carries naming the file that supplied it."""
+        return " (" + layer + " " + str(path or self.root / "governance.json") + ")"
 
     def rows(self):
         text = self.ledger.read_text(encoding="utf-8") if self.ledger.exists() else ""
@@ -106,11 +114,11 @@ class ResolutionTests(Base):
                               variant="execute")
         pair = provider.decide(decision.Action("coding.git_push", 1), "repo:a/main")
         self.assertEqual(pair.autonomy_level, 1)
-        self.assertIn("pairs.repo:a/main.coding.git_push = 1",
+        self.assertIn("pairs.repo:a/main.coding.git_push = 1" + self.named(),
                       pair.injected_cognition["rule_matches"])
         default = provider.decide(decision.Action("coding.git_push", 1), "repo:b/main")
         self.assertEqual(default.autonomy_level, 2)
-        self.assertIn("defaults.coding.git_push = 2",
+        self.assertIn("defaults.coding.git_push = 2" + self.named(),
                       default.injected_cognition["rule_matches"])
         stance = provider.decide(decision.Action("coding.file_write", 1), "repo:b/main")
         self.assertEqual(stance.autonomy_level, 3)
@@ -139,7 +147,8 @@ class ResolutionTests(Base):
         self.assertEqual(answer.autonomy_level, 1)
         self.assertEqual(answer.outcome, "ask")
         self.assertEqual(answer.injected_cognition["rule_matches"],
-                         ["defaults.coding.git_push = 3", "caps.coding.git_push = 1"])
+                         ["defaults.coding.git_push = 3" + self.named(),
+                          "caps.coding.git_push = 1" + self.named()])
 
     def test_a_cap_never_raises_a_level_a_pair_set_lower(self):
         provider = self.local({"pairs": {"repo:a/main": {"coding.git_push": 1}},
@@ -366,7 +375,8 @@ class CommandTests(Base):
         self.assertEqual(data["outcome"], "ask")
         self.assertEqual(data["autonomy_level"], 1)
         self.assertEqual(data["injected_cognition"]["rule_matches"],
-                         ["pairs.repo:unknown/local.coding.git_push = 1"])
+                         ["pairs.repo:unknown/local.coding.git_push = 1 (repository policy "
+                          + str((policy / "governance.json").resolve()) + ")"])
 
     def test_an_unknown_action_class_is_refused_by_the_parser(self):
         done = self.run_decide("--action", "coding.rm_rf")

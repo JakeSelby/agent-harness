@@ -6605,6 +6605,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S266",
+      "github_number": 874,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/874",
+      "title": "Local governance: add coding.pr_merge, a user-level policy file and repository-wide pairs",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S266.md",
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-E020",
       "github_number": 875,
       "github_url": "https://github.com/JakeSelby/agent-harness/issues/875",
