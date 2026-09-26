@@ -157,13 +157,15 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    input roots, and confirm both run.
 
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
-`source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, `cases` and
-`invalidation_scope`, with the case values `passed`, `failed`, or
+`source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, `cases`,
+`invalidation_scope` and `case_map`, with the case values `passed`, `failed`, or
 `unverified`. Each case observation opens with its case name and a colon, one per case in
 the record's sorted case order, so pairing never depends on position; a round-level note the
 round runner appends carries no case prefix. Add its path and SHA256 to the client entry. Evidence cannot be reused for another
-client or harness version. Its full source commit must be an ancestor of the release with no
-subsequent change under the paths that invalidate this target. Set exact runtime/client versions before changing status to qualified.
+client or harness version. Its full source commit must be an ancestor of the release, and a
+case's result counts only while no subsequent change lies under the paths that invalidate that
+case on this target; a change under a path the case-to-path map does not assign invalidates every
+case in the record. Set exact runtime/client versions before changing status to qualified.
 Each linked record must match the catalog's exact runtime version, client version and platform.
 Linked failed or unverified results block qualification even if another record passes the same
 case. When a rerun supersedes a record, remove the old reference from the active claim while
@@ -253,11 +255,60 @@ reaches an adapter through a symlink. What it cannot prove is the `runtime_files
 `hook.py` is only ever loaded for the runtime whose session is running is a maintainer's reading of
 the call sites, and a wrong entry there is coupling this scope would miss.
 
-Per-*case* scoping, which would invalidate only the acceptance cases whose declared source paths
-changed, is not implemented. It would replace the published requirement with "no change under the
-paths a maintainer believes this case depends on", losing any coupling the map does not model, and
-the evidence requirements are a v1 stable interface. That is an owner decision and a policy edit,
-not a quiet patch; it waits on one. See [#333](https://github.com/JakeSelby/agent-harness/issues/333).
+#### Per case, inside the target
+
+Within a target's path set, evidence is also invalidated per acceptance case. The block's
+`case_paths` map names, for every required case, the source paths whose change can alter what that
+case observes:
+
+```json
+"case_paths": {
+  "version": 1,
+  "cases": {
+    "installation": [],
+    "role-confinement": ["adapters/claude-code/worker.py", "adapters/codex/worker.py"]
+  }
+}
+```
+
+A path is a literal file or directory under one of the runtime source paths, with no glob, no
+`.` or `..` segment and no leading or trailing slash; a directory covers every file under it.
+Every required case is a key, so adding a case forces a claim about it, and an empty list claims
+the case depends on none of the mapped paths. When the source changes after a record's commit, the
+changed files inside the target's path set decide what survives:
+
+- a changed file under a path some case names makes each case that names it **stale**, and leaves
+  the record's other cases standing;
+- a changed file under no case's paths invalidates the whole record, so the map fails closed:
+  shared source such as `bin`, `lib`, `primitives` and `policy` is mapped to no case today, and
+  any change to it still costs the round.
+
+A stale result neither passes nor blocks. It describes source that no longer exists, so the claim
+needs that case rerun, and a record carrying only the rerun cases, linked beside the older one,
+completes it. `citizen compatibility` names a stale case that nothing answers, with the files that
+made it stale.
+
+Each new evidence record carries `case_map`, the map's `version` and the SHA-256 of its cases, as
+the acceptance runner found them in the catalog. A record whose `case_map` is missing, or differs
+from the catalog's, is treated as whole-target scoped: any change in its target's path set
+invalidates all of it. So the map's version is what a reviewer reads to see what a record assumed,
+and changing the map, whether a new entry or a narrower one, bumps it; the digest makes an edit
+that forgets the bump fail closed instead of silently re-scoping older records.
+
+The map is a maintainer's claim about coupling, and the risk is stated plainly: a change that
+alters what a case observes through a path the map does not assign to it passes unnoticed for that
+case. An entry is added only with its argument here, and the argument names the call sites. Today
+there is one:
+
+- **`adapters/<runtime>/worker.py`** is loaded only by `citizen role run`, through
+  `harness_core.workers`, and no hook or session start loads it. The runner drives `role run` in
+  `role-confinement` and `spawn-confinement`; `cost-posture` verifies a runtime that does not
+  route native spawns through a role worker, and `framework-spawn-routing` runs the cost-posture
+  turn. Those four cases name both runtimes' workers, since either is reachable from either
+  session; the other eight stand when only a worker changes.
+
+`tests/test_evidence_case_scope.py` holds the mechanism to this rule, and checks that every mapped
+path exists. See [#582](https://github.com/JakeSelby/agent-harness/issues/582).
 
 A released catalog pins the exact source commit its evidence qualifies. Later development does
 not rewrite or invalidate that historical release record, but any change under the runtime-source

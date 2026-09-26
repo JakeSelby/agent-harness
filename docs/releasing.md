@@ -139,9 +139,12 @@ will run the round (the [runbook](qualification-runbook.md#target-hosts) establi
 disposable-home sync, projection-drift and lifecycle checks. Each defect it catches is one that
 would otherwise be found part-way through a round and cost the whole round again. A green tier is
 **not** qualification: it observes no client, writes nothing under `compatibility/evidence/` and
-appears in no catalog record, and the run fails if any check touches either. The tier is
-**advisory** for now — CI runs it as a `smoke` job the branch ruleset does not require — until it
-is decided whether a red tier may block a freeze.
+appears in no catalog record, and the run fails if any check touches either. **A red tier blocks
+the round:** `scripts/qualification_round.py` runs it first and, when it fails or times out,
+launches no target and records why in `round.json`. `--skip-smoke` is for a tier you already ran
+green at this commit; the round records it as `skipped`. CI also runs the tier as a `smoke` job,
+which the branch ruleset does not require, so a red job warns about a merge but blocks only the
+round.
 
 **Fix no defect mid-round.** A round runs all four required targets to completion and collects
 their defects; a fix landed between targets invalidates the targets already observed and forces a
