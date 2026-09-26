@@ -31,8 +31,12 @@ repository. GitHub secret scanning with push protection is enabled. The read-onl
 tested against a corpus of write-capable commands (`tests/test_allow_readonly_bash.py`) and
 never returns a deny, so a bug in it can only fall through to the normal permission prompt.
 `claude/hooks/grade-bash.py` is graded the same way: a false low grade is a missed prompt, never
-worse than the native permission flow, and a false high grade costs one extra prompt or, in `auto`
-and `bypassPermissions` where no prompt exists, one re-run with the confirm marker.
+worse than the native permission flow, and a false high grade costs one extra prompt or, where no
+prompt exists, one re-run: with the confirm marker in `bypassPermissions`, and in `auto` after the
+user replies `approve <code>` as the whole message. That approval is recorded only from a prompt
+that is nothing but approve tokens, so text an agent can place in a notification turn cannot carry
+one, and it covers one
+run of one command in one session for thirty minutes, and its store is closed to the agent's writes.
 The stop gate runs a repository's own `## Gate` commands only in a folder trusted through
 Claude Code's dialog or `harness trust`, so a clone cannot run code on the first Stop. The
 `bypass` permission posture requires an explicit acknowledgement in the config file and is

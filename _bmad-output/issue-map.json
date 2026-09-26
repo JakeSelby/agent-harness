@@ -4,7 +4,7 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "bug": 105,
+    "bug": 106,
     "chore": 80,
     "decision": 14,
     "epic": 21,
@@ -6599,6 +6599,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B104.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B105",
+      "github_number": 859,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/859",
+      "title": "grade-bash's confirm marker is refused as a bypass in auto mode, so an approved irreversible command can never run",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B105.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
