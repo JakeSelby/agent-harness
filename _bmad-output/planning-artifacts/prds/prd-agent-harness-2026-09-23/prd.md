@@ -1083,7 +1083,8 @@ scoped per runtime). Per-case scoping is a pending decision (§11 Q1).
 A release must be frozen on a release branch, and it must pass a model-free smoke tier before any native
 case runs. Per-case evidence must be recorded as it completes. **Status:**
 - implemented (0.12): the freeze and per-case progress (#396, #397);
-- unreleased: the smoke tier (#581), and drivers for all eleven native cases (#336).
+- unreleased: the smoke tier (#581), and drivers for all eleven native cases (#336);
+- unreleased: the round runner stops before any target runs when the tier fails or times out (#688).
 
 **Consequences (testable):**
 - A smoke-tier failure stops the round before any model turn is spent.
