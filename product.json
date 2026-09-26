@@ -240,7 +240,7 @@
       "issue": 558
     },
     {
-      "issue": 935,
+      "issue": 936,
       "title": "Workspaces from your .code-workspace files",
       "line": "Your .code-workspace files decide which repositories belong together, citizen workspace open launches Claude Code or Codex across them, and a session in any member folder gets the others' instructions."
     }

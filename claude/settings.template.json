@@ -7,6 +7,7 @@
       "Read(~/**)",
       "Read(//private/tmp/**)",
       "Read(//tmp/**)",
+      "Read(~/.local/state/agent-harness/workspaces/**)",
       "Bash(jq *)",
       "Bash(uniq *)",
       "Bash(cut *)",
