@@ -26,7 +26,7 @@ def notes(root=ROOT):
             not isinstance(migration.get("recovery"), list) or not migration["recovery"] or
             any(not isinstance(item, str) or not item for item in migration["recovery"])):
         raise ValueError("migration metadata must match VERSION and contain actions and recovery")
-    policy = "https://github.com/JakeSelby/agent-harness/blob/v%s/docs/compatibility-policy.md" % version
+    policy = "https://github.com/JakeSelby/model-citizen/blob/v%s/docs/compatibility-policy.md" % version
     lines = ["# " + product["headline"], "", product["description"], "", product["stances"], "", "## Compatibility", ""]
     lines += ["- " + row["id"] + ": " + row["status"] for row in data["clients"]]
     lines += ["", "Native restrictions remain authoritative. See the versioned compatibility catalog for evidence and gaps.",

@@ -101,10 +101,15 @@ class AboutComparisonTests(unittest.TestCase):
     def test_homepage_is_compared_only_when_the_landing_copy_names_one(self):
         runner = FakeGh(view=view_with(homepageUrl="https://example.invalid"))
         live = sync_about.published(runner)
-        self.assertEqual(sync_about.differences(sync_about.product(REPO), live), [])
-        temp, root = product_root(homepage="https://agent-harness.jakeselby.com")
+        temp, root = product_root(homepage="")
         self.addCleanup(temp.cleanup)
-        self.assertEqual(sync_about.differences(sync_about.product(root), live), ["homepage"])
+        self.assertEqual(sync_about.differences(sync_about.product(root), live), [])
+        self.assertEqual(sync_about.differences(sync_about.product(REPO), live), ["homepage"])
+
+    def test_the_landing_copy_names_the_project_site_as_the_homepage(self):
+        self.assertEqual(PRODUCT["homepage"], "https://model-citizen.dev")
+        self.assertIn("model-citizen", PRODUCT["topics"])
+        self.assertLessEqual(len(PRODUCT["topics"]), 20)
 
     def test_an_apply_edits_only_the_fields_that_differ(self):
         topics = [topic for topic in REPO_VIEW["repositoryTopics"] if topic["name"] != "codex"]
