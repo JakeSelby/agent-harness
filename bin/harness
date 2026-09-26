@@ -324,8 +324,6 @@ def say(msg: str) -> None:
 
 # The environment a session scopes its own selection with; sync projects user defaults without it.
 SESSION_SCOPED = ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG", "HARNESS_MODE", "HARNESS_PERMISSIONS")
-#: The session-scoped layers that choose stance variants; identity and permissions choose none.
-SELECTION_SCOPED = ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG", "HARNESS_MODE")
 
 
 def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
@@ -340,13 +338,22 @@ def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
 
 def selection_override(env: Optional[Dict[str, str]] = None) -> bool:
-    """Whether `env` chooses a stance for this project or session, which a sync never links.
+    """Whether a project or session layer changes a stance here, which a sync never links.
 
-    A blank value chooses nothing, as the resolver reads it.
+    Asks the resolver for the stances with and without those layers, so a blank variable, an
+    identity override or a config that names no stance does not count.
     """
     env = os.environ if env is None else env
-    return any((key.startswith("HARNESS_STANCE_") or key in SELECTION_SCOPED) and str(value).strip()
-               for key, value in env.items())
+    module = load_posture()
+    if module is None:
+        return False
+    user = read_json(config_path()) or {}
+    try:
+        full = module.selection(env, strict=False, config=user, root=REPO)["stances"]
+        base = module.selection(user_defaults_env(env), strict=False, config=user, root=REPO)["stances"]
+    except (OSError, ValueError, KeyError):
+        return False
+    return full != base
 
 
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:

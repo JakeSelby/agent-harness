@@ -86,5 +86,14 @@ class SyncWithSessionStance(unittest.TestCase):
         self.assertEqual(diff.returncode, 0, diff.stdout + diff.stderr)
         self.assertNotIn("scope", diff.stdout)
 
+    def test_a_project_config_that_names_no_stance_prints_no_scope_line(self):
+        synced = self.cli({}, "sync")
+        self.assertEqual(synced.returncode, 0, synced.stdout + synced.stderr)
+        project = self.home / "project.json"
+        project.write_text("{}", encoding="utf-8")
+        diff = self.cli({"HARNESS_PROJECT_CONFIG": str(project)}, "diff")
+        self.assertEqual(diff.returncode, 0, diff.stdout + diff.stderr)
+        self.assertNotIn("scope", diff.stdout)
+
 if __name__ == "__main__":
     unittest.main()
