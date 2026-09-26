@@ -2,7 +2,7 @@
 title: Model Citizen product requirements
 status: final
 created: 2026-09-23
-updated: 2026-09-25
+updated: 2026-09-26
 supersedes: ../prd-agent-harness-2026-09-19/prd.md
 sources:
   - ../../source-ledger.md
@@ -1070,7 +1070,7 @@ Evidence: `../../research/technical-runtime-platform-limits-and-qualification-20
 
 #### FR-51: Scoped evidence invalidation
 A change must invalidate qualification evidence only where its paths reach. **Status:** unreleased (#583,
-scoped per runtime). Per-case scoping is a pending decision (§11 Q1).
+scoped per runtime; #582, scoped per case through a versioned case-to-path map, decided 2026-09-26).
 
 **Consequences (testable):**
 - A change outside the source paths leaves all evidence valid. This covers docs, tests, scripts and
@@ -1078,12 +1078,16 @@ scoped per runtime). Per-case scoping is a pending decision (§11 Q1).
 - A change under one runtime's adapter directory invalidates that runtime's targets only, unless it
   touches a file shared code reads for every runtime.
 - A change to shared source invalidates every target.
+- Within a target, a change under a path the case-to-path map assigns invalidates only the cases that
+  name it, and a change under a path no case names invalidates every case. A record that states no map
+  version, or another one, keeps the whole-target rule.
 
 #### FR-52: One qualification round per release
 A release must be frozen on a release branch, and it must pass a model-free smoke tier before any native
 case runs. Per-case evidence must be recorded as it completes. **Status:**
 - implemented (0.12): the freeze and per-case progress (#396, #397);
-- unreleased: the smoke tier (#581), and drivers for all eleven native cases (#336).
+- unreleased: the smoke tier (#581), and drivers for all eleven native cases (#336);
+- unreleased: the round runner stops before any target runs when the tier fails or times out (#688).
 
 **Consequences (testable):**
 - A smoke-tier failure stops the round before any model turn is spent.
@@ -1244,6 +1248,9 @@ runtimes for later search. **Status:** planned (backlog, #542, #543, after the #
   against abandoned turns.
 - The archive is local and not authoritative. It stores neutral turn rows keyed to the harness session,
   searchable by full text.
+- The archive stores message and tool-result text only when the developer explicitly opts in through
+  `telemetry.sessions_bodies`, which is off by default. Stored text is redacted for secret patterns at
+  write, and `retention_days` applies to it (#685).
 - Every archive search is logged with a usefulness signal, so the #546 reopen criteria can be evaluated.
 - On runtimes without a pre-write hook, the adapter's capabilities state the gap.
 
@@ -1375,6 +1382,24 @@ makes stale, in the same pull request:
 - **NFR-15 Experiment discipline:**
   - Every spike and mechanism change carries a numeric exit criterion, written before the run.
   - The criterion is never adjusted after the result.
+  - Every published result meets the evidence standard (planned 0.14, #794), which
+    `docs/evidence-standard.md` states with what satisfies each item. It carries twelve items:
+    1. a pre-registered plan (hypotheses, primary metric, guardrails, sample size, stopping rule and
+       multiplicity), committed before the first trial from `docs/pre-registration-template.md`;
+    2. a frozen task set with a reference solution per task, audited for task and outcome validity;
+    3. the pinned model, CLI, effort, date, container digest, seeds and fallback rate;
+    4. a dated price table;
+    5. paired per-task results with clustered or Wilson intervals, and the intra-cluster correlation;
+    6. a cost-effectiveness view, such as a Pareto frontier;
+    7. trajectories and a command that reproduces the run;
+    8. judge agreement: κ, a confusion matrix and bias audits;
+    9. a contamination check;
+    10. estimand labels: intention to treat, adherence, complier effects, and hypotheticals marked as
+        such;
+    11. field checks: sample ratio, novelty, CUPED and dilution;
+    12. a "what we do not claim" section.
+
+    Where SM-2 defines a term the standard uses, SM-2 governs.
 - **NFR-16 Hook overhead:**
   - Each hook's p95 wall time per call is measured and reported with the static estimate.
   - No hook exceeds 250 ms p95 on the reference machines. `[ASSUMPTION: bound to be confirmed by the first
@@ -1535,7 +1560,7 @@ observation, then evaluation, then proof. Each entry names what the milestone ne
   - every ledger row carries a profile fingerprint and per-module attribution (#482);
   - the bare arm is observed like the harness arm, with nothing added to model context;
   - the replay defects found on 2026-09-24 are fixed;
-  - an evidence standard and a pre-registration template.
+  - an evidence standard and a pre-registration template (#794, NFR-15).
 - **v0.15.0, Measured:**
   - evaluation tiers (#510, #511, #512);
   - harness against bare at five or more trials, with confidence intervals (#559, #560);
@@ -1696,8 +1721,8 @@ answer.
 
 1. **Per-case or per-target invalidation?** Should qualification evidence be invalidated per case, or only
    per target (#582)?
-   - Blocks: FR-51.
-   - Needed by: v0.14.0.
+   - Answered 2026-09-26: per case, through a versioned case-to-path map in the catalog; a change under
+     an unmapped path invalidates every case (#582).
 2. **Keeping the issue map current.** How does the issue map's lifecycle stay current without a pull request
    after every merge (#420)? Does the derived sprint status (FR-65) change the answer?
    - Blocks: the issue map's lifecycle field (#420). FR-65's derived sprint status (0.13) does not settle
