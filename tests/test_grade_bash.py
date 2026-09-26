@@ -479,6 +479,14 @@ class GradeTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(grade(command), 1)
 
+    def test_a_redirect_only_segment_after_a_subshell_still_writes_its_file(self):
+        for command in ("(ls) > out.txt", "(ls)>out.txt", "{ ls; } > out.txt", "x=1 > out.txt"):
+            with self.subTest(command=command):
+                self.assertEqual(grader.grade_text(command, CWD)[:3], (1, "redirect to", "out.txt"))
+        # a temp-directory target is graded as it is after a plain command
+        self.assertEqual(grade("(ls) > /tmp/out.txt"), grade("ls > /tmp/out.txt"))
+        self.assertEqual(grade("(ls) > /dev/null"), 0)
+
 
 class HookTests(unittest.TestCase):
     def test_stance_and_mode_matrix(self):

@@ -738,9 +738,8 @@ def grade_tokens(tokens, cwd, depth):
             wrote = target
     while tokens and ASSIGN_RE.match(tokens[0]):
         tokens = tokens[1:]
-    if not tokens:
-        return 0, None, None, None
-    if ro.segment_ok(list(tokens)):
+    if not tokens or ro.segment_ok(list(tokens)):
+        # A redirect-only segment, as after a subshell in `(ls) > out.txt`, still writes its file.
         return (1, "redirect to", wrote, None) if wrote else (0, None, None, None)
     head = tokens[0]
     prog = head.rpartition("/")[2]
