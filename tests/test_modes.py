@@ -166,6 +166,18 @@ class Resolution(unittest.TestCase):
         self.mode("bare", hooks={"grade-bash": "on"})
         self.assertEqual(self.resolve(user=self.user(mode="bare"))["hooks"]["grade-bash"], "on")
 
+    def test_an_unacknowledged_core_hook_off_is_refused_once_and_resolves_on_for_a_hook(self):
+        # One refusal path for every layer: the mode is not refused a second time on its own,
+        # and a hook keeps the rest of the mode while the core hook keeps enforcing.
+        self.mode("bare", hooks={"grade-bash": "off"}, rules={"secrets": "off"})
+        with self.assertRaises(ValueError) as caught:
+            self.resolve(user=self.user(mode="bare"))
+        self.assertEqual(str(caught.exception).count("grade-bash"), 1)
+        self.assertIn("mode:bare switches the core hook grade-bash off", str(caught.exception))
+        result = self.resolve(user=self.user(mode="bare"), strict=False)
+        self.assertEqual((result["hooks"]["grade-bash"], result["sources"]["hooks"]["grade-bash"]), ("on", "default"))
+        self.assertEqual((result["rules"]["secrets"], result["sources"]["rules"]["secrets"]), ("off", "mode:bare"))
+
     def test_a_user_root_may_add_a_mode(self):
         self.mode("mine", rules={"secrets": "off"})
         result = self.resolve(user=self.user(mode="mine"))

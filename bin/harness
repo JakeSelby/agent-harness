@@ -106,6 +106,9 @@ EXTERNAL_RULES_DIR = "harness-roots"
 RULES_DIR = "harness"
 # The switch kinds sync projects; an `off` unit of one is absent from every runtime home.
 SYNC_SWITCH_KINDS = ("rules", "skills", "workflows", "roles")
+# Every switch kind `config set` writes. Hooks are not projected: the lifecycle dispatcher reads
+# their switches at each event, so a hook switched off needs no sync.
+CONFIG_SWITCH_KINDS = SYNC_SWITCH_KINDS + ("hooks",)
 BREW_PACKAGES = ["git", "gh", "node@22", "pnpm", "uv", "ripgrep", "fd", "jq"]
 # Bin directories of the keg-only formulae above, which Homebrew does not link into its prefix.
 KEG_ONLY_BINS = ["/opt/homebrew/opt/node@22/bin", "/usr/local/opt/node@22/bin"]
@@ -3211,7 +3214,7 @@ def coerce_config_value(key: str, value: str) -> Any:
         user["mode"] = value
         load_selection(env={}, user=user)
         return value
-    if head in SYNC_SWITCH_KINDS:
+    if head in CONFIG_SWITCH_KINDS:
         if not tail:
             raise SystemExit(f"a {head} switch names its unit: harness config set {head}.<name> on|off")
         if value not in ("on", "off"):
@@ -3238,7 +3241,7 @@ def coerce_config_value(key: str, value: str) -> Any:
             raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
         return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"mode, rules|skills|workflows|roles.NAME, permissions, plan_allow_tools, "
+                     f"mode, rules|skills|workflows|roles|hooks.NAME, permissions, plan_allow_tools, "
                      f"governance.provider, governance.jev.*, "
                      f"or one of {', '.join(BOOL_KEYS)}")
 
@@ -3297,13 +3300,17 @@ def config_set(key: str, value: Optional[str]) -> int:
             if parts[0] == "stances":
                 # A stance set by hand is the user's choice from now on, above any mode.
                 unmark_init_default(cfg, parts[1])
-            if parts[0] in SYNC_SWITCH_KINDS:
-                # Resolved as it will be written: a switch that breaks a module dependency is
-                # refused, and one that repairs a selection the resolver already refuses goes in.
+            if parts[0] in CONFIG_SWITCH_KINDS:
+                # Resolved as it will be written: a switch that breaks a module dependency, or turns
+                # a core hook off unacknowledged, is refused; one that repairs a selection the
+                # resolver already refuses goes in.
                 unset = deepcopy(cfg)
                 unset[parts[0]].pop(parts[1])
                 if parts[1] not in load_selection(env={}, user=unset)[parts[0]]:
                     raise SystemExit(f"{parts[0]} has no unit '{parts[1]}'; `harness selection` lists every unit")
+                load_selection(env={}, user=cfg)
+            elif key == "core_switches_acknowledged":
+                # Withdrawing the acknowledgement while a core hook is off is refused the same way.
                 load_selection(env={}, user=cfg)
             if key.startswith("integrations."):
                 selected = integrations.selection(cfg)
@@ -3319,7 +3326,8 @@ def config_set(key: str, value: Optional[str]) -> int:
         say(f"{key} set  ({path})")
     else:
         say(f"{key} = {json.dumps(coerced)}  ({path})")
-    say("applies to new viewer sessions" if key.startswith("integrations.") else "run `harness sync` to apply it")
+    say("applies to new viewer sessions" if key.startswith("integrations.")
+        else "applies from the next hook event" if key.startswith("hooks.") else "run `harness sync` to apply it")
     return 0
 
 

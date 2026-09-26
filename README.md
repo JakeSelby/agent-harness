@@ -26,7 +26,7 @@ site and the GitHub description cannot drift apart.
 
 ### Guardrails that leave room for judgment
 
-Hooks handle the few things that should be deterministic. Everything else stays the agent's call.
+Hooks handle the few things that should be deterministic, and each has an id you can switch off; the four that enforce need your acknowledgement first. Everything else stays the agent's call.
 
 - [Graded shell commands](claude/hooks/grade-bash.py): Every command is graded from read-only to irreversible, and your autonomy stance decides which grades stop and ask.
 - [Stop gate](claude/hooks/stop-gate.py): The turn doesn't end while your repo's own gate is red.
