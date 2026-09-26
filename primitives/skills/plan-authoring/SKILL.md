@@ -219,8 +219,9 @@ after every revision.
 - **Write around what the lint withholds.** Name a check by what it does, not by a project name
   the lint allows only in docs; say "the Co-Authored-By trailer" rather than quoting its address.
 - **The harness lint takes a directory.** Copy the plan alone into an empty temporary directory
-  and run `citizen lint <that directory>`; it must print `0 finding(s)`. Linting the plans
-  directory itself reads every other plan in it too.
+  and run `<harness checkout>/bin/citizen lint <that directory>`, since `citizen` is not on
+  `PATH`; it must print `0 finding(s)`. The `harness-authoring` skill shows how to find the
+  checkout. Linting the plans directory itself reads every other plan in it too.
 
 ## Self-check before handing it over
 

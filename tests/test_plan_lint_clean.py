@@ -17,7 +17,7 @@ from pathlib import Path
 from isolation import without_harness_vars
 
 REPO = Path(__file__).resolve().parent.parent
-HARNESS = REPO / "bin" / "harness"
+CITIZEN = REPO / "bin" / "citizen"
 SOURCE = REPO / "primitives" / "skills" / "plan-authoring" / "SKILL.md"
 PROJECTION = REPO / "claude" / "skills" / "plan-authoring" / "SKILL.md"
 
@@ -37,7 +37,7 @@ def lint_plan(text):
         (plans / "a-plan.md").write_text(text, encoding="utf-8")
         env = without_harness_vars()
         env.update(HOME=str(home), HARNESS_LINT_TERMS="docs-ok:" + PROJECT)
-        return subprocess.run([sys.executable, str(HARNESS), "lint", str(plans)],
+        return subprocess.run([sys.executable, str(CITIZEN), "lint", str(plans)],
                               capture_output=True, text=True, env=env, timeout=60)
 
 
@@ -63,7 +63,7 @@ class SkillTests(unittest.TestCase):
             with self.subTest(path=path.relative_to(REPO)):
                 self.assertIn("run it on the plan before you post the review message", text)
                 self.assertIn("the Co-Authored-By trailer", text)
-                self.assertIn("citizen lint <that directory>", text)
+                self.assertIn("<harness checkout>/bin/citizen lint <that directory>", text)
                 self.assertIn("reports no finding on the plan", text)
 
 
