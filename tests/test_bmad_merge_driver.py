@@ -68,10 +68,20 @@ def filled(item):
     return text[:head_end] + body
 
 
+def repository_local_variables():
+    """The variables git treats as local to a repository, which a hook sets for its own."""
+    listed = subprocess.run(["git", "rev-parse", "--local-env-vars"], capture_output=True, text=True)
+    names = set(listed.stdout.split()) if listed.returncode == 0 else set()
+    return names | {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR"}
+
+
+LOCAL_VARIABLES = repository_local_variables()
+
+
 def isolated_environment():
     """This environment without the variables a git hook sets, which would point git elsewhere."""
-    return {key: value for key, value in os.environ.items()
-            if key not in {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
+    return {key: value for key, value in os.environ.items() if key not in LOCAL_VARIABLES}
 
 
 EPIC = item_for("epic", 1, 1)
@@ -204,6 +214,16 @@ class MergeMapTests(unittest.TestCase):
             with mock.patch("sys.stderr"), mock.patch.object(driver, "rebasing", return_value=False):
                 self.assertEqual(driver.main(["sprint-status"] + [str(path) for path in paths]), 1)
             self.assertEqual(paths[1].read_text(), "development_status: {}\n")
+
+
+class IsolatedEnvironmentTests(unittest.TestCase):
+    def test_every_repository_override_a_hook_could_set_is_dropped(self):
+        names = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                 "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR")
+        with mock.patch.dict(os.environ, {name: "/elsewhere" for name in names}):
+            env = isolated_environment()
+        for name in names:
+            self.assertNotIn(name, env)
 
 
 class RegistrationDocsTests(unittest.TestCase):
