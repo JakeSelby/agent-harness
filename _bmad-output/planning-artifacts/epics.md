@@ -120,6 +120,7 @@ How to read it:
   - AH-D009 [#685](https://github.com/JakeSelby/agent-harness/issues/685): Decide whether the session archive may store the message bodies #128 forbids collecting (open)
   - AH-S219 [#691](https://github.com/JakeSelby/agent-harness/issues/691): Architecture viewer: the mailbox adapter behind the viewer seam (FR-46) (open)
   - AH-S221 [#693](https://github.com/JakeSelby/agent-harness/issues/693): Log every session-archive search with a usefulness signal (FR-63) (open)
+  - AH-S271 [#935](https://github.com/JakeSelby/model-citizen/issues/935): Workspace map from .code-workspace files, with workspace list and open (FR-61) (open)
 
 ### AH-E003: Close the loop: Jev as the controller between measured rules and autonomy ([#135](https://github.com/JakeSelby/agent-harness/issues/135), open)
 
