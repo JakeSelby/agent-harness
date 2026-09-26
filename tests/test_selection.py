@@ -51,6 +51,7 @@ class Ladder(unittest.TestCase):
         return str(path)
 
     def mode(self, name, data):
+        data = dict({"schema_version": 1, "description": "a test mode"}, **data)
         (self.roots / "modes" / (name + ".json")).write_text(json.dumps(data), encoding="utf-8")
 
     def user(self, **data):
@@ -62,7 +63,7 @@ class Ladder(unittest.TestCase):
 
     def test_every_unit_of_every_kind_is_listed_at_its_default(self):
         result = self.resolve()
-        self.assertEqual(sorted(k for k in result if k not in ("mode", "sources")), SELECTABLE)
+        self.assertEqual(sorted(k for k in result if k not in ("mode", "sources", "shadowed")), SELECTABLE)
         self.assertIsNone(result["mode"])
         self.assertEqual(result["sources"]["mode"], "default")
         self.assertEqual(result["stances"], posture.DEFAULT_STANCES)
@@ -138,8 +139,10 @@ class Ladder(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mode file .*'permissions'"):
             self.resolve(user=self.user(mode="sneaky"))
 
-    def test_an_unknown_mode_resolves_to_nothing(self):
-        result = self.resolve(user=self.user(mode="not-shipped"))
+    def test_an_unknown_mode_is_refused_and_a_hook_runs_without_it(self):
+        with self.assertRaisesRegex(ValueError, "unknown mode 'not-shipped'"):
+            self.resolve(user=self.user(mode="not-shipped"))
+        result = self.resolve(user=self.user(mode="not-shipped"), strict=False)
         self.assertEqual((result["mode"], result["sources"]["mode"]), ("not-shipped", "user"))
         self.assertEqual(result["stances"], posture.DEFAULT_STANCES)
 
@@ -252,7 +255,7 @@ class Consumers(unittest.TestCase):
                            HARNESS_PROJECT_CONFIG=self.session({"rules": {"secrets": "off"}}))
         self.assertEqual(out.returncode, 0, out.stderr)
         data = json.loads(out.stdout)
-        self.assertEqual(sorted(k for k in data if k not in ("mode", "sources")), SELECTABLE)
+        self.assertEqual(sorted(k for k in data if k not in ("mode", "sources", "shadowed")), SELECTABLE)
         self.assertEqual((data["rules"]["secrets"], data["sources"]["rules"]["secrets"]), ("off", "project"))
         text = self.run_cli("selection")
         self.assertIn("rules.secrets=on (default)", text.stdout)
