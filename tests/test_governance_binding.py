@@ -324,6 +324,34 @@ class FailClosed(Home):
         self.assertIn("`approve ", reason)
         self.assertEqual(self.rows()[-1]["deterministic_answer"], "ask")
 
+    # `cd $(cat x)` grades 0 here, proved read-only, so it is rightly never governed; the lines
+    # below grade 1 while the segment walk used to find no graded segment in them.
+    HIDDEN = ("cd sub 2> err.log && ls", "cd $(cat x) 2> err.log && ls")
+
+    def test_regression_an_unknown_provider_tightens_a_command_with_no_graded_segment(self):
+        self.configure("no-such-provider")
+        self.assertEqual(self.bash("cd $(cat x)"), ("allow", ""))
+        for command in self.HIDDEN:
+            answer, reason = self.bash(command)
+            self.assertEqual(answer, "ask", command)
+            self.assertIn("no-such-provider", reason, command)
+            self.assertEqual(self.bash(command, "auto")[0], "deny", command)
+
+    def test_regression_a_malformed_policy_tightens_a_command_with_no_graded_segment(self):
+        self.configure("local")
+        self.policy("{not json")
+        for command in self.HIDDEN:
+            answer, reason = self.bash(command)
+            self.assertEqual(answer, "ask", command)
+            self.assertIn("PolicyError", reason, command)
+
+    def test_a_malformed_policy_fails_before_any_segment_is_judged(self):
+        self.configure("local")
+        self.policy("{not json")
+        answer = grader.govern("git status > log.txt", str(self.repo), 1, "execute")
+        self.assertEqual(answer[0], "ask")
+        self.assertIn("provider local could not answer", answer[1])
+
     def test_an_unknown_provider_name_asks(self):
         self.configure("no-such-provider")
         answer, reason = self.bash("npm test")

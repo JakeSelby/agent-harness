@@ -1169,8 +1169,12 @@ def governed_text(cmd, cwd, depth=0):
             body = body[1:]
         if body and body[0] == "cd":
             ops = operands(body[1:])
-            if ops[:1] != ["-"]:
-                here = _resolve(ops[0] if ops else "~", here)
+            moved = here if ops[:1] == ["-"] else _resolve(ops[0] if ops else "~", here)
+            # A `cd` that also writes, through a redirect, is governed where it runs.
+            cd_grade = grade_tokens(list(tokens), here, depth)[0]
+            if cd_grade > 0:
+                found.append((SHELL, cd_grade, here, _written("cd", [], _targets, here)))
+            here = moved
             continue
         found.extend(_governed(tokens, here, depth))
     return found
@@ -1230,8 +1234,10 @@ def govern(command, cwd, grade, variant, event=None, runtime=""):
         found = governed_text(command, cwd)
     except Exception:
         found = None
-    if not found:
-        found = [(SHELL, grade, cwd, [])]
+    if not found or max(entry[1] for entry in found) <= 0:
+        # The grader graded the line above 0 yet no segment carries that grade: govern the whole
+        # line at its grade rather than let the walk find nothing to ask about.
+        found = (found or []) + [(SHELL, grade, cwd, [])]
     hits = _policy_hits(command, found)
     if hits:
         _log(FILE_WRITE, None, POLICY_LEVEL, grade, "ask", name, event, runtime)
@@ -1241,6 +1247,16 @@ def govern(command, cwd, grade, variant, event=None, runtime=""):
     try:
         decision = _decision_module()
         places, providers = {}, {}
+        # The provider is selected, loaded and its policy read for the command's own directory
+        # before any segment is looked at. A provider that cannot be used then asks for the whole
+        # command, whatever its segments grade: a line whose only graded part is hidden from the
+        # segment walk, such as `cd $(cat x)`, must not pass for want of a segment to ask about.
+        places[cwd] = decision.locate(cwd)
+        home_root = places[cwd][1] or cwd
+        providers[home_root] = decision.select_provider(config, root=home_root, variant=variant)
+        load = getattr(providers[home_root], "policy", None)
+        if callable(load):
+            load()
         for action_class, level_grade, where, _written_paths in found:
             if level_grade <= 0:
                 continue
