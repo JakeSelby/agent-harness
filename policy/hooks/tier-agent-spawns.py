@@ -266,7 +266,7 @@ def routable(kind, cwd, session=None, announce=False, transcript=None):
                           "default band")
     if not (user / (kind + ".md")).is_file():
         return None, ("no " + kind + " definition is installed, so this spawn is not routed to "
-                      "the variant's default band; run `harness sync`")
+                      "the variant's default band; run `citizen sync`")
     module = posture_module()
     known = module.session_agents(session) if module else None
     if known is not None:
@@ -364,7 +364,7 @@ def routed_message(route, model, requested):
     return (f"unnamed subagent routed to {route['worker']}" + (f" ({shown})" if shown else "") +
             "; spawn worker-a, worker-b or worker-c to choose the band" +
             (" · the installed definition's effort is not the selected variant's; run "
-             "`harness sync` to apply the selected posture" if route.get("stale") else ""))
+             "`citizen sync` to apply the selected posture" if route.get("stale") else ""))
 
 
 def emit(fields, system_message=None):

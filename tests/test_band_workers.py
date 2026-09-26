@@ -330,7 +330,7 @@ class RerouteTests(unittest.TestCase):
         path.write_text(path.read_text(encoding="utf-8").replace("effort: low", "effort: high"))
         out = self.parsed({"prompt": "x"})
         self.assertIn("high effort", out["systemMessage"])
-        self.assertIn("run `harness sync`", out["systemMessage"])
+        self.assertIn("run `citizen sync`", out["systemMessage"])
 
     def test_a_named_role_is_untouched_and_never_asks_for_the_table(self):
         self.install_workers()
