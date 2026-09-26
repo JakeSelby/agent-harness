@@ -1633,6 +1633,10 @@ def patch_verdict(names, written, calls, fired, session_id):
     file-tool calls and `fired` the user hook's own log. A file the file tool wrote and the user
     hook never heard of is a composition failure. A turn that aimed the file tool at fewer than
     every file observed no multi-file patch, and one that never used it observed nothing.
+
+    The user hook's log names a file, not the call that wrote it, while the harness notice is read
+    by call id; only a turn with exactly one file-tool call per file ties each log line to the
+    same write the notice answers, so a repeated write is unverified.
     """
     aimed = set(Path(call["file"]).name for call in calls if call["file"])
     heard = set(Path(str(row.get("file") or "")).name for row in fired
@@ -1653,6 +1657,12 @@ def patch_verdict(names, written, calls, fired, session_id):
     if missing:
         raise Unverified("the turn did not write %s with its file tool, so a two-file patch was "
                          "not observed" % ", ".join(missing))
+    repeated = sorted(n for n in names
+                      if sum(1 for call in calls if Path(call["file"]).name == n) > 1)
+    if repeated:
+        raise Unverified("the turn aimed the file tool at %s more than once, and the user hook's "
+                         "log names the file but not the call, so its line cannot be tied to the "
+                         "write the harness notice answers" % ", ".join(repeated))
     return sorted(heard & set(names))
 
 
@@ -1668,7 +1678,9 @@ def write_hook_records(text, call_ids=None):
             record = json.loads(line)
         except ValueError:
             continue
-        attachment = record.get("attachment") if isinstance(record, dict) else None
+        if not isinstance(record, dict):
+            continue
+        attachment = record.get("attachment")
         if (record.get("type") != "attachment" or not isinstance(attachment, dict)
                 or attachment.get("hookName") != "PostToolUse:Write"):
             continue
