@@ -105,7 +105,7 @@ development_status:
   ah-s230-replay-judge-a-one-policy-arm-pair-on-cost-per: ready-for-dev
   ah-s245-jev-compliance-packs-calibrated-on-hand-labels: backlog
   ah-s266-local-governance-add-coding-pr-merge-a-user: ready-for-dev
-  ah-s270-local-governance-bind-the-decision-provider-into: backlog
+  ah-s270-local-governance-bind-the-decision-provider-into: ready-for-dev
   ah-sp001-jev-verify-stop-claims-against-gate-evidence: ready-for-dev
   ah-sp002-jev-evaluate-advisory-action-risk-and-tool: done
   ah-sp003-jev-evaluate-short-source-to-output-fidelity: done

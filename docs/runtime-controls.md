@@ -332,7 +332,10 @@ its output is exactly what the stance alone gives.
   not read-only and names either file, or writes one through a redirect, `tee`, `sed -i`,
   `cp`, `mv` or a similar path writer, asks; a `Write`, `Edit`, `MultiEdit`, `NotebookEdit` or
   `apply_patch` to one asks too, and in `auto` mode is refused with an approval code covering that
-  exact edit once.
+  exact edit once. The user's `config.json` is guarded the same way, by Bash write target and by
+  file tool, and so is any `harness config set governance...` command: the configuration selects
+  the provider, so without the guard an agent could switch governance off instead of editing a
+  policy.
 - **Rows.** Each decision the hook asks for is one `governance` row in `decisions.jsonl`, owned by
   `hooks/grade-bash`, whose `input` records the action class, counterparty, level, grade, outcome
   and provider, and never the command text. `telemetry.decisions: false` stops them with the rest.

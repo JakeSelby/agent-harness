@@ -390,6 +390,66 @@ class PolicyWrites(Home):
         self.assertEqual(self.write(target, tool="Edit")[0], "ask")
         self.assertEqual(self.write(target, runtime="codex")[0], "deny")
 
+    def test_bash_writes_to_the_user_config_ask(self):
+        for command in ("echo '{}' > ~/.config/agent-harness/config.json",
+                        "cd ~/.config/agent-harness && tee config.json < x",
+                        "sed -i '' s/local/none/ ~/.config/agent-harness/config.json",
+                        "cp /tmp/c.json $HOME/.config/agent-harness/config.json"):
+            answer, reason = self.bash(command)
+            self.assertEqual(answer, "ask", command)
+            self.assertIn("level 1", reason, command)
+            self.assertIn("harness configuration", reason, command)
+
+    def test_setting_a_governance_key_asks_and_denies_with_a_code_in_auto_mode(self):
+        for command in ("harness config set governance.provider none",
+                        "python3 bin/harness config set governance.provider none",
+                        "~/repos/h/bin/harness config set 'governance.provider' none",
+                        "citizen config set governance.provider none"):
+            answer, reason = self.bash(command)
+            self.assertEqual(answer, "ask", command)
+            self.assertIn("harness config set", reason, command)
+        answer, reason = self.bash("harness config set governance.provider none", "auto")
+        self.assertEqual(answer, "deny")
+        self.assertIn("`approve ", reason)
+
+    def test_other_config_keys_and_reads_are_not_gated(self):
+        self.assertIsNone(self.bash("harness config set identity.name x")[0])
+        self.assertIsNone(self.bash("harness config get governance.provider")[0])
+        self.assertEqual(self.bash("cat ~/.config/agent-harness/config.json")[0], "allow")
+
+    def test_a_file_tool_write_to_the_user_config_asks_or_denies(self):
+        target = self.home / ".config" / "agent-harness" / "config.json"
+        answer, reason = self.write(target, tool="Edit")
+        self.assertEqual(answer, "ask")
+        self.assertIn("level 1", reason)
+        self.assertEqual(self.write(target, "auto")[0], "deny")
+
+    def test_under_none_the_config_guard_is_off(self):
+        self.configure("none")
+        target = self.home / ".config" / "agent-harness" / "config.json"
+        self.assertEqual(self.write(target), (None, ""))
+        self.assertIsNone(self.bash("harness config set governance.provider local")[0])
+
+    def patch(self, path, mode="default"):
+        patch = "*** Begin Patch\n*** Delete File: %s\n*** End Patch\n" % path
+        out = lifecycle.dispatch("codex", {"hook_event_name": "PreToolUse", "tool_name": "apply_patch",
+                                           "tool_input": {"command": patch}, "session_id": SESSION,
+                                           "permission_mode": mode, "cwd": str(self.repo)})
+        return out.get("hookSpecificOutput", {}).get("permissionDecision")
+
+    def test_regression_a_delete_only_patch_of_a_policy_file_is_gated(self):
+        self.policy({})
+        self.assertEqual(self.patch(self.repo / ".agent-harness" / "governance.json"), "deny")
+        self.assertEqual(self.patch(".agent-harness/governance.json"), "deny")
+
+    def test_regression_a_delete_only_patch_of_the_approvals_store_is_denied(self):
+        store = self.home / ".local" / "state" / "agent-harness" / "approvals" / (SESSION + ".json")
+        self.configure(None)
+        self.assertEqual(self.patch(store), "deny")
+
+    def test_a_delete_only_patch_of_another_file_is_not_gated(self):
+        self.assertIsNone(self.patch(self.repo / "notes.txt"))
+
     def test_another_json_file_is_not_gated(self):
         self.assertEqual(self.write(self.repo / "governance.json"), (None, ""))
 

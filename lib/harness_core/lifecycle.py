@@ -690,7 +690,10 @@ def patch_paths(event):
     if event["tool_name"] == "apply_patch":
         patch = inputs.get("command", inputs.get("patch", ""))
         if isinstance(patch, str):
-            paths.extend(re.findall(r"^\*\*\* (?:Add File|Update File|Move to): (.+)$", patch, re.M))
+            # Every path a patch touches, deletions included: a delete-only patch that named no
+            # path would otherwise pass every guard on a file it removes.
+            paths.extend(re.findall(r"^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$",
+                                    patch, re.M))
     return sorted(set(str(Path(event.get("cwd") or os.getcwd()) / p) for p in paths if p))
 
 

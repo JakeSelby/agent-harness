@@ -46,7 +46,8 @@ Behaviour:
     segments stands. The provider only tightens: its `ask` is emitted through the same mode split
     and approval channel as the grader's, and it is never asked about a command the grader
     already gates. A configured provider that raises asks, naming the error, rather than allows,
-    and a write to a governance policy file is always asked about, as a level-1 action. Each
+    and a write to a governance policy file or to the user `config.json`, or a `harness config
+    set governance...`, is always asked about, as a level-1 action. Each
     decision is one `governance` row in the decision log. Under `none` nothing is imported and
     the output is exactly the stance's.
   - Never raises: a missing sibling grammar and any unexpected error are a silent exit 0, so a
@@ -977,6 +978,12 @@ POLICY_DIR = ".agent-harness"
 # Either policy file named in a command that is not read-only is a write to it: the repository's
 # `.agent-harness/governance.json` and the user's `.config/agent-harness/governance.json`.
 POLICY_RE = re.compile(r"agent-harness[/\\]+governance\.json")
+# The user configuration selects the provider, so a write to it can switch governance off; it is
+# guarded like a policy file, and so is the command that sets a `governance` key in it.
+CONFIG_NAME = "config.json"
+CONFIG_RE = re.compile(r"\.config[/\\]+agent-harness[/\\]+config\.json")
+# `citizen` is the CLI's other name, so both spellings are the same command.
+CONFIG_SET_RE = re.compile(r"(?:harness|citizen)\b[^;&|\n]*\bconfig\s+set\s+[\"']?governance\b")
 # Programs every operand of which may be a path they write, move or remove.
 PATH_WRITERS = {"tee", "cp", "mv", "install", "ln", "rm", "unlink", "truncate", "touch", "rsync",
                 "shred", "dd"}
@@ -1025,9 +1032,27 @@ def _resolve(target, cwd):
     return path if os.path.isabs(path) else os.path.normpath(os.path.join(cwd or os.getcwd(), path))
 
 
-def _user_policy():
+def _user_policy(name=POLICY_NAME):
     home = os.environ.get("HARNESS_HOME") or os.environ.get("HOME") or str(Path.home())
-    return os.path.join(home, ".config", "agent-harness", POLICY_NAME)
+    return os.path.join(home, ".config", "agent-harness", name)
+
+
+def is_user_config(path):
+    """Whether `path` is the harness user configuration, `config.json`, which selects the provider."""
+    try:
+        return (os.path.realpath(os.path.expanduser(str(path)))
+                == os.path.realpath(_user_policy(CONFIG_NAME)))
+    except (OSError, ValueError):
+        return False
+
+
+def guarded(path):
+    """What `path` is, when a write to it is a level-1 action, or None."""
+    if is_policy_file(path):
+        return "the governance policy file " + str(path)
+    if is_user_config(path):
+        return "the harness configuration " + str(path) + ", which selects the decision provider"
+    return None
 
 
 def is_policy_file(path):
@@ -1171,11 +1196,20 @@ def _log(action_class, slug, level, grade, outcome, provider, event, runtime,
 
 
 def _policy_hits(command, found):
-    hits = sorted(set(p for entry in found for p in entry[3] if is_policy_file(p)))
+    """What a command changes that is a level-1 action: a policy file, the user configuration or
+    a `governance` key set through `harness config set`."""
+    hits = sorted(set(filter(None, (guarded(p) for entry in found for p in entry[3]))))
     if not hits:
         match = POLICY_RE.search(command)
         if match:
-            hits = [match.group(0)]
+            hits = ["the governance policy file " + match.group(0)]
+        else:
+            match = CONFIG_RE.search(command)
+            if match:
+                hits = ["the harness configuration " + match.group(0)
+                        + ", which selects the decision provider"]
+    if CONFIG_SET_RE.search(command):
+        hits.append("the governance configuration, through `harness config set`")
     return hits
 
 
@@ -1201,9 +1235,8 @@ def govern(command, cwd, grade, variant, event=None, runtime=""):
     hits = _policy_hits(command, found)
     if hits:
         _log(FILE_WRITE, None, POLICY_LEVEL, grade, "ask", name, event, runtime)
-        return "ask", ("Governance: this writes the governance policy file %s, which is level %d:"
-                       " every change to it needs the user's explicit yes." % (", ".join(hits),
-                                                                             POLICY_LEVEL))
+        return "ask", ("Governance: this changes %s, which is level %d: every change to it"
+                       " needs the user's explicit yes." % ("; ".join(hits), POLICY_LEVEL))
     worst = None
     try:
         decision = _decision_module()
@@ -1236,21 +1269,20 @@ def govern(command, cwd, grade, variant, event=None, runtime=""):
 
 
 def govern_file(tool, tool_input, paths, event=None, runtime=""):
-    """`(subject, sentence)` for a file-tool write to a governance policy file, or None.
+    """`(subject, sentence)` for a file-tool write to a policy file or the user config, or None.
 
     Only when a provider other than `none` is configured. `subject` is what an approval code
     names: the tool and its exact input, so an approval covers that one edit."""
     name = provider_name(_config())
     if name == NO_PROVIDER:
         return None
-    hits = sorted(p for p in paths if is_policy_file(p))
+    hits = sorted(set(filter(None, (guarded(p) for p in paths))))
     if not hits:
         return None
     _log(FILE_WRITE, None, POLICY_LEVEL, 1, "ask", name, event, runtime)
     subject = tool + "\n" + json.dumps(tool_input, sort_keys=True)
-    return subject, ("Governance: this edits the governance policy file %s, which is level %d:"
-                     " every change to it needs the user's explicit yes." % (", ".join(hits),
-                                                                           POLICY_LEVEL))
+    return subject, ("Governance: this edits %s, which is level %d: every change to it needs"
+                     " the user's explicit yes." % ("; ".join(hits), POLICY_LEVEL))
 
 
 def main():
