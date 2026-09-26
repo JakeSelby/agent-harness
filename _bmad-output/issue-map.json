@@ -4,7 +4,7 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "bug": 106,
+    "bug": 107,
     "chore": 80,
     "decision": 14,
     "epic": 21,
@@ -6718,6 +6718,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S270.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B106",
+      "github_number": 896,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/896",
+      "title": "Read-only grammar mis-tokenizes a closing parenthesis followed directly by a separator",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B106.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     }
