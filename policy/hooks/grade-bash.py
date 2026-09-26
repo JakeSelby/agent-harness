@@ -1064,6 +1064,92 @@ def _isolating(text):
         return True
 
 
+COMPOUND_OPEN = {"{", "if", "while", "until", "for", "select", "case"}
+COMPOUND_CLOSE = {"}", "fi", "done", "esac"}
+LIST_ENDS = {"&&", "||", ";", ";;", "&"}
+
+
+def _unquoted_structure(text):
+    """`text` with every quoted or escaped operator character replaced by `_`, so the tokenizer,
+    which turns a quoted `|` into a word spelled like the operator, returns only real operators.
+    Word boundaries do not move: those characters were inside a word already."""
+    out, quote, i = [], "", 0
+    while i < len(text):
+        c = text[i]
+        if c == "\\" and quote != "'" and i + 1 < len(text):
+            nxt = text[i + 1]
+            out.append(c + ("_" if nxt in ro.OPERATOR_CHARS else nxt))
+            i += 2
+            continue
+        if quote and c == quote:
+            quote = ""
+        elif not quote and c in "'\"":
+            quote = c
+        elif quote and c in ro.OPERATOR_CHARS:
+            c = "_"
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _confined(text):
+    """Per simple command of `segments(text)`, whether a `cd` there is confined to it, or None
+    when the walk cannot place the line's structure and each `cd` falls back to `_isolating`.
+
+    A pipeline binds tighter than `&&`, `||` and `;`, so every element of a pipeline starts in the
+    directory in effect when it begins: only a `cd` inside a pipeline element, a subshell or a
+    background job is confined. A `cd` inside a brace group, conditional or loop keeps the
+    line-wide rule, because such a construct may itself be a pipeline element."""
+    try:
+        tokens = ro.tokenize(" ; ".join(_unquoted_structure(text).split("\n")))
+    except ValueError:
+        return None
+    # [(pipeline index, paren depth, compound depth)] per segment, and each pipeline's flag.
+    places, piped = [], [False]
+    cur, skipping, parens, compounds = [], False, 0, 0
+    for token in tokens:
+        if token in ro.ALWAYS_DELIM:
+            if cur:
+                places.append(open_at)
+            cur, skipping = [], False
+            if token == "(":
+                parens += 1
+            elif token == ")":
+                parens -= 1
+                if parens < 0:  # a `case` pattern, which this walk does not place
+                    return None
+            elif parens == 0 and compounds == 0:
+                if token in ("|", "|&"):
+                    piped[-1] = True
+                elif token in LIST_ENDS:
+                    if token == "&":
+                        piped[-1] = True
+                    piped.append(False)
+            continue
+        if skipping:
+            continue
+        if not cur:
+            if token in COMPOUND_OPEN:
+                compounds += 1
+            elif token in COMPOUND_CLOSE:
+                compounds -= 1
+                if compounds < 0:
+                    return None
+            if token in ro.WORD_DROP or token in ro.WORD_COND or token == "!":
+                continue
+            if token in ro.WORD_HEADER:
+                skipping = True
+                continue
+            open_at = (len(piped) - 1, parens, compounds)
+        cur.append(token)
+    if cur:
+        places.append(open_at)
+    if parens or compounds:
+        return None
+    return [True if in_parens else None if in_compound else piped[index]
+            for index, in_parens, in_compound in places]
+
+
 def _user_policy(name=POLICY_NAME):
     home = os.environ.get("HARNESS_HOME") or os.environ.get("HOME") or str(Path.home())
     return os.path.join(home, ".config", "agent-harness", name)
@@ -1203,7 +1289,8 @@ def governed_text(cmd, cwd, depth=0, isolated=False):
     `cd ../other && echo "$(git push)"` pushes from `../other`. A directory is None, which
     `govern` names `repo:unknown/local`, from the first change that cannot be known without
     running the line: a `cd` or `pushd` to anything but a literal path, `popd`, and any `cd` in a
-    subshell, a substitution, a pipeline or a background job, where it does not carry over."""
+    subshell, a substitution, a pipeline or a background job, where it does not carry over. A
+    pipeline after a `cd` starts in that `cd`'s directory, as `_confined` places it."""
     if depth >= MAX_DEPTH:
         return None
     text, _bodies = normalize(cmd)
@@ -1211,7 +1298,10 @@ def governed_text(cmd, cwd, depth=0, isolated=False):
     parts = segments(stripped) if stripped is not None else None
     if parts is None:
         return None
-    isolated = isolated or _isolating(stripped)
+    line_wide = isolated or _isolating(stripped)
+    confined = None if isolated else _confined(stripped)
+    if confined is None or len(confined) != len(parts):
+        confined = [None] * len(parts)
     queue = list(inners)
     found = []
 
@@ -1222,7 +1312,7 @@ def governed_text(cmd, cwd, depth=0, isolated=False):
                          or [(SHELL, _scan(inner)[0], where, [])])
 
     here = cwd
-    for tokens in parts:
+    for tokens, alone in zip(parts, confined):
         substitutions(sum(t.count(PLACEHOLDER) for t in tokens), here)
         body, _targets = _redirects(list(tokens))
         while body and ASSIGN_RE.match(body[0]):
@@ -1234,7 +1324,11 @@ def governed_text(cmd, cwd, depth=0, isolated=False):
             if moved_grade > 0:
                 found.append((SHELL, moved_grade, here, _written(head, [], _targets, here)))
             args = body[1:]
-            if isolated or head == "popd" or any(a.startswith("-") for a in args) or len(args) > 1:
+            if alone is None:
+                alone = line_wide
+            # A confined `cd` leaves the directory unknown, not unchanged: zsh runs a
+            # pipeline's last element in the current shell, so `x | cd d` moves it there.
+            if alone or head == "popd" or any(a.startswith("-") for a in args) or len(args) > 1:
                 here = None
             elif head == "pushd" and not args:
                 here = None  # swaps with the directory stack, which this walk does not hold

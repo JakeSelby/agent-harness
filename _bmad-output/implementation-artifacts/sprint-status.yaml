@@ -388,7 +388,7 @@ development_status:
   ah-b104-fix-remote-control-sessions-a-host-starts-never: ready-for-dev
   ah-b105-grade-bash-s-confirm-marker-is-refused-as-a: ready-for-dev
   ah-b106-read-only-grammar-mis-tokenizes-a-closing: ready-for-dev
-  ah-b108-governance-attributes-a-piped-push-after-a: backlog
+  ah-b108-governance-attributes-a-piped-push-after-a: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
