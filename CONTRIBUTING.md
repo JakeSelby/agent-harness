@@ -37,9 +37,9 @@ an atomic uniqueness constraint across PRs, and another PR changing cannot inval
 
 1. Fork and clone:
    ```sh
-   gh repo fork JakeSelby/agent-harness --clone --remote
-   cd agent-harness
-   git remote -v        # origin = your fork, upstream = JakeSelby/agent-harness
+   gh repo fork JakeSelby/model-citizen --clone --remote
+   cd model-citizen
+   git remote -v        # origin = your fork, upstream = JakeSelby/model-citizen
    ```
 2. Keep `main` on your fork current with upstream, and branch from it:
    ```sh
@@ -53,7 +53,7 @@ an atomic uniqueness constraint across PRs, and another PR changing cannot inval
 5. Push to your fork and open the PR against `main`:
    ```sh
    git push -u origin <short-topic>
-   gh pr create --repo JakeSelby/agent-harness --base main --fill
+   gh pr create --repo JakeSelby/model-citizen --base main --fill
    ```
 6. CI runs the lint and the tests. Fix anything red; the merge button stays disabled until the
    checks pass. Squash merge is the only merge method, and the PR title becomes the commit

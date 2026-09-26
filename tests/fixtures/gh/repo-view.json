@@ -1,6 +1,6 @@
 {
     "description": "The control plane for your coding agents, however you run them. One checkout of rules, skills, subagents, hooks and stances, projected into Claude Code and Codex with your own primitives: hook-enforced guardrails, usage telemetry, cost postures and model tiering, under any rules library or orchestration layer.",
-    "homepageUrl": "https://agent-harness.jakeselby.com",
+    "homepageUrl": "https://model-citizen.dev",
     "repositoryTopics": [
         {
             "name": "agent-harness"
@@ -42,9 +42,6 @@
             "name": "codex"
         },
         {
-            "name": "coding-agent"
-        },
-        {
             "name": "context-engineering"
         },
         {
@@ -52,6 +49,9 @@
         },
         {
             "name": "llm-agents"
+        },
+        {
+            "name": "model-citizen"
         },
         {
             "name": "observability"

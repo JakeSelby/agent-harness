@@ -170,6 +170,13 @@ class CommandContentTests(unittest.TestCase):
         self.assertIn("unresolved review thread", body)
         self.assertIn("reviewThreads", body)
 
+    def test_land_names_a_check_that_is_not_required_but_never_waits_on_it(self):
+        """A review bot's status is not required and sits pending for minutes after each request."""
+        body = split(COMMANDS / "land.md")[1]
+        self.assertIn("Name each check or status that is not required, with its state", body)
+        self.assertIn("never wait on it", body)
+        self.assertIn("A pending, failing or stale one stops the workflow", body)
+
     def test_build_answers_the_review_bot_and_leaves_human_threads_alone(self):
         """Resolving a human's thread would hide feedback nobody has answered."""
         body = split(COMMANDS / "build.md")[1]

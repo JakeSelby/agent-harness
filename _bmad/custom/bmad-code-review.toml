@@ -1,2 +1,5 @@
 [workflow]
-persistent_facts = ["file:{project-root}/docs/bmad-governance.md"]
+persistent_facts = [
+  "file:{project-root}/docs/bmad-governance.md",
+  '''Approved-plan mode. When an approved plan invokes this review (a `/build` or other implementation run the user approved with "build" or "go with N", or an invocation that says `unattended`), the approval is the user's standing answer at each checkpoint, so record the answer taken and continue instead of waiting: at the step 1 "CHECKPOINT", present the summary and proceed; at "Resolve decision-needed findings", resolve nothing and leave each one as an unchecked `[Review][Decision]` item in the story; at "Handle `patch` findings", take "Apply every patch"; at "Next steps", take "Done". Every finding is still written to the story's review findings section. End with the counts and then only the decision-needed findings, as numbered questions each with its options and a recommendation. Every other halt still stops the run: no review target, no active review layers, missing subagents or a blocked step. Invoked any other way, the review halts at every checkpoint as written.''',
+]

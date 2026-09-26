@@ -23,6 +23,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MAP_RELATIVE_PATH = "_bmad-output/issue-map.json"
 MAP_PATH = ROOT / MAP_RELATIVE_PATH
+# Every GitHub API call goes to this slug, not the map's "repository". The map keeps the slug it was
+# bootstrapped with because planning_block renders it into every mapped issue's body; since the
+# repository was renamed, GitHub answers a write to that slug with a 307 that `gh api` does not follow.
+API_REPOSITORY = "JakeSelby/model-citizen"
 ARTIFACT_DIR = ROOT / "_bmad-output" / "implementation-artifacts"
 BEGIN = "<!-- bmad-traceability:start -->"
 END = "<!-- bmad-traceability:end -->"
@@ -1121,8 +1125,7 @@ def item_depth_findings(item):
     return findings, []
 
 
-def verify_remote_artifacts(manifest):
-    repo = manifest["repository"]
+def verify_remote_artifacts(manifest, repo):
     tree = gh_json(["api", "repos/{}/git/trees/main?recursive=1".format(repo)])
     if tree.get("truncated"):
         raise RuntimeError("GitHub returned a truncated main tree; artifact presence is unknown")
@@ -1130,14 +1133,13 @@ def verify_remote_artifacts(manifest):
     return [item["artifact_path"] for item in manifest["items"] if item["artifact_path"] not in paths]
 
 
-def apply_manifest(manifest):
+def apply_manifest(manifest, repo):
     errors = audit_manifest(manifest)
     if errors:
         raise RuntimeError("\n".join(errors))
-    missing = verify_remote_artifacts(manifest)
+    missing = verify_remote_artifacts(manifest, repo)
     if missing:
         raise RuntimeError("artifacts are not on main: {}".format(", ".join(missing[:5])))
-    repo = manifest["repository"]
     project_native_types = projection_mode(manifest) == "native-and-labels"
     live_issues = fetch_issues(repo)
     live = {issue["number"]: issue for issue in live_issues}
@@ -1161,7 +1163,7 @@ def apply_manifest(manifest):
         issue = live[item["github_number"]]
         current_labels = {label["name"] for label in issue.get("labels", [])}
         projected_labels = desired_labels(issue, item["type"])
-        desired_body = upsert_planning_block(issue.get("body"), planning_block(item, repo))
+        desired_body = upsert_planning_block(issue.get("body"), planning_block(item, manifest["repository"]))
         payload = {}
         if desired_body != (issue.get("body") or ""):
             payload["body"] = desired_body
@@ -1615,7 +1617,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     bootstrap_parser = subparsers.add_parser("bootstrap")
-    bootstrap_parser.add_argument("--repo", default="JakeSelby/agent-harness")
+    bootstrap_parser.add_argument("--repo", default="JakeSelby/model-citizen")
     bootstrap_parser.add_argument(
         "--native-type-projection",
         choices=("labels-only", "native-and-labels"),
@@ -1706,7 +1708,7 @@ def main(argv=None):
             notices.append("live comparison skipped until the local findings below are fixed")
         if args.live and not errors:
             errors, notices = live_findings(
-                manifest, fetch_issues(manifest["repository"]), not args.ignore_lifecycle, args.grace_days
+                manifest, fetch_issues(API_REPOSITORY), not args.ignore_lifecycle, args.grace_days
             )
         for notice in notices:
             print("notice: {}".format(notice))
@@ -1718,25 +1720,25 @@ def main(argv=None):
         errors = audit_manifest(manifest)
         if errors:
             raise RuntimeError("\n".join(errors))
-        changed = refresh(manifest, fetch_issues(manifest["repository"]))
+        changed = refresh(manifest, fetch_issues(API_REPOSITORY))
         print("refresh: {} item(s) updated".format(len(changed)))
         return 0
     if args.command == "plan":
         errors = audit_manifest(manifest)
         if errors:
             raise RuntimeError("\n".join(errors))
-        print(json.dumps(planned_actions(manifest, fetch_issues(manifest["repository"])), indent=2))
+        print(json.dumps(planned_actions(manifest, fetch_issues(API_REPOSITORY)), indent=2))
         return 0
     if args.command == "apply":
-        apply_manifest(manifest)
-        remaining = planned_actions(manifest, fetch_issues(manifest["repository"]))
+        apply_manifest(manifest, API_REPOSITORY)
+        remaining = planned_actions(manifest, fetch_issues(API_REPOSITORY))
         print("apply: {} remaining action(s)".format(len(remaining)))
         return 1 if remaining else 0
     if args.command == "new":
         body = Path(args.body_file).read_text(encoding="utf-8")
         item = create_issue(
             manifest,
-            manifest["repository"],
+            API_REPOSITORY,
             args.title,
             body,
             args.kind,
@@ -1746,7 +1748,7 @@ def main(argv=None):
         )
         print("filed #{} and reserved {}".format(item["github_number"], item["bmad_id"]))
         return 0
-    item = reserve(manifest, manifest["repository"], args.issue, args.kind, args.parent, args.advance)
+    item = reserve(manifest, API_REPOSITORY, args.issue, args.kind, args.parent, args.advance)
     print("reserved {} for issue #{}".format(item["bmad_id"], item["github_number"]))
     return 0
 
