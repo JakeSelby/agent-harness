@@ -32,13 +32,13 @@ stop at the local commit, and report the branch as ready to push.
 5. **Push the branch and open the pull request** with `gh pr create`, based on the default
    branch, never pushing to that branch directly. Body: a few bullets on what and why, `Closes
    #N`, and the generated-with line your tool supplies.
-6. **Answer the review bot**, where one runs: a `.coderabbit.yaml`, `greptile.json`, or a bot on
-   past pull requests. A pass is done only when its status on the head commit completes
-   (CodeRabbit: `success: Review completed`), not on an empty review from a thread reply. If the
-   status reads skipped or no review starts, request one (`@coderabbitai review`). Wait up to
-   fifteen minutes, and say so if none arrives. Each unresolved bot thread is a finding: fix it,
-   rerun the gate and push, or reply why not, then `resolveReviewThread`. After a fix, ask for
-   one more review and wait again; two rounds at most. A human's thread is never yours to resolve.
+6. **Answer the review bot**, where one runs: `.coderabbit.yaml`, `greptile.json`, or past bot
+   reviews. A pass is done only when its status on the head commit completes (CodeRabbit:
+   `success: Review completed`), not on a thread reply's empty review. If it reads skipped or no
+   review starts, request one with the bot's command, such as `@coderabbitai review`. Wait up to
+   fifteen minutes; say so if none arrives. Each unresolved bot thread in GraphQL `reviewThreads` is
+   a finding: fix, gate and push, or reply why not, then `resolveReviewThread`. After a fix, ask for
+   one more review and wait again, two rounds at most. A human's thread is never yours to resolve.
 
 Report the outcome in one sentence, with the pull request URL when one was opened, then at most
 five bullets: bot threads answered or still open, a decision taken for the reader, a step left
