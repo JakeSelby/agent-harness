@@ -352,11 +352,11 @@ class CommandTests(Base):
                                "--json")
         self.assertEqual(json.loads(done.stdout)["counterparty"], "repo:a/main")
 
-    def test_the_text_output_says_no_hook_consults_it_yet(self):
+    def test_the_text_output_names_the_hook_that_consults_it(self):
         done = self.run_decide("--action", "coding.shell_exec", "--grade", "0")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("coding.shell_exec on repo:unknown/local: allow", done.stdout)
-        self.assertIn("No hook consults this yet", done.stdout)
+        self.assertIn("The grade-bash hook consults this provider", done.stdout)
 
     def test_the_configured_local_provider_reads_this_repository_policy(self):
         config = self.root / ".config" / "agent-harness"
