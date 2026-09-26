@@ -12,6 +12,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     citizen sync    [--dry-run] [--adopt] [--adopt-codex]
     citizen diff    [--quiet]
     citizen doctor
+    citizen upgrade [--dry-run]
     citizen uninstall
     citizen lint    [PATH]
     citizen usage   [--days N] [--by day|repo|model|role|stance|decision|provider|prefix] [--stance NAME] [--rescan]
@@ -1386,6 +1387,10 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
     if stale:
         say(f"  notice  identity {', '.join(stale)} still at the example value; the agent reads this")
         say("          as who you are. Fix with `citizen init` or `citizen config set identity.name \"…\"`")
+    old_plugin = plugin_install_state()["old"]
+    if old_plugin:
+        say("  notice  plugin %s is the pre-rename ID and stops loading once its marketplace "
+            "updates; run `citizen upgrade`" % ", ".join(old_plugin))
     if args.dry_run and getattr(args, "print_only", False):
         return 0
 
@@ -1776,7 +1781,7 @@ def plugin_install_state() -> Dict[str, Any]:
     names = {plugin, *PLUGIN_NAMES}
     slugs = {slug, *PLUGIN_NAMES} - {""}
     state = {"plugin": plugin, "marketplace": market, "registered": [], "enabled": [],
-             "cached": [], "doubled": [], "synced": manifest_path().is_file()}
+             "cached": [], "doubled": [], "old": [], "synced": manifest_path().is_file()}
     plugins = claude_dir() / "plugins"
     try:
         known = read_json(plugins / "known_marketplaces.json") or {}
@@ -1792,6 +1797,7 @@ def plugin_install_state() -> Dict[str, Any]:
          if value is not False and str(key).split("@")[0] in names),
         key=lambda key: (str(key).split("@")[0] != plugin, key))
     enabled_names = {str(key).split("@")[0] for key in state["enabled"]}
+    state["old"] = [key for key in state["enabled"] if str(key).split("@")[0] in PLUGIN_NAMES[1:]]
     if len(enabled_names) > 1:
         state["doubled"] = [key for key in state["enabled"] if str(key).split("@")[0] != plugin]
     cache = plugins / "cache"
@@ -1819,9 +1825,150 @@ def _plugin_install_line() -> str:
     line = "  install path: " + detail
     if state["doubled"]:
         line += ("\n  plugin warning: %s and %s are both enabled, so every skill loads twice; "
-                 "run %s" % (", ".join(state["doubled"]), state["enabled"][0], " and ".join(
-                     "`/plugin uninstall %s`" % key for key in state["doubled"])))
+                 "run `citizen upgrade`, or %s in a session" % (
+                     ", ".join(state["doubled"]), state["enabled"][0], " and ".join(
+                         "`/plugin uninstall %s`" % key for key in state["doubled"])))
+    elif state["old"]:
+        line += ("\n  plugin upgrade: %s is the pre-rename plugin ID and fails to load once its "
+                 "marketplace updates; run `citizen upgrade`" % ", ".join(state["old"]))
     return line
+
+
+# One step of `citizen upgrade`: the `claude` argv and the directory it runs in, which is a
+# project's for a plugin installed at project or local scope and None for a user install.
+UpgradeStep = Tuple[List[str], Optional[str]]
+
+
+def _run_claude(argv: List[str], cwd: Optional[str] = None) -> int:
+    """Run one `claude plugin` command and return its exit status; the seam tests stub."""
+    try:
+        return subprocess.run(argv, cwd=cwd, check=False).returncode
+    except OSError as exc:
+        say(f"  {exc}")
+        return 127
+
+
+def _marketplace_source(entry: Any) -> Optional[str]:
+    """What `claude plugin marketplace add` takes for a recorded marketplace, or None."""
+    source = entry.get("source") if isinstance(entry, dict) else None
+    if not isinstance(source, dict):
+        return None
+    field = {"github": "repo", "git": "url", "url": "url", "directory": "path", "file": "path"}
+    value = source.get(field.get(str(source.get("source")), ""))
+    return str(value) if value else None
+
+
+def _installed_scopes(key: str) -> List[Tuple[str, Optional[str]]]:
+    """The scopes, with their project directory, `installed_plugins.json` records for a plugin."""
+    data = read_json(claude_dir() / "plugins" / "installed_plugins.json") or {}
+    records = (data.get("plugins") or {}).get(key) if isinstance(data, dict) else None
+    if isinstance(records, dict):
+        records = [records]
+    scopes: List[Tuple[str, Optional[str]]] = []
+    for record in records if isinstance(records, list) else []:
+        if not isinstance(record, dict):
+            continue
+        scope = str(record.get("scope") or "user")
+        where = record.get("projectPath") if scope != "user" else None
+        if (scope, where) not in scopes:
+            scopes.append((scope, where))
+    return scopes or [("user", None)]
+
+
+def plugin_upgrade_plan() -> Tuple[List[str], List[UpgradeStep], List[str]]:
+    """The old plugin keys found, the `claude` steps that move them, and what blocks the move.
+
+    Claude Code ignores adding a repository whose old marketplace is still registered, so the
+    order is fixed: uninstall the old plugin, remove its marketplace, add the marketplace again
+    from its recorded source, install the new ID. docs/runtime-installation.md has the detail.
+    """
+    state = plugin_install_state()
+    old = state["old"]
+    if not old:
+        return [], [], []
+    new_name = PLUGIN_NAMES[0]
+    new_key = "%s@%s" % (new_name, new_name)
+    known = read_json(claude_dir() / "plugins" / "known_marketplaces.json") or {}
+    uninstall: List[UpgradeStep] = []
+    remove: List[UpgradeStep] = []
+    add: List[UpgradeStep] = []
+    scopes: List[Tuple[str, Optional[str]]] = []
+    problems: List[str] = []
+    for key in old:
+        market = key.split("@", 1)[1] if "@" in key else key
+        for scope, where in _installed_scopes(key):
+            uninstall.append((["claude", "plugin", "uninstall", key, "--scope", scope], where))
+            if (scope, where) not in scopes:
+                scopes.append((scope, where))
+        if market == new_name:
+            continue
+        remove_step: UpgradeStep = (["claude", "plugin", "marketplace", "remove", market], None)
+        if remove_step not in remove:
+            remove.append(remove_step)
+        if new_name in known:
+            continue
+        source = _marketplace_source(known.get(market))
+        if source is None:
+            problems.append("no recorded source for the %s marketplace in %s" % (
+                market, claude_dir() / "plugins" / "known_marketplaces.json"))
+            continue
+        add_step: UpgradeStep = (["claude", "plugin", "marketplace", "add", source], None)
+        if add_step not in add:
+            add.append(add_step)
+    install: List[UpgradeStep] = []
+    if new_key not in state["enabled"]:
+        install = [(["claude", "plugin", "install", new_key, "--scope", scope], where)
+                   for scope, where in scopes]
+    return old, uninstall + remove + add + install, problems
+
+
+def _upgrade_step_text(step: UpgradeStep) -> str:
+    argv, where = step
+    command = " ".join(shlex.quote(part) for part in argv)
+    return "cd %s && %s" % (shlex.quote(where), command) if where else command
+
+
+def _session_step_text(step: UpgradeStep) -> str:
+    """The in-session form of a step, for a machine without the `claude` CLI."""
+    argv = list(step[0][2:])
+    if "--scope" in argv:
+        at = argv.index("--scope")
+        del argv[at:at + 2]
+    return "/plugin " + " ".join(argv)
+
+
+def cmd_upgrade(args: argparse.Namespace) -> int:
+    old, steps, problems = plugin_upgrade_plan()
+    if not old:
+        say("citizen upgrade: no pre-rename plugin install found; nothing to do")
+        return 0
+    say("citizen upgrade: %s -> %s@%s" % (", ".join(old), PLUGIN_NAMES[0], PLUGIN_NAMES[0]))
+    if problems:
+        for problem in problems:
+            say("  " + problem)
+        say("  nothing was run; add the marketplace by hand, as docs/runtime-installation.md shows")
+        return 1
+    if args.dry_run:
+        say("  would run, in this order:")
+        for step in steps:
+            say("    " + _upgrade_step_text(step))
+        return 0
+    if shutil.which("claude") is None:
+        say("  the `claude` CLI is not on PATH; run these in a Claude Code session, in this order:")
+        for step in steps:
+            say("    " + _session_step_text(step))
+        return 1
+    for index, step in enumerate(steps):
+        say("  run  " + _upgrade_step_text(step))
+        status = _run_claude(step[0], step[1])
+        if status != 0:
+            say("  stopped: that step exited %d; these steps did not run:" % status)
+            for rest in steps[index + 1:]:
+                say("    " + _upgrade_step_text(rest))
+            return 1
+    say("  done: %s@%s is installed; skills are now /%s:<name>" % (
+        PLUGIN_NAMES[0], PLUGIN_NAMES[0], PLUGIN_NAMES[0]))
+    return 0
 
 
 def _checkout_state() -> str:
@@ -5213,6 +5360,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p = sub.add_parser("doctor", help="versions, logins, links, drift")
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("upgrade", help="move a Claude Code plugin install from its pre-rename ID to the current one")
+    p.add_argument("--dry-run", action="store_true", help="print the `claude plugin` commands without running them")
+    p.set_defaults(func=cmd_upgrade)
 
     p = sub.add_parser("uninstall", help="remove links and owned settings, restore adopted files")
     p.set_defaults(func=cmd_uninstall)
