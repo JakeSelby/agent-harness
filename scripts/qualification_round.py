@@ -41,6 +41,7 @@ SMOKE = "smoke_tier.py"
 RUNNER = "native_acceptance.py"
 PASSED = "passed"
 SKIPPED = "skipped"
+RUNNING = "running"
 ROUND_TIMEOUT = 5400
 
 
@@ -180,7 +181,9 @@ def run_round(round_dir, targets, model, confirmed, skip_smoke=False, tier_routi
     records_dir = Path(report["records"])
     records_dir.mkdir(parents=True, exist_ok=True)
     env = environment(report)
-    result = {"source_commit": report.get("source_commit"), "smoke": SKIPPED, "targets": {},
+    # A round killed mid-tier must not read as a deliberate skip.
+    result = {"source_commit": report.get("source_commit"),
+              "smoke": SKIPPED if skip_smoke else RUNNING, "targets": {},
               "tier_routing": tier_routing}
     write_round(round_dir, result)
     if not skip_smoke:

@@ -81,6 +81,19 @@ class SmokeGateTests(unittest.TestCase):
         self.assertNotIn("stopped", result)
         self.assertEqual(sorted(result["targets"]), [CLAUDE, CODEX])
 
+    def test_the_record_reads_running_not_skipped_while_the_tier_runs(self):
+        seen = []
+
+        def tier(*args, **kwargs):
+            seen.append(self.on_disk()["smoke"])
+            return done(0)
+
+        routing = {CLAUDE: ROUTING, CODEX: ROUTING}
+        with patch.object(ROUND, "smoke", side_effect=tier), \
+                patch.object(ROUND.subprocess, "run", side_effect=self.fake_run):
+            ROUND.run_round(self.round_dir, [CLAUDE, CODEX], None, [], tier_routing=routing)
+        self.assertEqual(seen, ["running"])
+
     def test_skip_smoke_runs_no_tier_records_skipped_and_runs_every_target(self):
         result, smoke = self.run_round(done(1), skip_smoke=True)
         self.assertEqual(smoke.call_count, 0)
