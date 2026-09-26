@@ -22,12 +22,17 @@ approves a refused command by replying `approve <code>`, and nothing else can cr
 - The store is the user's alone: `grade-bash` grades a Bash write to it 3, and the dispatcher
   denies a file-tool write to it (`file_write_deny`).
 
+Each `record` and `consume` holds an exclusive `flock` on `<session_id>.lock` beside the file
+for its whole read-modify-write, so two consumers cannot both use one approval and a consume
+cannot drop an approval a record just added. A lock that cannot be taken fails closed.
+
 Every read and write is wrapped, so a store that cannot be read is no approval and a store that
 cannot be written records nothing; neither ever raises into the hook that called it.
 
 Test: echo '{"hook_event_name":"UserPromptSubmit","session_id":"s1","prompt":"approve ABC234"}' | python3 approvals.py
 """
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -35,6 +40,11 @@ import re
 import sys
 import time
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # no advisory locks here, so the store neither records nor consumes
+    fcntl = None
 
 CODE_LENGTH = 6
 TTL = 30 * 60
@@ -117,10 +127,32 @@ def _write(path, entries):
         return False
 
 
+@contextlib.contextmanager
+def _locked(path):
+    """Hold an exclusive lock for `path`'s session; yields False when none could be taken."""
+    fd = None
+    try:
+        if fcntl is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            os.chmod(str(path.parent), 0o700)
+            fd = os.open(str(path.with_suffix(".lock")), os.O_RDWR | os.O_CREAT, 0o600)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+    except OSError:
+        if fd is not None:
+            os.close(fd)
+        fd = None
+    try:
+        yield fd is not None
+    finally:
+        if fd is not None:
+            os.close(fd)  # closing the descriptor releases the lock
+
+
 def _live(entry, now):
     created = entry.get("created")
-    return (isinstance(created, (int, float)) and not entry.get("used")
-            and 0 <= now - created <= TTL)
+    # A created time a little past `now` is a record that took the lock after this call read
+    # the clock, not a forgery: only a user prompt writes the store.
+    return isinstance(created, (int, float)) and not entry.get("used") and now - created <= TTL
 
 
 def record(session_id, prompt, now=None):
@@ -130,9 +162,12 @@ def record(session_id, prompt, now=None):
     if path is None or not codes:
         return []
     now = time.time() if now is None else now
-    entries = [e for e in _read(path) if _live(e, now)]
-    entries.extend({"code": code, "created": now, "used": False} for code in codes)
-    return codes if _write(path, entries) else []
+    with _locked(path) as held:
+        if not held:
+            return []
+        entries = [e for e in _read(path) if _live(e, now)]
+        entries.extend({"code": code, "created": now, "used": False} for code in codes)
+        return codes if _write(path, entries) else []
 
 
 def consume(session_id, code, now=None):
@@ -140,14 +175,19 @@ def consume(session_id, code, now=None):
     path = store_path(session_id)
     if path is None or not isinstance(code, str):
         return False
+    if not path.exists():
+        return False  # nothing was ever recorded: no lock file for a session with no approvals
     now = time.time() if now is None else now
-    entries = _read(path)
-    for entry in entries:
-        if entry.get("code") == code.upper() and _live(entry, now):
-            entry["used"] = True
-            entry["used_at"] = now
-            return _write(path, entries)
-    return False
+    with _locked(path) as held:
+        if not held:
+            return False
+        entries = _read(path)
+        for entry in entries:
+            if entry.get("code") == code.upper() and _live(entry, now):
+                entry["used"] = True
+                entry["used_at"] = now
+                return _write(path, entries)
+        return False
 
 
 def mentions_store(text):

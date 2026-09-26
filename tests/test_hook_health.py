@@ -172,7 +172,7 @@ class MessageTests(unittest.TestCase):
 
     def test_the_untrusted_message_names_the_command_that_fixes_it(self):
         text = (REPO / "claude" / "hooks" / "stop-gate.py").read_text()
-        self.assertIn("Run `harness trust .` in this folder", text)
+        self.assertIn("Run `citizen trust .` in this folder", text)
 
 
 if __name__ == "__main__":

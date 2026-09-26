@@ -2,31 +2,33 @@
 # SPDX-License-Identifier: MIT
 """Your way of working, across AI agents.
 
-A user-aligned, model-provider-agnostic harness built on shared custom primitives.
+Model Citizen: a user-aligned, model-provider-agnostic harness built on shared custom primitives.
 
 Projects shared primitives into selected runtimes, merges owned settings, renders personal
 guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML parser.
 
-    harness init    [--force] [--yes]
-    harness install [--dry-run] [--no-brew] [--no-apps] [--no-vscode] [--no-codex] [--with-optional]
-    harness sync    [--dry-run] [--adopt] [--adopt-codex]
-    harness diff    [--quiet]
-    harness doctor
-    harness uninstall
-    harness lint    [PATH]
-    harness usage   [--days N] [--by day|repo|model|role|stance|decision|provider|prefix] [--stance NAME] [--rescan]
-    harness usage   --rules [--by rule|repo|stance] [--days N] [--rescan]
-    harness worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
-    harness worktree audit [REPO]
-    harness worktree remove NAME [REPO] [--merged] [--also-clear NAME]
-    harness workspace create NAME FOLDER... [--no-harness] [--force]
-    harness config get KEY | set KEY VALUE
-    harness integrations show|register|doctor [architecture-viewer]
-    harness viewer validate|open|status|replace-document|close [OPTIONS]
-    harness integration check|apply NAME [REPO] [--force]
-    harness bmad    check|apply [REPO] [--force]   (alias for `integration ... bmad`)
-    harness remote-control install [--dry-run] | status | uninstall
-    harness --version
+    citizen init    [--force] [--yes]
+    citizen install [--dry-run] [--no-brew] [--no-apps] [--no-vscode] [--no-codex] [--with-optional]
+    citizen sync    [--dry-run] [--adopt] [--adopt-codex]
+    citizen diff    [--quiet]
+    citizen doctor
+    citizen uninstall
+    citizen lint    [PATH]
+    citizen usage   [--days N] [--by day|repo|model|role|stance|decision|provider|prefix] [--stance NAME] [--rescan]
+    citizen usage   --rules [--by rule|repo|stance] [--days N] [--rescan]
+    citizen worktree create NAME [REPO] [--branch BRANCH] [--base BASE] [--no-fetch]
+    citizen worktree audit [REPO]
+    citizen worktree remove NAME [REPO] [--merged] [--also-clear NAME]
+    citizen workspace create NAME FOLDER... [--no-harness] [--force]
+    citizen config get KEY | set KEY VALUE
+    citizen integrations show|register|doctor [architecture-viewer]
+    citizen viewer validate|open|status|replace-document|close [OPTIONS]
+    citizen integration check|apply NAME [REPO] [--force]
+    citizen bmad    check|apply [REPO] [--force]   (alias for `integration ... bmad`)
+    citizen remote-control install [--dry-run] | status | uninstall
+    citizen --version
+
+`harness` is a supported alias for `citizen`: the same program under its earlier name.
 """
 from __future__ import annotations
 
@@ -1359,7 +1361,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         read_json(claude_dir() / "settings.json")
     if cfg.get("codex", {}).get("manage", True):
         read_json(codex_dir() / "hooks.json")
-    say(f"agent-harness {VERSION} · repo {REPO} · home {home()}{' · DRY RUN' if dry else ''}")
+    say(f"model-citizen {VERSION} · repo {REPO} · home {home()}{' · DRY RUN' if dry else ''}")
     say("stances: " + ", ".join(f"{k}={v.stem}" for k, v in stances.items()) + f" · permissions={p}")
     for warning in root_warnings:
         say("  notice  " + warning)
@@ -1372,7 +1374,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         # take the setting resolves that as review by the user, so it is said out loud rather
         # than left to be discovered the next time an approval waits for a human.
         say("  notice  codex approval review: " + reviewer.detail)
-        say("          `permissions=auto` will ask you to approve; `harness doctor` repeats this")
+        say("          `permissions=auto` will ask you to approve; `citizen doctor` repeats this")
     try:
         project = Path.cwd()
     except OSError:
@@ -1383,7 +1385,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
     stale = placeholder_identity(cfg)
     if stale:
         say(f"  notice  identity {', '.join(stale)} still at the example value; the agent reads this")
-        say("          as who you are. Fix with `harness init` or `harness config set identity.name \"…\"`")
+        say("          as who you are. Fix with `citizen init` or `citizen config set identity.name \"…\"`")
     if args.dry_run and getattr(args, "print_only", False):
         return 0
 
@@ -1410,7 +1412,7 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
             config_path().parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(REPO / "config.example.json", config_path())
             say(f"  config  created {config_path()} from config.example.json")
-            say("          run `harness init` to fill it in by answering questions")
+            say("          run `citizen init` to fill it in by answering questions")
 
     if cfg.get("claude", {}).get("manage", True):
         # Legacy plain files that the harness now provides.
@@ -1697,7 +1699,7 @@ def _diff_lines() -> List[str]:
     lines: List[str] = []
     manifest = read_json(manifest_path())
     if not manifest:
-        return ["harness not synced yet (no manifest); run `harness sync`"]
+        return ["Model Citizen not synced yet (no manifest); run `citizen sync`"]
     for link in manifest.get("links", []):
         p = Path(link["path"])
         # A link from a registered primitive root names it, so drift points at the root to fix.
@@ -1915,13 +1917,13 @@ def jev_call_lines() -> List[str]:
     except Exception:
         return ["    jev calls: the usage ledger is unreadable"]
     if not rows:
-        return ["    jev calls: none recorded; `harness usage --by provider` reports them once "
+        return ["    jev calls: none recorded; `citizen usage --by provider` reports them once "
                 "a point is not off"]
     last = max(rows, key=lambda row: str(row.get("ended") or ""))
     returned = last.get("model") or "(none returned)"
     return [f"    jev calls: {len(rows)} recorded; last {last.get('status') or 'unknown'} at "
             f"{last.get('ended') or 'an unknown time'} returned {returned}",
-            "    jev call detail: `harness usage --by provider` prices them per point and mode"]
+            "    jev call detail: `citizen usage --by provider` prices them per point and mode"]
 
 
 def known_providers() -> List[str]:
@@ -1994,7 +1996,7 @@ def governance_lines(cfg: Dict[str, Any]) -> List[str]:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    say(f"agent-harness {VERSION}")
+    say(f"model-citizen {VERSION}")
     say(f"  repo: {REPO}")
     say(f"  checkout: {_checkout_state()}")
     say(_plugin_install_line())
@@ -2015,7 +2017,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         say(f"  codex approval reviewer: {reviewer.detail}")
         if posture(cfg) == "auto" and (not reviewer.reliable or live != "auto_review"):
             say("    `permissions=auto` promises automatic approval review; this client will ask "
-                "you instead. Re-run `harness sync` after updating Codex.")
+                "you instead. Re-run `citizen sync` after updating Codex.")
     for runtime, path in (("claude", claude_dir() / "settings.json"),
                           ("codex", codex_dir() / "hooks.json")):
         if not cfg.get(runtime, {}).get("manage", True):
@@ -2027,7 +2029,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             say(f"  {runtime} hooks: unreadable configuration: {exc}")
             continue
         if not count:
-            say(f"  {runtime} hooks: none registered in {path.name}; run `harness sync`")
+            say(f"  {runtime} hooks: none registered in {path.name}; run `citizen sync`")
         elif problems:
             say(f"  {runtime} hooks: {count} registered, {len(problems)} problem(s); affected hooks cannot run:")
             for problem in problems:
@@ -2061,7 +2063,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         except ValueError as exc:
             detail = f"headers unavailable: {exc}"
         say(f"  telemetry export: otlp -> {module.endpoint_label(telemetry['endpoint'])}, {detail}")
-        say("    the ledger is the record; replay a window with `harness usage export --since`")
+        say("    the ledger is the record; replay a window with `citizen usage export --since`")
     runtimes = native_runtimes(telemetry)
     if not runtimes:
         say("  native telemetry: off; neither runtime is asked to export its own")
@@ -2081,12 +2083,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             live = read_json(claude_dir() / "settings.json") or {}
             current = (live.get("env") or {}).get("OTEL_RESOURCE_ATTRIBUTES")
             if current is None:
-                say("    claude-code: not configured in settings.json; run `harness sync`")
+                say("    claude-code: not configured in settings.json; run `citizen sync`")
             elif current == attributes:
                 say(f"    claude-code: labels match this version and these stances ({attributes})")
             else:
                 say("    claude-code: labels are from an earlier sync and mislabel data until the "
-                    f"next one; run `harness sync`. Wanted {attributes}")
+                    f"next one; run `citizen sync`. Wanted {attributes}")
             for name in omitted:
                 say(f"    label {name} cannot travel in OTEL_RESOURCE_ATTRIBUTES and is left off")
         if "codex" not in runtimes:
@@ -2100,7 +2102,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             table = codex_otel_in_config(config_toml.read_text()) if config_toml.is_file() else None
             wanted, _ = codex_native_otel(telemetry, {}, True)
             if table is None or not any(key in table for key in wanted):
-                say("    codex: [otel] not configured in config.toml; run `harness sync`")
+                say("    codex: [otel] not configured in config.toml; run `citizen sync`")
             elif all(table.get(key) == value for key, value in (wanted or {}).items()):
                 say("    codex: [otel] exports logs and metrics to this endpoint. No header is "
                     "written, because [otel] takes a literal header map; its export needs an "
@@ -2108,15 +2110,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             else:
                 say("    codex: [otel] holds exporters this endpoint did not ask for — an earlier "
                     "sync, or a value the harness did not write and left alone; run "
-                    "`harness sync` and read what it reports")
+                    "`citizen sync` and read what it reports")
         say("    a runtime named here attaches its own user and organization identifiers to what "
             "it sends; read docs/telemetry.md before pointing this at a hosted endpoint")
     remote_control_doctor(cfg)
     stale = placeholder_identity(load_config())
-    say("  identity: " + (f"{', '.join(stale)} still at the example value, run `harness init`"
+    say("  identity: " + (f"{', '.join(stale)} still at the example value, run `citizen init`"
                           if stale else "set"))
     lines = _diff_lines()
-    say("  drift: " + ("none" if not lines else f"{len(lines)} item(s), run `harness diff`"))
+    say("  drift: " + ("none" if not lines else f"{len(lines)} item(s), run `citizen diff`"))
     if shutil.which("claude") and keychain.missing():
         say("  claude doctor: skipped, this HOME has no default keychain and a client launch "
             "would raise a macOS dialog")
@@ -2156,7 +2158,7 @@ def remote_control_doctor(cfg: Dict[str, Any]) -> None:
         name = remote_control.label(folder)
         pid = host_pid(name)
         if pid is None:
-            say(f"  remote-control {folder}: not running; `harness remote-control install`")
+            say(f"  remote-control {folder}: not running; `citizen remote-control install`")
             continue
         log = remote_control_log_dir() / (name + ".log")
         text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
@@ -2186,7 +2188,7 @@ def remote_control_doctor(cfg: Dict[str, Any]) -> None:
     stranded = remote_control.disconnected_sessions(rows, host_environment_ids(opts["folders"]))
     if stranded:
         say(f"  remote-control sessions: {len(stranded)} active but disconnected on this Mac's "
-            f"environments{page.scope()}; `harness remote-control status` prints the reattach "
+            f"environments{page.scope()}; `citizen remote-control status` prints the reattach "
             "command for each")
 
 
@@ -2601,7 +2603,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
     if not getattr(args, "staged", False) and (root / "primitives" / "roles").is_dir():
         hits += changelog_fragments.findings(root, notes)
     if (root / "primitives" / "roles").is_dir():
-        hits += ["projection drift: " + name + "; run `harness generate`"
+        hits += ["projection drift: " + name + "; run `citizen generate`"
                  for name in primitive_catalog.projection_drift(root)]
     for h in hits + notes:
         say(h)
@@ -2661,13 +2663,13 @@ def cmd_stances(args: argparse.Namespace) -> int:
                 f" · rows={len(cost['rows'])} · default_band={cost['default_band']}" +
                 (" · class applies" if cost["class_applies"] else " · class advisory only"))
             say("cost sources: " + " <- ".join(c["source"] for c in cost["extends_chain"]) +
-                " (full table: `harness stances --json`)")
+                " (full table: `citizen stances --json`)")
             if cost["warnings"]:
-                say(f"cost warnings: {len(cost['warnings'])}; `harness stances --json` names them")
+                say(f"cost warnings: {len(cost['warnings'])}; `citizen stances --json` names them")
         for conflict in data["conflicts"]:
             say("stance conflict: " + conflict)
         if data["conflicts"]:
-            say("stance conflict: `harness sync` refuses this selection; change one of the two.")
+            say("stance conflict: `citizen sync` refuses this selection; change one of the two.")
         say("Native runtime restrictions still apply; stance guidance is not proof of enforcement.")
     return 0
 
@@ -3056,7 +3058,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     dry = args.dry_run
     cfg = load_config()
     mac = platform.system() == "Darwin"
-    say(f"agent-harness install{' (dry run)' if dry else ''}")
+    say(f"model-citizen install{' (dry run)' if dry else ''}")
     if mac and not args.no_brew:
         if not shutil.which("xcode-select") or subprocess.run(["xcode-select", "-p"], capture_output=True).returncode != 0:
             say("  Xcode Command Line Tools missing: run `xcode-select --install`, then re-run")
@@ -3123,7 +3125,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     if owner is not None:
         say("owned: " + str(source.resolve()) + " is a file the harness generated")
         say("       " + json.dumps({k: v for k, v in owner.items() if k != "prior"}))
-        say("       edit its primitive and re-run `harness sync` instead of importing it")
+        say("       edit its primitive and re-run `citizen sync` instead of importing it")
         say("import refused: nothing was written")
         return 2
     cfg = load_config()
@@ -3135,7 +3137,7 @@ def cmd_import(args: argparse.Namespace) -> int:
         say("import refused: nothing was written")
         return 2
 
-    say(f"agent-harness {VERSION} · import {source} · root {root}")
+    say(f"model-citizen {VERSION} · import {source} · root {root}")
     for item in files:
         say("  write   " + str(root / item["path"]))
     for line in notices:
@@ -3226,7 +3228,7 @@ def coerce_config_value(key: str, value: str) -> Any:
         return value
     if head in CONFIG_SWITCH_KINDS:
         if not tail:
-            raise SystemExit(f"a {head} switch names its unit: harness config set {head}.<name> on|off")
+            raise SystemExit(f"a {head} switch names its unit: citizen config set {head}.<name> on|off")
         if value not in ("on", "off"):
             raise SystemExit(f"a {head} unit is on or off; got '{value}'")
         return value
@@ -3293,7 +3295,7 @@ def coerce_governance_value(key: str, value: str) -> Any:
 
 def config_set(key: str, value: Optional[str]) -> int:
     if value is None:
-        raise SystemExit(f"config set needs a value: harness config set {key} VALUE")
+        raise SystemExit(f"config set needs a value: citizen config set {key} VALUE")
     path = config_path()
     try:
         with reconcile.lock(path.parent):
@@ -3317,7 +3319,7 @@ def config_set(key: str, value: Optional[str]) -> int:
                 unset = deepcopy(cfg)
                 unset[parts[0]].pop(parts[1])
                 if parts[1] not in load_selection(env={}, user=unset)[parts[0]]:
-                    raise SystemExit(f"{parts[0]} has no unit '{parts[1]}'; `harness selection` lists every unit")
+                    raise SystemExit(f"{parts[0]} has no unit '{parts[1]}'; `citizen selection` lists every unit")
                 load_selection(env={}, user=cfg)
             elif key == "core_switches_acknowledged":
                 # Withdrawing the acknowledgement while a core hook is off is refused the same way.
@@ -3337,7 +3339,7 @@ def config_set(key: str, value: Optional[str]) -> int:
     else:
         say(f"{key} = {json.dumps(coerced)}  ({path})")
     say("applies to new viewer sessions" if key.startswith("integrations.")
-        else "applies from the next hook event" if key.startswith("hooks.") else "run `harness sync` to apply it")
+        else "applies from the next hook event" if key.startswith("hooks.") else "run `citizen sync` to apply it")
     return 0
 
 
@@ -3476,7 +3478,7 @@ def init_defaults(args: argparse.Namespace, path: Path) -> int:
     if left:
         say("  still at the example value: " + ", ".join(left))
         for field in left:
-            say(f"    harness config set identity.{field} \"…\"")
+            say(f"    citizen config set identity.{field} \"…\"")
     return 0
 
 
@@ -3485,19 +3487,19 @@ def cmd_init(args: argparse.Namespace) -> int:
     path = config_path()
     if path.exists() and not args.force:
         say(f"{path} already exists.")
-        say("  one value:  harness config set identity.name \"…\"")
-        say("  start over: harness init --force")
+        say("  one value:  citizen config set identity.name \"…\"")
+        say("  start over: citizen init --force")
         return 1
     if getattr(args, "yes", False):
         return init_defaults(args, path)
     if not sys.stdin.isatty():
-        say("harness init asks questions and needs a terminal.")
-        say("Without one, run `harness init --yes` for defaults, or write the same values")
-        say("with `harness config set KEY VALUE`.")
+        say("citizen init asks questions and needs a terminal.")
+        say("Without one, run `citizen init --yes` for defaults, or write the same values")
+        say("with `citizen config set KEY VALUE`.")
         return 1
     example = example_config()
     cfg = deepcopy(example)
-    print(f"agent-harness {VERSION} — setup. Enter keeps the value in brackets.\n")
+    print(f"model-citizen {VERSION} — setup. Enter keeps the value in brackets.\n")
     print("Identity. This is rendered into ~/.claude/CLAUDE.personal.md, which stays on this")
     print("machine; nothing here is ever written into the checkout.\n")
     identity = cfg.setdefault("identity", {})
@@ -3626,7 +3628,7 @@ def cmd_remote_control(args: argparse.Namespace) -> int:
             name = remote_control.label(folder)
             probe = launchctl("print", f"{launchd_domain()}/{name}")
             found = re.search(r"^\s*state = (\S+)", probe.stdout, re.M) if probe.returncode == 0 else None
-            state = found.group(1) if found else "not loaded; run `harness remote-control install`"
+            state = found.group(1) if found else "not loaded; run `citizen remote-control install`"
             say(f"{folder}: {state}")
             say(f"  log: {remote_control_log_dir() / (name + '.log')}")
         for folder, reason in skipped:
@@ -3637,7 +3639,7 @@ def cmd_remote_control(args: argparse.Namespace) -> int:
         if heal_log_path().exists():
             lines = [ln for ln in heal_log_path().read_text(encoding="utf-8").splitlines() if ln.strip()]
         loaded = launchctl("print", f"{launchd_domain()}/{remote_control.HEAL_LABEL}").returncode == 0
-        state = "loaded" if loaded else "not loaded; see `harness remote-control install`"
+        state = "loaded" if loaded else "not loaded; see `citizen remote-control install`"
         say(f"heal: {state}, {len(lines)} action(s) logged"
             + (f", last {lines[-1]}" if lines else ""))
         report_lost_sessions(serve, opts)
@@ -4377,7 +4379,7 @@ def provider_report(rows: List[Dict[str, Any]], days: int,
     table = {} if table is None else table
     if not rows:
         say(f"no decision-provider calls recorded in the last {days} day(s); "
-            "`harness doctor` says whether any point is configured to make one")
+            "`citizen doctor` says whether any point is configured to make one")
         return 0
     groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
     for row in rows:
@@ -4462,7 +4464,7 @@ def role_report(rows: List[Dict[str, Any]], days: int,
         groups.setdefault(key, []).append(row)
     if not groups:
         say(f"no subagent or worker runs recorded in the last {days} day(s); "
-            "run `harness usage --rescan` to backfill them from transcripts")
+            "run `citizen usage --rescan` to backfill them from transcripts")
         return 0
     head = (f"{'role':<30}{'runs':>6}{'out p50':>10}{'out p75':>10}{'out p90':>10}"
             f"{'usd p50':>9}{'usd p75':>9}"
@@ -4858,7 +4860,7 @@ def integration_check(data: dict, root: Path) -> Tuple[List[str], List[str]]:
                                                               install["skill_surface"])]
         installed = root / install["destination"] / template.name
         if not installed.exists():
-            state = f"template not installed (harness integration apply {data['id']})"
+            state = f"template not installed (citizen integration apply {data['id']})"
         elif installed.read_text(encoding="utf-8") == text:
             state = "installed"
         else:
@@ -4886,7 +4888,7 @@ def integration_apply(data: dict, root: Path, force: bool) -> List[str]:
         drift = integration_drift(text, base.read_text(encoding="utf-8"), install["skill_surface"])
         if drift:
             actions.append(f"  skipped {rel}: {len(drift)} drift finding(s), "
-                           f"see harness integration check {data['id']}")
+                           f"see citizen integration check {data['id']}")
             continue
         if dest.exists() and dest.read_text(encoding="utf-8") == text:
             continue
@@ -5136,9 +5138,15 @@ def cmd_tiers(args: argparse.Namespace) -> int:
     return 1 if findings else 0
 
 
+def program_name(argv0: Optional[str] = None) -> str:
+    """The name usage text shows: `citizen` or its alias `harness` as invoked, else `citizen`."""
+    name = os.path.basename(sys.argv[0] if argv0 is None else argv0)
+    return name if name in ("citizen", "harness") else "citizen"
+
+
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(prog="harness", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--version", action="version", version=f"agent-harness {VERSION}")
+    parser = argparse.ArgumentParser(prog=program_name(), description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--version", action="version", version=f"model-citizen {VERSION}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("install", help="full setup on a fresh machine, then sync")
@@ -5319,7 +5327,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.set_defaults(func=cmd_integration)
 
     # Kept because it is the surface users already know; it names the integration for them.
-    p = sub.add_parser("bmad", help="alias for `harness integration check|apply bmad`")
+    p = sub.add_parser("bmad", help="alias for `citizen integration check|apply bmad`")
     p.add_argument("action", choices=["check", "apply"])
     p.add_argument("path", nargs="?")
     p.add_argument("--force", action="store_true", help="apply: replace an override that differs from the template")

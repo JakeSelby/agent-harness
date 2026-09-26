@@ -717,7 +717,7 @@ class DetectorCoverageTests(TempHome):
 class CliTests(unittest.TestCase):
     def test_version_and_help(self):
         out = subprocess.run([sys.executable, str(REPO / "bin" / "harness"), "--version"], capture_output=True, text=True)
-        self.assertIn("agent-harness", out.stdout + out.stderr)
+        self.assertIn("model-citizen", out.stdout + out.stderr)
 
 
 if __name__ == "__main__":

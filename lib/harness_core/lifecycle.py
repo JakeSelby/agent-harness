@@ -697,6 +697,23 @@ def patch_paths(event):
     return sorted(set(str(Path(event.get("cwd") or os.getcwd()) / p) for p in paths if p))
 
 
+def store_write_deny(paths):
+    """The store guard without `approvals.py`, for when that module cannot load.
+
+    Every file-tool call would otherwise fail on the load and be denied as unverified; this
+    refuses only a write under the approvals directory and lets the rest through. The path is
+    the one `approvals.store_dir` names, resolved here from the same environment."""
+    home = os.environ.get("HARNESS_HOME") or os.environ.get("HOME") or str(Path.home())
+    root = os.path.realpath(os.path.join(home, ".local", "state", "agent-harness", "approvals"))
+    for path in paths:
+        target = os.path.realpath(os.path.expanduser(str(path)))
+        if target == root or target.startswith(root + os.sep):
+            return {"hookSpecificOutput": {"permissionDecision": "deny",
+                    "permissionDecisionReason": "The approvals store is written only from the user's "
+                    "own prompt, so no tool may write to it."}}
+    return None
+
+
 def dispatch(runtime, payload):
     if runtime not in ("claude-code", "codex"):
         raise ValueError("unknown runtime")
@@ -720,10 +737,14 @@ def _dispatch(runtime, payload):
         # The store of approvals the user typed is the user's alone; `grade-bash` consumes it, so
         # it guards it too. A Bash write to it is graded, a file-tool write is refused here.
         if tool in FILE_TOOLS and enabled("grade-bash"):
-            forged = load("approvals").file_write_deny(patch_paths(event))
+            paths = patch_paths(event)
+            try:
+                forged = load("approvals").file_write_deny(paths)
+            except Exception:
+                forged = store_write_deny(paths)
             if forged is not None:
                 results.append(forged)
-            else:
+            if forged is None:
                 # A governance policy file is edited only with the user's yes, each time: the
                 # provider reads it, so the agent it governs must not grant itself a level.
                 guarded = policy_file_result(runtime, event)
