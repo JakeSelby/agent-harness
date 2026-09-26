@@ -427,14 +427,16 @@ def segments(text):
 
 
 def _redirects(tokens):
-    """(tokens without redirections, the targets they write)."""
+    """(tokens without redirections, the files they write; a descriptor duplication writes none)."""
     clean, targets = [], []
     i = 0
     while i < len(tokens):
         token = tokens[i]
         if ro.PUNCTUATION_RUN.match(token):
             target = tokens[i + 1] if i + 1 < len(tokens) else ""
-            if ro.WRITE_REDIRECTS.match(token):
+            # `>&1` and `2>&-` duplicate or close a descriptor; `>2` and `&>2` write a file named 2
+            dup = re.match(r"^\d*>&$", token) and (target.isdigit() or target == "-")
+            if ro.WRITE_REDIRECTS.match(token) and not dup:
                 targets.append(target)
             i += 2
             continue
@@ -734,13 +736,12 @@ def grade_tokens(tokens, cwd, depth):
     for target in written:
         if re.match(r"^/dev/(sd|disk|nvme|rdisk)", target):
             return 3, "redirect to", target, "system"
-        if target and not target.isdigit() and target != "/dev/null":
+        if target and target != "/dev/null":
             wrote = target
     while tokens and ASSIGN_RE.match(tokens[0]):
         tokens = tokens[1:]
-    if not tokens:
-        return 0, None, None, None
-    if ro.segment_ok(list(tokens)):
+    if not tokens or ro.segment_ok(list(tokens)):
+        # A redirect-only segment, as after a subshell in `(ls) > out.txt`, still writes its file.
         return (1, "redirect to", wrote, None) if wrote else (0, None, None, None)
     head = tokens[0]
     prog = head.rpartition("/")[2]
@@ -1222,7 +1223,7 @@ def _git_dir(args, cwd):
 def _written(prog, args, targets, cwd):
     """The paths one simple command may write, move or remove: absolute where the directory is
     known, and otherwise the operand as written, so `_policy_hits` can still judge it by name."""
-    paths = [t for t in targets if t and not t.isdigit() and t != "/dev/null"]
+    paths = [t for t in targets if t and t != "/dev/null"]
     if prog in PATH_WRITERS:
         paths.extend(operands(args))
         paths.extend(a.split("=", 1)[1] for a in args if a.startswith("of="))
