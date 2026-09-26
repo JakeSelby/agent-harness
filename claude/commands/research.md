@@ -14,7 +14,7 @@ They carry the return caps and the shared search budget this command depends on.
    gatherer's answer never changes another's brief. Fewer is better. If the question is one
    dependent chain, answer it inline and spawn nothing.
 2. **Route each dimension by where its evidence lives.** A dimension answered from files or a
-   repository goes to an isolated `gatherer` worker — `harness role run gatherer --workspace
+   repository goes to an isolated `gatherer` worker — `citizen role run gatherer --workspace
    <repo> --prompt-file <brief>` — which is offline by design and holds only `Read`, `Grep` and
    `Glob`; grant extra input directories with `--read-dir`. A dimension that needs the live web
    goes to an in-session band worker instead (`worker-a` for one search or one fetch, `worker-b`
@@ -32,6 +32,6 @@ They carry the return caps and the shared search budget this command depends on.
 
 Report as a brief: two or three sentences of bottom line, then up to five findings with the numbers
 behind them and what they mean for the reader. When workers ran, end with the scratchpad file
-paths they wrote and the worker ids `harness role status` will show, one per line. An
+paths they wrote and the worker ids `citizen role status` will show, one per line. An
 isolated `gatherer` writes nothing itself: save its returned detail to a scratchpad file yourself
 before you synthesize.

@@ -29,10 +29,13 @@ def fingerprint(root):
                          capture_output=True, text=True, check=True).stdout
     names = set(raw.split("\0"))
     directory = root / ".agent-harness"
+    # Copies of files sent to a Remote Control client are not task inputs: policy/hooks/stage-user-files.py.
+    outbox = directory / "outbox"
     if directory.is_symlink():
         raise ValueError("task storage cannot be a symlink")
     if directory.is_dir():
-        names.update(str(p.relative_to(root)) for p in directory.rglob("*") if p.is_file() or p.is_symlink())
+        names.update(str(p.relative_to(root)) for p in directory.rglob("*")
+                     if (p.is_file() or p.is_symlink()) and outbox not in p.parents)
     for name in sorted(names - bookkeeping - {""}):
         path = root / name
         digest.update(name.encode())

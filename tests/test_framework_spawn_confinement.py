@@ -216,7 +216,7 @@ class DescriptorTests(unittest.TestCase):
             if line.startswith("id = "):
                 layer = line.split('"')[1]
                 self.assertIn(layer, agents, msg=layer + " is not declared in the descriptor")
-                self.assertIn("harness role run " + roles[layer], template)
+                self.assertIn("citizen role run " + roles[layer], template)
         # The pin is the one the repository installs; a descriptor read from another release
         # would map layers that are not there.
         self.assertIn("BMAD_VERSION=" + data["version"]["pinned"],
@@ -303,7 +303,7 @@ class QualificationTests(unittest.TestCase):
         step = procedure[procedure.index("\n9. "):procedure.index("\nStore a redacted")]
         step = " ".join(step.split())
         for needle in ("names no role", "isolated worker", "false positive", "descriptor",
-                       "worker state", "harness role run"):
+                       "worker state", "citizen role run"):
             self.assertIn(needle, step, msg=needle)
 
     def test_a_limitation_records_what_the_descriptor_still_cannot_recognise(self):

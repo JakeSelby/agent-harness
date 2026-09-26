@@ -2,8 +2,8 @@
 """`spawn-confinement` observes all of docs/compatibility.md step 9 (#732).
 
 The framework's own spawn text, naming no role, must be refused, and the refusal must name the
-framework, the layer and `harness role run <role>`; a brief the model rewrites itself is run and
-recorded as the claim's limit, never judged; the same layer run the routed way must leave worker
+framework, the layer and `citizen role run <role>`; a brief the model writes itself for the layer,
+keeping its prompt file and none of the descriptor's sentences, must be refused too (#739); the same layer run the routed way must leave worker
 state and findings; and two ordinary spawns, one mentioning review words and one editing the
 framework's input roots, must still run. The fake client here passes every brief through the real hook path,
 `lifecycle.dispatch`, with the disposable home as `HOME`, so each refusal and log row is the one
@@ -112,7 +112,8 @@ class SpawnConfinementCaseTests(unittest.TestCase):
         self.home.runtime = "claude-code"
         self.data, self.spawn = MODULE.descriptor_spawn()
         self.instructions, _ = MODULE.layer_instructions(self.data, self.spawn)
-        # What a model wrote live: the layer's prompt file, and none of the descriptor's phrases.
+        # A brief in the model's own words: the layer's prompt file, none of the descriptor's
+        # phrases, and a directive to apply it.
         self.client = FakeClient(self.home, "Read the review-layer instructions at "
                                  + self.instructions + " and apply them to calc.py.")
         self.home.seed = lambda *args, **kwargs: None
@@ -126,31 +127,52 @@ class SpawnConfinementCaseTests(unittest.TestCase):
         self.assertIn("own declared sentences quoted whole", verdict)
         self.assertIn("naming the framework (%s), the layer (%s)"
                       % (self.data["name"], self.spawn["id"]), verdict)
-        self.assertIn("`harness role run <role>` and `harness role run reviewer`", verdict)
+        self.assertIn("`citizen role run <role>` and `harness role run reviewer`", verdict)
         self.assertIn("whose logged input is that brief's fingerprint", verdict)
         self.assertIn("the model wrote its own brief \"Read the review-layer instructions at "
                       + self.instructions, verdict)
-        self.assertIn("it was not refused: no framework-spawn deny was logged", verdict)
-        self.assertIn("the classifier matched no spawn in it", verdict)
-        self.assertIn(MODULE.REWORDING_LIMIT, verdict)
+        self.assertIn("it was refused, with 1 framework-spawn deny row(s) logged for that brief's "
+                      "fingerprint, and the classifier matched it as `%s`" % self.spawn["id"],
+                      verdict)
+        self.assertNotIn("observed limit", verdict)
         self.assertIn("wrote status.json and result.md in its own directory", verdict)
         self.assertIn("mentions review, a diff and findings in passing ran", verdict)
         self.assertIn("appended its line to the file", verdict)
         self.assertEqual(self.client.args[2], self.spawn["role"])
         self.assertIn("--read-dir", self.client.args)
 
-    def test_a_reworded_brief_that_is_refused_is_recorded_and_still_passes(self):
-        self.client.reworded = ("Read " + self.instructions + " and "
-                                + self.spawn["phrases"][4] + ". Review calc.py.")
+    def test_the_brief_the_model_wrote_live_in_0_13_0_is_refused(self):
+        self.client.reworded = (
+            "You are acting as the \"edge-case-hunter\" review layer of that process. Before "
+            "doing anything else, read the review instructions for this layer from "
+            + self.instructions + " (in the current project directory) and follow them exactly "
+            "\u2014 that file defines your review methodology. Then read calc.py and perform the "
+            "review on it per those instructions.")
         verdict = MODULE.case_spawn_confinement(self.home)
         self.assertIn("it was refused, with 1 framework-spawn deny row(s)", verdict)
-        self.assertIn("matched it as `%s`" % self.spawn["id"], verdict)
 
-    def test_a_reworded_probe_the_model_never_attempted_is_recorded_not_judged(self):
+    def test_a_reworded_brief_that_runs_fails_and_quotes_the_brief(self):
+        self.client.reworded = ("Take a careful look at calc.py using the checklist kept at "
+                                + self.instructions + ", then report.")
+        with self.assertRaises(AssertionError) as caught:
+            MODULE.case_spawn_confinement(self.home)
+        self.assertIn("it was not refused: no framework-spawn deny was logged", str(caught.exception))
+        self.assertIn("wrote 1 subagent transcript(s)", str(caught.exception))
+        self.assertIn("using the checklist kept at", str(caught.exception))
+
+    def test_a_reworded_brief_naming_no_prompt_file_is_outside_the_claim(self):
+        self.client.reworded = "Look over calc.py for edge cases and report what you find."
+        with self.assertRaises(MODULE.Unverified) as caught:
+            MODULE.case_spawn_confinement(self.home)
+        self.assertIn("names none of the layer's declared prompt files", str(caught.exception))
+
+    def test_a_reworded_request_the_model_never_attempted_is_unverified(self):
         self.client.reworded = None
-        verdict = MODULE.case_spawn_confinement(self.home)
-        self.assertIn("the model made no Agent call, so no reworded brief reached the guard",
-                      verdict)
+        with self.assertRaises(MODULE.Unverified) as caught:
+            MODULE.case_spawn_confinement(self.home)
+        self.assertIn("the model made no Agent call, so no brief of its own reached the guard",
+                      str(caught.exception))
+        self.assertIn("own declared sentences quoted whole", str(caught.exception))
 
     def test_framework_text_that_is_not_refused_fails_and_quotes_the_brief(self):
         self.client.framework = "Please look over calc.py for bugs and tell me what you find."

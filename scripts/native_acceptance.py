@@ -15,7 +15,9 @@ client already uses on this machine (see docs/qualification-runbook.md) and noth
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --from-progress
 
 Each case is appended to a durable log as it finishes, so a killed round costs the case it was
-running and not the round; `--from-progress` rebuilds a record from what survived.
+running and not the round; `--from-progress` rebuilds a record from what survived. Run again at
+the same commit, a round skips every case the log already holds a verdict for, passed or failed,
+and reruns only the unverified and the unfinished.
 """
 import argparse
 import hashlib
@@ -1276,6 +1278,11 @@ def case_stance_switch(home):
     each, with the resolved voice text and output style read beside the replies; replies that
     agree on carrying a table observed nothing. Either half unobserved makes the case `unverified`
     with the other half's observation kept.
+
+    Both switches are user-level selections, which `harness sync` projects into links. A project
+    or a session selection reaches the model through the session hook's injected text instead, a
+    path that does not depend on the dimension, so `custom-stance` observes those two scopes for
+    every dimension, this one included.
     """
     home.seed(stances={"delegation": "tiered", "voice": "scannable"})
     home.harness("sync")
@@ -1377,14 +1384,54 @@ def project_override(home, variants):
             % (PROJECT_FILE, context, before or "<neither linked nor copied on this runtime>"))
 
 
+SESSION_VARIABLE = "HARNESS_STANCE_PROOF"
+
+
+def session_override(home, variants):
+    """Select proof=plain for one session through `HARNESS_STANCE_PROOF` while the global is tagged.
+
+    A session selection reaches the turn the way a project one does: the session hook injects the
+    resolved variant's text when it differs from the synced one (docs/sync-model.md). The turn
+    outside any selection is `project_override`'s, which already closed TAGGED.
+    """
+    link = stance_link(home, "proof")
+    before = link_target(link, variants)
+    turn = session_in(home, PROOF_PROMPT, home.project, {SESSION_VARIABLE: "plain"})
+    after = link_target(link, variants)
+    carried = OVERRIDE_LINE in home.orchestrator_text(turn.get("session_id", ""))
+    word = closing_word(home.answer(turn))
+    if before != after:
+        raise AssertionError("a turn under the session selection moved the global proof link "
+                             "%s -> %s" % (before or "<not a link>", after or "<not a link>"))
+    context = ("its transcript %s the session hook's \"%s\" line"
+               % ("carried" if carried else "did not carry", OVERRIDE_LINE))
+    if word == "TAGGED":
+        raise AssertionError("a turn started with %s=plain closed TAGGED like the global "
+                             "selection; %s" % (SESSION_VARIABLE, context))
+    if word != "PLAIN":
+        raise Unverified("the turn started with %s=plain closed %s, not PLAIN, so the session "
+                         "selection was not observed; %s"
+                         % (SESSION_VARIABLE, word or "<nothing>", context))
+    if not carried:
+        # A PLAIN reply alone could come from anywhere; the hook's line is what shows the session
+        # selection reached the client by the path under test.
+        raise Unverified("the turn started with %s=plain closed PLAIN, but %s, so nothing shows "
+                         "the session selection reached the client through the session hook"
+                         % (SESSION_VARIABLE, context))
+    return ("a fresh turn started with %s=plain and no project file closed PLAIN (%s), with the "
+            "global proof link unmoved" % (SESSION_VARIABLE, context))
+
+
 def case_custom_stance(home):
-    """docs/compatibility.md steps 2 and 4: a custom dimension, a project override, a bad choice.
+    """docs/compatibility.md steps 2 and 4: a custom dimension, project and session selections, a
+    bad choice.
 
     The dimension is one the repository does not ship, from an external root. A custom dimension
     is prose on every runtime, so the assertion is the client's own reply changing with the
     selection; the same dimension is then overridden for one disposable repository, and a turn
     inside it must follow the override while a turn outside it follows the global selection with
-    the global link unmoved. A selection that names no variant must be refused by the sync with
+    the global link unmoved. A turn started with `HARNESS_STANCE_PROOF` must follow that session
+    selection the same way. A selection that names no variant must be refused by the sync with
     the previously resolved link left where it was.
     """
     root = home.primitives / "stances" / "proof"
@@ -1405,6 +1452,7 @@ def case_custom_stance(home):
     select(home, "proof", "tagged")
     variants = [root / "plain.md", root / "tagged.md"]
     override = project_override(home, variants)
+    session = session_override(home, variants)
     before = link_target(stance_link(home, "proof"), variants)
     warning = select(home, "proof", "nonesuch", expected=1)
     if MISSING_VARIANT not in warning:
@@ -1416,9 +1464,9 @@ def case_custom_stance(home):
                              % (before, after or "<not a link>"))
     return ("A custom proof dimension supplied from an external primitive root appeared in harness "
             "stances --json after sync, and the native client's reply closed PLAIN under "
-            "proof=plain; then, %s; selecting a variant that does not exist made harness sync "
-            "exit 1 with \"%s\" and left the previously resolved variant at %s."
-            % (override, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
+            "proof=plain; then, %s; then %s; selecting a variant that does not exist made harness "
+            "sync exit 1 with \"%s\" and left the previously resolved variant at %s."
+            % (override, session, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
 
 
 # The log path is written into the script rather than read from the environment: a hook the
@@ -2241,7 +2289,7 @@ def layer_request(data, spawn, instructions):
             % (REVIEW_FILE, layer_name(spawn), data["name"], instructions))
 
 
-ROLE_RUN_PLACEHOLDER = "harness role run <role>"
+ROLE_RUN_PLACEHOLDER = "citizen role run <role>"
 
 
 def refusal_gaps(text, data, spawn):
@@ -2358,39 +2406,42 @@ def framework_refused(home, data, spawn):
     return notes
 
 
-REWORDING_LIMIT = ("recognition is lexical, so a brief that keeps the layer's prompt file but none "
-                   "of the descriptor's phrases is not refused (tracked in #739)")
+def reworded_refused(home, data, spawn, instructions, notes):
+    """Step 9's second claim: the brief the model writes itself for the layer is refused too.
 
-
-def reworded_probe(home, data, spawn, instructions):
-    """The observed limit of the claim: what the model's own brief for the layer did. Never raises.
-
-    Recorded, never judged: step 9 claims refusal for the framework's own spawn text only, and a
-    rewording is run to show where lexical recognition stops, whichever way it goes.
+    The model is told where the layer's prompt file is and writes the brief in its own words, so
+    it keeps the file, because the subagent must read it, and quotes none of the descriptor's
+    sentences. Recognition must still refuse it (#739). A model that never calls the tool, or
+    whose brief leaves out every declared prompt file, observes nothing about that claim.
     """
     probe = home.session(layer_request(data, spawn, instructions))
     session_id = probe["session_id"]
     calls, readable = agent_calls(home, session_id)
-    head = ("as the observed limit of the claim, not a pass criterion: asked in plain words to "
-            "have a subagent do the %s layer's review of %s, with that layer's instructions at %s "
-            "and no role named, " % (spawn["id"], REVIEW_FILE, instructions))
+    head = ("asked in plain words to have a subagent do the %s layer's review of %s, with that "
+            "layer's instructions at %s and no role named, " % (spawn["id"], REVIEW_FILE,
+                                                                instructions))
     if not calls:
-        return head + ("the model %s, so no reworded brief reached the guard"
-                       % ("made no Agent call" if readable else "left no readable transcript"))
+        raise Unverified(observed(notes, head + "the model %s, so no brief of its own reached "
+                                  "the guard" % ("made no Agent call" if readable
+                                                 else "left no readable transcript")))
     brief = str(calls[0]["input"].get("prompt", ""))
     match = frameworks.classify(brief, calls[0]["input"].get("subagent_type"))
     rows = brief_rows(logged_refusals(home, session_id), brief)
-    ran = len(home.subagents(session_id))
+    wrote = head + "the model wrote its own brief %s" % quoted(brief)
     if rows:
-        outcome = ("it was refused, with %s %s deny row(s) logged for that brief's fingerprint"
-                   % (len(rows), FRAMEWORK_POINT))
-    else:
-        outcome = ("it was not refused: no %s deny was logged for it and it wrote %s subagent "
-                   "transcript(s)" % (FRAMEWORK_POINT, ran))
-    return head + ("the model wrote its own brief %s; %s; the classifier %s; %s"
-                   % (quoted(brief), outcome,
-                      "matched it as `%s`" % match["spawn"] if match else "matched no spawn in it",
-                      REWORDING_LIMIT))
+        return wrote + ("; it was refused, with %s %s deny row(s) logged for that brief's "
+                        "fingerprint, and the classifier matched it as `%s`"
+                        % (len(rows), FRAMEWORK_POINT, match["spawn"] if match else "nothing"))
+    ran = len(home.subagents(session_id))
+    text = frameworks.normalise(brief)
+    if not [name for name in spawn.get("identifiers") or [] if frameworks.normalise(name) in text]:
+        raise Unverified(observed(notes, wrote + "; it names none of the layer's declared prompt "
+                                  "files, so it is outside the claim, and no %s deny was logged "
+                                  "for it" % FRAMEWORK_POINT))
+    raise AssertionError(observed(notes, wrote + "; it was not refused: no %s deny was logged "
+                                  "for it, it wrote %s subagent transcript(s), and the classifier "
+                                  "%s" % (FRAMEWORK_POINT, ran, "matched it as `%s`"
+                                          % match["spawn"] if match else "matched no spawn in it")))
 
 
 def routed_layer(home, data, spawn, instructions, notes):
@@ -2505,11 +2556,10 @@ def case_spawn_confinement(home):
     """docs/compatibility.md step 9: a framework's review layer is confined by what it carries.
 
     Each part is read from what the run wrote. The framework's own spawn text, naming no role, must
-    be refused by name. A brief the model rewrites in its own words is run and recorded as the
-    claim's observed limit, never judged. The same layer through `harness role run` must write
-    isolated worker state and return findings. Two ordinary spawns, one merely mentioning review
-    words and one editing the framework's input roots, must still run, or a guard that refuses
-    everything would read as a pass.
+    be refused by name, and so must the brief the model writes itself for the layer. The same
+    layer through `harness role run` must write isolated worker state and return findings. Two
+    ordinary spawns, one merely mentioning review words and one editing the framework's input
+    roots, must still run, or a guard that refuses everything would read as a pass.
     """
     home.seed()
     home.harness("sync")
@@ -2525,7 +2575,7 @@ def case_spawn_confinement(home):
     (home.project / edited).parent.mkdir(parents=True, exist_ok=True)
     (home.project / edited).write_text("status: open\n")
     notes = framework_refused(home, data, spawn)
-    notes.append(reworded_probe(home, data, spawn, instructions))
+    notes.append(reworded_refused(home, data, spawn, instructions, notes))
     routed_layer(home, data, spawn, instructions, notes)
     ordinary_ran(home, review_words_prompt(), ("review", "diff", "findings"),
                  "an ordinary unnamed spawn whose brief mentions review, a diff and findings in "
@@ -2933,9 +2983,9 @@ CASES = {
                       "variant beside the resolved variant text and link"),
     "custom-stance": (case_custom_stance,
                       "supply a dimension this repository does not ship from an external "
-                      "primitive root, read the client's reply under each variant and under a "
-                      "project override inside and outside its repository, and refuse a "
-                      "selection naming no variant"),
+                      "primitive root, read the client's reply under each variant, under a "
+                      "project override inside and outside its repository and under a session "
+                      "variable, and refuse a selection naming no variant"),
     "framework-spawn-routing": (case_framework_spawn_routing,
                                "drive the spawn hook with a fixture recipe built from a declared "
                                "integration descriptor, then run the cost-posture turn"),
@@ -2957,9 +3007,10 @@ CASES = {
     "spawn-confinement": (case_spawn_confinement,
                           "spawn a framework's review layer with its own spawn text and no "
                           "subagent_type, and read the refusal's framework, layer and role-run "
-                          "command from the decision log and the tool result; record what a brief "
-                          "the model rewrites itself did, as the claim's limit; run the same layer "
-                          "through harness role run and read its worker state and findings; and "
+                          "command from the decision log and the tool result; require the brief "
+                          "the model writes itself for the layer to be refused too; run the same "
+                          "layer through harness role run and read its worker state and "
+                          "findings; and "
                           "spawn ordinary work mentioning review words and editing the "
                           "framework's input roots, which must still run"),
     "cost-posture": (case_cost_posture,
@@ -3159,6 +3210,24 @@ def progress_lines(path, header=None):
     return items
 
 
+SETTLED = ("passed", "failed")
+
+
+def settled(items):
+    """Each case whose latest line in `items` is a verdict, mapped to that verdict.
+
+    A resumed round skips these, which is FR-52's "a resumed round skips completed cases". Pass
+    lines already filtered by `progress_lines(path, header)`: the header carries the source
+    commit, so a verdict never carries across candidates. A failure is kept rather than rerun,
+    so the evidence of it survives the resume; an `unverified` case observed nothing and runs
+    again, its new line superseding the old one.
+    """
+    latest = {}
+    for item in items:
+        latest[item["case"]] = item.get("result")
+    return dict((case, result) for case, result in latest.items() if result in SETTLED)
+
+
 NO_OBSERVATION = "no observation was recorded for this case"
 
 
@@ -3193,11 +3262,15 @@ def build_record(items):
 def scoped(client, data):
     """State the path set whose change invalidates this record, so a reviewer need not derive it.
 
-    The catalog grants the scope; a record that claims any other one is rejected. See
-    docs/compatibility.md.
+    The catalog grants the scope; a record that claims any other one is rejected. The record also
+    names the case-to-path map it assumed, which is what lets a later change invalidate only the
+    cases it touches. See docs/compatibility.md.
     """
     entry = dict(CLIENTS[client], id=client)
     data["invalidation_scope"] = compatibility.evidence_scope(catalog(), entry)
+    identity = compatibility.case_map_identity(catalog())
+    if identity is not None:
+        data["case_map"] = identity
     return data
 
 
@@ -3285,8 +3358,17 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
         "model_run": model,
     }
     append_routing(progress, header)
+    # A verdict is kept only when this round could reach one itself: on a surface it has not
+    # confirmed, `probe` reads every case as unverified, so a pass an earlier round recorded
+    # under --home-confirmed runs again rather than surviving an unconfirmed resume.
+    kept = ({} if unobserved_note(client, confirmed)
+            else settled(progress_lines(progress, header)))
     results = []
     for name in names:
+        if name in kept:
+            sys.stderr.write("resume: %s already %s at %s; not rerun\n"
+                             % (name, kept[name], header["source_commit"][:12]))
+            continue
         # The login is passed only when asked for, so a runner that never takes one still fits.
         extra = {"login": login} if login is not None else {}
         item = (runner(client, name, model, keep, confirmed, **extra) if name in CASES

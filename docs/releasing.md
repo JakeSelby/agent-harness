@@ -54,7 +54,8 @@ change. What the release must carry before it can be tagged is the next section.
    cut-over that ends the lint's Unreleased exemption; from the next release on, with
    `python3 scripts/release_notes.py --changelog <version>`, which assembles the `changelog.d/`
    fragments in a stable order and deletes them (see
-   [`changelog.d/README.md`](../changelog.d/README.md)). Run the CI commands and the Python floor
+   [`changelog.d/README.md`](../changelog.d/README.md)). That assembly satisfies the lint's
+   fragment rule, so the release pull request adds no `.none.md` waiver. Run the CI commands and the Python floor
    suite on committed HEAD; then run:
 
    ```sh
@@ -113,10 +114,10 @@ change. What the release must carry before it can be tagged is the next section.
 
 Cut `release/v<version>` at the commit the round qualifies and record it in
 `compatibility/freeze.json` as `state: frozen` with that branch and full commit, then run every
-target on that branch so `main` keeps merging without invalidating evidence. `harness freeze`
+target on that branch so `main` keeps merging without invalidating evidence. `citizen freeze`
 prints the drift between the frozen commit and `origin/main` under the runtime source paths —
 `VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`, `config.example.json` —
-and `harness freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
+and `citizen freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
 them, because such a change costs part of the round again. How much of it is scoped per target: a
 change under one runtime's adapter directory invalidates only that runtime's targets, unless it
 touches a file shared code reads for every runtime, and a change to shared source invalidates them
@@ -138,9 +139,12 @@ will run the round (the [runbook](qualification-runbook.md#target-hosts) establi
 disposable-home sync, projection-drift and lifecycle checks. Each defect it catches is one that
 would otherwise be found part-way through a round and cost the whole round again. A green tier is
 **not** qualification: it observes no client, writes nothing under `compatibility/evidence/` and
-appears in no catalog record, and the run fails if any check touches either. The tier is
-**advisory** for now — CI runs it as a `smoke` job the branch ruleset does not require — until it
-is decided whether a red tier may block a freeze.
+appears in no catalog record, and the run fails if any check touches either. **A red tier blocks
+the round:** `scripts/qualification_round.py` runs it first and, when it fails or times out,
+launches no target and records why in `round.json`. `--skip-smoke` is for a tier you already ran
+green at this commit; the round records it as `skipped`. CI also runs the tier as a `smoke` job,
+which the branch ruleset does not require, so a red job warns about a merge but blocks only the
+round.
 
 **Fix no defect mid-round.** A round runs all four required targets to completion and collects
 their defects; a fix landed between targets invalidates the targets already observed and forces a

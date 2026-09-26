@@ -6,8 +6,32 @@ import re
 from pathlib import Path
 
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
-KINDS = {"rules": "rules", "stances": "stances", "skills": "skills",
-         "roles": "roles", "workflows": "workflows", "presentation": "presentation"}
+# Every kind of primitive: its directory under a primitive root, the files that are its units, the
+# value a selection gives it and what sync projects it into. `variant` kinds pick one named file
+# per dimension; `switch` kinds are `on` or `off`, default `on`; a kind with no value is not
+# selectable. `policy/hooks/posture.py` reads this map to resolve a selection, so a new kind is
+# one entry here. `hooks` has no directory: its units are the lifecycle modules `HOOK_IDS` names.
+# Every policy module that answers a lifecycle event, by its basename under `policy/hooks/`. Both
+# runtimes' adapters dispatch through `lifecycle.py`, so this one list is every runtime's hook ids;
+# a module the other `policy/hooks/` files load as a library has no id and no switch.
+HOOK_IDS = ("allow-plan-webfetch", "allow-readonly-bash", "approvals", "brief-guard", "filter-output",
+            "grade-bash", "harness-session", "neutralize-tool-output", "stage-user-files", "stop-gate",
+            "tier-agent-spawns", "usage-feed", "usage-log", "validate-plan-card")
+# The hooks that enforce rather than assist: `off` only with `core_switches_acknowledged` true.
+CORE_HOOKS = ("brief-guard", "grade-bash", "neutralize-tool-output", "stop-gate")
+HOOKS_DIRECTORY = "policy/hooks"
+KINDS = {
+    "rules": {"directory": "rules", "pattern": "*.md", "value": "switch", "projection": "rule link"},
+    "stances": {"directory": "stances", "pattern": "*/*.md", "value": "variant",
+                "projection": "stance link and generated instructions"},
+    "skills": {"directory": "skills", "pattern": "*/SKILL.md", "value": "switch", "projection": "skill link"},
+    "roles": {"directory": "roles", "pattern": "*.md", "value": "switch", "projection": "agent definition"},
+    "workflows": {"directory": "workflows", "pattern": "*.md", "value": "switch",
+                  "projection": "command and generated skill"},
+    "hooks": {"directory": None, "pattern": None, "units": HOOK_IDS, "value": "switch",
+              "projection": "settings hook"},
+    "presentation": {"directory": "presentation", "pattern": "*.md", "value": None, "projection": "output style"},
+}
 # Capability classes, strongest first. A shared role names the class its work needs; each
 # adapter's bindings.json maps the classes it has qualified onto its own native models.
 TIER_CLASSES = ("frontier", "strong", "standard", "light")
@@ -176,15 +200,22 @@ def resolve_stances(root, config, strict=True):
 
 def catalog(root):
     entries = []
-    for kind, directory in KINDS.items():
-        source = root / "primitives" / directory
-        pattern = "*/SKILL.md" if kind == "skills" else "*/*.md" if kind == "stances" else "*.md"
-        for path in sorted(source.glob(pattern)):
+    for kind, entry in KINDS.items():
+        if not entry["directory"]:
+            continue
+        source = root / "primitives" / entry["directory"]
+        for path in sorted(source.glob(entry["pattern"])):
             ident = str(path.relative_to(source).with_suffix(""))
             if kind == "skills":
                 ident = path.parent.name
             entries.append({"id": ident, "kind": kind, "source": str(path.relative_to(root)),
                             "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    for ident in HOOK_IDS:
+        path = root / HOOKS_DIRECTORY / (ident + ".py")
+        if path.is_file():
+            entries.append({"id": ident, "kind": "hooks", "source": str(path.relative_to(root)),
+                            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                            "core": ident in CORE_HOOKS})
     return {"schema_version": 1, "version": (root / "VERSION").read_text().strip(),
             "primitives": entries}
 
@@ -473,8 +504,8 @@ def compatibility_capability_table(root, data):
             + ". `enforced` is narrower than it sounds. It never reaches the session's own model: "
             "the `model` settings key is one this harness never writes "
             "(`docs/settings-ownership.md`). Within a session it rewrites a spawn only while the "
-            "selected `delegation` variant is `tiered` — `off` stops the spawn instead, and any "
-            "other variant leaves it alone — and only while the adapter's class table maps at "
+            "selected `delegation` variant is `tiered`. `off` stops the spawn instead, any other "
+            "variant leaves it alone, and it acts only while the adapter's class table maps at "
             "least two models, since one class is no ladder to move a spawn down. Under every "
             "other condition the ceiling is prose, exactly as `advisory` is everywhere.")
     return ["A client's status is not a capability's status. Each cell is derived from that "

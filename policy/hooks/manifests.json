@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "hooks": {
+    "allow-plan-webfetch": {
+      "claims": [
+        "Approves a WebFetch of an http or https URL in plan mode, so gathering context for a plan does not prompt."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "allow-readonly-bash": {
+      "claims": [
+        "Approves shell commands proved read-only, and plan-mode investigation and plan_allow_tools tools under an open posture."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "approvals": {
+      "claims": [
+        "Records the user's `approve <code>` replies, so a command refused in auto mode can run once after the user approves it in chat."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "brief-guard": {
+      "claims": [
+        "Appends a return bound and the posture's soft budget to a subagent brief that states neither."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "filter-output": {
+      "claims": [
+        "Pipes verbose test, build and type-check runs through a filter, so only failures, the summary and the tail enter the transcript."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "grade-bash": {
+      "claims": [
+        "Grades each shell command by reach and asks, or denies, before one the autonomy stance does not cover runs.",
+      "With a decision provider configured, also asks before a command its policy level for that repository does not cover, and before any write to a governance policy file."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "harness-session": {
+      "claims": [
+        "Reports harness drift, session overrides and the handoff at session start, and records the session's agent registry."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "neutralize-tool-output": {
+      "claims": [
+        "Flags instruction-shaped text arriving in tool output, so it is read as data rather than obeyed."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "stage-user-files": {
+      "claims": [
+        "Copies a file SendUserFile names from outside the working directory into it, so a Remote Control client can open it."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "stop-gate": {
+      "claims": [
+        "Blocks the end of a turn while the repository's gate is red on a changed tree."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "tier-agent-spawns": {
+      "claims": [
+        "Routes each spawn to the model its role or band names; role confinement stays on when this is off."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "usage-feed": {
+      "claims": [
+        "Feeds measured turn and subagent spend back to the orchestrator on Claude Code."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "usage-log": {
+      "claims": [
+        "Records the session's token usage in the local usage ledger at session end."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
+    "validate-plan-card": {
+      "claims": [
+        "Checks a written plan file against the Review Card contract and says what it lacks."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    }
+  }
+}

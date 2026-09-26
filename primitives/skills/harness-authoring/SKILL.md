@@ -20,8 +20,9 @@ git -C "$(…)" remote -v
 ```
 
 If the manifest is missing, locate or install the harness before editing managed content.
-Do not create a second authority in a runtime configuration directory. If `origin` is `<owner>/agent-harness` and you are that owner, you are the
-**maintainer**. If `origin` is a fork and `upstream` is the harness, you are a **fork user**.
+Do not create a second authority in a runtime configuration directory. If `origin` is a fork and `upstream` is the
+harness, you are a **fork user**. Otherwise, if `origin` is `<owner>/model-citizen`, or `<owner>/agent-harness` from
+before the rename, and you are that owner, you are the **maintainer**.
 
 ## The ladder — first match wins
 
@@ -77,7 +78,7 @@ the user is a personal file, outside the repo.
      tests) carry a test; content changes are gated by the lint and review.
    - **Fork user:** commit to your fork's `main`, which is your live harness. If the change is
      worth sharing, `git fetch upstream && git rebase upstream/main`, push a branch to the fork,
-     and `gh pr create --repo <owner>/agent-harness`.
+     and `gh pr create --repo <owner>/<name>`, naming the repository your `upstream` remote points at.
 5. Record in one line where the item went and why, so the placement is auditable.
 
 ## Writing rule and comment text: the conciseness examples
@@ -121,7 +122,7 @@ belongs in the issue or in `docs/`, referenced from the PR body.
 ## The always-loaded cap
 
 `primitives/instructions.md`, every file in `primitives/rules/`, and the longest variant of each
-stance dimension are loaded on every turn of every session. `harness lint` fails when their combined
+stance dimension are loaded on every turn of every session. `citizen lint` fails when their combined
 size exceeds `ALWAYS_LOADED_TOKEN_CAP` in `bin/harness` — a third of the 12,607-token standing
 context measured in issue #430, and the binding limit — or the secondary `ALWAYS_LOADED_CAP` in
 lines. Both are printed on every lint run. A rule that needs more room than the

@@ -153,7 +153,7 @@ class PlannerCallerTests(unittest.TestCase):
         text = SKILL.read_text(encoding="utf-8")
         self.assertIn("## Delegating", text)
         delegating = text.split("## Delegating", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("`harness role run planner`", delegating)
+        self.assertIn("`citizen role run planner`", delegating)
         self.assertNotIn("Paste the `TEMPLATE.md`", delegating)
 
 

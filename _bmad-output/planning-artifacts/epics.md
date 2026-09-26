@@ -2,7 +2,7 @@
 title: Agent Harness epics
 status: active
 created: 2026-09-19
-updated: 2026-09-24
+updated: 2026-09-25
 inputDocuments:
   - prds/prd-agent-harness-2026-09-23/prd.md
   - architecture-spines/architecture-agent-harness-2026-09-23/ARCHITECTURE-SPINE.md
@@ -32,7 +32,7 @@ How to read it:
 | --- | --- |
 | Shared primitives and projection (FR-1, FR-3, FR-10, FR-13) | AH-E001, AH-E008 |
 | Stances and selection (FR-2, FR-14 to FR-16) | AH-E002, AH-E011, AH-E017 |
-| Configuration lifecycle (FR-4, FR-5, FR-17, FR-18, FR-66, FR-69, FR-70) | AH-E001, AH-E005, AH-E008, AH-E015 |
+| Configuration lifecycle (FR-4, FR-5, FR-17, FR-18, FR-66, FR-69, FR-70) | AH-E001, AH-E005, AH-E008, AH-E015, AH-E020 |
 | Measured rules (FR-19 to FR-22, FR-67) | AH-E009, AH-E013, AH-E003 |
 | Ledger, pricing and telemetry (FR-11, FR-23 to FR-27) | delivered without an epic (0.12); AH-E017 for the schema rule; AH-E018 for rebuild attribution |
 | Cost posture and delegation (FR-28 to FR-34) | delivered without an epic (0.11); AH-E013, AH-E015, AH-E018 |
@@ -40,7 +40,7 @@ How to read it:
 | Role workers and the delivery loop (FR-40 to FR-44, FR-68) | AH-E001, AH-E015 |
 | Framework integrations (FR-45, FR-46) | delivered without an epic (#585, #591); viewer under AH-E002 |
 | Decision providers (FR-47 to FR-50) | AH-E003 |
-| Compatibility, qualification and release (FR-6, FR-7, FR-12, FR-51 to FR-54) | AH-E005, AH-E014, AH-E006 |
+| Compatibility, qualification and release (FR-6, FR-7, FR-12, FR-51 to FR-54) | AH-E005, AH-E014, AH-E006, AH-E020 |
 | Cost benchmarks (FR-55 to FR-58) | AH-E013, AH-E011 |
 | Session operations (FR-8, FR-59 to FR-63) | AH-E001, AH-E002, AH-E015, AH-E017, AH-E018 |
 | Public planning (FR-9, FR-64, FR-65) | AH-E004, AH-E012, AH-E016 |
@@ -432,6 +432,18 @@ How to read it:
   - AH-S228 [#749](https://github.com/JakeSelby/agent-harness/issues/749): Refresh the handoff at task boundaries in /land and /close-out (open)
   - AH-S229 [#750](https://github.com/JakeSelby/agent-harness/issues/750): Cold-resume guard: hold one prompt after a long idle on a large context (open)
   - AH-SP011 [#751](https://github.com/JakeSelby/agent-harness/issues/751): Spike: one-week trial of an earlier auto-compact window (open)
+
+### AH-E020: Rename the product to Model Citizen ([#875](https://github.com/JakeSelby/agent-harness/issues/875), open)
+
+- **Milestones:** v0.14.0
+- **Goal:** Every living surface says Model Citizen, `citizen` runs everything `harness` does, and old links still resolve, while on-disk names, `AH-` IDs, telemetry and dated records keep `agent-harness` (AD-24).
+- **Covers:** FR-9, FR-17, FR-18, FR-53, FR-54, FR-66
+- **Stories:**
+  - AH-C078 [#876](https://github.com/JakeSelby/agent-harness/issues/876): Record the Model Citizen rename's sprint change and reserve its stories (open)
+  - AH-S267 [#877](https://github.com/JakeSelby/agent-harness/issues/877): Add the citizen command and keep harness as an alias (open)
+  - AH-S268 [#878](https://github.com/JakeSelby/agent-harness/issues/878): Rename the plugin to model-citizen and keep recognizing the old ID (open)
+  - AH-S269 [#879](https://github.com/JakeSelby/agent-harness/issues/879): Rename the product copy to Model Citizen (open)
+  - AH-C079 [#880](https://github.com/JakeSelby/agent-harness/issues/880): Point hardcoded links at the new repo and domain, and add the retired-name lint rule (open)
 
 ## Completed work with no epic
 

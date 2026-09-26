@@ -1,8 +1,8 @@
 ---
-title: Agent Harness developer experience contract
+title: Model Citizen developer experience contract
 status: final
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-25
 supersedes: ../ux-agent-harness-2026-09-19/EXPERIENCE.md
 sources:
   - DESIGN.md
@@ -12,7 +12,7 @@ sources:
 # Foundation
 
 The harness has three operational surfaces:
-- **The local CLI and its reports.**
+- **The local CLI and its reports.** The command is `citizen`; `harness` stays a supported alias.
 - **The agent's own session:**
   - answers shaped by the `voice` stance;
   - plans in the runtime's native plan pane;
@@ -31,7 +31,7 @@ records. Anything marked *(planned)* describes a planned PRD requirement, not cu
 2. **Understand.** The README leads with that question. It then shows a real dry-run capture and the
    capability groups, with release status below install.
 3. **Select.**
-   - `harness init` names the runtimes, a preset and the identity.
+   - `citizen init` names the runtimes, a preset and the identity.
    - Stances select behaviour, and modes will too *(planned, v0.14.0)*.
 4. **Preview.** A dry run lists every link, rendered file, setting and conflict before ownership changes.
 5. **Apply.** Sync records what the harness owns and preserves unrelated state.
@@ -49,13 +49,13 @@ The journeys mirror PRD UJ-1 to UJ-9.
 
 ## UJ-1. Riley evaluates without surrendering configuration
 
-Riley runs `harness init`, selects both runtimes, leaves editor management off, and runs `harness sync
+Riley runs `citizen init`, selects both runtimes, leaves editor management off, and runs `citizen sync
 --dry-run`. The dry run lists each proposed action by kind (link, render, path, native setting) and stops
 at one file Riley owns.
 
 **Confirmation:**
 - The conflict is named with its current owner, and adoption is never the default.
-- After applying, `doctor` reports local activation and drift, and `harness compatibility` reports
+- After applying, `doctor` reports local activation and drift, and `citizen compatibility` reports
   published qualification.
 
 **Known gap:** under a dry run, some summary lines are worded in the past tense ("sync complete"). That
@@ -63,13 +63,13 @@ wording is a defect, tracked under #634.
 
 ## UJ-2. Morgan changes one preference across both runtimes
 
-Morgan changes the `delegation` stance in the user configuration, reads `harness stances`, and syncs.
+Morgan changes the `delegation` stance in the user configuration, reads `citizen stances`, and syncs.
 
 **Confirmation:**
 - One authored choice reaches both native formats.
-- `harness stances --json` shows each adapter's coverage: `instruction` or `instruction-and-hook`.
+- `citizen stances --json` shows each adapter's coverage: `instruction` or `instruction-and-hook`.
 
-**Scope note:** a project-level selection changes what the hooks and `harness stances` resolve, but sync
+**Scope note:** a project-level selection changes what the hooks and `citizen stances` resolve, but sync
 links user-level stance text only. Carrying a project selection into the linked text is open (#276).
 
 ## UJ-3. Sam finds out which rules fire
@@ -91,7 +91,7 @@ shrinks when they go.
 Every brief carries its soft budget. The live usage feed prints each subagent's spend against its budget.
 When the latest turn's context crosses a threshold, a one-time nudge suggests a fresh session.
 
-**Confirmation:** `harness usage --by role`, then `--by day`, shows where the spend went, as list-price
+**Confirmation:** `citizen usage --by role`, then `--by day`, shows where the spend went, as list-price
 equivalents, with unpriced rows counted in the footer.
 
 ## UJ-5. Casey contributes a fix
@@ -127,7 +127,7 @@ Each release surface is reported as done, skipped or unverified.
 
 ## UJ-8. Kai keeps remote sessions alive
 
-`harness remote-control status` reports, for each workspace host:
+`citizen remote-control status` reports, for each workspace host:
 - its launchd state and log path;
 - the heal state;
 - any sessions that are active but disconnected, with the command to reconnect them.
@@ -138,7 +138,7 @@ leaves it out and heal never claims it.
 
 ## UJ-9. Ari tries a decision provider in shadow (planned, v0.16.0)
 
-Ari enables a provider at one decision point in the `shadow` stage, and runs `harness decisions eval`.
+Ari enables a provider at one decision point in the `shadow` stage, and runs `citizen decisions eval`.
 
 **Confirmation:** the report shows agreement, calibration, cost and latency against the point's written
 criterion. The point advances only when it meets that criterion.

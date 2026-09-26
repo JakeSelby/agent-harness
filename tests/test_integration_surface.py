@@ -108,11 +108,11 @@ class CommandTests(Surface):
 
     def test_the_uninstalled_state_line_names_the_command_that_installs_it(self):
         _, output = self.cli("integration", "check", "bmad", str(self.base))
-        self.assertIn("template not installed (harness integration apply bmad)", output)
+        self.assertIn("template not installed (citizen integration apply bmad)", output)
 
     def test_the_usage_text_documents_both_spellings(self):
         usage = harness.__doc__
-        self.assertIn("harness integration check|apply NAME", usage)
+        self.assertIn("citizen integration check|apply NAME", usage)
         self.assertIn("alias", usage)
 
 
@@ -130,7 +130,7 @@ class SessionNoticeTests(Surface):
         lines = module.integration_lines(str(REPO), str(self.base))
         self.assertEqual(len(lines), 1, lines)
         self.assertTrue(lines[0].startswith("BMad Method integration check: "), lines[0])
-        self.assertIn("template not installed (harness integration apply bmad)", lines[0])
+        self.assertIn("template not installed (citizen integration apply bmad)", lines[0])
         self.assertNotIn("skipped", lines[0])  # a skill the repository lacks is not news
 
     def test_the_notice_is_silent_once_the_overrides_are_in_place(self):

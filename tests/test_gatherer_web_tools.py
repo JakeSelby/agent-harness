@@ -118,7 +118,7 @@ class RoutingTests(unittest.TestCase):
 
     def test_research_routes_web_dimensions_away_from_the_worker(self):
         text = (REPO / "primitives/workflows/research.md").read_text()
-        self.assertIn("harness role run gatherer", text)
+        self.assertIn("citizen role run gatherer", text)
         self.assertIn("band worker", text)
 
 

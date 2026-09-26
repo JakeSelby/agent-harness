@@ -28,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/release_notes.py > "$RUNNER_TEMP/release-notes.md"
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "agent-harness $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Model Citizen $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
 
   advance-stable:
     needs: qualified-release
