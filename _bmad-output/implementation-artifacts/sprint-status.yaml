@@ -394,6 +394,7 @@ development_status:
   ah-b110-policy-file-guard-gates-commands-that-only: ready-for-dev
   ah-b111-grade-bash-grades-a-redirect-only-segment-after: ready-for-dev
   ah-b112-lock-the-intent-overlap-counter-s-read-modify: ready-for-dev
+  ah-b113-test-worker-context-budget-rewrites-a-tracked: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
   ah-c002-docs-positioning-line-comparison-rows-and: done
   ah-c003-docs-no-prerequisites-no-platform-statement-and: done
