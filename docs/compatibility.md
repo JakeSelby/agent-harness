@@ -308,7 +308,7 @@ there is one:
   session; the other eight stand when only a worker changes.
 
 `tests/test_evidence_case_scope.py` holds the mechanism to this rule, and checks that every mapped
-path exists. See [#582](https://github.com/JakeSelby/agent-harness/issues/582).
+path exists. See [#582](https://github.com/JakeSelby/model-citizen/issues/582).
 
 A released catalog pins the exact source commit its evidence qualifies. Later development does
 not rewrite or invalidate that historical release record, but any change under the runtime-source
