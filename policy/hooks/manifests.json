@@ -63,7 +63,8 @@
     },
     "grade-bash": {
       "claims": [
-        "Grades each shell command by reach and asks, or denies, before one the autonomy stance does not cover runs."
+        "Grades each shell command by reach and asks, or denies, before one the autonomy stance does not cover runs.",
+      "With a decision provider configured, also asks before a command its policy level for that repository does not cover, and before any write to a governance policy file."
       ],
       "surface": [
         "hook-events"
