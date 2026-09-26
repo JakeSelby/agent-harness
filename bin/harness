@@ -2673,8 +2673,11 @@ def cmd_selection(args: argparse.Namespace) -> int:
     module = load_posture()
     declared = module.manifests(read_json(config_path()) or {}, REPO)[0]
     say("mode=" + (data["mode"] or "none") + " (" + data["sources"]["mode"] + ")")
+    for kind, units in data.get("shadowed", {}).items():
+        for unit, source in units.items():
+            say("shadowed " + kind + "." + unit + ": the mode's value is overridden by " + source)
     for kind, units in data.items():
-        if kind in ("mode", "sources"):
+        if kind in ("mode", "sources", "shadowed"):
             continue
         for unit, value in units.items():
             # A switch unit reports what measures it; one with no instrument is unmeasured.
@@ -3164,7 +3167,8 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
-BOOL_KEYS = ["vscode.manage", "claude.manage", "codex.manage", "permissions_bypass_acknowledged"]
+BOOL_KEYS = ["vscode.manage", "claude.manage", "codex.manage", "permissions_bypass_acknowledged",
+             "core_switches_acknowledged"]
 
 
 def coerce_config_value(key: str, value: str) -> Any:
@@ -3200,6 +3204,13 @@ def coerce_config_value(key: str, value: str) -> Any:
         cfg["stances"][tail] = value
         resolve_stances(cfg)
         return value
+    if key == "mode":
+        # Resolved with the mode in place, so an unknown mode or one that fails its own
+        # validation is refused here rather than at the next sync.
+        user = read_json(config_path()) or {}
+        user["mode"] = value
+        load_selection(env={}, user=user)
+        return value
     if head in SYNC_SWITCH_KINDS:
         if not tail:
             raise SystemExit(f"a {head} switch names its unit: harness config set {head}.<name> on|off")
@@ -3227,7 +3238,8 @@ def coerce_config_value(key: str, value: str) -> Any:
             raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
         return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"rules|skills|workflows|roles.NAME, permissions, plan_allow_tools, governance.provider, governance.jev.*, "
+                     f"mode, rules|skills|workflows|roles.NAME, permissions, plan_allow_tools, "
+                     f"governance.provider, governance.jev.*, "
                      f"or one of {', '.join(BOOL_KEYS)}")
 
 
@@ -3278,9 +3290,13 @@ def config_set(key: str, value: Optional[str]) -> int:
             cfg = read_json(path)
             if cfg is None:
                 cfg = deepcopy(example_config())
+                mark_init_defaults(cfg, cfg.get("stances", {}))
             parts = (key.split(".") if key.startswith(("integrations.", "governance."))
                      else key.split(".", 1))
             reconcile.assign(cfg, parts, {"present": True, "value": coerced})
+            if parts[0] == "stances":
+                # A stance set by hand is the user's choice from now on, above any mode.
+                unmark_init_default(cfg, parts[1])
             if parts[0] in SYNC_SWITCH_KINDS:
                 # Resolved as it will be written: a switch that breaks a module dependency is
                 # refused, and one that repairs a selection the resolver already refuses goes in.
@@ -3349,6 +3365,12 @@ def cmd_viewer(args: argparse.Namespace) -> int:
 
 
 def _ask(prompt: str, default: str, choices: Optional[List[str]] = None, required: bool = False) -> str:
+    return _ask_entry(prompt, default, choices, required)[0]
+
+
+def _ask_entry(prompt: str, default: str, choices: Optional[List[str]] = None,
+               required: bool = False) -> Tuple[str, bool]:
+    """`_ask`'s answer, and whether it came from pressing Enter rather than typing it."""
     if choices:
         print(f"  {prompt}: {' · '.join(choices)}")
     label = "  " if choices else f"  {prompt}"
@@ -3365,7 +3387,7 @@ def _ask(prompt: str, default: str, choices: Optional[List[str]] = None, require
         if choices and value not in choices:
             print(f"    not one of: {', '.join(choices)}")
             continue
-        return value
+        return value, not raw
 
 
 def _detect_timezone() -> str:
@@ -3391,6 +3413,22 @@ def _detect_git_name() -> str:
     return out.stdout.strip() if out.returncode == 0 else ""
 
 
+def mark_init_defaults(cfg: Dict[str, Any], names: Any) -> None:
+    """Record `names` as stances init wrote as defaults, which resolve below a mode (AD-2).
+
+    Each name keeps the value init wrote, so a value edited by hand later counts as typed. The
+    key and its precedence are `posture.INIT_DEFAULTS`; `docs/modes.md` has the rule.
+    """
+    stances = cfg.get("stances", {})
+    cfg["init_defaults"] = {"stances": {name: stances[name] for name in sorted(names) if name in stances}}
+
+
+def unmark_init_default(cfg: Dict[str, Any], name: str) -> None:
+    listed = cfg.get("init_defaults")
+    if isinstance(listed, dict) and isinstance(listed.get("stances"), dict):
+        listed["stances"].pop(name, None)
+
+
 def init_defaults(args: argparse.Namespace, path: Path) -> int:
     """Write the config with no questions, for a scripted first run.
 
@@ -3413,6 +3451,7 @@ def init_defaults(args: argparse.Namespace, path: Path) -> int:
     identity["timezone"] = getattr(args, "timezone", None) or _detect_timezone()
     preset = getattr(args, "preset", None) or "software"
     cfg["stances"] = dict(example.get("stances", {}), **STANCE_PRESETS[preset])
+    mark_init_defaults(cfg, cfg["stances"])
     write_json_atomic(path, cfg)
     say(f"wrote {path} ({preset} defaults)")
     left = placeholder_identity(cfg)
@@ -3461,9 +3500,15 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("\nPreferences. Every one has a default; Enter takes it.")
     print("They are described in docs/preferences.md and can be changed later.\n")
     stances = cfg.setdefault("stances", {})
+    entered = []
     for name in STANCE_NAMES:
         variants = stance_variants(name)
-        stances[name] = _ask(name, defaults.get(name, variants[0]), variants)
+        stances[name], took_default = _ask_entry(name, defaults.get(name, variants[0]), variants)
+        if took_default:
+            entered.append(name)
+    # Enter took the offered value, which a mode may replace; a typed answer is a choice, even
+    # when it names the offered value.
+    mark_init_defaults(cfg, entered)
     write_json_atomic(path, cfg)
     print(f"\nwrote {path}")
     print("next: bin/harness sync")

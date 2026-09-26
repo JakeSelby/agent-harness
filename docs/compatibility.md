@@ -227,9 +227,10 @@ shared code reads whatever runtime is running**. Those are carved back into the 
 invalidate every target. The block names them: today `bindings.json` (`harness tiers` checks both
 adapters' class tables in one command), `capabilities.json` (stance coverage and catalog
 reconciliation read every runtime's) and `worker.py` (`harness role run --runtime` chooses the
-adapter by flag, so either runtime's worker is reachable from either session). Only `hook.py` is
-private to its runtime: a client executes its own runtime's hook, and `harness sync` writes the
-other one's path into a config file without reading it.
+adapter by flag, so either runtime's worker is reachable from either session). Only `hook.py` and
+the observation entry point `observe.py` are private to their runtime: a client executes its own
+runtime's hooks, and `harness sync` writes the other runtime's `hook.py` path into a config file
+without reading it.
 
 So a fix confined to `adapters/codex/hook.py` leaves the Claude Code targets of a round standing,
 and the reverse holds. A change to shared source, to a carved-out file in any adapter directory,

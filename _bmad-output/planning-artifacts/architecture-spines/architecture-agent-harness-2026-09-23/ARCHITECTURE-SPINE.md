@@ -141,6 +141,15 @@ flowchart TB
   - For modes, a developer's explicit choice shadows a mode key, while a value `harness init` wrote as a
     default does not. The resolver must therefore be able to tell the two apart. #557 picks the
     mechanism within that constraint.
+    *Amended 2026-09-25, confirmed by the owner on 2026-09-25:* per #557, `config.json` records the
+    stances `harness init` wrote as defaults, each with the value it wrote, under
+    `init_defaults: {"stances": {name: value}}`, and each one still holding its recorded value
+    resolves in a new `init` layer between the defaults and the mode. `harness init --yes` and
+    a `config set` that creates the file mark every stance, interactive init marks only the answers
+    Enter accepted, and `harness config set stances.NAME` or a hand edit of the value makes that
+    stance typed again. A config written before this change has no
+    `init_defaults`, so every stance in it stays typed and shadows a mode. This adds a key to the
+    user config schema and a layer to the precedence.
   - Invariants sit outside every switch.
 
 ### AD-3: Reversible configuration ownership [ADOPTED]
@@ -463,6 +472,11 @@ flowchart TB
   - **Registration:** observation has its own registered hook entry point beside `hook.py`, and is not
     routed through the dispatcher. It reads which events each runtime raises from the same event table
     AD-7 names as the one declaration, so the two entry points cannot disagree on events.
+    *Amended 2026-09-25, confirmed by the owner on 2026-09-25:* #791 ships the entry point, its registration
+    built from that table and the bare arm's install, but `harness sync` does not yet register it beside
+    `hook.py`. Registering it would start a second process on every hook event for every user, make Codex
+    users re-trust their hooks, and break tests that assume one entry per event. A follow-up issue adds
+    opt-in registration; until then only `bare_install` writes it, and nothing outside the tests calls that.
   - **Failure:** it fails open and silent. On any exception it exits 0 with no output, never a deny, a
     block or a `systemMessage`. The error goes to a local error log only.
   - In the bare arm, only the observation-only path is installed.
