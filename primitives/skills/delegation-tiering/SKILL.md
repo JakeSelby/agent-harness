@@ -20,7 +20,7 @@ work; the table is the only place a provider's model names appear. An unmapped c
 the nearest *stronger* mapped class and otherwise inherits the session model — never downward,
 because a weaker model than the role asked for is a silent failure. Both adapters map all four.
 Claude Code's table uses version-free aliases. Codex has none — every id carries a version and
-keeps resolving after its successor ships — so `harness tiers check` reads the catalog Codex
+keeps resolving after its successor ships — so `citizen tiers check` reads the catalog Codex
 fetches from its provider and flags a mapped model that is gone, superseded or out of order.
 `tiers.<runtime>.<class>` in your config remaps a class in one line; on a provider that lacks
 these ids, override a role's `model` to `inherit` in `role_bindings`.
@@ -413,7 +413,7 @@ spends the effort dial instead, with the number of agents kept small.
 ## Cost posture
 
 The `cost` stance is the other half of a delegation decision: `delegation` picks the tier, `cost`
-picks how much you spend at it. A variant is a table rather than a paragraph, and `harness stances
+picks how much you spend at it. A variant is a table rather than a paragraph, and `citizen stances
 --json` prints the resolved one — every switch, every row, the sidecar each layer came from, and
 any warning. Read it there instead of remembering it: the figures are data, and they are re-seeded
 from measurement as the roles change.

@@ -9,9 +9,9 @@ The demonstration describes deterministic adapter behavior. It is not a native c
 qualification result; use the [catalog](compatibility.md) for that evidence.
 
 ```sh
-harness config set stances.delegation off
-harness stances --json
-harness sync
+citizen config set stances.delegation off
+citizen stances --json
+citizen sync
 ```
 
 The resolved source is `primitives/stances/delegation/off.md`. Claude's selected rule link and
@@ -21,9 +21,9 @@ spawn, so only an explicit user request permits it. `tests/test_lifecycle.py` ex
 envelopes.
 
 ```sh
-harness config set stances.delegation tiered
-harness stances --json
-harness sync
+citizen config set stances.delegation tiered
+citizen stances --json
+citizen sync
 ```
 
 Both projections now carry `primitives/stances/delegation/tiered.md`: bounded gathering is allowed;
@@ -51,7 +51,7 @@ Explain the observation first, then suggest one concrete next action.
 ```
 
 Register the absolute root in `primitive_roots`, select `stances.feedback=direct`, inspect with
-`harness stances --json`, then sync. Switching to `gentle` changes both projections without a
+`citizen stances --json`, then sync. Switching to `gentle` changes both projections without a
 provider-specific copy. A new prose stance is advisory in both adapters; it does not acquire
 new enforced controls by its name. The [authoring contract](primitive-authoring.md) covers project
 and session precedence, invalid selections, duplicate authorities and conflict constraints.

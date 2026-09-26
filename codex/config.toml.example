@@ -1,4 +1,4 @@
-# agent-harness: the keys `harness sync` owns in ~/.codex/config.toml.
+# Model Citizen: the keys `citizen sync` owns in ~/.codex/config.toml.
 # Your model, reasoning effort, notify hooks, MCP servers, plugins and per-project trust
 # live in the same file and are never touched by the harness.
 

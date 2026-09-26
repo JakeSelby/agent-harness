@@ -1,4 +1,4 @@
-# agent-harness
+# Model Citizen
 
 A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable
 personal stances. `bin/harness` projects one policy authority into Claude Code and Codex. The global

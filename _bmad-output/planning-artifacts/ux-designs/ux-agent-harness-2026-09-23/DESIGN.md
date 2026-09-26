@@ -1,5 +1,5 @@
 ---
-title: Agent Harness design contract
+title: Model Citizen design contract
 status: final
 created: 2026-09-23
 updated: 2026-09-25
@@ -29,7 +29,7 @@ sources:
 
 # Brand and style
 
-Agent Harness is direct, inspectable and calm. It leads with what a developer can find out or do, and then
+Model Citizen is direct, inspectable and calm. It leads with what a developer can find out or do, and then
 states its limits without promotional inflation. This contract governs three surfaces:
 - the terminal;
 - the agent's own answers and plans, which the `voice` stance and the Review Card shape;

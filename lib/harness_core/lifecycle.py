@@ -198,7 +198,7 @@ OFFLINE_NOTE = {"gatherer": "An isolated gatherer is offline — Read, Grep and 
 # The one sentence the refusal, the `delegation` stance and the shared role descriptions all
 # carry, word for word, so a session that follows the stance is never surprised by the refusal
 # (issue #304). `tests/test_role_refusal_matches_the_stance.py` holds the three copies together.
-CONFINEMENT_SENTENCE = ("A read-only role runs through `harness role run <role>`: confinement is "
+CONFINEMENT_SENTENCE = ("A read-only role runs through `citizen role run <role>`: confinement is "
                         "read roots and return shape, not the absence of write tools, so `builder` "
                         "needs neither and spawns natively.")
 

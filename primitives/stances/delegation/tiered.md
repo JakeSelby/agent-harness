@@ -1,7 +1,7 @@
 # Delegation stance: tiered models
 
 **Gather with subagents without waiting to be asked** — locating, reading, grepping, summarizing —
-in every repo and mode. Keep judgment in the session. **A read-only role runs through `harness role
+in every repo and mode. Keep judgment in the session. **A read-only role runs through `citizen role
 run <role>`: confinement is read roots and return shape, not the absence of write tools, so
 `builder` needs neither and spawns natively.** **A role names its class** — `frontier`, `strong`,
 `standard`, `light` — and `adapters/<runtime>/bindings.json` maps each to a model; an unmapped

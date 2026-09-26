@@ -5,8 +5,8 @@ description: Show progress of background Workflow runs: who has returned, who is
 
 # Workflow status
 
-For harness-owned isolated role workers, run `harness role status` or
-`harness role status <worker-id>`. Report status, runtime, role and result path from those records.
+For harness-owned isolated role workers, run `citizen role status` or
+`citizen role status <worker-id>`. Report status, runtime, role and result path from those records.
 They are separate CLI processes and do not appear as native subagent threads.
 
 This reader inspects local Claude workflow journals from any client with filesystem access.

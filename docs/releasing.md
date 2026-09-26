@@ -114,10 +114,10 @@ change. What the release must carry before it can be tagged is the next section.
 
 Cut `release/v<version>` at the commit the round qualifies and record it in
 `compatibility/freeze.json` as `state: frozen` with that branch and full commit, then run every
-target on that branch so `main` keeps merging without invalidating evidence. `harness freeze`
+target on that branch so `main` keeps merging without invalidating evidence. `citizen freeze`
 prints the drift between the frozen commit and `origin/main` under the runtime source paths —
 `VERSION`, `bin`, `lib`, `adapters`, `primitives`, `policy`, `templates`, `config.example.json` —
-and `harness freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
+and `citizen freeze --merge-check <ref>` refuses a merge into the frozen branch that changes any of
 them, because such a change costs part of the round again. How much of it is scoped per target: a
 change under one runtime's adapter directory invalidates only that runtime's targets, unless it
 touches a file shared code reads for every runtime, and a change to shared source invalidates them

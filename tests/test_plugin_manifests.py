@@ -65,6 +65,22 @@ class CatalogSurfaceTests(unittest.TestCase):
         for missing in ("ownership journal", "Stance selection", "Codex projection", "hooks"):
             self.assertIn(missing.lower(), text.lower(), msg=missing)
 
+    def test_the_install_doc_carries_the_migration_from_the_old_plugin_id(self):
+        text = (REPO / "docs" / "runtime-installation.md").read_text()
+        heading = "### Moving an `agent-harness` plugin install"
+        self.assertIn(heading, text)
+        section = text.split(heading, 1)[1]
+        self.assertIn("/model-citizen:<name>", section)
+        # Claude Code ignores a second add of a repository whose old marketplace is still
+        # registered, so the old plugin and marketplace go before the new install.
+        steps = ("/plugin uninstall agent-harness@agent-harness",
+                 "/plugin marketplace remove agent-harness", "/plugin marketplace add ",
+                 "/plugin install %s@%s" % (PLUGIN["name"], MARKETPLACE["name"]))
+        for step in steps:
+            self.assertIn(step, section, msg=step)
+        positions = [section.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+
 
 class DoctorInstallPathTests(unittest.TestCase):
     def setUp(self):
@@ -84,7 +100,7 @@ class DoctorInstallPathTests(unittest.TestCase):
         line = harness._plugin_install_line()
         self.assertIn("neither", line)
         self.assertIn("bin/harness install", line)
-        self.assertIn("/plugin install agent-harness@agent-harness", line)
+        self.assertIn("/plugin install model-citizen@model-citizen", line)
 
     def test_an_ownership_manifest_reports_the_synced_home(self):
         self.write(".local/state/agent-harness/manifest.json", {})
@@ -121,6 +137,68 @@ class DoctorInstallPathTests(unittest.TestCase):
     def test_the_cache_directory_alone_is_enough_to_report_the_marketplace_install(self):
         (self.home / ".claude" / "plugins" / "cache" / "agent-harness" / "agent-harness").mkdir(parents=True)
         self.assertIn("marketplace plugin agent-harness/agent-harness", harness._plugin_install_line())
+
+
+class PluginRenameTests(unittest.TestCase):
+    """Doctor recognizes the plugin under its old and new IDs, and warns when both load."""
+
+    OLD = "agent-harness@agent-harness"
+    NEW = "model-citizen@model-citizen"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = unittest.mock.patch.dict(os.environ, {"HARNESS_HOME": self.tmp.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.home = Path(self.tmp.name)
+
+    def enable(self, *keys):
+        path = self.home / ".claude" / "settings.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"enabledPlugins": {key: True for key in keys}}))
+
+    def test_the_manifests_carry_the_new_name(self):
+        self.assertEqual(PLUGIN["name"], "model-citizen")
+        self.assertEqual(PLUGIN["displayName"], "Model Citizen")
+        self.assertEqual(MARKETPLACE["name"], "model-citizen")
+        self.assertIn("Model Citizen", PLUGIN["description"])
+        self.assertIn("Model Citizen", MARKETPLACE["metadata"]["description"])
+        self.assertIn("Model Citizen", entry()["description"])
+
+    def test_the_old_id_alone_is_reported_as_installed(self):
+        self.enable(self.OLD)
+        line = harness._plugin_install_line()
+        self.assertIn("marketplace plugin " + self.OLD, line)
+        self.assertNotIn("warning", line)
+
+    def test_the_new_id_alone_is_reported_as_installed(self):
+        self.enable(self.NEW)
+        line = harness._plugin_install_line()
+        self.assertIn("marketplace plugin " + self.NEW, line)
+        self.assertNotIn("warning", line)
+
+    def test_both_ids_enabled_warn_that_the_skills_load_twice(self):
+        self.enable(self.OLD, self.NEW)
+        line = harness._plugin_install_line()
+        self.assertIn("marketplace plugin " + self.NEW, line)
+        self.assertIn("loads twice", line)
+        self.assertIn("/plugin uninstall " + self.OLD, line)
+        self.assertNotIn("/plugin uninstall " + self.NEW, line)
+
+    def test_either_marketplace_name_in_the_cache_is_recognized(self):
+        for market, plugin in (("agent-harness", "agent-harness"), ("model-citizen", "model-citizen")):
+            (self.home / ".claude" / "plugins" / "cache" / market / plugin).mkdir(parents=True)
+        state = harness.plugin_install_state()
+        self.assertEqual(state["cached"], ["agent-harness/agent-harness", "model-citizen/model-citizen"])
+
+    def test_a_marketplace_registered_from_either_repository_name_is_recognized(self):
+        path = self.home / ".claude" / "plugins" / "known_marketplaces.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({
+            "agent-harness": {"source": {"source": "github", "repo": "JakeSelby/agent-harness"}},
+            "model-citizen": {"source": {"source": "github", "repo": "JakeSelby/model-citizen"}}}))
+        self.assertEqual(harness.plugin_install_state()["registered"], ["agent-harness", "model-citizen"])
 
 
 if __name__ == "__main__":

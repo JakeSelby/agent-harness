@@ -19,7 +19,7 @@ python3 scripts/cost_bench.py static --write    # refresh benchmarks/static.json
 `benchmarks/static.json` is the committed figure for the last release. It records files, lines,
 characters, an estimated token count for the default stance selection and for the longest variant
 of every dimension, the five largest files, and what that many tokens cost per model. Its
-`scopes` block names the set each count is over, because the caps `harness lint` prints are
+`scopes` block names the set each count is over, because the caps `citizen lint` prints are
 over a narrower one.
 
 - **Tokens are an estimate:** characters divided by four. It is there to show the trend between
@@ -34,7 +34,7 @@ over a narrower one.
   per file whose estimate moved since the committed figure, priced on the model with the highest
   cache-read rate, so a change to one rule reads as that file's delta rather than a moved total.
   The 5% gate stays on the total.
-- **The caps in `harness lint` are separate.** They bound the worst case — the longest variant of
+- **The caps in `citizen lint` are separate.** They bound the worst case — the longest variant of
   every stance — in tokens and in lines, over instructions, rules and stances only; this tracks the
   default selection, output styles and listings included, in tokens and dollars, version by
   version. Both use the same characters-over-four estimate. Which cap binds, and why:
@@ -116,7 +116,7 @@ python3 scripts/cost_bench.py replay --model <id> \
   launches with therefore deny both tools, and a deny outranks any profile's allow.
 - **The stop gate can fire.** The stop-gate hook runs a gate only in a folder the user trusted, and
   no one trusts a fresh snapshot. For the length of each scored run, its snapshot is listed in
-  `~/.config/agent-harness/trusted.txt`, where `harness trust` lists roots, and exactly that line
+  `~/.config/agent-harness/trusted.txt`, where `citizen trust` lists roots, and exactly that line
   is removed afterwards. Every arm's snapshot is listed; the bare arm has no hook to read it.
 - **Every run is captured as `stream-json` with hook events**, the one format that carries the
   Stop hook's decisions, so each row records `stop_hooks`, how often the hook ran, and
@@ -139,7 +139,7 @@ python3 scripts/cost_bench.py replay --model <id> \
 - **Beside it, `cache_miss_ratio`: how much of its prefix the run re-bought.**
   `cache_write / (cache_read + cache_write)` summed over every turn the run opened, subagent
   threads included, because a fan-out's fresh prefix is part of what the run cost. The
-  arithmetic is `harness usage --by prefix`'s, imported from that module rather than restated,
+  arithmetic is `citizen usage --by prefix`'s, imported from that module rather than restated,
   but the two are not the same number: the session figure subtracts a subagent's tokens, so a
   run that fanned out reads higher here, by design. A candidate that buys fewer tokens by
   re-writing its prefix more often is otherwise invisible in the history, so `history.jsonl` and

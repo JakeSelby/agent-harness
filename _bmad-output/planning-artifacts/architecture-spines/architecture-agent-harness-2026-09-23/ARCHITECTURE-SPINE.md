@@ -1,5 +1,5 @@
 ---
-name: 'Agent Harness'
+name: 'Model Citizen'
 type: architecture-spine
 purpose: build-substrate
 altitude: initiative
@@ -20,7 +20,7 @@ companions:
   - ../../ux-designs/ux-agent-harness-2026-09-23/EXPERIENCE.md
 ---
 
-# Architecture Spine: Agent Harness
+# Architecture Spine: Model Citizen
 
 ## Design Paradigm
 

@@ -164,7 +164,7 @@ class ReleaseDocTests(unittest.TestCase):
     def test_the_release_doc_names_the_freeze_and_the_mid_round_triage_rule(self):
         text = (REPO / "docs" / "releasing.md").read_text()
         self.assertIn("compatibility/freeze.json", text)
-        self.assertIn("harness freeze --merge-check", text)
+        self.assertIn("citizen freeze --merge-check", text)
         self.assertIn("Fix no defect mid-round", text)
 
 

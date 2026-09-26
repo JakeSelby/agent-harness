@@ -18,11 +18,11 @@ For a structured handoff, prepare a JSON file:
 ```
 
 ```sh
-harness task show
-harness task save --input task-input.json --runtime claude-code --revision 0
+citizen task show
+citizen task save --input task-input.json --runtime claude-code --revision 0
 # In Codex, from the same worktree:
-harness task show
-harness task save --input task-input.json --runtime codex --revision 1
+citizen task show
+citizen task save --input task-input.json --runtime codex --revision 1
 ```
 
 The revision rejects concurrent stale writers. Repository identity and a content fingerprint

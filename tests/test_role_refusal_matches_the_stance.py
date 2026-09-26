@@ -66,5 +66,11 @@ class SharedSentenceTests(unittest.TestCase):
         self.assertIn("authority: workspace-write", authority)
 
 
+class LiteralCommandTests(unittest.TestCase):
+    def test_the_shared_sentence_names_the_citizen_command(self):
+        # Written out rather than read from the constant, so a stale command name fails here.
+        self.assertIn("runs through `citizen role run <role>`", lifecycle.CONFINEMENT_SENTENCE)
+
+
 if __name__ == "__main__":
     unittest.main()

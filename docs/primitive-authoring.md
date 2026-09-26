@@ -38,8 +38,8 @@ source and full resolved behavior. Custom dimensions are optional until selected
 use lowercase letters, digits and hyphens. Duplicate dimension/variant definitions, unknown
 selections and path traversal are errors, not fallback behavior.
 
-A skill, role or workflow name defined in two roots is an error as well. `harness lint` names
-both sources and `harness sync` refuses before it writes anything, because a runtime resolves a
+A skill, role or workflow name defined in two roots is an error as well. `citizen lint` names
+both sources and `citizen sync` refuses before it writes anything, because a runtime resolves a
 duplicate name silently, first-wins. A project's own `.claude/agents/` or `.claude/skills/` name
 is not a duplicate: the project definition is meant to win, so sync reports the shadow as a
 notice and carries on.
@@ -67,9 +67,9 @@ while `designer` and `design-judge` are allowed to declare it:
   "reason": "Only the design roles the delegation-tiering skill exempts may declare frontier"}]}
 ```
 
-A violated constraint is a finding in `harness stances --json` (a `conflicts` array) and in
-`harness lint`, which evaluates the shipped constraints against `config.example.json`. It stays
-a hard error in the resolver, so `harness sync` refuses the selection rather than projecting a
+A violated constraint is a finding in `citizen stances --json` (a `conflicts` array) and in
+`citizen lint`, which evaluates the shipped constraints against `config.example.json`. It stays
+a hard error in the resolver, so `citizen sync` refuses the selection rather than projecting a
 contradiction; validation runs before sync changes files.
 
 ## A cost variant with numbers in it
@@ -97,7 +97,7 @@ chain routes nothing at all.
 
 A row is keyed by a role name or by a band — `A`, `B` or `C` — and may set `class`, `effort`,
 `budget_output_tokens` and `budget_tool_calls`; any of them may be omitted, and a null budget
-means unbudgeted. `budget_multiplier` scales both budgets, and `harness stances --json` reports
+means unbudgeted. `budget_multiplier` scales both budgets, and `citizen stances --json` reports
 the base figure and the scaled one. `class` never names the top class: reaching it by request is
 exactly what the `delegation` stance forbids, and it only applies at all when that stance
 resolves to `tiered`. A role whose frontmatter says `posture: fixed` — the verifiers — keeps its
@@ -128,7 +128,7 @@ bin/harness import ~/code/project/CLAUDE.md --dry-run   # the plan, then the syn
 bin/harness import ~/code/project/CLAUDE.md             # writes exactly that plan
 ```
 
-The first run only prints — the rules it would write, then `harness sync --dry-run` for the root
+The first run only prints — the rules it would write, then `citizen sync --dry-run` for the root
 that would carry them — and a second run applies the plan it printed; a source that changed in
 between is printed again rather than written. Rules land under
 `~/.config/agent-harness/imported/<name>/` unless `--root` names another absolute directory,
@@ -138,7 +138,7 @@ journal says the harness generated is refused with its record, and so is a skill
 workflow name the new root would define twice, in sync's own words and before anything is
 written.
 
-Once the root is registered, `harness sync` projects it like any other: the imported rules are
+Once the root is registered, `citizen sync` projects it like any other: the imported rules are
 linked into `~/.claude/rules/harness-roots/<root>/` and rendered into the Codex `AGENTS.md`
 after this repository's own rules, and any skills the root carries are linked beside the shared
 ones. [The sync model](sync-model.md) covers the ordering, the drift reporting and what
@@ -181,7 +181,7 @@ selection` and every command that reads a selection refuse, naming each module i
 A module switched off asks nothing of its dependencies and holds no slot. A module from your own
 root may omit its manifest: it resolves and reports as unmeasured, and a root written before
 manifests existed keeps working. A dependency is a module whose absence breaks this one. A
-pointer to further reading is not a dependency. `harness selection` shows each switch unit's
+pointer to further reading is not a dependency. `citizen selection` shows each switch unit's
 instruments, or `unmeasured`, beside its value.
 
 ## Contribute shared primitives

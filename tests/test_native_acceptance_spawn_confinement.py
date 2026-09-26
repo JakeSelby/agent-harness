@@ -2,7 +2,7 @@
 """`spawn-confinement` observes all of docs/compatibility.md step 9 (#732).
 
 The framework's own spawn text, naming no role, must be refused, and the refusal must name the
-framework, the layer and `harness role run <role>`; a brief the model writes itself for the layer,
+framework, the layer and `citizen role run <role>`; a brief the model writes itself for the layer,
 keeping its prompt file and none of the descriptor's sentences, must be refused too (#739); the same layer run the routed way must leave worker
 state and findings; and two ordinary spawns, one mentioning review words and one editing the
 framework's input roots, must still run. The fake client here passes every brief through the real hook path,
@@ -127,7 +127,7 @@ class SpawnConfinementCaseTests(unittest.TestCase):
         self.assertIn("own declared sentences quoted whole", verdict)
         self.assertIn("naming the framework (%s), the layer (%s)"
                       % (self.data["name"], self.spawn["id"]), verdict)
-        self.assertIn("`harness role run <role>` and `harness role run reviewer`", verdict)
+        self.assertIn("`citizen role run <role>` and `harness role run reviewer`", verdict)
         self.assertIn("whose logged input is that brief's fingerprint", verdict)
         self.assertIn("the model wrote its own brief \"Read the review-layer instructions at "
                       + self.instructions, verdict)

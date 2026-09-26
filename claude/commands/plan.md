@@ -9,7 +9,7 @@ What to plan: $ARGUMENTS
 
 1. **Invoke the `plan-authoring` skill and read it in full.** Never write the card from memory
    of its contract; a hook validates the file you write.
-2. **Delegate the wide reading before plan mode.** `harness role run planner` writes an artifact
+2. **Delegate the wide reading before plan mode.** `citizen role run planner` writes an artifact
    and plan mode permits no write but its own plan file, so run it here when delegation pays —
    active runtime, explicit session model, brief file, `--artifact <new-plan.md>`.
 3. **Ask before entering plan mode**, in one line naming the topic — entering it is the user's
