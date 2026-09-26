@@ -227,7 +227,7 @@ class ApplyTests(unittest.TestCase):
         ), mock.patch.object(sync, "fetch_issues", side_effect=[[original], [projected]]), mock.patch.object(
             sync, "gh_command"
         ), mock.patch.object(sync, "gh_json") as gh:
-            sync.apply_manifest(manifest)
+            sync.apply_manifest(manifest, "owner/repo")
         payload = gh.call_args.args[1]
         self.assertTrue(payload["body"].startswith("Original body"))
         self.assertEqual(payload["labels"], ["keep-me", "type::story"])
@@ -238,7 +238,7 @@ class ApplyTests(unittest.TestCase):
         ), mock.patch.object(sync, "fetch_issues", side_effect=[[projected], [projected]]), mock.patch.object(
             sync, "gh_command"
         ), mock.patch.object(sync, "gh_json") as gh:
-            sync.apply_manifest(manifest)
+            sync.apply_manifest(manifest, "owner/repo")
         gh.assert_not_called()
 
     def test_apply_sets_native_type_when_the_manifest_enables_projection(self):
@@ -256,7 +256,7 @@ class ApplyTests(unittest.TestCase):
         ), mock.patch.object(sync, "fetch_issues", side_effect=[[original], [projected]]), mock.patch.object(
             sync, "gh_command"
         ), mock.patch.object(sync, "gh_json") as gh:
-            sync.apply_manifest(manifest)
+            sync.apply_manifest(manifest, "org/repo")
         self.assertEqual(gh.call_args.args[1]["type"], "Feature")
 
     def test_apply_refuses_missing_remote_artifact_before_mutation(self):
@@ -267,7 +267,7 @@ class ApplyTests(unittest.TestCase):
             sync.subprocess, "run"
         ) as run, mock.patch.object(sync, "gh_json") as gh:
             with self.assertRaisesRegex(RuntimeError, "artifacts are not on main"):
-                sync.apply_manifest(manifest)
+                sync.apply_manifest(manifest, "owner/repo")
         fetch.assert_not_called()
         run.assert_not_called()
         gh.assert_not_called()
@@ -280,7 +280,7 @@ class ApplyTests(unittest.TestCase):
             sync.subprocess, "run"
         ) as run, mock.patch.object(sync, "gh_json") as gh:
             with self.assertRaisesRegex(RuntimeError, "mapped issues were not found"):
-                sync.apply_manifest(manifest)
+                sync.apply_manifest(manifest, "owner/repo")
         run.assert_not_called()
         gh.assert_not_called()
 
@@ -294,7 +294,7 @@ class ApplyTests(unittest.TestCase):
             sync, "gh_command"
         ) as gh:
             with self.assertRaisesRegex(RuntimeError, "malformed BMad Planning fences"):
-                sync.apply_manifest(manifest)
+                sync.apply_manifest(manifest, "owner/repo")
         gh.assert_not_called()
 
     def test_apply_restores_prior_parent_when_reparenting_fails(self):
@@ -315,7 +315,7 @@ class ApplyTests(unittest.TestCase):
             sync, "gh_json", side_effect=[None, RuntimeError("add failed"), None]
         ) as gh:
             with self.assertRaisesRegex(RuntimeError, "add failed"):
-                sync.apply_manifest(manifest)
+                sync.apply_manifest(manifest, "owner/repo")
         endpoints = [call.args[0][-3] for call in gh.call_args_list]
         self.assertIn("repos/owner/repo/issues/52/sub_issue", endpoints[0])
         self.assertIn("repos/owner/repo/issues/93/sub_issues", endpoints[1])
@@ -330,7 +330,7 @@ class ApplyTests(unittest.TestCase):
             sync.subprocess, "run", return_value=failure
         ):
             with self.assertRaisesRegex(RuntimeError, "label failed"):
-                sync.apply_manifest(manifest)
+                sync.apply_manifest(manifest, "owner/repo")
 
 
 class LiveAuditTests(unittest.TestCase):
@@ -591,15 +591,15 @@ class RemoteArtifactTests(unittest.TestCase):
         with mock.patch.object(sync, "gh_json", return_value={
             "truncated": False, "tree": [{"path": artifact}],
         }):
-            self.assertEqual(sync.verify_remote_artifacts(manifest), [])
+            self.assertEqual(sync.verify_remote_artifacts(manifest, "owner/repo"), [])
         with mock.patch.object(sync, "gh_json", return_value={"truncated": False, "tree": []}):
-            self.assertEqual(sync.verify_remote_artifacts(manifest), [artifact])
+            self.assertEqual(sync.verify_remote_artifacts(manifest, "owner/repo"), [artifact])
 
     def test_remote_tree_refuses_truncated_response(self):
         manifest = sync.build_manifest([issue(1, "feat: first")], "owner/repo")
         with mock.patch.object(sync, "gh_json", return_value={"truncated": True, "tree": []}):
             with self.assertRaisesRegex(RuntimeError, "truncated main tree"):
-                sync.verify_remote_artifacts(manifest)
+                sync.verify_remote_artifacts(manifest, "owner/repo")
 
 
 class GitHubCommandTests(unittest.TestCase):
@@ -799,9 +799,85 @@ class NewIssueTests(unittest.TestCase):
                     sync.main(["new", "--title", "T", "--kind", "story", "--body-file", str(body), "--parent", "1"]), 0
                 )
         create.assert_called_once_with(
-            self.manifest, "owner/repo", "T", "## Problem\n", "story", 1, None, False
+            self.manifest, sync.API_REPOSITORY, "T", "## Problem\n", "story", 1, None, False
         )
         self.assertIn("filed #2 and reserved AH-S002", out.getvalue())
+
+
+class ApiRepositoryTests(unittest.TestCase):
+    """API calls go to the current slug while planning blocks keep the slug the map stores."""
+
+    def setUp(self):
+        self.manifest = sync.build_manifest([issue(93, "Epic"), issue(94, "Child")], "owner/old")
+
+    def test_apply_sends_every_call_to_the_given_slug_and_links_the_stored_one(self):
+        live = [issue(93, "Epic"), issue(94, "Child")]
+        reparented = [dict(value) for value in live]
+        reparented[1]["parent_issue_url"] = "https://api.github.com/repos/owner/new/issues/52"
+        tree = {"truncated": False, "tree": [{"path": item["artifact_path"]} for item in self.manifest["items"]]}
+
+        def answer(args, input_data=None):
+            return tree if "git/trees" in " ".join(args) else None
+
+        with mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
+            sync, "fetch_issues", side_effect=[live, reparented]
+        ) as fetch, mock.patch.object(sync, "gh_command") as command, mock.patch.object(
+            sync, "gh_json", side_effect=answer
+        ) as gh:
+            sync.apply_manifest(self.manifest, "owner/new")
+        self.assertEqual([call.args for call in fetch.call_args_list], [("owner/new",), ("owner/new",)])
+        for call in command.call_args_list:
+            args = call.args[0]
+            self.assertEqual(args[args.index("-R") + 1], "owner/new")
+        self.assertTrue(command.call_args_list)
+        endpoints = [next(arg for arg in call.args[0] if arg.startswith("repos/")) for call in gh.call_args_list]
+        methods = [call.args[0][2] if call.args[0][1] == "--method" else "GET" for call in gh.call_args_list]
+        self.assertEqual(methods, ["GET", "PATCH", "PATCH", "DELETE", "POST"])
+        for endpoint in endpoints:
+            self.assertTrue(endpoint.startswith("repos/owner/new/"), endpoint)
+        self.assertIn("repos/owner/new/issues/52/sub_issue", endpoints)
+        self.assertIn("repos/owner/new/issues/93/sub_issues", endpoints)
+        for call in gh.call_args_list[1:3]:
+            body = call.args[1]["body"]
+            self.assertIn("https://github.com/owner/old/blob/main/", body)
+            self.assertNotIn("owner/new", body)
+
+    def test_every_github_command_receives_the_api_slug(self):
+        with tempfile.TemporaryDirectory() as temp:
+            body = Path(temp) / "body.md"
+            body.write_text("## Problem\n", encoding="utf-8")
+            cases = [
+                (["new", "--title", "T", "--kind", "story", "--body-file", str(body)], "create_issue"),
+                (["reserve", "--issue", "95", "--kind", "story"], "reserve"),
+                (["plan"], "fetch_issues"),
+                (["refresh"], "fetch_issues"),
+                (["audit", "--live"], "fetch_issues"),
+                (["apply"], "apply_manifest"),
+                (["apply"], "fetch_issues"),
+            ]
+            for argv, target in cases:
+                with self.subTest(argv=argv, target=target), mock.patch.object(
+                    sync, "load_manifest", return_value=self.manifest
+                ), mock.patch.object(sync, "audit_manifest", return_value=[]), mock.patch.object(
+                    sync, "fetch_issues", return_value=[]
+                ) as fetch, mock.patch.object(
+                    sync, "create_issue", return_value={"github_number": 95, "bmad_id": "AH-S001"}
+                ) as create, mock.patch.object(
+                    sync, "reserve", return_value={"github_number": 95, "bmad_id": "AH-S001"}
+                ) as reserve, mock.patch.object(sync, "apply_manifest") as apply, mock.patch.object(
+                    sync, "refresh", return_value=[]
+                ), mock.patch.object(sync, "planned_actions", return_value=[]), mock.patch.object(
+                    sync, "live_findings", return_value=([], [])
+                ), mock.patch.object(sync.subprocess, "run") as run, redirect_stdout(io.StringIO()):
+                    self.assertEqual(sync.main(argv), 0)
+                    called = {"fetch_issues": fetch, "create_issue": create, "reserve": reserve,
+                              "apply_manifest": apply}[target]
+                    self.assertTrue(called.call_args_list)
+                    for call in called.call_args_list:
+                        self.assertEqual(call.args[1] if target != "fetch_issues" else call.args[0],
+                                         sync.API_REPOSITORY)
+                        self.assertNotIn("owner/old", call.args)
+                    run.assert_not_called()
 
 
 if __name__ == "__main__":
