@@ -60,7 +60,6 @@ import importlib.util
 import json
 import os
 import re
-import shlex
 import sys
 from pathlib import Path
 
@@ -403,10 +402,7 @@ def segments(text):
     tokenize."""
     text = " ; ".join(text.split("\n"))
     try:
-        lex = shlex.shlex(text, posix=True, punctuation_chars=True)
-        lex.commenters = ""
-        lex.whitespace_split = True
-        tokens = list(lex)
+        tokens = ro.tokenize(text)
     except ValueError:
         return None
     out, cur, skipping = [], [], False
@@ -1058,13 +1054,10 @@ def _isolating(text):
     """Whether the line has a subshell, a pipeline or a background job, where a `cd` does not
     carry to the commands after it."""
     try:
-        lex = shlex.shlex(" ; ".join(text.split("\n")), posix=True, punctuation_chars=True)
-        lex.commenters = ""
-        lex.whitespace_split = True
-        for token in lex:
+        for token in ro.tokenize(" ; ".join(text.split("\n"))):
             if token and set(token) <= set("();|&<>"):
-                # A punctuation run such as `);` or `|&`: drop the two list operators and the
-                # descriptor redirections, and look for what is left.
+                # An operator such as `)` or `|&`, or a quoted run of operator characters: drop
+                # the two list operators and the descriptor redirections, and look for what is left.
                 rest = token.replace("&&", "").replace("||", "")
                 for redirect in (">&", "<&", "&>"):
                     rest = rest.replace(redirect, "")
