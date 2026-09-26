@@ -20,7 +20,7 @@ One command clones the `stable` branch to `~/repos/agent-harness`, writes a defa
 and previews the install without performing it:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/JakeSelby/model-citizen/stable/scripts/install.sh | sh
 ```
 
 Read the preview it prints, then select which runtimes to manage and install:

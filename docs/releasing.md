@@ -5,7 +5,7 @@ not native qualification. `scripts/release_preflight.py` refuses publication unt
 client in the compatibility catalog carries native evidence. Every release follows the
 [compatibility policy](compatibility-policy.md); generated notes link it and state the migration
 review or exact versioned migration action. The reference site at
-[agent-harness.jakeselby.com](https://agent-harness.jakeselby.com) follows releases from its own
+[model-citizen.dev](https://model-citizen.dev) follows releases from its own
 repository; nothing in this procedure deploys it.
 
 ## When a release is proposed, and what it is numbered
