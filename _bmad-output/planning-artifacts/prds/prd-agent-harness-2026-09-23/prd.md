@@ -1245,6 +1245,9 @@ runtimes for later search. **Status:** planned (backlog, #542, #543, after the #
   against abandoned turns.
 - The archive is local and not authoritative. It stores neutral turn rows keyed to the harness session,
   searchable by full text.
+- The archive stores message and tool-result text only when the developer explicitly opts in through
+  `telemetry.sessions_bodies`, which is off by default. Stored text is redacted for secret patterns at
+  write, and `retention_days` applies to it (#685).
 - Every archive search is logged with a usefulness signal, so the #546 reopen criteria can be evaluated.
 - On runtimes without a pre-write hook, the adapter's capabilities state the gap.
 
