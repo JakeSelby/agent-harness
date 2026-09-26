@@ -30,7 +30,6 @@ Test: echo '{"tool_name":"Bash","tool_input":{"command":"git -C /x status"}}' | 
 """
 import json
 import re
-import shlex
 import sys
 
 # Commands that are read-only regardless of arguments. Claude Code still checks
@@ -134,6 +133,82 @@ _PLACEHOLDER = "__ROSUB__"  # stands in for a verified substitution; never a rea
 READ_REDIRECTS = {"<", "<<", "<<<", "<&"}
 WRITE_REDIRECTS = re.compile(r"^\d*(>|>>|&>|>&)$")
 PUNCTUATION_RUN = re.compile(r"^\d*[<>&|]+$")
+
+
+# Characters that begin an operator outside quotes, and the operators they spell, longest
+# first. `;&` and `;;&` are not listed, so they split into delimiters and fail closed.
+OPERATOR_CHARS = "();<>|&"
+OPERATORS = ("&>>", "<<<", "&&", "||", ";;", "|&", "&>", ">>", ">&", ">|", "<<", "<&", "<>",
+             ";", "&", "|", "(", ")", "<", ">")
+_WHITESPACE = " \t\r\n"
+
+
+def _operators(run):
+    """An unquoted run of operator characters as the operators bash reads in it: the longest
+    operator at each position, left to right, so `);` is `)` then `;`."""
+    out, i = [], 0
+    while i < len(run):
+        op = next(o for o in OPERATORS if run.startswith(o, i))
+        out.append(op)
+        i += len(op)
+    return out
+
+
+def tokenize(cmd):
+    """The words and operators of `cmd`, as POSIX `shlex` with `punctuation_chars` splits them,
+    except that an unquoted run of operator characters is split into its operators. `shlex`
+    returns such a run as one token, so `(true);` ended in `);`, which is not a delimiter.
+    A quoted or escaped operator character is part of a word. Raises ValueError on an unclosed
+    quote or a trailing backslash, as `shlex` does."""
+    tokens = []
+    word = None  # None: no word in progress; "" is an empty quoted word
+    i, n = 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        if c in _WHITESPACE or c in OPERATOR_CHARS:
+            if word is not None:
+                tokens.append(word)
+                word = None
+            if c in _WHITESPACE:
+                i += 1
+                continue
+            j = i
+            while j < n and cmd[j] in OPERATOR_CHARS:
+                j += 1
+            tokens.extend(_operators(cmd[i:j]))
+            i = j
+        elif c == "\\":
+            if i + 1 >= n:
+                raise ValueError("No escaped character")
+            word = (word or "") + cmd[i + 1]
+            i += 2
+        elif c == "'":
+            end = cmd.find("'", i + 1)
+            if end < 0:
+                raise ValueError("No closing quotation")
+            word = (word or "") + cmd[i + 1:end]
+            i = end + 1
+        elif c == '"':
+            buf, j = [], i + 1
+            while j < n and cmd[j] != '"':
+                if cmd[j] == "\\" and j + 1 < n:
+                    if cmd[j + 1] not in '"\\':
+                        buf.append("\\")  # only a quote or a backslash is escaped here
+                    buf.append(cmd[j + 1])
+                    j += 2
+                    continue
+                buf.append(cmd[j])
+                j += 1
+            if j >= n:
+                raise ValueError("No closing quotation")
+            word = (word or "") + "".join(buf)
+            i = j + 1
+        else:
+            word = (word or "") + c
+            i += 1
+    if word is not None:
+        tokens.append(word)
+    return tokens
 
 
 def assignment_ok(token):
@@ -627,19 +702,16 @@ def command_ok(cmd, depth=0):
     cmd = _strip_subs(cmd, depth)
     if cmd is None:
         return False
-    # A newline separates commands for bash but is whitespace to shlex, so each
-    # line loses its comment and the lines are joined with `;`. shlex's own comment
-    # handling stays off: a `#` inside a word is part of the word, as in bash. A
-    # backslash continuation is not modelled and falls through.
+    # A newline separates commands for bash but is whitespace to `tokenize`, so each
+    # line loses its comment and the lines are joined with `;`. `tokenize` knows no
+    # comments: a `#` inside a word is part of the word, as in bash. A backslash
+    # continuation is not modelled and falls through.
     if re.search(r"\\\r?\n", cmd):
         return False
     cmd = cmd.replace("\r\n", "\n").replace("\r", "\n")
     cmd = " ; ".join(_strip_comment(line) for line in cmd.split("\n"))
     try:
-        lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
-        lex.commenters = ""
-        lex.whitespace_split = True
-        tokens = list(lex)
+        tokens = tokenize(cmd)
     except ValueError:
         return False
     segments = []
