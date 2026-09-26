@@ -1,8 +1,8 @@
 ---
-title: Agent Harness product requirements
+title: Model Citizen product requirements
 status: final
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-26
 supersedes: ../prd-agent-harness-2026-09-19/prd.md
 sources:
   - ../../source-ledger.md
@@ -11,11 +11,11 @@ sources:
   - addendum.md
 ---
 
-# PRD: Agent Harness
+# PRD: Model Citizen
 
 ## 0. Document purpose
 
-This PRD says what Agent Harness must do. It covers what shipped from 0.1 to 0.12, the work merged on
+This PRD says what Model Citizen must do. It covers what shipped from 0.1 to 0.12, the work merged on
 `main` since the 0.12.0 tag, and the roadmap through 1.0.0. It is written for three readers: contributors, the maintainer, and the BMad workflows downstream of
 it (the UX specification, the architecture spine, and the epics and story files).
 
@@ -45,7 +45,7 @@ document's FR1 to FR12, so existing references stay valid. New requirements star
 
 ## 1. Vision
 
-Agent Harness is a user-owned layer over the coding-agent runtimes a developer already runs, today Claude
+Model Citizen is a user-owned layer over the coding-agent runtimes a developer already runs, today Claude
 Code and Codex. The developer states a working style once, as rules, skills, roles, workflows and
 switchable stances. The harness then:
 - projects that style into each runtime's native configuration;
@@ -55,7 +55,7 @@ switchable stances. The harness then:
 The harness does not serve models, choose a provider's endpoint or replace a runtime. It maps capability
 classes to models the runtime already offers. It turns the instruction files every
 developer already writes into policy they can inspect, switch and measure. The rest of the field is
-open-loop: an author writes an instruction and hopes. Agent Harness closes the measurement half of that
+open-loop: an author writes an instruction and hopes. Model Citizen closes the measurement half of that
 loop today:
 - Every rule names a deterministic detector over the agent's own transcripts, or states in one line why
   none can decide it.
@@ -225,6 +225,8 @@ measurable.
     it and where it is an instruction only.
   - **Edge case:** a project-level selection changes what the hooks resolve. The linked stance text stays
     user-level until #276 is decided.
+    *Amended 2026-09-26:* #276 is decided. The linked text stays user-level, and the session-start hook
+    injects the differing variant's text, or a pointer to it when it does not fit the always-loaded budget.
 - **UJ-3. Sam finds out which of their rules actually fire.**
   - **Persona and context:** Sam keeps a 300-line instruction file and suspects most of it is dead weight.
   - **Path:**
@@ -389,7 +391,7 @@ The system must author rules, skills, roles, workflows and stances once, in the 
 **Status:** implemented (0.9).
 
 **Consequences (testable):**
-- `harness catalog` lists every primitive exactly once, with no runtime-specific copy of its meaning.
+- `citizen catalog` lists every primitive exactly once, with no runtime-specific copy of its meaning.
 - Adding a runtime adapter requires no second authoritative copy of any primitive.
 
 #### FR-3: Native projections without claimed parity
@@ -398,7 +400,7 @@ formats. Each adapter must also publish, per capability, how its runtime carries
 (0.9); the per-capability matrix is in 0.12 (#472).
 
 **Consequences (testable):**
-- `harness generate --check` reports no drift between the primitive catalog and the generated projections.
+- `citizen generate --check` reports no drift between the primitive catalog and the generated projections.
 - `adapters/<runtime>/capabilities.json` gives each capability a mode, `instruction` or
   `instruction-and-hook`, and a qualification state. The tier restriction is recorded as `enforced`,
   `advisory` or `none`.
@@ -408,7 +410,7 @@ Contributors must be able to add or replace primitives, including stance dimensi
 runtime-specific authority. **Status:** implemented (0.9).
 
 **Consequences (testable):**
-- A new stance dimension is a folder of Markdown files, and `harness stances` lists it after sync.
+- A new stance dimension is a folder of Markdown files, and `citizen stances` lists it after sync.
 - An external primitive root can supply primitives without editing the checkout.
 - A custom stance never inherits a built-in variant's execution semantics. It is prose unless it declares
   what it enforces.
@@ -418,7 +420,7 @@ A developer can import an existing `CLAUDE.md`, `AGENTS.md` or `.cursorrules` in
 root, and sync projects it alongside the primitive catalog. **Status:** implemented (0.12, #478, #484).
 
 **Consequences (testable):**
-- `harness import` writes primitives under an external root and never edits the source file.
+- `citizen import` writes primitives under an external root and never edits the source file.
 - Sync refuses a primitive whose name collides with another root's, and names both files.
 - The detector-or-reason lint gate (FR-19) covers the primitive catalog, not external roots. Reporting
   imported rules as unmeasured is planned with FR-20.
@@ -432,19 +434,23 @@ UJ-6.
 
 #### FR-2: One effective selection
 The system must resolve user, project and session selections into one explicit effective policy before any
-projection. **Status:** partial: implemented (0.9), but sync ignores `HARNESS_STANCE_*` session variables
-that `harness stances` honours (#294, v0.14.0).
+projection. **Status:** implemented (0.9); from 0.14.0 the session-start hook injects a differing project
+or session selection (#276), and sync projects user-level selections only, by design (#294).
 
 **Consequences (testable):**
-- `harness stances` shows each dimension's effective variant, the layer it came from, and each adapter's
+- `citizen stances` shows each dimension's effective variant, the layer it came from, and each adapter's
   coverage.
 - A session override never rewrites the user's global selection.
-- Every hook reads the same effective policy that `harness stances` prints.
+- Every hook reads the same effective policy that `citizen stances` prints.
 - Project configuration may select stances only. Identity, targets and permissions stay user-owned.
   *Amended 2026-09-25:* a project file may carry any selection key, so it may also switch rules,
   hooks, skills, workflows and roles and name a mode (#554, FR-15). Identity, targets, permissions,
   runtime flags, `primitive_roots` and telemetry stay user-owned; a project file that sets one is
   refused with a message naming the key.
+- *Amended 2026-09-26 (#276):* a project or session stance selection that differs from the synced one
+  reaches the model at session start as that variant's text, counted against the always-loaded token cap
+  less what the sync already loads; a variant that does not fit is named with a pointer to its file. A
+  session whose selection matches the synced one gets nothing injected.
 
 **Out of scope:** stances that weaken an invariant.
 
@@ -454,7 +460,7 @@ dimension and a role binding. **Status:** implemented (0.12, four constraints, #
 
 **Consequences (testable):**
 - `sync` refuses a selection that violates `primitives/constraints.json` and names the constraint.
-  `harness stances` prints the conflict and still exits 0, so the selection can be inspected.
+  `citizen stances` prints the conflict and still exits 0, so the selection can be inspected.
 
 #### FR-15: Selection model with switches for every primitive
 A developer must be able to switch every rule, hook, skill, workflow and role on or off by id, in one
@@ -471,9 +477,9 @@ A developer must be able to select a named mode for a session or a repository. *
 
 **Consequences (testable):**
 - `HARNESS_MODE` selects a mode for one session without changing stored selections.
-- A mode takes effect for a developer who ran `harness init`. After a default `init`, selecting the
+- A mode takes effect for a developer who ran `citizen init`. After a default `init`, selecting the
   `superpowers` mode changes `plan-ceremony`.
-- `harness selection` names every mode key that a user key shadowed.
+- `citizen selection` names every mode key that a user key shadowed.
 - The `superpowers` mode keeps every enforcement hook and cedes process primitives to the layered library.
   Its detection reports when that library is present.
 - `delegated` variants of `plan-ceremony` and `testing` keep those dimensions explicit when a mode cedes
@@ -496,7 +502,7 @@ A developer must be able to preview every managed change before applying it. **S
 (0.3).
 
 **Consequences (testable):**
-- `harness sync --dry-run` lists every link, rendered file, setting and conflict, grouped by runtime and
+- `citizen sync --dry-run` lists every link, rendered file, setting and conflict, grouped by runtime and
   owner, and changes nothing.
 
 #### FR-5: Ownership journal
@@ -515,19 +521,19 @@ which tracks the latest release. **Status:** implemented (0.11.1, `stable`; 0.12
 
 **Consequences (testable):**
 - `stable` fast-forwards to each release tag after publication, and never moves backward.
-- The installer clones `stable`, runs `harness init --yes`, then `harness install --dry-run`. It applies
+- The installer clones `stable`, runs `citizen init --yes`, then `citizen install --dry-run`. It applies
   nothing until the developer runs the install for real.
 
 #### FR-18: Plugin listing as a sampler
 The system must publish a Claude Code plugin listing that exposes the primitive catalog without its hooks.
-Plugin hooks would merge with user hooks and fire twice, so the plugin never replaces `harness sync`.
+Plugin hooks would merge with user hooks and fire twice, so the plugin never replaces `citizen sync`.
 **Status:** partial: implemented (0.12, #475). The plugin's constrained roles run as native agents with no
 hook to refuse their native spawn, and the manifest's version lags `VERSION`. Both are planned for
 correction (unscheduled).
 
 **Consequences (testable):**
 - The plugin manifest declares no hooks, and its version equals `VERSION`.
-- The docs say that full enforcement, including role confinement (FR-40, FR-41), needs `harness sync`.
+- The docs say that full enforcement, including role confinement (FR-40, FR-41), needs `citizen sync`.
 
 #### FR-66: Upgrade, rollback and migration
 Upgrading between releases must migrate configuration forward, carry the ownership journal, and keep the
@@ -556,18 +562,18 @@ A developer must be able to create a first configuration interactively or in one
 read or set individual keys. **Status:** implemented (0.8).
 
 **Consequences (testable):**
-- `harness init --yes --preset software` writes a configuration without asking anything.
-- `harness config get|set` accepts only identity, stances, permissions, runtime booleans, primitive
+- `citizen init --yes --preset software` writes a configuration without asking anything.
+- `citizen config get|set` accepts only identity, stances, permissions, runtime booleans, primitive
   roots, and the `integrations.*` and `governance.*` keys.
-- `harness init` refuses to replace an existing configuration without `--force`.
+- `citizen init` refuses to replace an existing configuration without `--force`.
 
 #### FR-70: Machine setup, editor settings and templates
-The system must set up a machine for the harness with `harness install`: tools, apps, and VS Code settings
+The system must set up a machine for the harness with `citizen install`: tools, apps, and VS Code settings
 and extensions. It must also ship a Codex configuration example and a repository template. The editor
 surfaces are labelled preview. **Status:** implemented (0.9, preview).
 
 **Consequences (testable):**
-- `harness install --dry-run` lists every package, app, setting and extension it would install, and
+- `citizen install --dry-run` lists every package, app, setting and extension it would install, and
   changes nothing.
 - Editor management is off unless the developer selects it, and its projections appear in the dry-run
   preview like any other.
@@ -586,12 +592,12 @@ Lint must fail when a rule in the primitive catalog names neither a detector nor
 having none. **Status:** implemented (0.6, the lint gate; 0.12, the engine vendored from `ruleprobe`, #488).
 
 **Consequences (testable):**
-- Removing a rule's detector binding fails `harness lint`, and the failure names the rule.
+- Removing a rule's detector binding fails `citizen lint`, and the failure names the rule.
 - The detector registry holds 17 detectors: 6 generic ones from the vendored engine, and 11 specific to
   this repository.
 
 #### FR-20: Per-rule hit rate
-`harness usage --rules` must report each rule's hit rate by repository, and by the stance variant selected
+`citizen usage --rules` must report each rule's hit rate by repository, and by the stance variant selected
 when the session ran. **Status:** partial: implemented (0.12), with the report keyed by detector.
 Planned for v0.15.0, with the module scorecard: listing each unmeasured rule with its reason, and the share
 of rules measured.
@@ -615,13 +621,13 @@ harness's way of working. **Status:** implemented (0.12; `ruleprobe` 0.1.0 is pu
 A developer must be able to bind a detector to any of their own rules without writing code, and to see what
 share of their rules is measured. **Status:** partial:
 - implemented (0.12): declarative detectors in standalone `ruleprobe` 0.1.
-- planned (unscheduled: the 2026-09-24 roadmap does not place it): loading them in `harness usage --rules`.
+- planned (unscheduled: the 2026-09-24 roadmap does not place it): loading them in `citizen usage --rules`.
 - planned (unscheduled: the 2026-09-24 roadmap does not place it): proposing a detector from a rule's
   prose.
 
 **Consequences (testable):**
 - A declarative detector in `.ruleprobe/detectors.yaml` is picked up by `ruleprobe` without a code change,
-  and by `harness usage --rules` once loading lands.
+  and by `citizen usage --rules` once loading lands.
 - A report run with the developer's rule directory states the share of rules measured and lists the
   unmeasured rules.
 
@@ -646,7 +652,7 @@ Local measurements must distinguish known, partial, unavailable and failed data,
 remote telemetry. **Status:** implemented (0.9).
 
 **Consequences (testable):**
-- With no export configured, every `harness usage` view works from local files.
+- With no export configured, every `citizen usage` view works from local files.
 - A row built from total-only data is marked `partial`, never presented as complete.
 
 #### FR-23: Cross-runtime usage ledger
@@ -655,7 +661,7 @@ slices, the harness version and the session effort. **Status:** implemented (0.1
 
 **Consequences (testable):**
 - Codex subagent threads are linked to their parents, and archived sessions are read.
-- `harness usage` supports `--by day`, `repo`, `model`, `role`, `rule`, `stance`, `decision`, `provider`
+- `citizen usage` supports `--by day`, `repo`, `model`, `role`, `rule`, `stance`, `decision`, `provider`
   and `prefix`, and reports the deduplication ratio.
 - `--by role` marks any role with fewer than 30 samples.
 
@@ -666,7 +672,7 @@ as an invoice. **Status:** implemented (0.12); exact-match pricing is unreleased
 **Consequences (testable):**
 - A model missing from the price table is reported as unpriced. It is never priced at $0, and never at a
   family rate.
-- `harness doctor` warns when the price table is more than 90 days old.
+- `citizen doctor` warns when the price table is more than 90 days old.
 
 #### FR-25: OTLP export with replay
 The system must export usage ledger rows as OTLP log records to any endpoint the developer configures.
@@ -674,7 +680,7 @@ Export is off by default, uses only the standard library, never blocks a hook, a
 ledger. **Status:** implemented (0.12).
 
 **Consequences (testable):**
-- Delivery is at least once. `harness usage export --since` can replay the ledger at any time.
+- Delivery is at least once. `citizen usage export --since` can replay the ledger at any time.
   Readers deduplicate on `harness.row_key`, keeping the greatest `harness.exported_at`, as the documented
   query does.
 - Export settings live in the `telemetry` setting, not a stance. Their secret comes from the environment or
@@ -700,7 +706,7 @@ The log is controlled by a setting, and its `input` field is capped. **Status:**
 sampling and completion claims are unreleased (#574, #593).
 
 **Consequences (testable):**
-- `harness usage --by decision` reports decisions by decision point, answer and outcome.
+- `citizen usage --by decision` reports decisions by decision point, answer and outcome.
 - Each row's `input` is capped at 2 KiB. The log stays local, is not part of export, and stops when
   `telemetry.decisions` is off.
 
@@ -725,7 +731,7 @@ available only by explicit declaration. A developer's `role_bindings` may overri
 effort, and nothing else. **Status:** implemented (0.11).
 
 **Consequences (testable):**
-- `harness tiers check` fails when an adapter's class-to-model table names a model its runtime does not
+- `citizen tiers check` fails when an adapter's class-to-model table names a model its runtime does not
   offer.
 - A spawn that requests `frontier` without a declaration is refused on runtimes that enforce the ceiling.
   The compatibility matrix says which runtimes those are.
@@ -826,8 +832,8 @@ It must also refuse always-loaded context over 200 lines, or over 4,202 tokens. 
 (0.1; the token cap in 0.12, #474).
 
 **Consequences (testable):**
-- `harness lint` fails on a credential pattern.
-- `harness lint` fails when always-loaded context passes either cap.
+- `citizen lint` fails on a credential pattern.
+- `citizen lint` fails when always-loaded context passes either cap.
 - Untracked scratch under `.agent-harness/` is skipped. Tracked files there are linted.
 
 #### FR-39: Plan mode investigates under the developer's permission mode
@@ -861,7 +867,8 @@ private logs. A planner returns content, and the harness validates it and publis
 #### FR-41: Confinement however the spawn is named
 A constrained role's work must be refused as a native spawn, whatever name the spawn carries. This includes
 framework review layers. **Status:** partial: implemented (0.11.1, spawn guards); the session-level signal
-is unreleased (#585). The Workflow tool still bypasses it (#576, v0.14.0).
+is unreleased (#585). The Workflow tool's launch is guarded (#576, unreleased); a script's `agent()` calls
+are still not band-routed.
 
 **Consequences (testable):**
 - While a routed review is in flight, an unnamed spawn carrying review work is refused.
@@ -892,9 +899,9 @@ safe after a squash merge. **Status:** partial: implemented (0.9), but a checkou
 cannot be removed; the fix is planned (backlog, #413).
 
 **Consequences (testable):**
-- `harness worktree audit` lists each worktree with its repository identity, merged state and unique
+- `citizen worktree audit` lists each worktree with its repository identity, merged state and unique
   commits.
-- `harness worktree remove` refuses a tree with unique unmerged commits. It deletes a branch only once its
+- `citizen worktree remove` refuses a tree with unique unmerged commits. It deletes a branch only once its
   pull request is merged at that tip.
 
 #### FR-68: Readable answers and plans
@@ -927,8 +934,8 @@ An integration must be declared as a descriptor that states:
 **Status:** unreleased (#585, #591).
 
 **Consequences (testable):**
-- `harness integration check <name>` reports renamed keys or layer ids after an upstream release.
-- `harness integration apply <name>` installs the overrides. `harness bmad` remains an alias for one
+- `citizen integration check <name>` reports renamed keys or layer ids after an upstream release.
+- `citizen integration apply <name>` installs the overrides. `citizen bmad` remains an alias for one
   release. `[ASSUMPTION: removed in 0.14]`
 - A framework's review layers are confined at the spawn hook by the descriptor's mapping, not by prompt
   text.
@@ -959,7 +966,7 @@ The system must offer the providers `none`, `local` and `jev` behind one contrac
 - unreleased (#575, #592, #596, #597): the `jev` provider, stages, the kill switch, question packs, the
   eval runner and ledger rows.
 
-`harness decide` asks the configured provider about an action from the CLI. No hook consults a provider
+`citizen decide` asks the configured provider about an action from the CLI. No hook consults a provider
 yet.
 
 **Consequences (testable):**
@@ -987,7 +994,7 @@ A decision point moves through its stages only by passing each stage's gate.
 - **Into `shadow`:** the point is bound last in the decision chain, it meets its written latency bar, and
   one live request has been verified.
 - **Into `advise`:** the point meets its written held-out criterion with a fitted threshold, as reported by
-  `harness decisions eval`. The report covers agreement, calibration (ECE), flip rate, cost per thousand
+  `citizen decisions eval`. The report covers agreement, calibration (ECE), flip rate, cost per thousand
   decisions and p95 latency, all against versioned question packs.
 - **Into `act`:** the point's false-alarm rate against sampled allows has also been measured.
 - **No criterion:** a point without a criterion stays in `shadow`.
@@ -1031,9 +1038,9 @@ The CLI must distinguish published qualification from local installation, activa
 also report runtime versions, logins, links, providers and hosts. **Status:** implemented (0.9).
 
 **Consequences (testable):**
-- `harness doctor` names each problem it finds together with the command to run next, for example
-  `drift: 1 item(s), run harness diff`.
-- On macOS, `harness doctor` skips the runtime's own doctor when HOME has no keychain.
+- `citizen doctor` names each problem it finds together with the command to run next, for example
+  `drift: 1 item(s), run citizen diff`.
+- On macOS, `citizen doctor` skips the runtime's own doctor when HOME has no keychain.
 
 #### FR-7: Evidence-backed compatibility
 Compatibility claims must reference versioned native evidence for an exact runtime, client surface,
@@ -1069,7 +1076,7 @@ Evidence: `../../research/technical-runtime-platform-limits-and-qualification-20
 
 #### FR-51: Scoped evidence invalidation
 A change must invalidate qualification evidence only where its paths reach. **Status:** unreleased (#583,
-scoped per runtime). Per-case scoping is a pending decision (§11 Q1).
+scoped per runtime; #582, scoped per case through a versioned case-to-path map, decided 2026-09-26).
 
 **Consequences (testable):**
 - A change outside the source paths leaves all evidence valid. This covers docs, tests, scripts and
@@ -1077,12 +1084,16 @@ scoped per runtime). Per-case scoping is a pending decision (§11 Q1).
 - A change under one runtime's adapter directory invalidates that runtime's targets only, unless it
   touches a file shared code reads for every runtime.
 - A change to shared source invalidates every target.
+- Within a target, a change under a path the case-to-path map assigns invalidates only the cases that
+  name it, and a change under a path no case names invalidates every case. A record that states no map
+  version, or another one, keeps the whole-target rule.
 
 #### FR-52: One qualification round per release
 A release must be frozen on a release branch, and it must pass a model-free smoke tier before any native
 case runs. Per-case evidence must be recorded as it completes. **Status:**
 - implemented (0.12): the freeze and per-case progress (#396, #397);
-- unreleased: the smoke tier (#581), and drivers for all eleven native cases (#336).
+- unreleased: the smoke tier (#581), and drivers for all eleven native cases (#336);
+- unreleased: the round runner stops before any target runs when the tier fails or times out (#688).
 
 **Consequences (testable):**
 - A smoke-tier failure stops the round before any model turn is spent.
@@ -1211,7 +1222,7 @@ are unreleased (#603).
 
 **Consequences (testable):**
 - A relaunched host logs that it is reusing its prior environment, and keeps its environment id.
-- `harness remote-control heal` runs every 60 seconds and reconnects a disconnected session on an
+- `citizen remote-control heal` runs every 60 seconds and reconnects a disconnected session on an
   environment the machine owns.
 - A server-archived session is past recovery. It is left out of `status`, and it is never reported as
   healed.
@@ -1221,7 +1232,7 @@ A developer must be able to define a multi-root workspace whose session history 
 workspace, whichever folder is first. **Status:** implemented (0.12).
 
 **Consequences (testable):**
-- `harness workspace create` points every folder's project key at one store, so every folder shows the same
+- `citizen workspace create` points every folder's project key at one store, so every folder shows the same
   session history.
 - A project key that already holds real history is left alone and reported, never overwritten.
 
@@ -1244,6 +1255,9 @@ runtimes for later search. **Status:** partial: path claims and the pre-write ch
   against abandoned turns.
 - The archive is local and not authoritative. It stores neutral turn rows keyed to the harness session,
   searchable by full text.
+- The archive stores message and tool-result text only when the developer explicitly opts in through
+  `telemetry.sessions_bodies`, which is off by default. Stored text is redacted for secret patterns at
+  write, and `retention_days` applies to it (#685).
 - Every archive search is logged with a usefulness signal, so the #546 reopen criteria can be evaluated.
 - On runtimes without a pre-write hook, the adapter's capabilities state the gap.
 
@@ -1315,6 +1329,11 @@ makes stale, in the same pull request:
   - Code uses no syntax newer than 3.9.
   - CI runs the runner's system Python only. The 3.9 floor is proved locally and by the release lifecycle
     runs. A 3.9 check on every pull request is a gap.
+  - **Default taken: amendment 2026-09-25 (#640).** Added after the original run; the lines above are
+    unchanged and dated 2026-09-23. The required `test` check runs `tests/test_python_floor.py` under a real
+    Python 3.9, parsing every tracked Python source, so #640 closes the gap for syntax on every pull
+    request. The new `test-py39` CI job runs the suite under Python 3.9 on every pull request and in the
+    merge queue, and it blocks a merge only once the owner adds it to the branch ruleset's required checks.
 - **NFR-3 Security:**
   - Secrets and private paths never enter tracked code, evidence or planning artifacts.
   - No stance weakens authorization.
@@ -1370,6 +1389,24 @@ makes stale, in the same pull request:
 - **NFR-15 Experiment discipline:**
   - Every spike and mechanism change carries a numeric exit criterion, written before the run.
   - The criterion is never adjusted after the result.
+  - Every published result meets the evidence standard (planned 0.14, #794), which
+    `docs/evidence-standard.md` states with what satisfies each item. It carries twelve items:
+    1. a pre-registered plan (hypotheses, primary metric, guardrails, sample size, stopping rule and
+       multiplicity), committed before the first trial from `docs/pre-registration-template.md`;
+    2. a frozen task set with a reference solution per task, audited for task and outcome validity;
+    3. the pinned model, CLI, effort, date, container digest, seeds and fallback rate;
+    4. a dated price table;
+    5. paired per-task results with clustered or Wilson intervals, and the intra-cluster correlation;
+    6. a cost-effectiveness view, such as a Pareto frontier;
+    7. trajectories and a command that reproduces the run;
+    8. judge agreement: κ, a confusion matrix and bias audits;
+    9. a contamination check;
+    10. estimand labels: intention to treat, adherence, complier effects, and hypotheticals marked as
+        such;
+    11. field checks: sample ratio, novelty, CUPED and dilution;
+    12. a "what we do not claim" section.
+
+    Where SM-2 defines a term the standard uses, SM-2 governs.
 - **NFR-16 Hook overhead:**
   - Each hook's p95 wall time per call is measured and reported with the static estimate.
   - No hook exceeds 250 ms p95 on the reference machines. `[ASSUMPTION: bound to be confirmed by the first
@@ -1530,7 +1567,7 @@ observation, then evaluation, then proof. Each entry names what the milestone ne
   - every ledger row carries a profile fingerprint and per-module attribution (#482);
   - the bare arm is observed like the harness arm, with nothing added to model context;
   - the replay defects found on 2026-09-24 are fixed;
-  - an evidence standard and a pre-registration template.
+  - an evidence standard and a pre-registration template (#794, NFR-15).
 - **v0.15.0, Measured:**
   - evaluation tiers (#510, #511, #512);
   - harness against bare at five or more trials, with confidence intervals (#559, #560);
@@ -1691,8 +1728,8 @@ answer.
 
 1. **Per-case or per-target invalidation?** Should qualification evidence be invalidated per case, or only
    per target (#582)?
-   - Blocks: FR-51.
-   - Needed by: v0.14.0.
+   - Answered 2026-09-26: per case, through a versioned case-to-path map in the catalog; a change under
+     an unmapped path invalidates every case (#582).
 2. **Keeping the issue map current.** How does the issue map's lifecycle stay current without a pull request
    after every merge (#420)? Does the derived sprint status (FR-65) change the answer?
    - Blocks: the issue map's lifecycle field (#420). FR-65's derived sprint status (0.13) does not settle
@@ -1706,6 +1743,9 @@ answer.
    that reads only user-level configuration (#276)?
    - Blocks: FR-2.
    - Needed by: v0.14.0.
+   - *Resolved 2026-09-26:* the owner chose session-start injection of the resolved stance text when it
+     differs from the synced one, bounded by the always-loaded budget (FR-2). #294 settled that sync keeps
+     projecting user-level selections only.
 5. **How modes take effect after `init`.** Should `harness init` write only keys that differ from the
    defaults, or should a mode overlay the base user configuration (#557)?
    - Blocks: FR-16.

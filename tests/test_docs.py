@@ -68,7 +68,7 @@ class GuideTests(unittest.TestCase):
         self.assertIn("rate-limit", GUIDE)
 
     def test_it_names_the_three_commands_that_diagnose_a_broken_install(self):
-        for command in ("harness doctor", "harness diff", "harness uninstall"):
+        for command in ("citizen doctor", "citizen diff", "citizen uninstall"):
             self.assertIn(command, GUIDE, msg=command)
 
     def test_the_links_it_offers_resolve(self):
@@ -90,7 +90,7 @@ class CostDocTests(unittest.TestCase):
     def test_preferences_explains_what_a_session_costs_and_names_the_dial(self):
         self.assertIn("## What a session costs", PREFERENCES)
         self.assertIn("`cost` stance is the dial", PREFERENCES)
-        self.assertIn("harness usage", PREFERENCES)
+        self.assertIn("citizen usage", PREFERENCES)
 
 
 if __name__ == "__main__":

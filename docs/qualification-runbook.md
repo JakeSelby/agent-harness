@@ -165,13 +165,16 @@ case. Write `--out` outside the checkout: the runner refuses to run against a di
 evidence file is added to the tree deliberately, after review.
 
 `scripts/qualification_round.py` drives a provisioned round: the smoke tier once, then the
-runner per target from the frozen clone, one record each. It decides nothing and stops for
-nothing — a round collects every target's defects before any of them is fixed, which is the rule
-in [releasing](releasing.md#freeze-the-qualification-branch) — and it exits non-zero unless every
-case of every target passed. A target's earlier record is moved aside before its runner is
-launched, so a runner that exits before writing one reports every case `unverified` rather than
-the previous round's passes, and a target that runs past the round deadline is recorded and
-carried rather than raised — the targets after it still run.
+runner per target from the frozen clone, one record each. A smoke tier that fails or times out
+stops the round before any target runs, and `round.json` records the tier's result, why the round
+stopped and the targets it did not run; `--skip-smoke` records the tier as `skipped` and runs every
+target. Past the tier it decides nothing and stops for nothing — a round collects every target's
+defects before any of them is fixed, which is the rule in
+[releasing](releasing.md#freeze-the-qualification-branch) — and it exits non-zero unless the tier
+passed or was skipped and every case of every target passed. A target's earlier record is moved
+aside before its runner is launched, so a runner that exits before writing one reports every case
+`unverified` rather than the previous round's passes, and a target that runs past the round
+deadline is recorded and carried rather than raised — the targets after it still run.
 
 ## Which class executes, and which class reads
 
@@ -192,7 +195,7 @@ A bare class moves every target; `TARGET=CLASS` moves the one it names, so a Cod
 executed at a different class from a Claude Code one in the same round. Later arguments win.
 
 The classes are resolved through the target runtime's `adapters/<runtime>/bindings.json`, the
-same table `harness tiers` checks; a personal `tiers.<runtime>` override in a user configuration
+same table `citizen tiers` checks; a personal `tiers.<runtime>` override in a user configuration
 is not applied, because a round runs from a frozen clone. Two refusals, both before any client is
 launched:
 
@@ -216,6 +219,15 @@ The routing is written to the durable per-case log before the first case runs an
 `round.json` before the smoke tier, so a killed round still records which classes were running.
 `--from-progress` refuses a log whose cases were executed under a different routing rather than
 merging them: a record built from two routings cannot say which class produced an observation.
+
+A round started again with the same arguments at the same commit resumes from that log: a case
+whose latest line is `passed` or `failed` is not run again, and the runner says so on stderr for
+each one. A failure is kept so its evidence stays intact; an `unverified` case, which observed
+nothing, and a case the kill interrupted both run again. The log's header carries the source
+commit, client version and routing, so a verdict never skips a case for a different candidate. A
+resume without `--home-confirmed` on a surface that needs it keeps no verdict, since it could only
+read `unverified` itself, so every case runs again. To
+retry a failed case at the same commit, give the round a fresh `--progress` log.
 
 The saving this buys is the issue's estimate, not a measurement: workers ran 0.7×–1.8× their 82K
 output budget, so four targets cost 230K–590K output tokens per round, most of it authoring

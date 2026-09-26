@@ -7,7 +7,7 @@ decision, so a request requiring confirmation is denied with its reason. Output 
 grants an otherwise unapproved shell command merely to rewrite it.
 
 Hook registration is not activation. Codex requires native trust for the current hooks content;
-accept it in the client. `harness trust` separately authorizes running a repository's gate and
+accept it in the client. `citizen trust` separately authorizes running a repository's gate and
 does not manufacture native hook trust. Native permission restrictions always take precedence.
 Hosted search and continuation through an already running shell are not universally intercepted.
 Hooks assist workflow policy; they are not a substitute for the runtime sandbox.
@@ -29,7 +29,7 @@ posture does not move stays a symlink to the committed projection, exactly as be
 moves is rendered into the Claude home, so the class and effort it runs with are written into the
 file on disk rather than decided per session. A
 session-scoped `HARNESS_STANCE_COST`, like any `HARNESS_STANCE_*`, stays in that session and does
-not move them until the next `harness sync`; an isolated [role worker](role-workers.md) resolves
+not move them until the next `citizen sync`; an isolated [role worker](role-workers.md) resolves
 its class, effort and soft budget per run, from the same table and the same precedence, so it
 follows that session selection and a constrained role cannot run one way as a worker and another
 as a definition. A `role_bindings.<runtime>.<role>` entry still wins over the variant's row.
@@ -38,10 +38,10 @@ Routing of spawns that name no agent definition turns itself off in a workspace 
 would put that repository's instructions on every unnamed spawn; the spawn runs as written and the
 hook says so.
 Before downgrading to a release that only links these definitions, either select `balanced` with
-no role bindings and sync once, which restores the links, or run `harness uninstall`. Syncing a
+no role bindings and sync once, which restores the links, or run `citizen uninstall`. Syncing a
 home back with the older release is not enough on its own: role files the older release does not
-ship stay in `~/.claude/agents` and `~/.codex/agents`, and its `harness diff` reports no drift,
-because code that never knew those roles cannot miss them. `harness uninstall` before the
+ship stay in `~/.claude/agents` and `~/.codex/agents`, and its `citizen diff` reports no drift,
+because code that never knew those roles cannot miss them. `citizen uninstall` before the
 downgrade is the remedy; it removes what the newer release wrote.
 
 Routing is session-scoped for the same reason that effort is sync-scoped: what a native agent is
@@ -71,6 +71,48 @@ by `last_event_at`, so that read asserts the order rather than requesting it, an
 reported as not checked, never as nothing found. A count over a page that carries a cursor names
 the page it counted rather than the account.
 
+## Hook ids
+
+Every policy module that answers a lifecycle event has an id, its basename under `policy/hooks/`,
+and each id is a unit of the `hooks` switch kind in the [selection document](preferences.md#the-selection-document):
+
+| Id | Answers |
+| --- | --- |
+| `allow-plan-webfetch` | PreToolUse on WebFetch in plan mode |
+| `allow-readonly-bash` | the read-only Bash allow, plan-mode allows and `plan_allow_tools` |
+| `approvals` | UserPromptSubmit: records a prompt that is only `approve <code>` tokens, for `grade-bash` in auto mode, Claude Code only |
+| `brief-guard` (core) | PreToolUse on a spawn |
+| `filter-output` | PreToolUse on Bash |
+| `grade-bash` (core) | Bash grading, its ask or deny, consuming an approval in auto mode, guarding the approvals store, and the decision log's Bash rows |
+| `harness-session` | SessionStart |
+| `neutralize-tool-output` (core) | PostToolUse |
+| `stage-user-files` | PreToolUse on SendUserFile, Claude Code only |
+| `stop-gate` (core) | Stop |
+| `tier-agent-spawns` | band routing of a spawn, and the integration descriptor notice |
+| `usage-feed` | UserPromptSubmit, SubagentStart, SubagentStop and PostToolUse on a spawn, Claude Code only |
+| `usage-log` | SessionEnd |
+| `validate-plan-card` | PostToolUse on a plan file |
+
+`citizen config set hooks.<id> off` switches one off, and it applies from the next event with no
+sync: the dispatcher resolves the selection at each event and neither loads nor runs a module
+whose id is `off`. The libraries those modules load (`decisions`, `posture`, `pricing`,
+`telemetry`, `rule-detectors`, `otel-headers`, `filter-lines`) have no id and no switch. Denying
+every spawn under `delegation: off` is the stance's own answer and stays with any id off.
+Role confinement has no id either: the constrained-role, `harness-role:` marker, framework and
+evasion denials and the Workflow launch guard run with every hook off, so switching
+`tier-agent-spawns` off stops band routing and never lets a constrained role run in session.
+
+The four core ids enforce rather than assist. A layer may switch one off only when the user
+configuration sets `"core_switches_acknowledged": true`; `config set`, `sync` and
+`citizen selection` refuse it otherwise, before anything is written, and so does withdrawing the
+acknowledgement while a core hook is off. The acknowledgement is read from the user configuration
+alone, because a project, session or mode file may carry selection keys only. A hook that meets an
+unacknowledged `off` keeps running, and so does every hook when the selection will not resolve.
+
+Codex's adapter dispatches through the same `lifecycle.py` and reads the same id map. There is no
+Codex-only id; an id whose event Codex does not raise, such as `usage-feed`, simply never runs
+there. `citizen catalog` lists each id with kind `hooks`, its source and whether it is core.
+
 ## Decision providers
 
 `lib/harness_core/decision.py` holds one transport-agnostic contract for the question "may this
@@ -81,18 +123,37 @@ an `injected_cognition` block of rule matches and optional agent and user messag
 approvals and may be a no-op. The shape deliberately mirrors the `decide`/`record`/`learn` surface
 of an external control plane, so a hosted provider can be added later without a second contract.
 An action names a class — `coding.shell_exec`, `coding.git_commit`, `coding.git_push`,
-`coding.deploy`, `coding.file_write` — and the command grade where one is known. A counterparty is
-the `repo:<name>/<branch>` slug the usage ledger already derives.
+`coding.deploy`, `coding.file_write`, `coding.pr_merge` — and the command grade where one is known. A counterparty is
+a `repo:<name>/<branch>` slug. `<name>` is the repository's, read from its common git directory, so
+a linked worktree in a directory named for its task names the repository it belongs to; the usage
+ledger's `repo` field keeps the worktree directory's name.
 
 Two providers ship. `none` is the default: every action is allowed at level 3 with the reason
-`governance: none`. `local` reads `.agent-harness/governance.json` in the repository
-(`defaults`, `pairs`, `caps`) and resolves a level in that order — an explicit counterparty pair,
-then the action class default, then the level the autonomy stance implies (`execute` 3,
-`confirm-writes` 2, `ask` 1, and 1 when nothing resolves). A cap is a ceiling the resolved level
-never exceeds; `coding.deploy` carries a built-in cap of 2 that a policy file may lower and may not
-raise. Level 3 allows every grade, level 2 asks at grade 2 and up, level 1 asks at grade 1 and up,
-and an unknown grade is judged as 1. A policy file that cannot be honoured as written is an error
-naming the file, never a silent "no policy". Both providers write to the existing
+`governance: none`, and no policy file is read. `local` reads two policy files in one schema
+(`defaults`, `pairs`, `caps`): a user-level `governance.json` beside `config.json`
+(`~/.config/agent-harness/governance.json`, under `HARNESS_HOME` when that is set), and
+`.agent-harness/governance.json` in the repository. It merges them before resolving anything.
+The repository file wins for a class default and for each class inside a pair; caps combine by the
+lower value, so neither file can lift a ceiling the other set. The user file holds levels that apply
+everywhere, and levels for repositories that carry no file of their own.
+
+```json
+{"defaults": {"coding.git_push": 2},
+ "pairs": {"repo:agent-harness": {"coding.pr_merge": 3},
+           "repo:agent-harness/main": {"coding.git_push": 1}},
+ "caps": {"coding.deploy": 2}}
+```
+
+A level is then resolved in this order: the exact `repo:<name>/<branch>` pair, then the
+whole-repository `repo:<name>` pair, then the action class default, then the level the autonomy
+stance implies (`execute` 3, `confirm-writes` 2, `ask` 1, and 1 when nothing resolves). The
+repository name in a slug ends at the first `/`, so a branch such as `feat/x` still reaches
+`repo:<name>`. A cap is a ceiling the resolved level never exceeds; `coding.deploy` carries a
+built-in cap of 2 that a policy file may lower and may not raise, and `coding.pr_merge` has no
+built-in cap. The reason and each rule match name the file that supplied the level or the cap, or
+say `autonomy stance` or `built-in`. Level 3 allows every grade, level 2 asks at grade 2 and up, level 1 asks at grade 1 and up,
+and an unknown grade is judged as 1. A policy file at either level that cannot be honoured as
+written is an error naming that file, never a silent "no policy". Both providers write to the existing
 `decisions.jsonl` ledger and neither reaches the network.
 
 A third provider, `jev`, lives in `lib/harness_core/decisions/jev.py` and answers over the
@@ -105,7 +166,7 @@ mean "use the deterministic answer". A judgment may turn an `allow` into an `ask
 widen a decision or produce a `deny`. Every other outcome fails open to the deterministic
 decision: no key, a timeout, an exhausted budget, a malformed response, an unexpected exception.
 Each call writes one `event` row carrying the status, the requested and returned model ids, the
-pack and request hashes, the usage and the latency, and never the state; `harness decide`
+pack and request hashes, the usage and the latency, and never the state; `citizen decide`
 suppresses that row, because a reporting command changes nothing. The endpoint must be `https`
 and the opener can reach no other scheme, since a bearer key goes with every request, and a
 request is charged to its budget as it is sent rather than when it succeeds, so a failing
@@ -129,7 +190,7 @@ untouched, so an answer can be measured before it is trusted: nothing reaches th
 user. `advise` puts the judgment in `rule_matches`, says what `act` would have done, and changes
 no outcome. `act` lets a judgment turn an `allow` into an `ask`, and nothing else. Every mode
 defaults to `off`, so a configuration written before this existed makes no request; a mode, a
-point or a field the harness does not know fails at `harness config set`, not at the first call,
+point or a field the harness does not know fails at `citizen config set`, not at the first call,
 and a point name this harness does not know reads `off` rather than the default. Each call
 writes one ledger row carrying the mode, the judgment label, the severity level, the
 deterministic outcome and the outcome acting on the judgment would have reached, so a `shadow`
@@ -158,7 +219,7 @@ prose still travels, which is why the allowlist is two fields and not a free voc
 session rather than a process: a hook is a new process per event, so the counters live in
 `~/.local/state/agent-harness/jev-spend.json` keyed by session id, under the lock, read before
 each check and added to as each request is charged. A spend file that cannot be read or written
-leaves the in-process count standing rather than failing a decision. `harness doctor`
+leaves the in-process count standing rather than failing a decision. `citizen doctor`
 prints the mode per point, the allowlist, where the kill switch lives, the model every request
 pins, what the last call returned, and whether a credential variable is set — by name, never its
 value.
@@ -166,7 +227,7 @@ value.
 **What each call cost.** Every call also writes one `kind: "decision"` row to the usage ledger:
 the point, the mode, the status, the model ids, the pack and request hashes, the judgment and
 severity labels, the deterministic outcome and the one an `act` mode would have reached, the
-tokens, the latency and the session that asked — and none of the state it sent. `harness usage
+tokens, the latency and the session that asked — and none of the state it sent. `citizen usage
 --by provider` prices those rows from `policy/prices.json` like any other. A mode of `shadow` is
 measurable for exactly this reason: the row exists, priced and labelled, before anything the
 provider says can change an answer. Both rows stop when `telemetry.decisions` is `false`; see
@@ -174,7 +235,7 @@ provider says can change an answer. Both rows stop when `telemetry.decisions` is
 
 ## Measuring a provider before trusting it
 
-A typed answer is not evidence that it was the right one. `harness decisions eval` replays the
+A typed answer is not evidence that it was the right one. `citizen decisions eval` replays the
 labelled rows of the [decision log](usage.md) — real inputs, the answer the deterministic hook
 gave, and the outcome the session later showed — through a question pack in `shadow` mode, and
 writes a report to `~/.local/state/agent-harness/jev-eval.json` or wherever `--out` says.
@@ -235,10 +296,52 @@ ceiling nobody can convert is not a ceiling; and a live run with an empty
 four base fields and differ in nothing. A live run sends under the user's own allowlist, so an
 evaluation cannot send a field a hook is not allowed to send.
 
-`governance.provider` selects one; the default is `none`. `harness decide --action <class>
-[--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.
-Nothing consults a provider yet: command grading still answers the permission question on its own,
-and binding the two is separate work.
+`governance.provider` selects one; the default is `none`. `citizen decide --action <class>
+[--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository and
+the policy files it read, each marked present or absent; `citizen doctor` lists the same files
+under the governance provider.
+
+### How command grading consults the provider
+
+`grade-bash` consults the selected provider for every Bash command the autonomy stance lets
+through, and only when `governance.provider` is not `none`. Under `none` it imports nothing and
+its output is exactly what the stance alone gives.
+
+- **Classification.** Each simple command in the line is classified: `git push` is
+  `coding.git_push`, `git commit` is `coding.git_commit`, `gh pr merge` is `coding.pr_merge`, a
+  deploy verb the grader knows (its `deploy` family, `vercel deploy`, `netlify deploy`,
+  `cdk deploy`) is `coding.deploy`, and anything else is `coding.shell_exec`. Wrappers, runners,
+  `sudo` and a shell's `-c` text are looked through as the grader looks through them. A
+  read-only command, grade 0, is not put to the provider, since no level asks at grade 0.
+- **Counterparty.** Each command's counterparty is the repository and branch of the directory it
+  runs in: a `git -C <dir>` moves it for that command, and a `cd <dir>` or `pushd <dir>` earlier
+  in the line moves it for the commands after it, substitutions included. The repository policy
+  read is that repository's own `.agent-harness/governance.json`. A directory is trusted only when
+  every change before the command is a literal path; after `cd -`, `cd "$X"`, `popd`, a `cd` in a
+  subshell, substitution, pipeline or background job, `env -C` or `--git-dir`, the counterparty
+  is `repo:unknown/local`, which no pair names, so the class default governs.
+- **Tighten-only.** The provider is asked with the command's grade, and the strictest answer
+  across the segments stands. It is never asked about a command the stance already gates, so it
+  can add a prompt and never remove one. An `ask` is an ask in a prompting mode and, in `auto` and
+  `bypassPermissions`, a deny through the same channel the grader uses: an approval code in
+  `auto`, which the user's `approve <code>` reply lets through once, and the confirm marker in
+  `bypassPermissions`. A provider `deny` is a deny in every mode. The reason names the class, the
+  counterparty, the level and the rule or file that supplied it.
+- **Fail closed.** A configured provider that cannot answer — an unknown provider name, a policy
+  file that raises `PolicyError`, any other exception — makes the command ask, naming the error.
+  It never falls back to allow.
+- **Policy files.** An agent write to the user-level `governance.json` or to any
+  `.agent-harness/governance.json` is a level-1 action: always asked about. A Bash command that is
+  not read-only and names either file, or writes one through a redirect, `tee`, `sed -i`,
+  `cp`, `mv` or a similar path writer, asks; a `Write`, `Edit`, `MultiEdit`, `NotebookEdit` or
+  `apply_patch` to one asks too, and in `auto` mode is refused with an approval code covering that
+  exact edit once. The user's `config.json` is guarded the same way, by Bash write target and by
+  file tool, and so is any `harness config set governance...` command: the configuration selects
+  the provider, so without the guard an agent could switch governance off instead of editing a
+  policy.
+- **Rows.** Each decision the hook asks for is one `governance` row in `decisions.jsonl`, owned by
+  `hooks/grade-bash`, whose `input` records the action class, counterparty, level, grade, outcome
+  and provider, and never the command text. `telemetry.decisions: false` stops them with the rest.
 
 Session start checks a declared integration's configuration without installing it. Installation
 remains explicit. See [task continuation](task-continuation.md), the [BMad integration](bmad.md),

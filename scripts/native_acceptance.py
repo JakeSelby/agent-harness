@@ -15,7 +15,9 @@ client already uses on this machine (see docs/qualification-runbook.md) and noth
     python3 scripts/native_acceptance.py --client claude-code-cli-macos --from-progress
 
 Each case is appended to a durable log as it finishes, so a killed round costs the case it was
-running and not the round; `--from-progress` rebuilds a record from what survived.
+running and not the round; `--from-progress` rebuilds a record from what survived. Run again at
+the same commit, a round skips every case the log already holds a verdict for, passed or failed,
+and reruns only the unverified and the unfinished.
 """
 import argparse
 import hashlib
@@ -1224,6 +1226,11 @@ def case_stance_switch(home):
     each, with the resolved voice text and output style read beside the replies; replies that
     agree on carrying a table observed nothing. Either half unobserved makes the case `unverified`
     with the other half's observation kept.
+
+    Both switches are user-level selections, which `harness sync` projects into links. A project
+    or a session selection reaches the model through the session hook's injected text instead, a
+    path that does not depend on the dimension, so `custom-stance` observes those two scopes for
+    every dimension, this one included.
     """
     home.seed(stances={"delegation": "tiered", "voice": "scannable"})
     home.harness("sync")
@@ -1325,14 +1332,54 @@ def project_override(home, variants):
             % (PROJECT_FILE, context, before or "<neither linked nor copied on this runtime>"))
 
 
+SESSION_VARIABLE = "HARNESS_STANCE_PROOF"
+
+
+def session_override(home, variants):
+    """Select proof=plain for one session through `HARNESS_STANCE_PROOF` while the global is tagged.
+
+    A session selection reaches the turn the way a project one does: the session hook injects the
+    resolved variant's text when it differs from the synced one (docs/sync-model.md). The turn
+    outside any selection is `project_override`'s, which already closed TAGGED.
+    """
+    link = stance_link(home, "proof")
+    before = link_target(link, variants)
+    turn = session_in(home, PROOF_PROMPT, home.project, {SESSION_VARIABLE: "plain"})
+    after = link_target(link, variants)
+    carried = OVERRIDE_LINE in home.orchestrator_text(turn.get("session_id", ""))
+    word = closing_word(home.answer(turn))
+    if before != after:
+        raise AssertionError("a turn under the session selection moved the global proof link "
+                             "%s -> %s" % (before or "<not a link>", after or "<not a link>"))
+    context = ("its transcript %s the session hook's \"%s\" line"
+               % ("carried" if carried else "did not carry", OVERRIDE_LINE))
+    if word == "TAGGED":
+        raise AssertionError("a turn started with %s=plain closed TAGGED like the global "
+                             "selection; %s" % (SESSION_VARIABLE, context))
+    if word != "PLAIN":
+        raise Unverified("the turn started with %s=plain closed %s, not PLAIN, so the session "
+                         "selection was not observed; %s"
+                         % (SESSION_VARIABLE, word or "<nothing>", context))
+    if not carried:
+        # A PLAIN reply alone could come from anywhere; the hook's line is what shows the session
+        # selection reached the client by the path under test.
+        raise Unverified("the turn started with %s=plain closed PLAIN, but %s, so nothing shows "
+                         "the session selection reached the client through the session hook"
+                         % (SESSION_VARIABLE, context))
+    return ("a fresh turn started with %s=plain and no project file closed PLAIN (%s), with the "
+            "global proof link unmoved" % (SESSION_VARIABLE, context))
+
+
 def case_custom_stance(home):
-    """docs/compatibility.md steps 2 and 4: a custom dimension, a project override, a bad choice.
+    """docs/compatibility.md steps 2 and 4: a custom dimension, project and session selections, a
+    bad choice.
 
     The dimension is one the repository does not ship, from an external root. A custom dimension
     is prose on every runtime, so the assertion is the client's own reply changing with the
     selection; the same dimension is then overridden for one disposable repository, and a turn
     inside it must follow the override while a turn outside it follows the global selection with
-    the global link unmoved. A selection that names no variant must be refused by the sync with
+    the global link unmoved. A turn started with `HARNESS_STANCE_PROOF` must follow that session
+    selection the same way. A selection that names no variant must be refused by the sync with
     the previously resolved link left where it was.
     """
     root = home.primitives / "stances" / "proof"
@@ -1353,6 +1400,7 @@ def case_custom_stance(home):
     select(home, "proof", "tagged")
     variants = [root / "plain.md", root / "tagged.md"]
     override = project_override(home, variants)
+    session = session_override(home, variants)
     before = link_target(stance_link(home, "proof"), variants)
     warning = select(home, "proof", "nonesuch", expected=1)
     if MISSING_VARIANT not in warning:
@@ -1364,9 +1412,9 @@ def case_custom_stance(home):
                              % (before, after or "<not a link>"))
     return ("A custom proof dimension supplied from an external primitive root appeared in harness "
             "stances --json after sync, and the native client's reply closed PLAIN under "
-            "proof=plain; then, %s; selecting a variant that does not exist made harness sync "
-            "exit 1 with \"%s\" and left the previously resolved variant at %s."
-            % (override, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
+            "proof=plain; then, %s; then %s; selecting a variant that does not exist made harness "
+            "sync exit 1 with \"%s\" and left the previously resolved variant at %s."
+            % (override, session, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
 
 
 # The log path is written into the script rather than read from the environment: a hook the
@@ -2189,7 +2237,7 @@ def layer_request(data, spawn, instructions):
             % (REVIEW_FILE, layer_name(spawn), data["name"], instructions))
 
 
-ROLE_RUN_PLACEHOLDER = "harness role run <role>"
+ROLE_RUN_PLACEHOLDER = "citizen role run <role>"
 
 
 def refusal_gaps(text, data, spawn):
@@ -2883,9 +2931,9 @@ CASES = {
                       "variant beside the resolved variant text and link"),
     "custom-stance": (case_custom_stance,
                       "supply a dimension this repository does not ship from an external "
-                      "primitive root, read the client's reply under each variant and under a "
-                      "project override inside and outside its repository, and refuse a "
-                      "selection naming no variant"),
+                      "primitive root, read the client's reply under each variant, under a "
+                      "project override inside and outside its repository and under a session "
+                      "variable, and refuse a selection naming no variant"),
     "framework-spawn-routing": (case_framework_spawn_routing,
                                "drive the spawn hook with a fixture recipe built from a declared "
                                "integration descriptor, then run the cost-posture turn"),
@@ -3098,6 +3146,24 @@ def progress_lines(path, header=None):
     return items
 
 
+SETTLED = ("passed", "failed")
+
+
+def settled(items):
+    """Each case whose latest line in `items` is a verdict, mapped to that verdict.
+
+    A resumed round skips these, which is FR-52's "a resumed round skips completed cases". Pass
+    lines already filtered by `progress_lines(path, header)`: the header carries the source
+    commit, so a verdict never carries across candidates. A failure is kept rather than rerun,
+    so the evidence of it survives the resume; an `unverified` case observed nothing and runs
+    again, its new line superseding the old one.
+    """
+    latest = {}
+    for item in items:
+        latest[item["case"]] = item.get("result")
+    return dict((case, result) for case, result in latest.items() if result in SETTLED)
+
+
 NO_OBSERVATION = "no observation was recorded for this case"
 
 
@@ -3132,11 +3198,15 @@ def build_record(items):
 def scoped(client, data):
     """State the path set whose change invalidates this record, so a reviewer need not derive it.
 
-    The catalog grants the scope; a record that claims any other one is rejected. See
-    docs/compatibility.md.
+    The catalog grants the scope; a record that claims any other one is rejected. The record also
+    names the case-to-path map it assumed, which is what lets a later change invalidate only the
+    cases it touches. See docs/compatibility.md.
     """
     entry = dict(CLIENTS[client], id=client)
     data["invalidation_scope"] = compatibility.evidence_scope(catalog(), entry)
+    identity = compatibility.case_map_identity(catalog())
+    if identity is not None:
+        data["case_map"] = identity
     return data
 
 
@@ -3218,8 +3288,17 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
         "model_run": model,
     }
     append_routing(progress, header)
+    # A verdict is kept only when this round could reach one itself: on a surface it has not
+    # confirmed, `probe` reads every case as unverified, so a pass an earlier round recorded
+    # under --home-confirmed runs again rather than surviving an unconfirmed resume.
+    kept = ({} if unobserved_note(client, confirmed)
+            else settled(progress_lines(progress, header)))
     results = []
     for name in names:
+        if name in kept:
+            sys.stderr.write("resume: %s already %s at %s; not rerun\n"
+                             % (name, kept[name], header["source_commit"][:12]))
+            continue
         item = (runner(client, name, model, keep, confirmed) if name in CASES
                 else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
         append_case(progress, header, item)

@@ -4,7 +4,7 @@ This page describes a Claude Code adapter feature for macOS. Codex has no equiva
 
 Claude Code's `/remote-control` shares one running session with the mobile app and
 claude.ai/code. Starting a *new* session from the phone needs `claude remote-control` running as
-a server in the folder, and one server serves one folder. `harness remote-control` keeps one
+a server in the folder, and one server serves one folder. `citizen remote-control` keeps one
 server per configured folder alive under launchd, so the folders are reachable after a reboot
 with no terminal open.
 
@@ -29,9 +29,9 @@ Add the folders to the user configuration, then install:
 ```
 
 ```sh
-harness remote-control install [--dry-run]   # one launchd agent per folder; drops agents for removed folders
-harness remote-control status                # launchd state and log path per folder
-harness remote-control uninstall             # unload and remove every agent
+citizen remote-control install [--dry-run]   # one launchd agent per folder; drops agents for removed folders
+citizen remote-control status                # launchd state and log path per folder
+citizen remote-control uninstall             # unload and remove every agent
 ```
 
 - **`folders`** entries are a path, or an object with a `path` and optionally its own `spawn`,
@@ -63,7 +63,7 @@ from the host's log, writes the folder's pointer for it with no pid, sends `SIGK
 `claude` process, which skips the shutdown path, and then reloads the agent, whose new host
 reuses the environment. `--dry-run` names the environment it would adopt.
 
-Restart a host only with `harness remote-control install`, never `launchctl kickstart -k`: that
+Restart a host only with `citizen remote-control install`, never `launchctl kickstart -k`: that
 sends `SIGTERM`, and a host that did not reuse its environment archives its sessions on it.
 
 ## Keeping sessions across a restart: `heal`
@@ -74,7 +74,7 @@ that adopts nothing, and the chats open on your phone are gone. Claude Code can 
 environment — it asks the server to reuse the id in the folder's
 `~/.claude/projects/<slug>/bridge-pointer.json` — but only while that file is younger than its
 four-hour TTL and names a pid that is no longer running, and a server that started without a
-pointer never writes one. `harness remote-control heal` closes that gap: once a minute it reads
+pointer never writes one. `citizen remote-control heal` closes that gap: once a minute it reads
 each running agent's live environment id from its log and rewrites the folder's pointer with it,
 so a relaunch asks for the environment the sessions are actually on. `--dry-run` reports without
 writing, `--once` is the single pass the `com.agent-harness.remote-control-heal` agent runs, and
@@ -115,7 +115,7 @@ unarchiving needs more than the login token, so it stays a manual step.
 
 ## Sessions that were lost anyway: `status`
 
-`harness remote-control status` asks the account which sessions are still `active` with a
+`citizen remote-control status` asks the account which sessions are still `active` with a
 `disconnected` bridge on an environment this Mac registered, and prints the reattach command for
 each, for any session heal could not reconnect. It does not run them. A
 `claude remote-control --session-id <id>` host registers the lost
@@ -134,18 +134,25 @@ newest 50`.
 The claude.ai token is read from the login keychain for the duration of the call and is never
 printed, logged or written anywhere.
 
-`harness doctor` reports the same ground per configured folder: whether the host process is alive,
+`citizen doctor` reports the same ground per configured folder: whether the host process is alive,
 which environment it registered, whether the pointer names that environment and that pid, how long
 it has been unreachable, and how many of its sessions are disconnected.
 
 ## Files an agent sends you
 
-In a Remote Control session, `SendUserFile` uploads nothing. The app keeps the file's path and
-asks the session for the file when you open it, and Claude Code serves it only from under the
-directory the session started in, which is the session's worktree under `spawn: worktree`, or a
-directory added to the session. Most other paths fail in the app with "Couldn't load this file".
-Reports, renders and screenshots are routinely written somewhere else: a temp or scratch
-directory, a task worktree, or the main checkout seen from a session's worktree.
+In Claude Code 2.1.280 a session a host starts has no upload route of its own, so a file the agent
+sends with `SendUserFile` reaches the app as "not delivered: this session is not on a project
+thread", and the iOS app shows its card greyed out. Every host the harness installs therefore
+sets `CLAUDE_CODE_BRIEF_UPLOAD=1`, which its sessions inherit: with it set, the file is uploaded
+with the account the host is signed in to, and the card opens. The variable is undocumented, so a
+client update may drop it. Set it to `""` in a folder's `env` to turn uploads off for that host.
+A host picks up the change only when `install` next rewrites its agent.
+
+A file that is not uploaded is one the app may still ask the session for, and Claude Code serves
+it only from under the directory the session started in, which is the session's worktree under
+`spawn: worktree`, or a directory added to the session. Most other paths fail in the app with
+"Couldn't load this file". Reports, renders and screenshots are routinely written somewhere else:
+a temp or scratch directory, a task worktree, or the main checkout seen from a session's worktree.
 
 The `stage-user-files` policy closes that gap in every Remote Control session the harness hooks
 run in, whether a host here started it or not. Before `SendUserFile` runs, each file from outside
@@ -166,7 +173,7 @@ whose worktree has since been removed cannot be opened afterwards.
   exits non-zero with the fix. Trust is per exact directory: a trusted repository does not trust
   its worktrees, and the failure is a host that exits with
   `Error: Workspace not trusted. Please run \`claude\` in <path> first …` every minute. Run
-  `claude` in the folder once and accept the dialog. `harness trust` is a different gate — it
+  `claude` in the folder once and accept the dialog. `citizen trust` is a different gate — it
   lets the stop-gate hook run a repository's gate — and `install` names it alongside, because a
   folder served unattended usually wants both.
 - **Take over a folder already served from a terminal.** Claude Code allows one server per

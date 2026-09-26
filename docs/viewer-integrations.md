@@ -31,12 +31,12 @@ optional viewer, not the harness. Existing versions without the public client ar
 No upstream source or dependencies are bundled here.
 
 ~~~sh
-harness integrations register --file adapter.json
-harness config set integrations.architecture-viewer.adapter upstream-uml-viewer
-harness config set integrations.architecture-viewer.implementation custom
-harness integrations show architecture-viewer --json
-harness integrations doctor architecture-viewer
-harness config set integrations.architecture-viewer.implementation builtin
+citizen integrations register --file adapter.json
+citizen config set integrations.architecture-viewer.adapter upstream-uml-viewer
+citizen config set integrations.architecture-viewer.implementation custom
+citizen integrations show architecture-viewer --json
+citizen integrations doctor architecture-viewer
+citizen config set integrations.architecture-viewer.implementation builtin
 ~~~
 
 Registration preserves the current selection. show inspects configuration and executable
@@ -73,11 +73,11 @@ rejects `..`, missing paths, and symlinks that escape those roots before the ada
 profile or invokes the viewer.
 
 ~~~sh
-harness viewer validate --input open.json
-harness viewer open --input open.json --implementation custom --adapter upstream-uml-viewer
-harness viewer status --session UUID
-harness viewer replace-document --session UUID --input replacement.json --request-id REQUEST_UUID
-harness viewer close --session UUID
+citizen viewer validate --input open.json
+citizen viewer open --input open.json --implementation custom --adapter upstream-uml-viewer
+citizen viewer status --session UUID
+citizen viewer replace-document --session UUID --input replacement.json --request-id REQUEST_UUID
+citizen viewer close --session UUID
 ~~~
 
 Replacement input includes document and a nonnegative expected_revision from the latest

@@ -1,15 +1,15 @@
 {
-  "name": "agent-harness",
+  "name": "model-citizen",
   "owner": { "name": "Jake Selby", "url": "https://github.com/JakeSelby" },
   "metadata": {
-    "description": "The Agent Harness plugin: its skills, subagent roles, slash commands and output style, installable without a checkout.",
+    "description": "The Model Citizen plugin: its skills, subagent roles, slash commands and output style, installable without a checkout.",
     "version": "0.11.1"
   },
   "plugins": [
     {
-      "name": "agent-harness",
+      "name": "model-citizen",
       "source": "./",
-      "description": "Skills, subagent roles, slash commands and an output style from the Agent Harness checkout, installable on their own. Rules, stances, hooks and the Codex projection need `bin/harness install`; see docs/runtime-installation.md.",
+      "description": "Skills, subagent roles, slash commands and an output style from the Model Citizen checkout, installable on their own. Rules, stances, hooks and the Codex projection need `bin/harness install`; see docs/runtime-installation.md.",
       "category": "workflow"
     }
   ]

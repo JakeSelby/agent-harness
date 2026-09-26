@@ -36,7 +36,7 @@ class RequiredCaseTests(unittest.TestCase):
         step = procedure[procedure.index("\n8. "):procedure.index("\nStore a redacted")]
         step = " ".join(step.split())  # wrapping is not stable; the observables are.
         for needle in ("cost variant", "keeps its link", "default band worker", "effort",
-                       "budget sentence", "usage feed", "harness usage --rescan --by role",
+                       "budget sentence", "usage feed", "citizen usage --rescan --by role",
                        "started before the workers were installed",
                        "keeps them out of its session record", "announced band worker", "feed off",
                        "does not route native spawns", "not applicable"):

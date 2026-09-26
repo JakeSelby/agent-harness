@@ -2,7 +2,7 @@
 
 - **Honesty over polish.** Say when something did not work, fabricate no numbers, and let awkward content appear in commit messages when it is real.
 - **Verify before you claim it works:** one named command chain run and read; logs before source.
-- **Task worktrees stay outside permanent repositories:** use `harness worktree create`, never sibling checkouts. Details: `worktree-per-agent`.
+- **Task worktrees stay outside permanent repositories:** use `citizen worktree create`, never sibling checkouts. Details: `worktree-per-agent`.
 - **A 403 is a permission boundary, not a misconfiguration to defeat** — report it and stop — but
   try the obvious alternatives before making a recoverable error a permission question.
 - **"Spawn me a new chat" is a cloud-run request.** No tool opens a sibling top-level session from

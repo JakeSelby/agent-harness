@@ -18,7 +18,7 @@ Rules are the one primitive with a measurement loop around them, and it runs in 
    instead, and is then dark on purpose rather than by omission.
 3. **Lint enforces the choice.** `check_detectors` in `bin/harness` fails the commit on a rule that
    has neither, so an unmeasured rule cannot arrive quietly.
-4. **The report says what fired.** `harness usage --rules` counts hits per rule over the window,
+4. **The report says what fired.** `citizen usage --rules` counts hits per rule over the window,
    `--by repo` per repository and `--by stance` per `dimension=variant`, so a hit rate can be read
    against the preference variant that was selected at the time. Thresholds, and what the numbers
    do not support, are in [usage](usage.md).
@@ -44,7 +44,7 @@ flowchart TD
 
 Resolution precedence is defaults, user, explicit project, then session. User-level sync projects
 only user defaults; lifecycle hooks resolve invocation overrides without mutating global links.
-`harness stances --json` shows source, behavior and adapter coverage. Native restrictions always
+`citizen stances --json` shows source, behavior and adapter coverage. Native restrictions always
 win. [Custom stance authoring](primitive-authoring.md) defines naming, roots and conflicts.
 
 Rules hold standing behavior. Stances make personal choices explicit and switchable; they are one
@@ -96,7 +96,7 @@ One spawn, drawn top to bottom, before and after that layer:
 
 [Sync and ownership](sync-model.md) explains links, generated files, structural merges,
 configuration homes and rollback. Keep the shared checkout stable and change it through worktrees.
-`harness generate --check` detects stale source projections, and `harness diff` compares installed
+`citizen generate --check` detects stale source projections, and `citizen diff` compares installed
 artifacts against their recorded state. Personal data stays outside the repository. Keep a personal
 writing-voice profile in your preserved personal instructions; see [identity](preferences.md#identity).
 

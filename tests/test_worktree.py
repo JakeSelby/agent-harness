@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -308,6 +309,57 @@ class WorktreeTests(unittest.TestCase):
         (bucket / "existing-task").mkdir()
         with self.assertRaises(SystemExit):
             harness.ensure_worktree_bucket(self.repo)
+
+    def merge_config(self):
+        out = subprocess.run(["git", "-C", str(self.repo), "config", "--get-regexp", r"^merge\."],
+                             capture_output=True, text=True)
+        return out.stdout.splitlines()
+
+    def ship_driver(self):
+        (self.repo / "scripts").mkdir()
+        (self.repo / "scripts" / "bmad_merge_driver.py").write_text("")
+        subprocess.run(["git", "-C", str(self.repo), "add", "scripts"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "driver"], check=True)
+
+    def test_create_registers_the_bmad_merge_drivers_once(self):
+        self.ship_driver()
+        # This test repository stands in for the checkout the running harness lives in.
+        patcher = mock.patch.object(harness, "REPO", self.repo)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
+        expected = sorted(
+            f"merge.{name}.{key} {value}"
+            for name, (description, command) in harness.BMAD_MERGE_DRIVERS.items()
+            for key, value in (("name", description), ("driver", command))
+        )
+        self.assertEqual(sorted(self.merge_config()), expected)
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-two")), 0)
+        self.assertEqual(sorted(self.merge_config()), expected)
+        dest = (self.base / "worktrees" / "project" / "task-one").resolve()
+        self.assertFalse(harness.register_bmad_merge_drivers(dest))
+
+    def test_gitattributes_names_every_registered_driver(self):
+        attributes = (REPO / ".gitattributes").read_text()
+        for name in harness.BMAD_MERGE_DRIVERS:
+            self.assertIn(f"merge={name}", attributes)
+
+    def test_another_repository_shipping_the_script_gets_no_drivers(self):
+        self.ship_driver()
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
+        self.assertEqual(self.merge_config(), [])
+        self.assertFalse(harness.register_bmad_merge_drivers(self.repo))
+
+    def test_a_harness_outside_any_checkout_registers_nothing(self):
+        self.ship_driver()
+        outside = self.base / "not-a-checkout"
+        outside.mkdir()
+        self.assertFalse(harness.register_bmad_merge_drivers(self.repo, outside))
+        self.assertEqual(self.merge_config(), [])
+
+    def test_create_registers_nothing_where_the_driver_is_absent(self):
+        self.assertEqual(harness.cmd_worktree(self.args("create", "task-one")), 0)
+        self.assertEqual(self.merge_config(), [])
 
 
 if __name__ == "__main__":

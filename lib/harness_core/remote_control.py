@@ -22,6 +22,11 @@ DEFAULTS = {"folders": [], "spawn": "worktree", "permission_mode": "default", "k
 # A `folders` entry is a path, or an object naming a path plus what differs for that one host.
 FOLDER_KEYS = ("path", "spawn", "env")
 SYSTEM_PATH = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+# Every host's sessions inherit this. Without it, Claude Code 2.1.280 gives a session a host
+# starts no upload route, so a file the agent sends with SendUserFile reaches the app as "not
+# delivered" and cannot be opened there; with it set, the file is uploaded with the signed-in
+# account. The variable is undocumented. A folder's own `env` wins, so "" turns it off there.
+HOST_ENV = {"CLAUDE_CODE_BRIEF_UPLOAD": "1"}
 # A server that cannot register (folder served from a terminal, no network) exits at once;
 # launchd's ten-second default would hammer the registration endpoint.
 THROTTLE_SECONDS = 60
@@ -111,12 +116,13 @@ def command(folder, opts, claude_bin):
 def plist(folder, opts, claude_bin, home, log_dir):
     name = label(folder)
     path = [str(Path(claude_bin).parent)] + [p for p in SYSTEM_PATH if p != str(Path(claude_bin).parent)]
+    env = dict({"HOME": str(home), "PATH": ":".join(path)}, **HOST_ENV)
+    env.update(folder_options(folder, opts)["env"])
     return {
         "Label": name,
         "ProgramArguments": command(folder, opts, claude_bin),
         "WorkingDirectory": str(folder),
-        "EnvironmentVariables": dict({"HOME": str(home), "PATH": ":".join(path)},
-                                     **folder_options(folder, opts)["env"]),
+        "EnvironmentVariables": env,
         "RunAtLoad": True,
         "KeepAlive": True,
         "ThrottleInterval": THROTTLE_SECONDS,

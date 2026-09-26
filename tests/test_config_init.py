@@ -137,6 +137,11 @@ class ConfigSetTests(TempHome):
         self.assertEqual(harness.cmd_config(args), 0)
         self.assertEqual(json.loads(harness.config_path().read_text())["identity"]["name"], "A Name")
 
+    def test_set_suggests_the_citizen_command_to_apply_it(self):
+        with loud() as out:
+            harness.config_set("stances.commits", "off")
+        self.assertIn("run `citizen sync` to apply it", out.getvalue())
+
 
 class InitTests(TempHome):
     def _answers(self, *values):
