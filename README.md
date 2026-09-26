@@ -224,7 +224,7 @@ Excerpts are shortened; paths and unrelated stances are omitted.
 ```console
 $ bin/harness config set stances.delegation tiered
 stances.delegation = "tiered"  (.../.config/agent-harness/config.json)
-run `harness sync` to apply it
+run `citizen sync` to apply it
 
 $ bin/harness stances --json
 "delegation": {

@@ -92,7 +92,7 @@ and each id is a unit of the `hooks` switch kind in the [selection document](pre
 | `usage-log` | SessionEnd |
 | `validate-plan-card` | PostToolUse on a plan file |
 
-`harness config set hooks.<id> off` switches one off, and it applies from the next event with no
+`citizen config set hooks.<id> off` switches one off, and it applies from the next event with no
 sync: the dispatcher resolves the selection at each event and neither loads nor runs a module
 whose id is `off`. The libraries those modules load (`decisions`, `posture`, `pricing`,
 `telemetry`, `rule-detectors`, `otel-headers`, `filter-lines`) have no id and no switch. Denying
@@ -103,14 +103,14 @@ evasion denials and the Workflow launch guard run with every hook off, so switch
 
 The four core ids enforce rather than assist. A layer may switch one off only when the user
 configuration sets `"core_switches_acknowledged": true`; `config set`, `sync` and
-`harness selection` refuse it otherwise, before anything is written, and so does withdrawing the
+`citizen selection` refuse it otherwise, before anything is written, and so does withdrawing the
 acknowledgement while a core hook is off. The acknowledgement is read from the user configuration
 alone, because a project, session or mode file may carry selection keys only. A hook that meets an
 unacknowledged `off` keeps running, and so does every hook when the selection will not resolve.
 
 Codex's adapter dispatches through the same `lifecycle.py` and reads the same id map. There is no
 Codex-only id; an id whose event Codex does not raise, such as `usage-feed`, simply never runs
-there. `harness catalog` lists each id with kind `hooks`, its source and whether it is core.
+there. `citizen catalog` lists each id with kind `hooks`, its source and whether it is core.
 
 ## Decision providers
 
