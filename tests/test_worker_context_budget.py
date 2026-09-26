@@ -5,6 +5,7 @@ Run: python3 -m unittest discover tests
 import copy
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -54,6 +55,30 @@ def system_text(command):
         return (work_dir(command) / "instructions.md").read_text()
     config = work_dir(command) / "codex" / "config.toml"
     return reconcile.tomlkit.parse(config.read_text())["developer_instructions"]
+
+
+def broken_role_root(case, role, old, new):
+    """A temporary harness root whose copy of `role` has `old` replaced by `new`.
+
+    Every top-level entry and every `primitives` entry but `roles` is a symlink to the checkout;
+    the role tree is a copy, so the edit never reaches a tracked file.
+    """
+    temp = tempfile.TemporaryDirectory()
+    case.addCleanup(temp.cleanup)
+    root = Path(temp.name).resolve()
+    for entry in REPO.iterdir():
+        if entry.name != "primitives":
+            (root / entry.name).symlink_to(entry)
+    (root / "primitives").mkdir()
+    for entry in (REPO / "primitives").iterdir():
+        if entry.name != "roles":
+            (root / "primitives" / entry.name).symlink_to(entry)
+    shutil.copytree(REPO / "primitives" / "roles", root / "primitives" / "roles")
+    path = root / "primitives" / "roles" / (role + ".md")
+    text = path.read_text()
+    case.assertIn(old, text)
+    path.write_text(text.replace(old, new))
+    return root
 
 
 class ResolutionTests(unittest.TestCase):
@@ -134,16 +159,15 @@ class GuardTests(unittest.TestCase):
         self.assertIn("--model <session-model>", reason["permissionDecisionReason"])
 
     def test_a_renamed_skill_directory_refuses_the_spawn_and_fails_the_run(self):
-        role = REPO / "primitives" / "roles" / "design-judge.md"
-        original = role.read_text()
-        role.write_text(original.replace("skills: design-loop", "skills: design-loupe"))
-        try:
+        # The broken role lives in a temporary root that links every other entry back to the
+        # checkout, so the real role file is never rewritten while other processes read it.
+        root = broken_role_root(self, "design-judge", "skills: design-loop", "skills: design-loupe")
+        with patch.object(lifecycle, "ROOT", root):
             self.assertIsNotNone(lifecycle.constrained_role("design-judge"))
-            with self.assertRaisesRegex(ValueError, "unknown skill"):
-                workers.resolution(REPO, copy.deepcopy(CFG), "codex", "design-judge", model="m")
-        finally:
-            role.write_text(original)
-        self.assertIsNone(lifecycle.constrained_role("builder"))
+            self.assertIsNone(lifecycle.constrained_role("builder"))
+        with self.assertRaisesRegex(ValueError, "unknown skill"):
+            workers.resolution(root, copy.deepcopy(CFG), "codex", "design-judge", model="m")
+        self.assertIn("skills: design-loop\n", (REPO / "primitives" / "roles" / "design-judge.md").read_text())
 
 
 class LaunchTests(unittest.TestCase):

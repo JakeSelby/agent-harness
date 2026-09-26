@@ -4,7 +4,7 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "bug": 112,
+    "bug": 115,
     "chore": 82,
     "decision": 14,
     "epic": 22,
@@ -6796,6 +6796,32 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B109.md",
       "parent_bmad_id": "AH-E020",
       "parent_github_number": 875,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B114",
+      "github_number": 931,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/931",
+      "title": "The governance config-set check gates commands that only mention it",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B114.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B113",
+      "github_number": 932,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/932",
+      "title": "test_worker_context_budget rewrites a tracked role file in the real checkout",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B113.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
       "lifecycle": "active",
       "provenance": "authored"
     },
