@@ -110,6 +110,8 @@ CLAUSES = {
     "merge": "merges into the shared branch",
     "delete": "deletes data that cannot be restored",
     "archive": "locks the repository read-only for everyone",
+    "rename": ("moves the repository to a new name, and the old URLs redirect only while no"
+               " repository takes the old name"),
     "database": "drops data that cannot be restored",
     "migration": "changes a database schema in place",
     "infra": "changes live infrastructure",
@@ -569,8 +571,10 @@ def _gh(args):
     verb = ops[1] if len(ops) > 1 else ""
     if (noun, verb) in (("repo", "delete"), ("release", "delete"), ("gist", "delete")):
         return 3, "gh %s %s" % (noun, verb), " ".join(ops[2:3]), "delete"
-    if (noun, verb) in (("repo", "archive"), ("repo", "rename")):
-        return 3, "gh %s %s" % (noun, verb), " ".join(ops[2:3]), "archive"
+    if (noun, verb) == ("repo", "archive"):
+        return 3, "gh repo archive", " ".join(ops[2:3]), "archive"
+    if (noun, verb) == ("repo", "rename"):
+        return 3, "gh repo rename", " ".join(ops[2:3]), "rename"
     if (noun, verb) == ("pr", "merge"):
         return 2, "gh pr merge", " ".join(ops[2:3]), "merge"
     if noun == "api":

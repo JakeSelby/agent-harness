@@ -271,6 +271,7 @@ GRADE3 = [
     ("az group delete --name rg", "az group delete", "rg"),
     ("gh repo delete o/r --yes", "gh repo delete", "o/r"),
     ("gh repo archive o/r", "gh repo archive", "o/r"),
+    ("gh repo rename new-name", "gh repo rename", "new-name"),
     ("gh release delete v1.0.0", "gh release delete", "v1.0.0"),
     ("docker system prune -af", "docker system prune", ""),
     ("docker rm -f app", "docker rm -f", "app"),
@@ -577,6 +578,19 @@ class HookTests(unittest.TestCase):
         _, why = run("gh pr merge 3 --squash", "confirm-writes", "default")
         self.assertIn("merges into the shared branch", why)
         self.assertNotIn("rewrites remote history", why)
+
+    def test_gh_repo_rename_carries_its_own_clause_not_the_archive_one(self):
+        _, why = run("gh repo rename new-name")
+        self.assertEqual(
+            why,
+            "grade 3, irreversible: gh repo rename new-name moves the repository to a new name, "
+            "and the old URLs redirect only while no repository takes the old name "
+            "— this cannot be undone (grade-bash hook, autonomy=execute)")
+        _, why = run("gh repo archive o/r")
+        self.assertEqual(
+            why,
+            "grade 3, irreversible: gh repo archive o/r locks the repository read-only for everyone "
+            "— this cannot be undone (grade-bash hook, autonomy=execute)")
 
     def test_every_family_in_use_has_a_clause(self):
         families = {grader.grade_text(c, CWD)[3] for c, _, _ in GRADE3}
