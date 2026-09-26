@@ -1442,13 +1442,20 @@ def _names_policy(text):
     return bool(POLICY_RE.search(text) or CONFIG_RE.search(text))
 
 
-def gh_text_only(command):
+def _names_config_set(text):
+    return bool(CONFIG_SET_RE.search(text))
+
+
+def gh_text_only(command, names=_names_policy):
     """Whether `command` is the one shape that may mention a policy path as data: exactly one
     `gh issue|pr create|comment|edit|review` command on one line, every policy path in it inside
     a quoted `--body`, `--title`, `-b` or `-t` value or inside the body of one quoted
     here-document fed to `--body-file -` or `-F -`, and nothing else on the line: no separator,
     pipe, background job, substitution, expansion or other redirect. Every other command that
-    names a policy path may run code that writes it, so any doubt is False."""
+    names a policy path may run code that writes it, so any doubt is False.
+
+    `names` says what counts as a mention: a policy path by default, or `_names_config_set` for a
+    `harness config set governance` command, which the same shape carries only as text."""
     lines = command.split("\n")
     parsed = _plain_words(lines[0])
     if parsed is None:
@@ -1471,16 +1478,20 @@ def gh_text_only(command):
             plain[k:k + 2] in (["--body-file", "-"], ["-F", "-"]) for k in range(len(plain))) \
             and "--body-file=-" not in plain:
         return False
+    rest = []
     for k, (w, quoted, marks) in enumerate(words):
-        if not _names_policy(w):
-            continue
         name, eq, _value = w.partition("=")
         if eq and name in GH_TEXT_FLAGS and all(marks[len(name) + 1:]) and not any(
-                marks[:len(name) + 1]) and not _names_policy(name):
+                marks[:len(name) + 1]) and not names(name):
             continue  # `--body='...'`: the value after `=` is quoted
-        if not (quoted and k and words[k - 1][0] in GH_TEXT_FLAGS and not words[k - 1][1]):
+        if quoted and k and words[k - 1][0] in GH_TEXT_FLAGS and not words[k - 1][1]:
+            continue
+        if names(w):
             return False
-    return True
+        rest.append(w)
+    # A mention spread over several words outside the text values, such as an unquoted
+    # `harness config set governance`, is not data either.
+    return not names(" ".join(rest))
 
 
 def _policy_hits(command, found, walked=True):
@@ -1491,7 +1502,8 @@ def _policy_hits(command, found, walked=True):
     the operands of `tee`, `cp`, `mv`, `sed -i` and the like. The whole text, here-document
     bodies included, is then searched for a policy path by name unless the walk decomposed the
     line and it is `gh_text_only`: almost any command may run code that writes a path it only
-    names, so the search fails closed."""
+    names, so the search fails closed. The search for `harness config set governance` takes the
+    same one exemption, judged by the same lexer."""
     paths = [p for entry in found for p in entry[3]]
     hits = sorted(set(filter(None, (guarded(p) if os.path.isabs(p) else unresolved(p)
                                     for p in paths))))
@@ -1508,7 +1520,11 @@ def _policy_hits(command, found, walked=True):
             if match:
                 hits = ["the harness configuration " + match.group(0)
                         + ", which selects the decision provider"]
-    if CONFIG_SET_RE.search(command):
+    try:
+        set_exempt = walked and gh_text_only(command, _names_config_set)
+    except Exception:
+        set_exempt = False
+    if CONFIG_SET_RE.search(command) and not set_exempt:
         hits.append("the governance configuration, through `harness config set`")
     return hits
 
