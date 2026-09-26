@@ -54,6 +54,13 @@ def parse_map(text, side):
         raise Unmergeable("the {} issue map is not valid JSON".format(side))
     if not isinstance(manifest, dict) or not isinstance(manifest.get("items", []), list):
         raise Unmergeable("the {} issue map has no item list".format(side))
+    counters = manifest.get("next_ids", {})
+    if not isinstance(counters, dict):
+        raise Unmergeable("the {} issue map's next_ids is not an object".format(side))
+    for kind, value in counters.items():
+        # `type` rather than isinstance, since JSON true is a Python bool and bool is an int.
+        if type(value) is not int:
+            raise Unmergeable("the {} issue map's next {} ID is not an integer".format(side, kind))
     return manifest
 
 
@@ -92,7 +99,10 @@ def merge_maps(base, ours, theirs, main_is_ours=False):
         other = branch_items.get(bmad_id)
         before = base_items.get(bmad_id)
         if other is None:
-            if before is None or before != item:
+            if before is None:
+                items.append(item)
+            elif before != item:
+                conflicts.append("{} was removed on one side and changed on the other".format(bmad_id))
                 items.append(item)
             continue
         if before is None and other != item:
@@ -125,12 +135,12 @@ def merge_maps(base, ours, theirs, main_is_ours=False):
             counters = dict(main.get(key) or {})
             for kind, value in (branch.get(key) or {}).items():
                 current = counters.get(kind)
-                if not isinstance(current, int) or (isinstance(value, int) and value > current):
+                if current is None or value > current:
                     counters[kind] = value
             merged[key] = counters
         else:
             value = merge_value(key, base.get(key, sync.MISSING), main.get(key, sync.MISSING),
-                                branch.get(key, sync.MISSING), [])
+                                branch.get(key, sync.MISSING), conflicts)
             if value is not sync.MISSING:
                 merged[key] = value
     return merged, conflicts, notices

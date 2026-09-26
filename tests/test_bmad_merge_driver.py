@@ -68,6 +68,12 @@ def filled(item):
     return text[:head_end] + body
 
 
+def isolated_environment():
+    """This environment without the variables a git hook sets, which would point git elsewhere."""
+    return {key: value for key, value in os.environ.items()
+            if key not in {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}}
+
+
 EPIC = item_for("epic", 1, 1)
 STORY = item_for("story", 1, 2, parent=EPIC)
 BASE = manifest_for([EPIC, STORY], {"epic": 2, "story": 2})
@@ -150,6 +156,35 @@ class MergeMapTests(unittest.TestCase):
         self.assertEqual(conflicts, ["AH-S001 title"])
         self.assertEqual(merged["items"][1]["title"], "Main title")
 
+    def test_an_item_removed_on_the_branch_and_changed_on_main_conflicts(self):
+        mine = self.reserved()
+        del mine["items"][1]
+        main = self.reserved()
+        main["items"][1]["lifecycle"] = "completed"
+        merged, conflicts, _ = self.merge(mine, main)
+        self.assertEqual(conflicts, ["AH-S001 was removed on one side and changed on the other"])
+        self.assertEqual(merged["items"][1]["lifecycle"], "completed")
+
+    def test_a_top_level_field_changed_differently_on_both_sides_conflicts(self):
+        mine = self.reserved()
+        mine["repository"] = "someone/fork"
+        main = self.reserved()
+        main["repository"] = "someone/else"
+        merged, conflicts, _ = self.merge(mine, main)
+        self.assertEqual(conflicts, ["repository"])
+        self.assertEqual(merged["repository"], "someone/else")
+
+    def test_a_counter_that_is_not_an_integer_is_a_conflict(self):
+        mine = self.reserved()
+        mine["next_ids"]["story"] = True
+        with tempfile.TemporaryDirectory() as temp:
+            paths = [Path(temp) / name for name in ("base", "ours", "theirs")]
+            for path, manifest in zip(paths, (BASE, mine, self.reserved())):
+                path.write_text(driver.serialize(manifest))
+            with mock.patch("sys.stderr"), mock.patch.object(driver, "rebasing", return_value=False):
+                self.assertEqual(driver.main(["map"] + [str(path) for path in paths]), 1)
+            self.assertEqual(json.loads(paths[1].read_text())["next_ids"]["story"], True)
+
     def test_an_unparsable_side_exits_as_a_conflict_and_leaves_ours(self):
         with tempfile.TemporaryDirectory() as temp:
             paths = [Path(temp) / name for name in ("base", "ours", "theirs")]
@@ -202,11 +237,11 @@ class MergeInRepositoryTests(unittest.TestCase):
 
     def git(self, *args, check=True):
         return subprocess.run(["git", "-C", str(self.repo)] + list(args), check=check,
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, env=isolated_environment())
 
     def tool(self, *args):
         return subprocess.run([sys.executable, "scripts/bmad_issue_sync.py"] + list(args),
-                              cwd=str(self.repo), capture_output=True, text=True)
+                              cwd=str(self.repo), capture_output=True, text=True, env=isolated_environment())
 
     def commit(self, message):
         self.git("add", "-A")
