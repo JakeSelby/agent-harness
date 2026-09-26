@@ -64,6 +64,8 @@ POINT_MODULES = {
     "framework-spawn": None,
     "workflow-launch": None,
     "integration-descriptor": "hooks/tier-agent-spawns",
+    # One row per decision `grade-bash` asks the configured decision provider for.
+    "governance": "hooks/grade-bash",
 }
 
 # 2 KiB. Far past any command or the head of a brief, and small enough that a session's worth of

@@ -9,17 +9,20 @@ the same questions in the same shape:
 
 `Action` carries an action class and, when the caller knows it, the grade `grade-bash.py`
 already assigns a command (0 reversible, 3 irreversible). `counterparty` is the
-`repo:<name>/<branch>` slug the usage ledger already derives, so a policy written against a
-repository and branch matches whatever asks the question.
+`repo:<name>/<branch>` slug `counterparty()` derives, so a policy written against a repository
+and branch matches whatever asks the question.
 
 Two providers ship here. `none` is the default and governs nothing: every action is allowed at
 autonomy level 3. `local` reads a user-level and a per-repository policy file, merges them, and
 resolves a level from the result.
 A provider that answers over a transport lives in `harness_core.decisions` and is imported only
 when a configuration names it; `jev` is the one that ships.
-Nothing in this module reaches the network, and nothing in this module is consulted by a hook
-yet: `grade-bash.py` still answers the permission question on its own. The binding is a later
-story, and until it lands this seam changes no behaviour at all.
+Nothing in this module reaches the network. `grade-bash.py` consults the selected provider for
+every Bash command it would otherwise let through, but only when `governance.provider` is not
+`none`, and it imports this module only then: under `none` the hook's output is exactly what the
+stance alone gives. The binding is tighten-only, so a provider can turn an allow into an ask and
+never an ask into an allow, and a configured provider that raises asks rather than allows.
+`docs/runtime-controls.md` describes the binding from the user's side.
 
 `Decision.outcome` has three values — `allow`, `ask`, `deny`. Neither provider here ever denies;
 `deny` exists because a provider that can refuse must have somewhere to say so, and a consumer
@@ -65,9 +68,10 @@ USER_LAYER = "user policy"
 REPOSITORY_LAYER = "repository policy"
 BUILTIN_SOURCE = "built-in"
 POLICY_KEYS = ("defaults", "pairs", "caps")
-# The point name these rows carry in the decision ledger. Deliberately not in
-# `decisions.POINTS`: that tuple names the hook points whose rows the report expects to exist,
-# and no hook writes these yet.
+# The point name a provider's own outcome rows carry in the decision ledger. Deliberately not in
+# `decisions.POINTS`: that tuple names the hook points whose rows the report expects to exist.
+# The rows `grade-bash.py` writes for each decision it asks a provider for carry its own
+# `governance` point instead.
 LEDGER_POINT = "decision-provider"
 
 
@@ -160,23 +164,53 @@ def _hook_module(name: str, root: Optional[Path] = None):
     return module
 
 
-def counterparty(cwd: Optional[str] = None) -> str:
-    """`repo:<name>/<branch>` for a working directory, the slug the usage ledger already uses.
+UNKNOWN_COUNTERPARTY = "repo:unknown/local"
 
-    Derived by `usage-log.py`'s own git helper and its own expressions, so a policy keyed on a
-    counterparty matches the repository and branch the ledger will later name. Outside a
-    repository, `repo:unknown/local`: a policy must not silently match a directory that only
+
+def counterparty(cwd: Optional[str] = None) -> str:
+    """`repo:<name>/<branch>` for a working directory; `locate` says how it is derived."""
+    return locate(cwd)[0]
+
+
+def locate(cwd: Optional[str] = None) -> Tuple[str, Optional[str]]:
+    """`(counterparty, working-tree root)` for a working directory.
+
+    Derived through `usage-log.py`'s own git helper, as the usage ledger derives its repository
+    and branch, with one difference: `<name>` is the repository's, read from the common git
+    directory, so a linked worktree in a directory named for its task still names the
+    repository it belongs to, and a policy keyed on `repo:<name>` governs every worktree of it.
+    The ledger's `repo` field keeps the worktree directory's name. Outside a repository,
+    `repo:unknown/local` and no root: a policy must not silently match a directory that only
     happens to share a basename with one.
     """
     cwd = str(Path(cwd).expanduser()) if cwd else os.getcwd()
     module = _hook_module("usage-log")
     if module is None or not os.path.isdir(cwd):
-        return "repo:unknown/local"
+        return UNKNOWN_COUNTERPARTY, None
     top = module.git(cwd, "rev-parse", "--show-toplevel")
     if not top:
-        return "repo:unknown/local"
+        return UNKNOWN_COUNTERPARTY, None
+    common = module.git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
     branch = module.git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
-    return "repo:" + os.path.basename(top) + "/" + (branch or "unknown")
+    return "repo:" + repository_name(top, common) + "/" + (branch or "unknown"), top
+
+
+def repository_name(top: str, common: Optional[str]) -> str:
+    """The repository's name: the directory holding its common `.git`, or a bare `<name>.git`.
+
+    Falls back to the working tree's own directory name when the common directory is unknown,
+    as it is under a git too old for `--path-format`.
+    """
+    if common:
+        common = os.path.normpath(common)
+        base = os.path.basename(common)
+        if base == ".git":
+            name = os.path.basename(os.path.dirname(common))
+        else:
+            name = base[:-4] if base.endswith(".git") else base
+        if name:
+            return name
+    return os.path.basename(top.rstrip("/")) or "unknown"
 
 
 def _ledger():
