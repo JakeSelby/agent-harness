@@ -191,9 +191,12 @@ def case_path_map(data):
     the case depends on none of them. A changed file under no case's paths invalidates every case,
     so the map fails closed. The rule and the argument for each entry are in docs/compatibility.md.
     """
-    declared = (data.get("evidence_invalidation") or {}).get("case_paths")
-    if not declared:
+    block = data.get("evidence_invalidation") or {}
+    if "case_paths" not in block:
         return {}
+    # Present but empty or malformed is refused, not read as absent, so a broken declaration
+    # cannot quietly turn per-case scoping off.
+    declared = block["case_paths"]
     version = declared.get("version") if isinstance(declared, dict) else None
     if not isinstance(version, int) or isinstance(version, bool) or version < 1:
         raise ValueError("the case-to-path map requires a positive integer version")

@@ -41,6 +41,14 @@ class CaseMapDeclarationTests(unittest.TestCase):
         self.assertIsNone(compatibility.case_map_identity(data))
         self.assertIsNone(compatibility.stale_cases(data, {"case_map": None}, ["lib/core.py"]))
 
+    def test_a_present_but_empty_map_is_refused_not_read_as_absent(self):
+        for empty in ({}, [], None, 0, ""):
+            with self.subTest(case_paths=empty):
+                data = {"clients": CLIENTS, "required_cases": list(REQUIRED),
+                        "evidence_invalidation": dict(SCOPE, case_paths=empty)}
+                with self.assertRaisesRegex(ValueError, "positive integer version"):
+                    compatibility.case_path_map(data)
+
     def test_a_map_that_is_not_literal_complete_and_versioned_is_refused(self):
         cases = MAP["cases"]
         refused = [
