@@ -5,7 +5,7 @@
 # default configuration, and dry-run the install. It never installs anything itself — the last
 # thing it prints is the command that does. Shape borrowed from pmstack's `install.sh`.
 #
-#   curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/JakeSelby/model-citizen/stable/scripts/install.sh | sh
 #
 # Environment:
 #   HARNESS_CHECKOUT              where the checkout lives      (default ~/repos/agent-harness)
@@ -18,7 +18,7 @@
 # Anything after `sh -s --` is passed through to `harness install --dry-run`.
 set -eu
 
-REPO_URL="${HARNESS_REPO_URL:-https://github.com/JakeSelby/agent-harness.git}"
+REPO_URL="${HARNESS_REPO_URL:-https://github.com/JakeSelby/model-citizen.git}"
 BRANCH="${HARNESS_BRANCH:-stable}"
 CHECKOUT="${HARNESS_CHECKOUT:-$HOME/repos/agent-harness}"
 CONFIG="${HARNESS_HOME:-$HOME}/.config/agent-harness/config.json"

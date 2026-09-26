@@ -1617,7 +1617,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     bootstrap_parser = subparsers.add_parser("bootstrap")
-    bootstrap_parser.add_argument("--repo", default="JakeSelby/agent-harness")
+    bootstrap_parser.add_argument("--repo", default="JakeSelby/model-citizen")
     bootstrap_parser.add_argument(
         "--native-type-projection",
         choices=("labels-only", "native-and-labels"),
