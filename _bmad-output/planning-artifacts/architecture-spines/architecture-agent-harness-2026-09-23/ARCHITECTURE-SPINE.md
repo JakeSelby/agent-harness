@@ -7,7 +7,7 @@ paradigm: 'policy kernel with ports and adapters, enforced at hook ports'
 scope: 'the harness CLI, its primitive catalog, policy kernel, hook dispatch, adapters, measurement, integrations and planning traceability'
 status: final
 created: '2026-09-23'
-updated: '2026-09-25'
+updated: '2026-09-26'
 supersedes: '../architecture-agent-harness-2026-09-19/ARCHITECTURE-SPINE.md'
 binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-27, FR-28, FR-29, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-37, FR-38, FR-39, FR-40, FR-41, FR-42, FR-43, FR-44, FR-45, FR-46, FR-47, FR-48, FR-49, FR-50, FR-51, FR-52, FR-53, FR-54, FR-55, FR-56, FR-57, FR-58, FR-59, FR-60, FR-61, FR-62, FR-63, FR-64, FR-65, FR-66, FR-67, FR-68, FR-69, FR-70]
 sources:
@@ -181,6 +181,9 @@ flowchart TB
     - a change to `bindings.json`, `capabilities.json` or `worker.py` under either adapter invalidates
       every target, because shared code reads them for every runtime;
     - so does a change to any other shared source path.
+  - Within a target, invalidation is per case, through the catalog's versioned `case_paths` map: a change
+    under a path a case names makes that case stale, a change under a path no case names invalidates the
+    whole record, and a record that states no map, or another map, keeps the whole-target rule (#582).
   - The catalog states are `qualified`, `unqualified`, `planned` and `unsupported`.
   - A round runs frozen on a release branch. A model-free smoke tier runs before any native case.
   - Every public surface reads its version and status from the catalog and `product.json`. The plugin
@@ -613,7 +616,6 @@ flowchart LR
 
 - **Mode precedence mechanism.** #557 decides it, within the AD-2 constraint.
 - **Floor semantics for core hook ids.** Plain override holds until the selection model decides.
-- **Per-case evidence invalidation (#582).** Per-runtime scoping (AD-4) holds until then.
 - **Codex prompt-submit and subagent events.** The event table stays as declared until a probe on the
   current client settles the disputed support (AD-7).
 - **The session archive's row format.** The #541 spike decides it, bound by AD-11 and AD-16.
