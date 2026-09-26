@@ -62,6 +62,7 @@ from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
 from harness_core import intents
 from harness_core import changelog as changelog_fragments
+from harness_core import retired_names
 from harness_core import decision as decisions_provider
 # The opt-in block for a provider that leaves the machine. Importing the controls does not
 # import the provider: nothing that reaches the network is loaded unless a config names it.
@@ -2496,6 +2497,7 @@ def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], L
     docs_only = [re.compile(r"(?i)\b" + re.escape(t) + r"\b") for t in docs_ok]
     shapes = [(label, re.compile(p)) for label, p in SHAPE_PATTERNS]
     secrets = [re.compile(p) for p in SECRET_PATTERNS]
+    retired = retired_names.applies(root)
     if not secrets:
         # An empty list would pass every file silently; say so instead, on every lint path.
         hits.append("secrets: pattern list unavailable, claude/hooks/rule-detectors.py did not import")
@@ -2510,6 +2512,9 @@ def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], L
         except (UnicodeDecodeError, OSError):
             continue
         installed = rel.parts[0] in NAME_FORBIDDEN_DIRS or rel.name in NAME_FORBIDDEN_FILES
+        # The project was renamed; retired_names says what stays out and what keeps it on purpose.
+        check_retired = retired and retired_names.allowed_path(rel.as_posix()) is None
+        released = retired_names.released_lines(rel.as_posix(), text.splitlines()) if check_retired else set()
         for n, line in enumerate(text.splitlines(), 1):
             low = line.lower()
             for term in everywhere:
@@ -2529,6 +2534,9 @@ def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], L
             for rx in secrets:
                 if rx.search(line):
                     hits.append(f"{rel}:{n}: secret pattern {rx.pattern}")
+            if check_retired and n not in released:
+                for label in retired_names.line_findings(line):
+                    hits.append(f"{rel}:{n}: retired-name: the old project {label}")
     return hits
 
 

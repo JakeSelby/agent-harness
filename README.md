@@ -4,11 +4,11 @@
 
 Formerly Agent Harness.
 
-[![CI](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml)
+[![CI](https://github.com/JakeSelby/model-citizen/actions/workflows/ci.yml/badge.svg)](https://github.com/JakeSelby/model-citizen/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-[![Reference](https://img.shields.io/badge/reference-agent--harness.jakeselby.com-d97706.svg)](https://agent-harness.jakeselby.com)
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/JakeSelby/agent-harness?utm_source=oss&utm_medium=github&utm_campaign=JakeSelby%2Fagent-harness&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+[![Reference](https://img.shields.io/badge/reference-model--citizen.dev-d97706.svg)](https://model-citizen.dev)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/JakeSelby/model-citizen?utm_source=oss&utm_medium=github&utm_campaign=JakeSelby%2Fmodel-citizen&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 ## The control plane for your coding agents, however you run them.
 
@@ -147,7 +147,7 @@ and previews the install. It installs nothing itself; the last thing it prints i
 does:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/JakeSelby/model-citizen/stable/scripts/install.sh | sh
 ```
 
 Read [the script](scripts/install.sh) before you pipe it, and
@@ -159,7 +159,7 @@ and a `git pull` on it moves you to the next one; `main`, which this page shows,
 trunk and can be ahead of any release:
 
 ```sh
-git clone --branch stable https://github.com/JakeSelby/agent-harness.git ~/repos/agent-harness
+git clone --branch stable https://github.com/JakeSelby/model-citizen.git ~/repos/agent-harness
 cd ~/repos/agent-harness
 
 bin/harness config set claude.manage true
@@ -332,7 +332,7 @@ and the [sync model](docs/sync-model.md).
   [workspaces](docs/workspaces.md) and [always-on Remote Control servers](docs/remote-control.md)
 - [Bidirectional task continuation](docs/task-continuation.md) and the
   [BMad integration](docs/bmad.md)
-- [Contributing](CONTRIBUTING.md) and the [public reference](https://agent-harness.jakeselby.com)
+- [Contributing](CONTRIBUTING.md) and the [public reference](https://model-citizen.dev)
 
 Model Citizen uses the open-source [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD)
 to structure public product planning, architecture, delivery and release readiness. BMad is a

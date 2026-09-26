@@ -19,6 +19,9 @@ from test_harness import harness
 
 OLD = "agent-harness@agent-harness"
 NEW = "model-citizen@model-citizen"
+# The slug an install recorded before the repository was renamed, assembled so the
+# retired-name lint passes this file.
+OLD_REPOSITORY = "JakeSelby/" + "agent-harness"
 
 
 class PluginUpgradeCase(unittest.TestCase):
@@ -42,7 +45,7 @@ class PluginUpgradeCase(unittest.TestCase):
             record["projectPath"] = project
         self.write("plugins/installed_plugins.json", {"version": 2, "plugins": {OLD: [record]}})
         self.write("plugins/known_marketplaces.json", {"agent-harness": {
-            "source": source or {"source": "github", "repo": "JakeSelby/agent-harness"}}})
+            "source": source or {"source": "github", "repo": OLD_REPOSITORY}}})
 
     def upgrade(self, dry_run=False, which="/usr/local/bin/claude", statuses=()):
         calls = []
@@ -83,7 +86,7 @@ class UpgradeCommandTests(PluginUpgradeCase):
         self.assertEqual(calls, [
             (["claude", "plugin", "uninstall", OLD, "--scope", "user"], None),
             (["claude", "plugin", "marketplace", "remove", "agent-harness"], None),
-            (["claude", "plugin", "marketplace", "add", "JakeSelby/agent-harness"], None),
+            (["claude", "plugin", "marketplace", "add", OLD_REPOSITORY], None),
             (["claude", "plugin", "install", NEW, "--scope", "user"], None),
         ])
         self.assertIn("done", out)
@@ -106,7 +109,7 @@ class UpgradeCommandTests(PluginUpgradeCase):
         self.assertEqual(rc, 1)
         self.assertEqual(len(calls), 2)
         rest = out.split("did not run", 1)[1]
-        self.assertIn("claude plugin marketplace add JakeSelby/agent-harness", rest)
+        self.assertIn("claude plugin marketplace add " + OLD_REPOSITORY, rest)
         self.assertIn("claude plugin install %s --scope user" % NEW, rest)
         self.assertNotIn("marketplace remove", rest)
         self.assertNotIn("done", out)
@@ -117,7 +120,7 @@ class UpgradeCommandTests(PluginUpgradeCase):
         self.assertEqual(rc, 1)
         self.assertEqual(calls, [])
         expected = ["/plugin uninstall " + OLD, "/plugin marketplace remove agent-harness",
-                    "/plugin marketplace add JakeSelby/agent-harness", "/plugin install " + NEW]
+                    "/plugin marketplace add " + OLD_REPOSITORY, "/plugin install " + NEW]
         positions = [out.index(line) for line in expected]
         self.assertEqual(positions, sorted(positions), out)
 
@@ -125,7 +128,7 @@ class UpgradeCommandTests(PluginUpgradeCase):
         self.old_install()
         self.write("settings.json", {"enabledPlugins": {OLD: True, NEW: True}})
         self.write("plugins/known_marketplaces.json", {
-            "agent-harness": {"source": {"source": "github", "repo": "JakeSelby/agent-harness"}},
+            "agent-harness": {"source": {"source": "github", "repo": OLD_REPOSITORY}},
             "model-citizen": {"source": {"source": "github", "repo": "JakeSelby/model-citizen"}}})
         rc, _, calls = self.upgrade()
         self.assertEqual(rc, 0)

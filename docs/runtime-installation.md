@@ -60,7 +60,7 @@ the recovery manifest. It does not overwrite even a dangling user symlink to res
 and is safe to run twice. Its shape is borrowed from pmstack's `install.sh`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/JakeSelby/model-citizen/stable/scripts/install.sh | sh
 ```
 
 1. **Requirements.** `git`, `python3` 3.9 or newer, macOS or Linux. A missing one is a single line
@@ -94,7 +94,7 @@ have to become that checkout, so the script clones one instead.
 Claude Code can load the projected primitives without a checkout. In a session:
 
 ```
-/plugin marketplace add JakeSelby/agent-harness
+/plugin marketplace add JakeSelby/model-citizen
 /plugin install model-citizen@model-citizen
 ```
 
@@ -125,12 +125,12 @@ CLI on your PATH it prints the in-session steps instead.
 
 A plugin-only install has no `citizen` command, so run the steps in a session. The `add` line
 takes the source you first added the marketplace from; if that was a fork or a local path, add
-that instead of `JakeSelby/agent-harness`:
+that instead of `JakeSelby/model-citizen`:
 
 ```
 /plugin uninstall agent-harness@agent-harness
 /plugin marketplace remove agent-harness
-/plugin marketplace add JakeSelby/agent-harness
+/plugin marketplace add JakeSelby/model-citizen
 /plugin install model-citizen@model-citizen
 ```
 

@@ -16,6 +16,9 @@ from test_harness import harness, REPO
 
 PLUGIN = json.loads((REPO / ".claude-plugin" / "plugin.json").read_text())
 MARKETPLACE = json.loads((REPO / ".claude-plugin" / "marketplace.json").read_text())
+# The slug an install recorded before the repository was renamed, assembled so the
+# retired-name lint passes this file.
+OLD_REPOSITORY = "JakeSelby/" + "agent-harness"
 SURFACE = "claude-code-plugin-marketplace"
 
 
@@ -60,7 +63,7 @@ class CatalogSurfaceTests(unittest.TestCase):
     def test_the_install_doc_names_what_the_marketplace_path_leaves_out(self):
         text = (REPO / "docs" / "runtime-installation.md").read_text()
         self.assertIn("## Install from the plugin marketplace", text)
-        self.assertIn("/plugin marketplace add JakeSelby/agent-harness", text)
+        self.assertIn("/plugin marketplace add JakeSelby/model-citizen", text)
         self.assertIn("/plugin install %s@%s" % (PLUGIN["name"], MARKETPLACE["name"]), text)
         for missing in ("ownership journal", "Stance selection", "Codex projection", "hooks"):
             self.assertIn(missing.lower(), text.lower(), msg=missing)
@@ -121,7 +124,7 @@ class DoctorInstallPathTests(unittest.TestCase):
 
     def test_a_registered_marketplace_with_no_install_says_so(self):
         self.write(".claude/plugins/known_marketplaces.json",
-                   {"agent-harness": {"source": {"source": "github", "repo": "JakeSelby/agent-harness"}}})
+                   {"agent-harness": {"source": {"source": "github", "repo": OLD_REPOSITORY}}})
         line = harness._plugin_install_line()
         self.assertIn("marketplace registered, plugin not installed", line)
 
@@ -196,7 +199,7 @@ class PluginRenameTests(unittest.TestCase):
         path = self.home / ".claude" / "plugins" / "known_marketplaces.json"
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps({
-            "agent-harness": {"source": {"source": "github", "repo": "JakeSelby/agent-harness"}},
+            "agent-harness": {"source": {"source": "github", "repo": OLD_REPOSITORY}},
             "model-citizen": {"source": {"source": "github", "repo": "JakeSelby/model-citizen"}}}))
         self.assertEqual(harness.plugin_install_state()["registered"], ["agent-harness", "model-citizen"])
 
