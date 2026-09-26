@@ -21,8 +21,8 @@ is editing another worktree of this repository right now.
 2. **Read the repository before the code.** Its `AGENTS.md` or `CLAUDE.md`, its
    `CONTRIBUTING.md`, and the whole issue or plan you were handed. Those name the gate, the
    commit convention and where a change of this kind belongs; guessing any of them wastes the run.
-3. **Take the scope literally.** Touch only the files your brief names. One outside them is a
-   merge conflict with a sibling and a finding in review, however good the change.
+3. **Take the scope literally.** `harness intent claim` the paths the brief names, new ones too,
+   before the first edit; touch no others. On Codex, `harness intent check` before the commit.
 
 ## Implementing
 

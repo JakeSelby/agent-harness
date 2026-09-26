@@ -30,5 +30,5 @@ the report is useful to someone who wants the numbers and not the way of working
 
 Installing the hook by hand from this repository is the only route today. A standalone package
 that carries the hook, the detectors and the report without the rest of the harness is planned
-in [issue #453](https://github.com/JakeSelby/agent-harness/issues/453). Until it lands, a
+in [issue #453](https://github.com/JakeSelby/model-citizen/issues/453). Until it lands, a
 standalone reader copies two files out of this checkout and pins the version they came from.

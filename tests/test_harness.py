@@ -714,6 +714,99 @@ class DetectorCoverageTests(TempHome):
         self.assertTrue(any("rule-detectors.py" in h for h in hits), msg=str(hits))
 
 
+class RetiredNameLintTests(TempHome):
+    """The old brand, slug and site host fail outside the dated areas and the "Formerly" lines.
+
+    The retired strings are assembled at run time, so this file passes the rule it tests.
+    """
+    OLD = "agent" + "-harness"
+    BRAND = "Agent" + " Harness"
+    SLUG = "Jake" + "Selby/" + OLD
+    HOST = OLD + ".jake" + "selby.com"
+
+    def _fixture(self, this_repository=True):
+        root = Path(self.tmp.name) / "repo"
+        root.mkdir()
+        if this_repository:
+            (root / "primitives" / "roles").mkdir(parents=True)
+        return root
+
+    def _write(self, root, rel, text):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text + "\n")
+        return path
+
+    def _retired(self, root, *rels):
+        return [h for h in harness.lint_files(root, [root / r for r in rels], NO_TERMS) if "retired-name" in h]
+
+    def test_each_retired_name_fails_a_living_file(self):
+        root = self._fixture()
+        self._write(root, "README.md", "\n".join([
+            "Welcome to " + self.BRAND + ".",
+            "Clone https://github.com/" + self.SLUG + ".git to start.",
+            "Read https://" + self.HOST + "/docs/ for the reference.",
+            "utm_campaign=" + self.SLUG.replace("/", "%2F"),
+            "Upper case slug: " + self.SLUG.upper()]))
+        hits = self._retired(root, "README.md")
+        self.assertEqual([h.split(":")[1] for h in hits], ["1", "2", "3", "4", "5"], hits)
+        text = " ".join(hits)
+        for label in ("brand", "repository slug", "site host"):
+            self.assertIn("the old project " + label, text)
+
+    def test_the_new_names_and_on_disk_names_pass(self):
+        root = self._fixture()
+        self._write(root, "docs/install.md", "\n".join([
+            "Clone https://github.com/" + "Jake" + "Selby/model-citizen and read https://model-citizen.dev.",
+            "Config lives in ~/.config/" + self.OLD + "/config.json; local plans in ." + self.OLD + "/plans.",
+            "The launchd label is com.example." + self.OLD + ".observer.",
+            "A sibling repository, " + self.SLUG + "-site, is a different name.",
+            "Every coding tool needs an agent harness of some kind."]))
+        self.assertEqual(self._retired(root, "docs/install.md"), [])
+
+    def test_formerly_lines_pass_and_the_rest_of_the_file_does_not(self):
+        root = self._fixture()
+        self._write(root, "README.md", "Formerly " + self.BRAND + ".\n\n" + self.BRAND + " is here.")
+        hits = self._retired(root, "README.md")
+        self.assertEqual(len(hits), 1, hits)
+        self.assertTrue(hits[0].startswith("README.md:3:"), hits)
+
+    def test_dated_areas_keep_the_old_names(self):
+        root = self._fixture()
+        line = "See https://github.com/" + self.SLUG + "/issues/1 on " + self.HOST + "."
+        dated = ["_bmad-output/issue-map.json", "_bmad-output/implementation-artifacts/X-1.md",
+                 "docs/plans/p.md", ".agent-harness/handoffs/h.md", "compatibility/evidence/e.json",
+                 "docs/spikes/2026-09-22-note.md", "tests/test_bmad_fixture.py"]
+        for rel in dated:
+            self._write(root, rel, line)
+        self._write(root, "docs/spikes/note.md", line)
+        hits = self._retired(root, *dated + ["docs/spikes/note.md"])
+        self.assertTrue(hits, "the undated file must still fail")
+        self.assertTrue(all(h.startswith("docs/spikes/note.md:") for h in hits), hits)
+
+    def test_only_the_changelogs_released_sections_keep_the_old_names(self):
+        root = self._fixture()
+        self._write(root, "CHANGELOG.md", "\n".join([
+            "# Changelog", "",
+            "## [Unreleased]", "", "- Moved to " + self.HOST + ".", "",
+            "## [0.13.1] \u2014 2026-09-24", "", "- Released as " + self.BRAND + ".", "",
+            "## [0.1.0] \u2014 2026-01-02", "", "- First cut of " + self.SLUG + "."]))
+        hits = self._retired(root, "CHANGELOG.md")
+        self.assertEqual([h.split(":")[1] for h in hits], ["5"], hits)
+
+    def test_another_repository_is_not_held_to_this_projects_rename(self):
+        root = self._fixture(this_repository=False)
+        self._write(root, "README.md", "Built on " + self.BRAND + ": https://github.com/" + self.SLUG)
+        self.assertEqual(self._retired(root, "README.md"), [])
+
+    def test_the_staged_path_applies_the_rule_too(self):
+        root = self._fixture()
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        self._write(root, "notes.md", "Moved from " + self.HOST + ".")
+        subprocess.run(["git", "-C", str(root), "add", "notes.md"], check=True)
+        self.assertTrue(any("retired-name" in h for h in harness.lint_staged(root)))
+
+
 class CliTests(unittest.TestCase):
     def test_version_and_help(self):
         out = subprocess.run([sys.executable, str(REPO / "bin" / "harness"), "--version"], capture_output=True, text=True)
