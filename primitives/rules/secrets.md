@@ -2,7 +2,7 @@
 
 - **Never put tokens, passwords, API keys, or secrets in any file that is committed to source
   control** — comments, docstrings, commit messages, story files and planning artifacts alike.
-- **Read credentials from the environment, never inline.**
+- **Read credentials from the environment, a cloud CLI profile (`--profile`) or a secret store; never inline, never a pasted key.**
 - **On finding a secret in source control, stop.** Commit nothing on top; tell the user immediately
   so the credential is rotated first; then remove it, then rewrite history if warranted.
 - **Add a secret-bearing file to `.gitignore` before creating it.** An already-tracked file stays
