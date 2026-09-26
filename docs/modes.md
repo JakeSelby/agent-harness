@@ -70,7 +70,8 @@ Beside `schema_version` and `description` it may carry selection kinds only: no 
 `sources`, identity, permissions or other user-owned key. Each unit it names must be installed.
 A name two roots both define is refused. `harness config set mode`, `harness selection` and
 `harness sync` all refuse a mode that breaks one of these rules before anything is written; a hook
-runs without it. A mode that switches off a core hook (`brief-guard`, `grade-bash`,
-`neutralize-tool-output` or `stop-gate`) is refused the way any layer that does is, unless
-`config.json` sets `core_switches_acknowledged` to `true`: those three commands refuse it, and a
-hook applies the rest of the mode with that core hook still on.
+runs without it. A mode may switch off a core hook (`brief-guard`, `grade-bash`,
+`neutralize-tool-output` or `stop-gate`) only when `config.json` sets
+`core_switches_acknowledged` to `true`, as any layer may. With it set, the mode applies with that
+core hook off. Without it, those three commands refuse the mode, and a hook applies the rest of the
+mode with that core hook still on.
