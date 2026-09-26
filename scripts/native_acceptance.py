@@ -3198,11 +3198,15 @@ def build_record(items):
 def scoped(client, data):
     """State the path set whose change invalidates this record, so a reviewer need not derive it.
 
-    The catalog grants the scope; a record that claims any other one is rejected. See
-    docs/compatibility.md.
+    The catalog grants the scope; a record that claims any other one is rejected. The record also
+    names the case-to-path map it assumed, which is what lets a later change invalidate only the
+    cases it touches. See docs/compatibility.md.
     """
     entry = dict(CLIENTS[client], id=client)
     data["invalidation_scope"] = compatibility.evidence_scope(catalog(), entry)
+    identity = compatibility.case_map_identity(catalog())
+    if identity is not None:
+        data["case_map"] = identity
     return data
 
 
