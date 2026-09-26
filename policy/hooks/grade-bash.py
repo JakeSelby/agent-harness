@@ -1025,11 +1025,50 @@ def _decision_module():
 
 
 def _resolve(target, cwd):
-    """`target` as an absolute path, relative to `cwd`, with `~` and `$HOME` expanded."""
+    """`target` as an absolute path, relative to `cwd`, with `~` and `$HOME` expanded; None when
+    `cwd` is unknown (None) and `target` is relative."""
     path = _expand(target)
     if not path:
         return cwd
-    return path if os.path.isabs(path) else os.path.normpath(os.path.join(cwd or os.getcwd(), path))
+    if os.path.isabs(path):
+        return path
+    return None if cwd is None else os.path.normpath(os.path.join(cwd, path))
+
+
+# A directory change is statically known only when its target is a literal path: nothing the
+# shell expands at run time. `~` and `~/…` are the one expansion allowed, being the user's home.
+DYNAMIC_CHARS = set("$`*?[{") | {"\\"}
+
+
+def _static_dir(target, cwd):
+    """The directory a `cd`, `pushd` or `-C` to `target` reaches, or None when it cannot be known
+    without running the line: `-`, a variable, a substitution, `~user`, a glob."""
+    if (not target or target.startswith("-") or PLACEHOLDER in target
+            or any(c in DYNAMIC_CHARS for c in target)
+            or (target.startswith("~") and target != "~" and not target.startswith("~/"))):
+        return None
+    return _resolve(target, cwd)
+
+
+def _isolating(text):
+    """Whether the line has a subshell, a pipeline or a background job, where a `cd` does not
+    carry to the commands after it."""
+    try:
+        lex = shlex.shlex(" ; ".join(text.split("\n")), posix=True, punctuation_chars=True)
+        lex.commenters = ""
+        lex.whitespace_split = True
+        for token in lex:
+            if token and set(token) <= set("();|&<>"):
+                # A punctuation run such as `);` or `|&`: drop the two list operators and the
+                # descriptor redirections, and look for what is left.
+                rest = token.replace("&&", "").replace("||", "")
+                for redirect in (">&", "<&", "&>"):
+                    rest = rest.replace(redirect, "")
+                if any(c in rest for c in "()|&"):
+                    return True
+        return False
+    except ValueError:
+        return True
 
 
 def _user_policy(name=POLICY_NAME):
@@ -1068,13 +1107,19 @@ def is_policy_file(path):
 
 
 def _git_dir(args, cwd):
-    """(the directory a git command runs in, after each `-C <dir>`, and its subcommand)."""
+    """(the directory a git command runs in, after each `-C <dir>`, and its subcommand). The
+    directory is None when a `-C` is not a literal path, or `--git-dir` or `--work-tree` points
+    the command at a repository its directory does not name."""
     i = 0
     while i < len(args):
         a = args[i]
+        if a.startswith(("--git-dir=", "--work-tree=")):
+            cwd = None
         if a in GIT_VALUE_GLOBALS and i + 1 < len(args):
             if a == "-C":
-                cwd = _resolve(args[i + 1], cwd)
+                cwd = _static_dir(args[i + 1], cwd)
+            elif a in ("--git-dir", "--work-tree"):
+                cwd = None
             i += 2
             continue
         if a.startswith("-"):
@@ -1092,7 +1137,7 @@ def _written(prog, args, targets, cwd):
         paths.extend(a.split("=", 1)[1] for a in args if a.startswith("of="))
     if prog in IN_PLACE and (short(args, "i") or has(args, "--in-place")):
         paths.extend(operands(args))
-    return [_resolve(p, cwd) for p in paths]
+    return [r for r in (_resolve(p, cwd) for p in paths) if r]
 
 
 def _governed(tokens, cwd, depth):
@@ -1100,7 +1145,7 @@ def _governed(tokens, cwd, depth):
 
     Wrappers, runners, `sudo` and a shell's `-c` text are looked through, as the grader looks
     through them, and the inner command is governed at the higher of the two grades."""
-    grade, verb, _target, family = grade_tokens(list(tokens), cwd, depth)
+    grade, verb, _target, family = grade_tokens(list(tokens), cwd or "", depth)
     body, targets = _redirects(list(tokens))
     while body and ASSIGN_RE.match(body[0]):
         body = body[1:]
@@ -1112,6 +1157,9 @@ def _governed(tokens, cwd, depth):
     inner = None
     if depth < MAX_DEPTH:
         if prog in WRAPPERS:
+            if prog == "env" and any(a in ("-C", "--chdir") or a.startswith("--chdir=")
+                                     for a in args):
+                cwd = None  # `env -C` moves the inner command; no literal is trusted here
             rest = strip_options(args, WRAPPERS[prog])
             while rest and ASSIGN_RE.match(rest[0]):
                 rest = rest[1:]
@@ -1147,10 +1195,16 @@ def _governed(tokens, cwd, depth):
     return [(SHELL, grade, cwd, written)]
 
 
-def governed_text(cmd, cwd, depth=0):
+def governed_text(cmd, cwd, depth=0, isolated=False):
     """[(action class, grade, directory, paths written)] for every simple command in `cmd`, in
-    order, or None when the text does not decompose. A `cd <dir>` moves the directory of the
-    commands after it, so `cd ../other && git push` is a push from `../other`."""
+    execution order, or None when the text does not decompose.
+
+    The directory is the one in effect when the command runs, walking the line as the shell
+    would: a substitution is governed with the directory of the segment it sits in, so
+    `cd ../other && echo "$(git push)"` pushes from `../other`. A directory is None, which
+    `govern` names `repo:unknown/local`, from the first change that cannot be known without
+    running the line: a `cd` or `pushd` to anything but a literal path, `popd`, and any `cd` in a
+    subshell, a substitution, a pipeline or a background job, where it does not carry over."""
     if depth >= MAX_DEPTH:
         return None
     text, _bodies = normalize(cmd)
@@ -1158,25 +1212,38 @@ def governed_text(cmd, cwd, depth=0):
     parts = segments(stripped) if stripped is not None else None
     if parts is None:
         return None
+    isolated = isolated or _isolating(stripped)
+    queue = list(inners)
     found = []
-    for inner in inners:
-        found.extend(governed_text(inner, cwd, depth + 1)
-                     or [(SHELL, _scan(inner)[0], cwd, [])])
+
+    def substitutions(count, where):
+        for _ in range(min(count, len(queue))):
+            inner = queue.pop(0)
+            found.extend(governed_text(inner, where, depth + 1, isolated=True)
+                         or [(SHELL, _scan(inner)[0], where, [])])
+
     here = cwd
     for tokens in parts:
+        substitutions(sum(t.count(PLACEHOLDER) for t in tokens), here)
         body, _targets = _redirects(list(tokens))
         while body and ASSIGN_RE.match(body[0]):
             body = body[1:]
-        if body and body[0] == "cd":
-            ops = operands(body[1:])
-            moved = here if ops[:1] == ["-"] else _resolve(ops[0] if ops else "~", here)
-            # A `cd` that also writes, through a redirect, is governed where it runs.
-            cd_grade = grade_tokens(list(tokens), here, depth)[0]
-            if cd_grade > 0:
-                found.append((SHELL, cd_grade, here, _written("cd", [], _targets, here)))
-            here = moved
+        head = body[0].rpartition("/")[2] if body else ""
+        if head in ("cd", "pushd", "popd"):
+            # A directory change that also writes, through a redirect, is governed where it runs.
+            moved_grade = grade_tokens(list(tokens), here or "", depth)[0]
+            if moved_grade > 0:
+                found.append((SHELL, moved_grade, here, _written(head, [], _targets, here)))
+            args = body[1:]
+            if isolated or head == "popd" or any(a.startswith("-") for a in args) or len(args) > 1:
+                here = None
+            elif head == "pushd" and not args:
+                here = None  # swaps with the directory stack, which this walk does not hold
+            else:
+                here = _static_dir(args[0] if args else "~", here)
             continue
         found.extend(_governed(tokens, here, depth))
+    substitutions(len(queue), None)  # any the segments did not account for: fail closed
     return found
 
 
@@ -1260,10 +1327,15 @@ def govern(command, cwd, grade, variant, event=None, runtime=""):
         for action_class, level_grade, where, _written_paths in found:
             if level_grade <= 0:
                 continue
-            if where not in places:
-                places[where] = decision.locate(where)
-            slug, top = places[where]
-            root = top or where
+            if where is None:
+                # A directory the walk could not know: no pair names this counterparty, so the
+                # class default governs, read from the policies the hook's own directory sees.
+                slug, root = decision.UNKNOWN_COUNTERPARTY, home_root
+            else:
+                if where not in places:
+                    places[where] = decision.locate(where)
+                slug, top = places[where]
+                root = top or where
             if root not in providers:
                 providers[root] = decision.select_provider(config, root=root, variant=variant)
             answer = providers[root].decide(decision.Action(action_class, level_grade), slug)

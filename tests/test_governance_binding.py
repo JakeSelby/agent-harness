@@ -309,6 +309,75 @@ class Counterparty(Home):
         self.assertEqual(decision.repository_name("/w/task", ""), "task")
 
 
+class UnknownDirectory(Home):
+    """A segment after a directory change the walk cannot know is governed as
+    `repo:unknown/local`, so no pair of the starting repository applies to it."""
+
+    def setUp(self):
+        super().setUp()
+        self.configure("local")
+        self.other = make_repo(self.home / "other")
+        # The starting repository allows a push; the class default and `other` ask for one.
+        self.user_policy({"defaults": {"coding.git_push": 2},
+                          "pairs": {"repo:alpha": {"coding.git_push": 3}}})
+
+    def places(self, command):
+        return [(entry[0], entry[2]) for entry in grader.governed_text(command, str(self.repo))
+                if entry[0] == "coding.git_push"]
+
+    def assert_unknown(self, command):
+        self.assertEqual(self.places(command), [("coding.git_push", None)], command)
+        answer, reason = self.bash(command)
+        self.assertEqual(answer, "ask", command)
+        self.assertIn("repo:unknown/local", reason, command)
+
+    def test_the_starting_repository_allows_a_plain_push(self):
+        self.assertIsNone(self.bash("git push")[0])
+
+    def test_regression_cd_dash_is_unknown(self):
+        self.assert_unknown("cd - && git push")
+
+    def test_regression_a_substitution_runs_in_the_directory_its_segment_has(self):
+        command = 'cd ../other && echo "$(git push)"'
+        self.assertEqual(self.places(command), [("coding.git_push", str(self.other))])
+        answer, reason = self.bash(command)
+        self.assertEqual(answer, "ask")
+        self.assertIn("repo:other/main", reason)
+        self.assertNotIn("repo:alpha", reason)
+
+    def test_a_variable_target_is_unknown(self):
+        self.assert_unknown('cd "$D" && git push')
+
+    def test_pushd_to_a_literal_repository_resolves_and_popd_is_unknown(self):
+        answer, reason = self.bash("pushd ../other && git push")
+        self.assertEqual(answer, "ask")
+        self.assertIn("repo:other/main", reason)
+        self.assert_unknown("popd && git push")
+        self.assert_unknown("pushd && git push")
+
+    def test_a_pushd_to_a_literal_that_is_no_repository_is_unknown(self):
+        (self.home / "plain").mkdir()
+        answer, reason = self.bash("pushd ../plain && git push")
+        self.assertEqual(answer, "ask")
+        self.assertIn("repo:unknown/local", reason)
+
+    def test_a_cd_in_a_subshell_pipeline_or_substitution_is_unknown(self):
+        self.assert_unknown("(cd ../other && true) ; git push")
+        self.assert_unknown("cd ../other | true; git push")
+        self.assert_unknown("echo $(cd ../other && git push)")
+
+    def test_a_dynamic_git_dash_c_or_env_chdir_is_unknown(self):
+        self.assert_unknown("git -C $(pwd) push")
+        self.assert_unknown("env -C ../other git push")
+        self.assert_unknown("git --git-dir=../other/.git push")
+
+    def test_a_literal_cd_still_resolves(self):
+        answer, reason = self.bash("cd %s && git push" % self.other)
+        self.assertEqual(answer, "ask")
+        self.assertIn("repo:other/main", reason)
+        self.assertIsNone(self.bash("cd %s && git push" % self.repo)[0])
+
+
 class FailClosed(Home):
     """AC 7: a configured provider that raises asks, or denies with a code, and names the error."""
 

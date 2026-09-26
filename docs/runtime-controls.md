@@ -314,9 +314,12 @@ its output is exactly what the stance alone gives.
   `sudo` and a shell's `-c` text are looked through as the grader looks through them. A
   read-only command, grade 0, is not put to the provider, since no level asks at grade 0.
 - **Counterparty.** Each command's counterparty is the repository and branch of the directory it
-  runs in: a `git -C <dir>` moves it for that command, and a `cd <dir>` earlier in the line moves
-  it for the commands after it. The repository policy read is that repository's own
-  `.agent-harness/governance.json`.
+  runs in: a `git -C <dir>` moves it for that command, and a `cd <dir>` or `pushd <dir>` earlier
+  in the line moves it for the commands after it, substitutions included. The repository policy
+  read is that repository's own `.agent-harness/governance.json`. A directory is trusted only when
+  every change before the command is a literal path; after `cd -`, `cd "$X"`, `popd`, a `cd` in a
+  subshell, substitution, pipeline or background job, `env -C` or `--git-dir`, the counterparty
+  is `repo:unknown/local`, which no pair names, so the class default governs.
 - **Tighten-only.** The provider is asked with the command's grade, and the strictest answer
   across the segments stands. It is never asked about a command the stance already gates, so it
   can add a prompt and never remove one. An `ask` is an ask in a prompting mode and, in `auto` and
