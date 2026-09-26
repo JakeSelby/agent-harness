@@ -309,6 +309,7 @@ development_status:
   ah-c073-record-the-bmad-ticketing-adoption-epic-and-its: done
 
   ah-e020-rename-the-product-to-model-citizen: in-progress
+  ah-b109-bmad-issue-sync-py-new-and-apply-fail-with-http: ready-for-dev
   ah-c078-record-the-model-citizen-rename-s-sprint-change: ready-for-dev
   ah-c079-point-hardcoded-links-at-the-new-repo-and-domain: ready-for-dev
   ah-s267-add-the-citizen-command-and-keep-harness-as-an: ready-for-dev
