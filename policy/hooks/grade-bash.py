@@ -975,8 +975,9 @@ DEPLOY_VERBS = ("vercel deploy", "netlify deploy", "cdk deploy")
 RANK = {"allow": 0, "ask": 1, "deny": 2}
 POLICY_NAME = "governance.json"
 POLICY_DIR = ".agent-harness"
-# Either policy file named in a command that is not read-only is a write to it: the repository's
-# `.agent-harness/governance.json` and the user's `.config/agent-harness/governance.json`.
+# The repository's `.agent-harness/governance.json` and the user's
+# `.config/agent-harness/governance.json`, found by name only where a command's written paths
+# cannot be known: a line the walk cannot decompose, and inline interpreter code.
 POLICY_RE = re.compile(r"agent-harness[/\\]+governance\.json")
 # The user configuration selects the provider, so a write to it can switch governance off; it is
 # guarded like a policy file, and so is the command that sets a `governance` key in it.
@@ -988,6 +989,13 @@ CONFIG_SET_RE = re.compile(r"(?:harness|citizen)\b[^;&|\n]*\bconfig\s+set\s+[\"'
 PATH_WRITERS = {"tee", "cp", "mv", "install", "ln", "rm", "unlink", "truncate", "touch", "rsync",
                 "shred", "dd"}
 IN_PLACE = {"sed", "gsed", "perl", "ruby"}
+# Interpreters, by name without a version suffix, and the options whose value is code they run.
+# That code may write any path it names, so a policy path named in it counts as written.
+INTERPRETER_RE = re.compile(r"^(python|node|perl|ruby|php)[0-9.]*$")
+INLINE_CODE = {"python": ("c", ()), "node": ("ep", ("--eval", "--print")),
+               "perl": ("eE", ()), "ruby": ("e", ()), "php": ("r", ())}
+MENTION_RE = re.compile(r"[^\s'\"(),;=`]*(?:agent-harness[/\\]+governance"
+                        r"|\.config[/\\]+agent-harness[/\\]+config)\.json")
 POLICY_LEVEL = 1
 FILE_APPROVAL_TAIL = (" Nothing can prompt in this permission mode, so the edit was refused rather"
                       " than asked about. Stop, say in chat what the edit changes, and ask the user,"
@@ -1233,7 +1241,45 @@ def _written(prog, args, targets, cwd):
         head = os.path.dirname(path)
         resolved = None if (PLACEHOLDER in head or "$" in head) else _resolve(path, cwd)
         out.append(resolved or path)
+    # A policy path named in inline code is left as written: which directory the code resolves
+    # it against is not known, so `_policy_hits` judges it by name.
+    for code in _inline_code(prog, args):
+        out.extend(match.group(0) for match in MENTION_RE.finditer(code))
     return out
+
+
+def _inline_code(prog, args):
+    """The code an interpreter runs from its own arguments: `python -c`, `node -e`, `perl -e`,
+    `ruby -e`, `php -r`. A script or a here-document on stdin is not inline code; neither is an
+    argument after the script operand, which belongs to the script."""
+    match = INTERPRETER_RE.match(prog)
+    if not match:
+        return []
+    letters, longs = INLINE_CODE[match.group(1)]
+    code, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "--" or not a.startswith("-") or a == "-":
+            break
+        name, _eq, value = a.partition("=")
+        if name in longs:
+            if _eq:
+                code.append(value)
+            elif i + 1 < len(args):
+                code.append(args[i + 1])
+                i += 1
+        elif not a.startswith("--"):
+            at = next((k for k, c in enumerate(a[1:], 1) if c in letters), None)
+            if at is not None:
+                if a[at + 1:]:
+                    code.append(a[at + 1:])
+                elif i + 1 < len(args):
+                    code.append(args[i + 1])
+                    i += 1
+                if match.group(1) == "python":
+                    break  # `-c` ends Python's options; what follows is `sys.argv`
+        i += 1
+    return code
 
 
 def _governed(tokens, cwd, depth):
@@ -1384,12 +1430,51 @@ def unresolved(operand):
     return None
 
 
-def _policy_hits(command, found):
+def _stdin_scripts(command):
+    """The paths written by here-document bodies a shell reads as its script, as in
+    `bash <<'EOF'`. A body is data to every other program, so a policy path it only mentions is
+    not a write; a shell runs it, so its writes are walked, with the directory taken as unknown."""
+    text, bodies = normalize(command)
+    stripped, _inners = _extract_subs(text)
+    parts = segments(stripped) if (bodies and stripped is not None) else None
+    if not parts:
+        return []
+    for tokens in parts:
+        body, _targets = _redirects(list(tokens))
+        while body and ASSIGN_RE.match(body[0]):
+            body = body[1:]
+        args = body[1:]
+        if (body and body[0].rpartition("/")[2] in SHELLS and not operands(args)
+                and not any(DASH_C_RE.match(a) for a in args)):
+            break
+    else:
+        return []
+    written = []
+    for script in bodies:
+        found = governed_text(script, None, 1)
+        if found is None:
+            written.extend(match.group(0) for match in MENTION_RE.finditer(script))
+        else:
+            written.extend(p for entry in found for p in entry[3])
+    return written
+
+
+def _policy_hits(command, found, walked=True):
     """What a command changes that is a level-1 action: a policy file, the user configuration or
-    a `governance` key set through `harness config set`."""
+    a `governance` key set through `harness config set`.
+
+    A policy path is judged from the paths the walk found written: redirect targets, the
+    operands of `tee`, `cp`, `mv`, `sed -i` and the like, and names in inline interpreter code.
+    Only a line the walk could not decompose (`walked` false) is searched for the path by name,
+    so a path that a quoted argument or a here-document body merely mentions is not a write."""
+    try:
+        scripts = _stdin_scripts(command)
+    except Exception:
+        scripts, walked = [], False
+    paths = [p for entry in found for p in entry[3]] + scripts
     hits = sorted(set(filter(None, (guarded(p) if os.path.isabs(p) else unresolved(p)
-                                    for entry in found for p in entry[3]))))
-    if not hits:
+                                    for p in paths))))
+    if not hits and not walked:
         match = POLICY_RE.search(command)
         if match:
             hits = ["the governance policy file " + match.group(0)]
@@ -1420,11 +1505,12 @@ def govern(command, cwd, grade, variant, event=None, runtime=""):
         found = governed_text(command, cwd)
     except Exception:
         found = None
+    walked = found is not None
     if not found or max(entry[1] for entry in found) <= 0:
         # The grader graded the line above 0 yet no segment carries that grade: govern the whole
         # line at its grade rather than let the walk find nothing to ask about.
         found = (found or []) + [(SHELL, grade, cwd, [])]
-    hits = _policy_hits(command, found)
+    hits = _policy_hits(command, found, walked)
     if hits:
         _log(FILE_WRITE, None, POLICY_LEVEL, grade, "ask", name, event, runtime)
         return "ask", ("Governance: this changes %s, which is level %d: every change to it"
