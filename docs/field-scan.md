@@ -5,7 +5,7 @@ date. Release cadence among the projects below runs daily to weekly, so treat ev
 "does not ship" here as a dated observation, not a standing fact. The method, the sources and the
 raw claim ledger are in the research run under
 [`_bmad-output/planning-artifacts/research/`](../_bmad-output/planning-artifacts/research/), and
-corrections are welcome as an [Idea issue](https://github.com/JakeSelby/agent-harness/issues/new/choose).
+corrections are welcome as an [Idea issue](https://github.com/JakeSelby/model-citizen/issues/new/choose).
 
 ## 1. Why this page exists
 
@@ -207,6 +207,6 @@ The section that decides whether the rest is credible.
 
 This page is versioned and dated. If a project named here ships something that changes a line, or
 if a claim does not match what you find in the file it cites, open an
-[Idea issue](https://github.com/JakeSelby/agent-harness/issues/new/choose) with the path. The
+[Idea issue](https://github.com/JakeSelby/model-citizen/issues/new/choose) with the path. The
 research run that produced this page carries a staleness map; its earliest re-check is
 2026-12-01, and a refresh replaces this page rather than amending it.

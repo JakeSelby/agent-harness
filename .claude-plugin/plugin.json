@@ -5,8 +5,8 @@
   "description": "Skills, subagent roles, slash commands and an output style from the Model Citizen checkout, installable on their own.",
   "author": { "name": "Jake Selby", "url": "https://github.com/JakeSelby" },
   "license": "MIT",
-  "homepage": "https://agent-harness.jakeselby.com",
-  "repository": "https://github.com/JakeSelby/agent-harness.git",
+  "homepage": "https://model-citizen.dev",
+  "repository": "https://github.com/JakeSelby/model-citizen.git",
   "keywords": ["claude-code", "codex", "agent-skills", "subagents", "context-engineering"],
   "skills": "./primitives/skills/",
   "agents": [

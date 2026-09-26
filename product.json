@@ -3,6 +3,7 @@
   "description": "An open-source control plane for coding agents. One checkout of rules, skills, roles and stances, projected into Claude Code and Codex with your own primitives, enforced with hooks, and measured with usage telemetry and cost controls. It layers under the rules libraries and orchestration you already use.",
   "stances": "Preferences you can switch: autonomy, delegation, cost, testing, voice, commits, planning, licensing and build versus buy. Three of those bind to enforcement today: autonomy sets which shell-command grade stops and asks, delegation changes spawn routing, and cost resolves a model and budget table per role. The rest are prose that swaps cleanly. The usage report groups rule hits by the variant that was selected, so a switch can be checked rather than assumed.",
   "github_description": "The control plane for your coding agents, however you run them. One checkout of rules, skills, subagents, hooks and stances, projected into Claude Code and Codex with your own primitives: hook-enforced guardrails, usage telemetry, cost postures and model tiering, under any rules library or orchestration layer.",
+  "homepage": "https://model-citizen.dev",
   "hero": {
     "title": "The control plane for your coding agents, however you run them.",
     "subtitle": "Model Citizen sits under the Claude Code and Codex you already run, and under whatever rules library you like. It keeps your rules, skills, roles and stances in one checkout, projects them into each agent with your own primitives, enforces them with hooks, and shows you what every session did and what it cost.",
@@ -78,7 +79,7 @@
         },
         {
           "name": "A worktree per agent",
-          "line": "Parallel agents do not step on your checkout or on each other.",
+          "line": "Parallel agents do not step on your checkout or on each other. Each claims the paths it will write, and an edit to a live sibling's claim is warned, then denied.",
           "doc": "primitives/skills/worktree-per-agent"
         }
       ]
@@ -253,10 +254,10 @@
     "claude-code-rules",
     "claude-skills",
     "codex",
-    "coding-agent",
     "context-engineering",
     "developer-tools",
     "llm-agents",
+    "model-citizen",
     "observability",
     "rule-detectors",
     "subagents"

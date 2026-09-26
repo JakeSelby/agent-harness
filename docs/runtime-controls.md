@@ -85,6 +85,7 @@ and each id is a unit of the `hooks` switch kind in the [selection document](pre
 | `filter-output` | PreToolUse on Bash |
 | `grade-bash` (core) | Bash grading, its ask or deny, consuming an approval in auto mode, guarding the approvals store, and the decision log's Bash rows |
 | `harness-session` | SessionStart |
+| `intent-overlap` | PreToolUse on Edit, Write, MultiEdit and NotebookEdit: a live sibling's claim on the path |
 | `neutralize-tool-output` (core) | PostToolUse |
 | `stage-user-files` | PreToolUse on SendUserFile, Claude Code only |
 | `stop-gate` (core) | Stop |

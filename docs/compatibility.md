@@ -113,9 +113,14 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    acknowledged, and the refused sync must leave the mode where it was. Judge the acknowledged
    bypass from the turn's own permission denials and mode, never from the written file alone: a
    turn the model declined on its own judgement observed no permission control and is unverified,
-   not a block.
+   not a block. The auto posture is claimed narrowly: the mode the sync wrote and the mode the
+   client ran one write under. What the client's auto-mode classifier refuses is its provider's
+   judgement, and a round does not ask it to refuse anything.
 4. Check hook trust, composition, denials and multi-file patches; attempt writes from read-only
    roles and outside the planner artifact scope. Configuration defaults are insufficient proof.
+   Composition is read from the turn: the user's own hook and the harness's own `PostToolUse`
+   entry must each be seen firing on the same write. On a client with no multi-file patch tool,
+   Claude Code among them, a multi-file patch is one turn writing each file with its file tool.
 5. Change staged and untracked files after a green gate; check reruns and unverified failures.
 6. Drive the spawn hook in a disposable home against a fixture recipe built from a descriptor
    in `policy/integrations/`: confirm a brief carrying a constrained role's work is denied with
@@ -128,7 +133,9 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    framework's own workflow is run in a qualification round; that is the optional suite in
    [BMad](bmad.md).
 7. Continue the same task Claude→Codex and Codex→Claude, including changed-tree and stale-writer
-   cases; establish permissions anew. Verify migration, drift and uninstall preserve user data.
+   cases; establish permissions anew. Verify migration, drift and uninstall preserve user data:
+   a hand edit to a harness-owned setting is reported as drift by `harness diff` while the
+   harness is still installed, and survives the uninstall that follows.
 8. Select a non-default cost variant and sync; confirm that only the roles it changes are
    rewritten and that every other role keeps its link. In a session started after that sync,
    spawn a subagent that names no role, and confirm from the subagent's own transcript that it
@@ -152,9 +159,10 @@ For every target listed in the catalog, verify every `required_cases` entry nati
    declared prompt file is the layer's work in any wording. A model that makes no call, or whose
    brief names none of the declared prompt files, leaves the case unverified. Confirm the same layer run the routed way writes
    isolated worker state and returns findings, and that a session with no worker state written is a
-   failed case rather than a passed review. Then the false positive: spawn ordinary work whose
-   brief mentions review, a diff or findings in passing, and one that edits the framework's own
-   input roots, and confirm both run.
+   failed case rather than a passed review, by judging the routed run again with its worker
+   state moved aside. Then the false positive: spawn ordinary work whose brief mentions review,
+   a diff or findings in passing, and one that edits the framework's own input roots, and
+   confirm both run.
 
 Store a redacted JSON evidence artifact with `kind: native`, `client`, `harness_version`,
 `source_commit`, `runtime_version`, `client_version`, `platform`, `observations`, `cases`,
@@ -308,7 +316,7 @@ there is one:
   session; the other eight stand when only a worker changes.
 
 `tests/test_evidence_case_scope.py` holds the mechanism to this rule, and checks that every mapped
-path exists. See [#582](https://github.com/JakeSelby/agent-harness/issues/582).
+path exists. See [#582](https://github.com/JakeSelby/model-citizen/issues/582).
 
 A released catalog pins the exact source commit its evidence qualifies. Later development does
 not rewrite or invalidate that historical release record, but any change under the runtime-source

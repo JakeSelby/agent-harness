@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question
-    url: https://github.com/JakeSelby/agent-harness/discussions/categories/q-a
+    url: https://github.com/JakeSelby/model-citizen/discussions/categories/q-a
     about: Ask how something works, or why the agent behaves a certain way.
   - name: Security report
-    url: https://github.com/JakeSelby/agent-harness/security/advisories/new
+    url: https://github.com/JakeSelby/model-citizen/security/advisories/new
     about: Report privately. Never open a public issue for something exploitable.

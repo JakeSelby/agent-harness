@@ -403,7 +403,7 @@ class RegenerationTests(SprintRoot):
         live = [live_issue(1, "A story", state="closed")]
         with mock.patch.object(sync, "fetch_issues", return_value=live) as fetch, redirect_stdout(io.StringIO()):
             self.assertEqual(sync.main(["refresh"]), 0)
-        fetch.assert_called_once_with(REPOSITORY)
+        fetch.assert_called_once_with(sync.API_REPOSITORY)
         self.assertIn("ah-s001-a-story: done", self.rendered())
         self.assertEqual(sync.sprint_status_findings(sync.load_manifest()), [])
 

@@ -611,6 +611,13 @@ def encode_pre(runtime, original, normalized, results):
     notices = [r["systemMessage"] for r in results if isinstance(r.get("systemMessage"), str) and r["systemMessage"]]
     if notices and runtime == "claude-code":
         encoded = dict(encoded, systemMessage="\n".join(notices))
+    # Context for the agent, such as an overlap warning that decides nothing on its own.
+    contexts = [r.get("hookSpecificOutput", {}).get("additionalContext") for r in results]
+    contexts = [c for c in contexts if isinstance(c, str) and c]
+    if contexts and runtime == "claude-code":
+        fields = dict(encoded.get("hookSpecificOutput") or {"hookEventName": "PreToolUse"})
+        fields["additionalContext"] = "\n".join(contexts)
+        encoded = dict(encoded, hookSpecificOutput=fields)
     return encoded
 
 
@@ -753,6 +760,9 @@ def _dispatch(runtime, payload):
         # Only a rewrite: the plan-mode approval below still answers for this tool.
         if tool == "SendUserFile" and runtime == "claude-code":
             results.append(invoke("stage-user-files", event))
+        # A live sibling's claim on the path: policy/hooks/intent-overlap.py.
+        if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+            results.append(invoke("intent-overlap", event))
         if tool == "Bash":
             grading, readonly = enabled("grade-bash"), enabled("allow-readonly-bash")
             grader = load("grade-bash") if grading or readonly else None
