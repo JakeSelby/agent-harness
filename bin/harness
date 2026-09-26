@@ -1913,6 +1913,38 @@ def jev_call_lines() -> List[str]:
             "    jev call detail: `harness usage --by provider` prices them per point and mode"]
 
 
+def known_providers() -> List[str]:
+    """Every provider name `governance.provider` may select, local and transport alike."""
+    return sorted(set(decisions_provider.PROVIDERS) | set(decisions_provider.TRANSPORT_PROVIDERS))
+
+
+def policy_files(name: str, root: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """The governance policy files provider `name` reads here, lowest precedence first.
+
+    Empty for `none`, which reads no file. `local`, and `jev` over it, read the user-level file
+    beside `config.json` and then this repository's `.agent-harness/governance.json`.
+    """
+    if name == decisions_provider.NullProvider.name or name not in known_providers():
+        return []
+    root = Path.cwd() if root is None else Path(root)
+    files = [(decisions_provider.USER_LAYER, decisions_provider.user_policy_file()),
+             (decisions_provider.REPOSITORY_LAYER, root / decisions_provider.POLICY_FILE)]
+    return [{"layer": layer, "path": str(path), "present": path.is_file()}
+            for layer, path in files]
+
+
+def policy_file_lines(name: str, root: Optional[Path] = None) -> List[str]:
+    """One line per policy file the provider reads, for `decide` and `doctor`."""
+    if name not in known_providers():
+        return [f"    governance.provider {name!r} is not a provider; known providers are "
+                + ", ".join(known_providers()) + "; no policy file is read"]
+    files = policy_files(name, root)
+    if not files:
+        return [f"    policy files: none read by provider {name}"]
+    return [f"    {entry['layer']}: {entry['path']} "
+            f"({'present' if entry['present'] else 'absent'})" for entry in files]
+
+
 def governance_lines(cfg: Dict[str, Any]) -> List[str]:
     """What `doctor` reports about the decision provider and what it may send.
 
@@ -1921,7 +1953,7 @@ def governance_lines(cfg: Dict[str, Any]) -> List[str]:
     """
     block = cfg.get("governance") if isinstance(cfg.get("governance"), dict) else {}
     name = str(block.get("provider") or decisions_provider.NullProvider.name)
-    lines = [f"  governance provider: {name}"]
+    lines = [f"  governance provider: {name}"] + policy_file_lines(name)
     try:
         controls = decision_controls.Controls.from_config(cfg)
     except decisions_provider.PolicyError as exc:
@@ -2674,15 +2706,18 @@ def cmd_decide(args: argparse.Namespace) -> int:
             answer = provider.decide(action, slug)
     except decisions_provider.PolicyError as exc:
         raise SystemExit(str(exc))
+    files = policy_files(provider.name)
     if args.json:
         print(json.dumps({"schema_version": 1, "action": action.as_dict(), "counterparty": slug,
-                          "decision": answer.as_dict()}, indent=2))
+                          "decision": answer.as_dict(), "policy_files": files}, indent=2))
         return 0
     say(f"{args.action} on {slug}: {answer.outcome} "
         f"(level {answer.autonomy_level}, provider {answer.provider})")
     say(answer.reason)
     for match in answer.injected_cognition["rule_matches"]:
         say("  rule: " + match)
+    for line in policy_file_lines(provider.name):
+        say(line.replace("    ", "  ", 1))
     if answer.injected_cognition["agent_message"]:
         say("  agent: " + answer.injected_cognition["agent_message"])
     say("No hook consults this yet; command grading still answers the permission question.")
