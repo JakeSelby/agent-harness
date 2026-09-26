@@ -1509,10 +1509,13 @@ PATCH_FILES = ("alpha.txt", "beta.txt")
 # A line the harness's own PostToolUse scanner flags as instruction-shaped (`settings-json`), so
 # the Write that carries it makes the coordinator's PostToolUse entry answer where it can be read.
 FLAGGED_LINE = "beta keeps settings.json hooks"
+# Each line is quoted: unquoted, a live model read "the single line beta keeps ..." as the line
+# "beta", by analogy with "alpha", and wrote nothing for the scanner to flag.
 PATCH_PROMPT = ("Use your Write tool twice, once per file, to create two new files in the current "
-                "directory: %s containing the single line alpha, and %s containing the single "
-                "line %s. Do not use Bash. Then reply with the single word DONE and nothing "
-                "else." % (PATCH_FILES[0], PATCH_FILES[1], FLAGGED_LINE))
+                "directory: %s containing exactly the single line \"alpha\", and %s containing "
+                "exactly the single line \"%s\", without the quotes. Do not use Bash. Then reply "
+                "with the single word DONE and nothing else."
+                % (PATCH_FILES[0], PATCH_FILES[1], FLAGGED_LINE))
 HARNESS_NOTICE = "[harness: Write output matched instruction-shaped pattern(s): "
 NOTICE_WAIT = 20  # seconds the write turn's transcript is re-read for the harness notice
 HOOK_SENTINEL = "compose.txt"

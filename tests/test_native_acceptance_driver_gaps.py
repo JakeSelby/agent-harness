@@ -192,6 +192,11 @@ class MissingWorkerStateTests(unittest.TestCase):
 class HarnessPostToolUseTests(unittest.TestCase):
     """Step 4: the harness's own PostToolUse entry is seen firing on the write turn."""
 
+    def test_the_patch_prompt_quotes_each_line_whole(self):
+        # Unquoted, a live model took the flagged line's first word for the whole line.
+        self.assertIn('"%s"' % MODULE.FLAGGED_LINE, MODULE.PATCH_PROMPT)
+        self.assertIn('"alpha"', MODULE.PATCH_PROMPT)
+
     def test_the_real_coordinator_flags_the_write_the_patch_prompt_asks_for(self):
         self.assertIn(MODULE.FLAGGED_LINE, MODULE.PATCH_PROMPT)
         with tempfile.TemporaryDirectory() as directory:
