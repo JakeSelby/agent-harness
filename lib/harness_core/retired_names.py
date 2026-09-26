@@ -8,7 +8,7 @@ Three kinds of material keep the old names on purpose and are allowed:
 
 - **Dated areas**, which record what was true when they were written and are never rewritten: the
   BMad corpus (whose issue map keeps the old slug because every mapped issue's planning block renders
-  it), dated plans and handoffs, the changelog, compatibility evidence, any file named for its date,
+  it), dated plans and handoffs, the changelog's released sections, compatibility evidence, any file named for its date,
   and the BMad test fixtures that mirror the issue map's stored slug.
 - **On-disk names** such as the config directory, the local work directory and launchd labels. The
   patterns below need the owner prefix, the site domain or the capitalised two-word brand, so a
@@ -38,11 +38,13 @@ ALLOWED_PREFIXES = (
     ("docs/plans/", "dated plans"),
     (".agent-harness/", "dated local plans and handoffs"),
     ("compatibility/evidence/", "dated qualification evidence"),
-    ("CHANGELOG.md", "released version sections are dated"),
     ("tests/test_bmad_", "fixtures mirror the issue map's stored slug"),
 )
 DATED_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}")
 FORMERLY = re.compile(r"^\W*Formerly\b")
+CHANGELOG = "CHANGELOG.md"
+# A released section is headed by its version or its date; `## [Unreleased]` is still living text.
+RELEASED_HEADING = re.compile(r"^## \[?(?:v?\d+\.\d+|\d{4}-\d{2}-\d{2})")
 
 
 def applies(root):
@@ -59,6 +61,19 @@ def allowed_path(rel):
     if DATED_NAME.match(PurePosixPath(text).name):
         return "the file is named for its date"
     return None
+
+
+def released_lines(rel, lines):
+    """The 1-based numbers of the changelog lines inside a released, and so dated, section."""
+    if str(rel).replace("\\", "/") != CHANGELOG:
+        return set()
+    dated, released = set(), False
+    for number, line in enumerate(lines, 1):
+        if line.startswith("## "):
+            released = bool(RELEASED_HEADING.match(line))
+        if released:
+            dated.add(number)
+    return dated
 
 
 def line_findings(line):

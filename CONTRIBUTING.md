@@ -38,7 +38,7 @@ an atomic uniqueness constraint across PRs, and another PR changing cannot inval
 1. Fork and clone:
    ```sh
    gh repo fork JakeSelby/model-citizen --clone --remote
-   cd agent-harness
+   cd model-citizen
    git remote -v        # origin = your fork, upstream = JakeSelby/model-citizen
    ```
 2. Keep `main` on your fork current with upstream, and branch from it:

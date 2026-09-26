@@ -776,13 +776,23 @@ class RetiredNameLintTests(TempHome):
         line = "See https://github.com/" + self.SLUG + "/issues/1 on " + self.HOST + "."
         dated = ["_bmad-output/issue-map.json", "_bmad-output/implementation-artifacts/X-1.md",
                  "docs/plans/p.md", ".agent-harness/handoffs/h.md", "compatibility/evidence/e.json",
-                 "CHANGELOG.md", "docs/spikes/2026-09-22-note.md", "tests/test_bmad_fixture.py"]
+                 "docs/spikes/2026-09-22-note.md", "tests/test_bmad_fixture.py"]
         for rel in dated:
             self._write(root, rel, line)
         self._write(root, "docs/spikes/note.md", line)
         hits = self._retired(root, *dated + ["docs/spikes/note.md"])
         self.assertTrue(hits, "the undated file must still fail")
         self.assertTrue(all(h.startswith("docs/spikes/note.md:") for h in hits), hits)
+
+    def test_only_the_changelogs_released_sections_keep_the_old_names(self):
+        root = self._fixture()
+        self._write(root, "CHANGELOG.md", "\n".join([
+            "# Changelog", "",
+            "## [Unreleased]", "", "- Moved to " + self.HOST + ".", "",
+            "## [0.13.1] \u2014 2026-09-24", "", "- Released as " + self.BRAND + ".", "",
+            "## [0.1.0] \u2014 2026-01-02", "", "- First cut of " + self.SLUG + "."]))
+        hits = self._retired(root, "CHANGELOG.md")
+        self.assertEqual([h.split(":")[1] for h in hits], ["5"], hits)
 
     def test_another_repository_is_not_held_to_this_projects_rename(self):
         root = self._fixture(this_repository=False)

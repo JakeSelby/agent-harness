@@ -2510,6 +2510,7 @@ def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], L
         installed = rel.parts[0] in NAME_FORBIDDEN_DIRS or rel.name in NAME_FORBIDDEN_FILES
         # The project was renamed; retired_names says what stays out and what keeps it on purpose.
         check_retired = retired and retired_names.allowed_path(rel.as_posix()) is None
+        released = retired_names.released_lines(rel.as_posix(), text.splitlines()) if check_retired else set()
         for n, line in enumerate(text.splitlines(), 1):
             low = line.lower()
             for term in everywhere:
@@ -2529,7 +2530,7 @@ def lint_files(root: Path, files: List[Path], terms: Optional[Tuple[List[str], L
             for rx in secrets:
                 if rx.search(line):
                     hits.append(f"{rel}:{n}: secret pattern {rx.pattern}")
-            if check_retired:
+            if check_retired and n not in released:
                 for label in retired_names.line_findings(line):
                     hits.append(f"{rel}:{n}: retired-name: the old project {label}")
     return hits
