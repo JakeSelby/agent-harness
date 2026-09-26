@@ -33,8 +33,29 @@ what it adopted; a rule a root stops carrying has its link retired on the next s
 configuration names but the disk does not carry is one warning and a skip, not a failed sync.
 
 Custom homes use `CLAUDE_CONFIG_DIR` and `CODEX_HOME`; the shared harness home can use
-`HARNESS_HOME`. Project/session overrides do not repoint global files. Native hook trust is
-separate from registration and from the harness's repository gate trust.
+`HARNESS_HOME`. Native hook trust is separate from registration and from the harness's repository
+gate trust.
+
+## Project and session stance selections
+
+Sync projects only your user-level selection, so the linked stance text is the one your last sync
+resolved. A project selection (`HARNESS_PROJECT_CONFIG`) or a session one (`HARNESS_STANCE_*`,
+`HARNESS_SESSION_CONFIG`, `HARNESS_MODE`) never repoints those global links. Instead, the
+session-start hook resolves the full ladder with `citizen stances --json` and, for each dimension
+whose variant differs from the one the sync manifest records, adds that variant's text to the
+session's context as an "Effective session stance" line that replaces the linked variant for that
+session. Hooks read the same resolution at run time, so the prose you follow and the switches the
+hooks act on agree.
+
+The injection costs context only when a selection differs; a session with no selection, or one
+that matches the synced variants, pays nothing. What it injects is re-read on every turn, like the
+always-loaded layer, so it shares that layer's budget: the token cap `citizen lint` enforces, less
+what the sync already made always-loaded (the instructions, the rules it linked and the linked
+stance variants). Each differing dimension is always named. Its text is included in dimension order
+while it fits what is left; a variant that does not fit is named with the path of its file and an
+instruction to read and follow it, so a long custom variant degrades to a pointer rather than
+overrunning the budget. The `custom-stance` qualification case observes both a project and a
+session selection natively.
 
 An unmanaged path is a conflict unless explicitly adopted. A redirected link or user-modified
 managed value is preserved and reported. `citizen diff` detects missing, redirected or modified
