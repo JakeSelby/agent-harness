@@ -79,5 +79,12 @@ class SyncWithSessionStance(unittest.TestCase):
         self.assertEqual(diff.returncode, 0, diff.stdout + diff.stderr)
         self.assertNotIn("scope", diff.stdout)
 
+    def test_a_blank_stance_variable_prints_no_scope_line(self):
+        synced = self.cli({}, "sync")
+        self.assertEqual(synced.returncode, 0, synced.stdout + synced.stderr)
+        diff = self.cli({"HARNESS_STANCE_TESTING": "  "}, "diff")
+        self.assertEqual(diff.returncode, 0, diff.stdout + diff.stderr)
+        self.assertNotIn("scope", diff.stdout)
+
 if __name__ == "__main__":
     unittest.main()

@@ -340,9 +340,13 @@ def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
 
 def selection_override(env: Optional[Dict[str, str]] = None) -> bool:
-    """Whether `env` chooses a stance for this project or session, which a sync never links."""
+    """Whether `env` chooses a stance for this project or session, which a sync never links.
+
+    A blank value chooses nothing, as the resolver reads it.
+    """
     env = os.environ if env is None else env
-    return any(key.startswith("HARNESS_STANCE_") or key in SELECTION_SCOPED for key in env)
+    return any((key.startswith("HARNESS_STANCE_") or key in SELECTION_SCOPED) and str(value).strip()
+               for key, value in env.items())
 
 
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
