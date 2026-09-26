@@ -46,7 +46,7 @@ Sync keeps a journal of what it changed and refuses to overwrite what it does no
 - [Same policy on both](docs/runtime-controls.md): A Claude Code spawn and a Codex spawn resolve to the same delegation policy.
 - [Declared integrations](docs/bmad.md): A planning framework declares itself in one descriptor. citizen integration check|apply installs its overrides, and the spawn hook confines its review layers.
 - [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.
-- [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents do not step on your checkout or on each other.
+- [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents do not step on your checkout or on each other. Each claims the paths it will write, and an edit to a live sibling's claim is warned, then denied.
 
 ### See and steer what your agents spend
 

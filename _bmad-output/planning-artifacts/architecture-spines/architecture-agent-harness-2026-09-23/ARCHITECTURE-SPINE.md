@@ -362,7 +362,7 @@ flowchart TB
   - No model trains on a third-party provider's output.
   - Evidence changes a stance only as a proposal the developer applies.
 
-### AD-16: Parallel writers coordinate through shared, recorded state [PLANNED: backlog, #542, #543]
+### AD-16: Parallel writers coordinate through shared, recorded state [PARTIAL: claims and the pre-write check in v0.14.0 (#542); archive planned (#543)]
 
 - **Binds:** FR-44, FR-63; builders, worktrees, the decision log, the session archive.
 - **Prevents:** overlapping edits between sibling agents, and coordination chat that bills as prompts.
