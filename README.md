@@ -89,7 +89,7 @@ grouped by repository and by the preference variant you had selected at the time
 Reasonable developers disagree about testing, autonomy and how much to delegate. Nine axes, each a named choice: three bind to enforcement today, the rest are prose that swaps cleanly.
 
 - [Stance dimensions and variants](primitives/stances): Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.
-- [User, project, session](docs/preferences.md): Set a default or pick a mode, override it for one repo, override that for one session, and see which layer set each unit and what measures it with citizen selection.
+- [User, project, session](docs/preferences.md): Set a default or pick a mode, override it for one repo or session, and the agent follows the override from its next session. citizen selection shows what set each unit.
 - [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
 - [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
 - [Autonomy stances](primitives/stances/autonomy): Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.

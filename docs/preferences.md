@@ -117,9 +117,10 @@ work, and the always-loaded preamble says so.
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
 `HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start
-the `harness-session.py` hook compares the environment with the synced config and injects one
-line of context for any difference, so `HARNESS_STANCE_TESTING=off claude` works for one
-session without a re-sync.
+the `harness-session.py` hook compares the resolved selection with the synced one and injects
+the differing variant's text, within the always-loaded budget
+([synchronization](sync-model.md#project-and-session-stance-selections)), so
+`HARNESS_STANCE_TESTING=off claude` works for one session without a re-sync.
 
 The `plan-ceremony` stance also decides whether the plan-card validator runs. Registration is
 unconditional — one coordinator per lifecycle event, as in

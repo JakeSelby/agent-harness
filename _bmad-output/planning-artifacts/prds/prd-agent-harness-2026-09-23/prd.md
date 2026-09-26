@@ -2,7 +2,7 @@
 title: Model Citizen product requirements
 status: final
 created: 2026-09-23
-updated: 2026-09-25
+updated: 2026-09-26
 supersedes: ../prd-agent-harness-2026-09-19/prd.md
 sources:
   - ../../source-ledger.md
@@ -225,6 +225,8 @@ measurable.
     it and where it is an instruction only.
   - **Edge case:** a project-level selection changes what the hooks resolve. The linked stance text stays
     user-level until #276 is decided.
+    *Amended 2026-09-26:* #276 is decided. The linked text stays user-level, and the session-start hook
+    injects the differing variant's text, or a pointer to it when it does not fit the always-loaded budget.
 - **UJ-3. Sam finds out which of their rules actually fire.**
   - **Persona and context:** Sam keeps a 300-line instruction file and suspects most of it is dead weight.
   - **Path:**
@@ -445,6 +447,10 @@ that `citizen stances` honours (#294, v0.14.0).
   hooks, skills, workflows and roles and name a mode (#554, FR-15). Identity, targets, permissions,
   runtime flags, `primitive_roots` and telemetry stay user-owned; a project file that sets one is
   refused with a message naming the key.
+- *Amended 2026-09-26 (#276):* a project or session stance selection that differs from the synced one
+  reaches the model at session start as that variant's text, counted against the always-loaded token cap
+  less what the sync already loads; a variant that does not fit is named with a pointer to its file. A
+  session whose selection matches the synced one gets nothing injected.
 
 **Out of scope:** stances that weaken an invariant.
 
@@ -1711,6 +1717,8 @@ answer.
    that reads only user-level configuration (#276)?
    - Blocks: FR-2.
    - Needed by: v0.14.0.
+   - *Resolved 2026-09-26:* the owner chose session-start injection of the resolved stance text when it
+     differs from the synced one, bounded by the always-loaded budget (FR-2). FR-2's remaining gap is #294.
 5. **How modes take effect after `init`.** Should `harness init` write only keys that differ from the
    defaults, or should a mode overlay the base user configuration (#557)?
    - Blocks: FR-16.

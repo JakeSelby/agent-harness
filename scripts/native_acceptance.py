@@ -1226,6 +1226,11 @@ def case_stance_switch(home):
     each, with the resolved voice text and output style read beside the replies; replies that
     agree on carrying a table observed nothing. Either half unobserved makes the case `unverified`
     with the other half's observation kept.
+
+    Both switches are user-level selections, which `harness sync` projects into links. A project
+    or a session selection reaches the model through the session hook's injected text instead, a
+    path that does not depend on the dimension, so `custom-stance` observes those two scopes for
+    every dimension, this one included.
     """
     home.seed(stances={"delegation": "tiered", "voice": "scannable"})
     home.harness("sync")
@@ -1327,14 +1332,48 @@ def project_override(home, variants):
             % (PROJECT_FILE, context, before or "<neither linked nor copied on this runtime>"))
 
 
+SESSION_VARIABLE = "HARNESS_STANCE_PROOF"
+
+
+def session_override(home, variants):
+    """Select proof=plain for one session through `HARNESS_STANCE_PROOF` while the global is tagged.
+
+    A session selection reaches the turn the way a project one does: the session hook injects the
+    resolved variant's text when it differs from the synced one (docs/sync-model.md). The turn
+    outside any selection is `project_override`'s, which already closed TAGGED.
+    """
+    link = stance_link(home, "proof")
+    before = link_target(link, variants)
+    turn = session_in(home, PROOF_PROMPT, home.project, {SESSION_VARIABLE: "plain"})
+    after = link_target(link, variants)
+    carried = OVERRIDE_LINE in home.orchestrator_text(turn.get("session_id", ""))
+    word = closing_word(home.answer(turn))
+    if before != after:
+        raise AssertionError("a turn under the session selection moved the global proof link "
+                             "%s -> %s" % (before or "<not a link>", after or "<not a link>"))
+    context = ("its transcript %s the session hook's \"%s\" line"
+               % ("carried" if carried else "did not carry", OVERRIDE_LINE))
+    if word == "TAGGED":
+        raise AssertionError("a turn started with %s=plain closed TAGGED like the global "
+                             "selection; %s" % (SESSION_VARIABLE, context))
+    if word != "PLAIN":
+        raise Unverified("the turn started with %s=plain closed %s, not PLAIN, so the session "
+                         "selection was not observed; %s"
+                         % (SESSION_VARIABLE, word or "<nothing>", context))
+    return ("a fresh turn started with %s=plain and no project file closed PLAIN (%s), with the "
+            "global proof link unmoved" % (SESSION_VARIABLE, context))
+
+
 def case_custom_stance(home):
-    """docs/compatibility.md steps 2 and 4: a custom dimension, a project override, a bad choice.
+    """docs/compatibility.md steps 2 and 4: a custom dimension, project and session selections, a
+    bad choice.
 
     The dimension is one the repository does not ship, from an external root. A custom dimension
     is prose on every runtime, so the assertion is the client's own reply changing with the
     selection; the same dimension is then overridden for one disposable repository, and a turn
     inside it must follow the override while a turn outside it follows the global selection with
-    the global link unmoved. A selection that names no variant must be refused by the sync with
+    the global link unmoved. A turn started with `HARNESS_STANCE_PROOF` must follow that session
+    selection the same way. A selection that names no variant must be refused by the sync with
     the previously resolved link left where it was.
     """
     root = home.primitives / "stances" / "proof"
@@ -1355,6 +1394,7 @@ def case_custom_stance(home):
     select(home, "proof", "tagged")
     variants = [root / "plain.md", root / "tagged.md"]
     override = project_override(home, variants)
+    session = session_override(home, variants)
     before = link_target(stance_link(home, "proof"), variants)
     warning = select(home, "proof", "nonesuch", expected=1)
     if MISSING_VARIANT not in warning:
@@ -1366,9 +1406,9 @@ def case_custom_stance(home):
                              % (before, after or "<not a link>"))
     return ("A custom proof dimension supplied from an external primitive root appeared in harness "
             "stances --json after sync, and the native client's reply closed PLAIN under "
-            "proof=plain; then, %s; selecting a variant that does not exist made harness sync "
-            "exit 1 with \"%s\" and left the previously resolved variant at %s."
-            % (override, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
+            "proof=plain; then, %s; then %s; selecting a variant that does not exist made harness "
+            "sync exit 1 with \"%s\" and left the previously resolved variant at %s."
+            % (override, session, MISSING_VARIANT, before or "<neither linked nor copied on this runtime>"))
 
 
 # The log path is written into the script rather than read from the environment: a hook the
@@ -2885,9 +2925,9 @@ CASES = {
                       "variant beside the resolved variant text and link"),
     "custom-stance": (case_custom_stance,
                       "supply a dimension this repository does not ship from an external "
-                      "primitive root, read the client's reply under each variant and under a "
-                      "project override inside and outside its repository, and refuse a "
-                      "selection naming no variant"),
+                      "primitive root, read the client's reply under each variant, under a "
+                      "project override inside and outside its repository and under a session "
+                      "variable, and refuse a selection naming no variant"),
     "framework-spawn-routing": (case_framework_spawn_routing,
                                "drive the spawn hook with a fixture recipe built from a declared "
                                "integration descriptor, then run the cost-posture turn"),
