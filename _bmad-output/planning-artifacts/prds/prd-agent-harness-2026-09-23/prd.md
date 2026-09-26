@@ -434,8 +434,8 @@ UJ-6.
 
 #### FR-2: One effective selection
 The system must resolve user, project and session selections into one explicit effective policy before any
-projection. **Status:** partial: implemented (0.9), but sync ignores `HARNESS_STANCE_*` session variables
-that `citizen stances` honours (#294, v0.14.0).
+projection. **Status:** implemented (0.9); from 0.14.0 the session-start hook injects a differing project
+or session selection (#276), and sync projects user-level selections only, by design (#294).
 
 **Consequences (testable):**
 - `citizen stances` shows each dimension's effective variant, the layer it came from, and each adapter's
@@ -1743,7 +1743,8 @@ answer.
    - Blocks: FR-2.
    - Needed by: v0.14.0.
    - *Resolved 2026-09-26:* the owner chose session-start injection of the resolved stance text when it
-     differs from the synced one, bounded by the always-loaded budget (FR-2). FR-2's remaining gap is #294.
+     differs from the synced one, bounded by the always-loaded budget (FR-2). #294 settled that sync keeps
+     projecting user-level selections only.
 5. **How modes take effect after `init`.** Should `harness init` write only keys that differ from the
    defaults, or should a mode overlay the base user configuration (#557)?
    - Blocks: FR-16.
