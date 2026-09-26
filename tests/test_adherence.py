@@ -54,8 +54,9 @@ def load_adherence():
 adherence = load_adherence()
 
 
-def obs(event, session="s-1"):
-    return {"event": event, "session_id": session, "runtime": "claude-code", "ts": "t"}
+def obs(event, session="s-1", at=None):
+    ts = "t" if at is None else adherence.now_ts(at)
+    return {"event": event, "session_id": session, "runtime": "claude-code", "ts": ts}
 
 
 def emitted(turn=2, session="s-1", recommendation="fresh-session", ident="e1", now=T0):
@@ -172,6 +173,26 @@ class RespondTests(unittest.TestCase):
         self.assertEqual(adherence.respond(emitted(turn=2), []), ("unknown", "unobserved", 0))
         self.assertEqual(adherence.respond(emitted(turn=2), [obs("UserPromptSubmit")]),
                          ("unknown", "unobserved", 0))
+
+    def test_a_turn_behind_the_ledger_is_read_from_the_prompts_stamped_by_the_emission(self):
+        # The feed counted one prompt; the ledger saw three by the time it spoke, then an end
+        # three prompts later. Read from the feed's count alone, that would be not followed.
+        before = [obs("UserPromptSubmit", at=T0 - 60), obs("UserPromptSubmit", at=T0 - 30),
+                  obs("UserPromptSubmit", at=T0)]
+        after = [obs("UserPromptSubmit", at=T0 + 30 * n) for n in (1, 2, 3)]
+        observed = before + after + [obs("SessionEnd", at=T0 + 120)]
+        self.assertEqual(adherence.respond(emitted(turn=1), observed), ("followed", "SessionEnd", 3))
+
+    def test_a_turn_ahead_of_the_ledger_is_kept(self):
+        observed = [obs("UserPromptSubmit", at=T0), obs("UserPromptSubmit", at=T0 + 30),
+                    obs("SessionEnd", at=T0 + 60)]
+        self.assertEqual(adherence.respond(emitted(turn=2), observed), ("followed", "SessionEnd", 0))
+
+    def test_prompts_after_the_emission_do_not_move_its_turn(self):
+        observed = [obs("UserPromptSubmit", at=T0)] + [
+            obs("UserPromptSubmit", at=T0 + 30 * n) for n in (1, 2, 3, 4)]
+        self.assertEqual(adherence.respond(emitted(turn=1), observed),
+                         ("not_followed", "UserPromptSubmit", 3))
 
     def test_an_emission_this_cannot_read_is_unknown(self):
         self.assertEqual(adherence.respond(emitted(recommendation="gone"), []),

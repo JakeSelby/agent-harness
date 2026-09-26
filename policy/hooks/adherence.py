@@ -22,7 +22,8 @@ recommendation is computed from identifiers alone.
 **Whether a recommendation was followed is read from the observation ledger**, the
 identifier-only row per hook event `harness_core.observer` writes. `turn` is the emitting hook's
 count of the session's prompts, and the response looks at the session's observation rows after
-its `turn`-th `UserPromptSubmit`. Followed: one of the recommendation's `follow` events arrives
+its `turn`-th `UserPromptSubmit`, or after the last one stamped no later than the emission when
+that is further on. Followed: one of the recommendation's `follow` events arrives
 before the window of `window` further prompts has passed. Not followed: the session's prompt
 `turn + window + 1` arrives first. Unknown: neither can be read yet. An emission is answered
 `unknown` for good only once it is `UNKNOWN_AFTER` old, with `reason` saying why:
@@ -171,16 +172,36 @@ def read_rows(target):
     return rows
 
 
+def prompts_by(ts, session, observed):
+    """The session's observed prompts stamped no later than `ts`, or 0 when `ts` is unreadable.
+
+    The feed's own count can fall behind the ledger's, when it skips a prompt it could not lock
+    or resets a state file it could not read, and a turn that lags would close the window early.
+    The next prompt cannot arrive before the emitting one's hook has run, so none is counted here.
+    """
+    moment = parse_ts(ts)
+    if moment is None:
+        return 0
+    count = 0
+    for item in observed:
+        if item.get("session_id") == session and item.get("event") == PROMPT:
+            stamped = parse_ts(item.get("ts"))
+            if stamped is not None and stamped <= moment:
+                count += 1
+    return count
+
+
 def respond(row, observed):
     """`(outcome, reason, turns_after)` for one emission against the session's observation rows.
 
-    `observed` is the observation ledger's rows in file order; only `event` and `session_id` are
-    read. `turns_after` counts the prompts seen after the emitting one, capped at the window.
+    `observed` is the observation ledger's rows in file order; only `event`, `session_id` and
+    `ts` are read. `turns_after` counts the prompts seen after the emitting one, capped at the window.
     """
     spec = KINDS.get(row.get("recommendation"))
     turn, session = row.get("turn"), row.get("session_id")
     if spec is None or not whole(turn) or turn < 1 or not isinstance(session, str):
         return "unknown", "unrecognised", 0
+    turn = max(turn, prompts_by(row.get("ts"), session, observed))
     prompts = 0
     for item in observed:
         if item.get("session_id") != session:
