@@ -25,6 +25,18 @@
       "dependencies": [],
       "conflicts": []
     },
+    "approvals": {
+      "claims": [
+        "Records the user's `approve <code>` replies, so a command refused in auto mode can run once after the user approves it in chat."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
     "brief-guard": {
       "claims": [
         "Appends a return bound and the posture's soft budget to a subagent brief that states neither."

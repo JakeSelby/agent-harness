@@ -20,6 +20,8 @@ BASE_EVENTS = ("PreToolUse", "PostToolUse", "SessionStart", "Stop", "SessionEnd"
 # declares the gap rather than registering an event that runtime does not raise.
 FEED_EVENTS = ("UserPromptSubmit", "SubagentStart", "SubagentStop")
 EVENTS = {"claude-code": BASE_EVENTS + FEED_EVENTS, "codex": BASE_EVENTS}
+# The tools that write a file by path, after `ALIASES`; `apply_patch` names its paths in the patch.
+FILE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch")
 ROLE_NAME = re.compile(r"[a-z][a-z0-9-]*")
 # A brief may declare the role it belongs to. The line stands alone so the declaration cannot be
 # produced by prose that happens to mention a role, and it travels with the text: a brief pasted
@@ -687,6 +689,12 @@ def _dispatch(runtime, payload):
     kind, tool = event.get("hook_event_name"), event.get("tool_name")
     if kind == "PreToolUse":
         results = []
+        # The store of approvals the user typed is the user's alone; `grade-bash` consumes it, so
+        # it guards it too. A Bash write to it is graded, a file-tool write is refused here.
+        if tool in FILE_TOOLS and enabled("grade-bash"):
+            forged = load("approvals").file_write_deny(patch_paths(event))
+            if forged is not None:
+                results.append(forged)
         # Only a rewrite: the plan-mode approval below still answers for this tool.
         if tool == "SendUserFile" and runtime == "claude-code":
             results.append(invoke("stage-user-files", event))
@@ -697,16 +705,26 @@ def _dispatch(runtime, payload):
                 raise RuntimeError("command classifier unavailable")
             # Shared stance resolution includes explicit project and session selections.
             variant = selected("autonomy", "execute")
-            command, confirmed = event["tool_input"]["command"], False
+            raw = command = event["tool_input"]["command"]
+            confirmed = False
             grade = verb = target = family = None
             if grader is not None:
                 command, confirmed = grader.strip_marker(command)
                 grade, verb, target, family = grader.grade_text(command, event.get("cwd", ""))
             asked = grading and bool(grade) and not confirmed and grade >= grader.THRESHOLDS.get(variant, 1)
             if asked:
-                decision = "deny" if runtime == "codex" or event.get("permission_mode") in grader.DENY_MODES else "ask"
-                results.append({"hookSpecificOutput": {"permissionDecision": decision,
-                    "permissionDecisionReason": grader.reason(grade, verb, target, family, variant)}})
+                mode, session = event.get("permission_mode"), event.get("session_id")
+                decision = "deny" if runtime == "codex" or mode in grader.DENY_MODES else "ask"
+                # Codex raises no UserPromptSubmit, so only Claude Code's auto mode can carry an
+                # approval the user typed; `grade-bash.py` owns the channel and its wording.
+                channel = runtime == "claude-code" and decision == "deny"
+                if channel and grader.approved(mode, session, raw):
+                    asked, confirmed = False, True
+                else:
+                    why = grader.reason(grade, verb, target, family, variant)
+                    code = grader.approval_code(mode, session, raw) if channel else None
+                    results.append({"hookSpecificOutput": {"permissionDecision": decision,
+                        "permissionDecisionReason": why + (grader.APPROVAL_TAIL % code if code else "")}})
             # Grade 0 is proved read-only, so it is approved in every mode. Grades 1 and 2 are the
             # ones native plan mode prompts on: a script the grammar cannot read through, a
             # scratch redirect, a test run. Under an open posture the first is investigation and
@@ -796,8 +814,13 @@ def _dispatch(runtime, payload):
         return {"hookSpecificOutput": {"hookEventName": kind, "additionalContext": "\n".join(contexts)}} if any(contexts) else {}
     if kind in FEED_EVENTS:
         # A feed never denies, never blocks and never speaks for another policy, so it answers
-        # its own two events alone.
-        return invoke("usage-feed", event) if runtime == "claude-code" else {}
+        # its own two events alone. The approvals recorder speaks for nothing either: it only
+        # keeps the `approve <code>` replies in the user's prompt.
+        if runtime != "claude-code":
+            return {}
+        if kind == "UserPromptSubmit":
+            invoke("approvals", event)
+        return invoke("usage-feed", event)
     if kind == "SessionStart":
         return invoke("harness-session", event)
     if kind == "Stop":
