@@ -1229,12 +1229,25 @@ are unreleased (#603).
 
 #### FR-61: Workspaces
 A developer must be able to define a multi-root workspace whose session history and memory follow the
-workspace, whichever folder is first. **Status:** implemented (0.12).
+workspace, whichever folder is first. The `.code-workspace` files in one configured folder must be the only
+definition of which folders belong together, and a session must be launchable across a workspace's folders.
+**Status:** partial: the shared session store is implemented (0.12); the workspace map, `workspace list`
+and `workspace open` are implemented (0.14, #935); supplying member instructions at session start is
+planned (0.14).
 
 **Consequences (testable):**
 - `citizen workspace create` points every folder's project key at one store, so every folder shows the same
   session history.
 - A project key that already holds real history is left alone and reported, never overwritten.
+- With `workspaces_dir` unset, no workspace command or hook attaches anything, and `workspace list` says how
+  to set it and exits 1.
+- The map is worked out from the files on every call and never stored. A folder in several workspaces
+  resolves by launch facts, then an override, then single membership, then a unique first position; any
+  other case attaches nothing and lists the candidates.
+- `workspace list` shows each workspace's members in order with their instruction size or `missing`, how
+  every shared folder resolves and by which rule, and each ignored override.
+- `workspace open NAME` runs the runtime in the first existing member with every other existing member as
+  `--add-dir` and `HARNESS_WORKSPACE=NAME` set; arguments after `--` come before the `--add-dir` flags.
 
 #### FR-62: Disposable homes on macOS
 Every runtime launched under a substituted HOME must get a throwaway keychain. If it cannot, the case fails
