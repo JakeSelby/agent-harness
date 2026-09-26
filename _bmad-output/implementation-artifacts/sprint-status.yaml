@@ -434,7 +434,7 @@ development_status:
   ah-c074-file-the-roadmap-s-new-stories-reserve-the: ready-for-dev
   ah-c075-re-derive-the-prd-s-stale-unreleased-status: backlog
   ah-c076-file-the-coderabbit-build-session-s-follow-ups: ready-for-dev
-  ah-c077-add-the-bmad-issue-map-audit-to-the-agents-md: backlog
+  ah-c077-add-the-bmad-issue-map-audit-to-the-agents-md: ready-for-dev
   ah-d001-docs-bmad-decide-the-builder-routing-follow-up: done
   ah-d003-decide-whether-the-credential-probe-names-the: done
   ah-d004-decide-whether-repeated-agent-pairs-get-an: done
@@ -530,7 +530,7 @@ development_status:
   ah-s261-feat-voice-concise-voice-with-reply-shapes: ready-for-dev
   ah-s262-rewrite-the-always-loaded-rules-in-plain: backlog
   ah-s263-name-the-review-complete-signal-in-build-step-6: backlog
-  ah-s264-say-whether-land-waits-on-checks-that-are-not: backlog
+  ah-s264-say-whether-land-waits-on-checks-that-are-not: ready-for-dev
   ah-s265-grant-agents-a-standing-go-ahead-to-merge-pull: ready-for-dev
   ah-sp004-jev-count-the-labelled-decisions-existing: done
   ah-sp013-spike-architecture-which-harness-capabilities: backlog
