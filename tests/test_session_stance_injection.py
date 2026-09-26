@@ -61,6 +61,13 @@ class Budget(unittest.TestCase):
         self.assertEqual(lines, ["a" * 400, "b pointer", "c" * 40])
         self.assertLessEqual(sum(HOOK.est_tokens(line) for line in lines), budget)
 
+    def test_the_separators_between_stances_count_against_the_budget(self):
+        # Each line fits on its own, but the joined text with its separators would not.
+        entries = [("a" * 10, "p"), ("b" * 10, "q")]
+        lines = HOOK.fit_stances(entries, 4)
+        self.assertEqual(lines, ["a" * 10, "q"])
+        self.assertLessEqual(HOOK.est_tokens("\n\n".join(lines)), 4)
+
     def test_no_budget_still_names_every_selection(self):
         entries = [("a" * 400, "a pointer")]
         self.assertEqual(HOOK.fit_stances(entries, -50), ["a pointer"])

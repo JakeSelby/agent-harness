@@ -133,17 +133,14 @@ def fit_stances(entries, budget):
     """Lines for the differing stances: full text where it fits `budget` tokens, else a pointer.
 
     `entries` is `[(full, pointer)]`. Every pointer is paid for first, because a pointer is what
-    keeps the selection honest; the budget left then upgrades pointers to full text in order.
+    keeps the selection honest; the budget left then upgrades pointers to full text in order. The
+    joined text is measured, separators included, since that is what the session receives.
     """
-    left = budget - sum(est_tokens(pointer) for _, pointer in entries)
-    lines = []
-    for full, pointer in entries:
-        extra = est_tokens(full) - est_tokens(pointer)
-        if extra <= left:
-            left -= extra
-            lines.append(full)
-        else:
-            lines.append(pointer)
+    lines = [pointer for _, pointer in entries]
+    for index, (full, _) in enumerate(entries):
+        candidate = lines[:index] + [full] + lines[index + 1:]
+        if est_tokens("\n\n".join(candidate)) <= budget:
+            lines = candidate
     return lines
 
 
