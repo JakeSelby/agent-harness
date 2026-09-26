@@ -101,7 +101,8 @@ class CatalogTests(unittest.TestCase):
     def test_catalog_uses_neutral_unique_source_ids(self):
         items = catalog.catalog(REPO)["primitives"]
         self.assertEqual(len(items), len({(x["kind"], x["id"]) for x in items}))
-        self.assertTrue(all(x["source"].startswith("primitives/") for x in items))
+        self.assertTrue(all(x["source"].startswith("policy/hooks/" if x["kind"] == "hooks" else "primitives/")
+                            for x in items))
         self.assertEqual(len([x for x in items if x["kind"] == "roles"]), 11)
 
     def test_custom_stance_switch_changes_both_instruction_projections(self):

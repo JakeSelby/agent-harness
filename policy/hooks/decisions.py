@@ -49,19 +49,20 @@ from pathlib import Path
 POINTS = ("grade-bash", "stop-gate", "tier-agent-spawns", "brief-guard", "evasion-deny")
 
 # The module that owns each point's decision (AD-23): the hook id whose logic made it, named as a
-# selection reference, `hooks/<id>`. Role confinement, framework and evasion refusals, the
-# Workflow launch guard and the integration notice all run in the spawn path `tier-agent-spawns`
-# owns. A point no hook owns, such as `decision-provider`, names `null` rather than a guess.
+# selection reference, `hooks/<id>`. The integration notice runs in the spawn path
+# `tier-agent-spawns` owns. Role confinement, framework and evasion refusals and the Workflow
+# launch guard have no id, since no switch turns them off, so they name `null`, as does any
+# other point no hook owns, such as `decision-provider`, rather than a guess.
 MODULE_KEY = "module"
 POINT_MODULES = {
     "grade-bash": "hooks/grade-bash",
     "stop-gate": "hooks/stop-gate",
     "tier-agent-spawns": "hooks/tier-agent-spawns",
     "brief-guard": "hooks/brief-guard",
-    "evasion-deny": "hooks/tier-agent-spawns",
-    "role-confinement": "hooks/tier-agent-spawns",
-    "framework-spawn": "hooks/tier-agent-spawns",
-    "workflow-launch": "hooks/tier-agent-spawns",
+    "evasion-deny": None,
+    "role-confinement": None,
+    "framework-spawn": None,
+    "workflow-launch": None,
     "integration-descriptor": "hooks/tier-agent-spawns",
 }
 
