@@ -46,6 +46,8 @@ whose variant differs from the one the sync manifest records, adds that variant'
 session's context as an "Effective session stance" line that replaces the linked variant for that
 session. Hooks read the same resolution at run time, so the prose you follow and the switches the
 hooks act on agree.
+`citizen diff` compares the links against your user-level selection, so a project or session
+selection is not drift; it says so when one is set.
 
 The injection costs context only when a selection differs; a session with no selection, or one
 that matches the synced variants, pays nothing. What it injects is re-read on every turn, like the
