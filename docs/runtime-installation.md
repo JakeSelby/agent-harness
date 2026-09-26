@@ -123,7 +123,9 @@ the marketplace again from the same source and installs `model-citizen@model-cit
 order. A failed step stops the run and prints the steps that did not run. Without the `claude`
 CLI on your PATH it prints the in-session steps instead.
 
-A plugin-only install has no `citizen` command, so run the steps in a session:
+A plugin-only install has no `citizen` command, so run the steps in a session. The `add` line
+takes the source you first added the marketplace from; if that was a fork or a local path, add
+that instead of `JakeSelby/agent-harness`:
 
 ```
 /plugin uninstall agent-harness@agent-harness
