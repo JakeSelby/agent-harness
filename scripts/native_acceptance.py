@@ -102,9 +102,15 @@ def catalog():
     return json.loads((ROOT / "compatibility" / "catalog.json").read_text())
 
 
-def redact(text, extra=()):
-    """Strip home paths, session identifiers and anything shaped like a credential."""
+def redact(text, extra=(), secrets=()):
+    """Strip home paths, session identifiers and anything shaped like a credential.
+
+    `secrets` are literal values to remove whatever their shape, such as the fields of a linked
+    login file; they go first, so no path or shape rule can split one and leave part of it behind.
+    """
     text = str(text)
+    for secret in sorted((str(item) for item in secrets if item), key=len, reverse=True):
+        text = text.replace(secret, REDACTED)
     for path in [str(item) for item in extra] + [str(Path.home()), tempfile.gettempdir()]:
         if path and path != "/":
             text = text.replace(str(Path(str(path)).resolve()), "~").replace(str(path), "~")
@@ -188,6 +194,10 @@ class Home:
     def discard(self):
         if not self.keep:
             shutil.rmtree(self.root, ignore_errors=True)
+
+    def use_login(self, source):
+        raise Unverified("only a Codex client takes a session login; %s passes its credential "
+                         "by name (docs/qualification-runbook.md, Credentials)" % self.runtime)
 
     def seed(self, stances=None, roots=(), **config):
         data = json.loads((ROOT / "config.example.json").read_text())
@@ -392,6 +402,20 @@ class CodexHome(Home):
     command = "codex"
     home_var = "CODEX_HOME"
 
+    def use_login(self, source):
+        """Point this home's `auth.json` at the operator's session login, as the worker adapter does.
+
+        A symlink, never a copy: a kept home then holds no credential of its own, and a token the
+        client refreshes lands in the one login file rather than forking it. Returns the login's
+        string values, which the caller redacts from every observation whatever their shape.
+        """
+        login = Path(source) / "auth.json"
+        if not login.is_file():
+            raise Unverified("no Codex session login in the operator's CODEX_HOME; run codex login")
+        self.client_dir.mkdir(parents=True, exist_ok=True)
+        (self.client_dir / "auth.json").symlink_to(login.resolve())
+        return login_secrets(login)
+
     def session(self, prompt, tools=("Agent",), resume=None, timeout=TURN_TIMEOUT):
         args = [self.command, "exec", "--json", "--skip-git-repo-check",
                 "--cd", str(self.project), "-m", self.model]
@@ -517,6 +541,34 @@ def reconcile_config(path):
 
 
 HOMES = {"claude-code": Home, "codex": CodexHome}
+
+
+def login_source(environ=None):
+    """The operator's Codex home, read before any disposable HOME replaces it."""
+    environ = os.environ if environ is None else environ
+    if environ.get("CODEX_HOME"):
+        return Path(environ["CODEX_HOME"])
+    return Path(environ.get("HOME") or os.path.expanduser("~")) / ".codex"
+
+
+def login_secrets(path):
+    """Every string of eight or more characters in a login file, for literal redaction."""
+    found = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, str) and len(value) >= 8:
+            found.append(value)
+    try:
+        walk(json.loads(Path(path).read_text()))
+    except (OSError, ValueError):
+        pass
+    return found
 
 SPAWN_PROMPT = ("Use your Agent tool exactly once to launch one subagent. Do not name a "
                 "subagent_type and do not set a model: pass only the prompt, which must be "
@@ -3026,33 +3078,45 @@ def unobserved_note(client, confirmed):
     return UNOBSERVED_HOME % (spec["home_var"], spec["runtime"], spec["runtime"])
 
 
-def probe(client, name, model, keep, confirmed=()):
+def probe(client, name, model, keep, confirmed=(), login=None):
     """Run one case and return its result, observation and the home it used.
 
     A surface whose configuration home this runner has never been run against cannot turn an
     assertion that held into a qualification pass: the reading itself is unconfirmed, so the
     verdict is `unverified` with the observation kept, exactly as an unobserved case is.
+
+    `login` is the operator's Codex home, given only under `--codex-session-login`; its
+    `auth.json` is linked into this case's home and every value in it is redacted from the result.
     """
     started = time.time()
     spec = CLIENTS[client]
     home = HOMES[spec["runtime"]](spec, name, model, keep=keep)
     caveat = unobserved_note(client, confirmed)
+    secrets = []
+
+    def scrub(text):
+        # Read the login again at redaction time: a token the client refreshed mid-case is in the
+        # operator's file, or in this home's own if the client replaced the link with a file.
+        fresh = [] if login is None else (login_secrets(Path(login) / "auth.json")
+                                          + login_secrets(home.client_dir / "auth.json"))
+        return redact(text, [home.root], secrets + fresh)
     try:
+        if login is not None:
+            secrets = home.use_login(login)
         observation = CASES[name][0](home)
         return {"case": name, "result": "unverified" if caveat else "passed",
-                "observation": redact(observed([observation], caveat) if caveat else observation,
-                                      [home.root]),
+                "observation": scrub(observed([observation], caveat) if caveat else observation),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     except AssertionError as error:
         # On an unconfirmed surface the reading itself is in question, so an assertion that did
         # not hold is not yet a defect in the harness: it is `unverified` with what was read.
         return {"case": name, "result": "unverified" if caveat else "failed",
-                "observation": redact(observed([str(error)], caveat) if caveat else error,
-                                      [home.root]),
+                "observation": scrub(observed([str(error)], caveat) if caveat else error),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     except Exception as error:  # An unobserved case is unverified, never a pass.
         reason = "%s: %s" % (type(error).__name__, error) if not isinstance(error, Unverified) else str(error)
-        return {"case": name, "result": "unverified", "observation": redact(reason, [home.root]),
+        return {"case": name, "result": "unverified",
+                "observation": scrub(reason),
                 "seconds": round(time.time() - started, 1), "sessions": home.launched}
     finally:
         home.discard()
@@ -3250,12 +3314,18 @@ def executed_by(tier_routing, model=None):
     return run, stated
 
 
-def plan(client, names, model, confirmed=(), tier_routing=None):
+LOGIN_NOTE = ("the operator's Codex session login is linked, not copied, into each disposable "
+              "CODEX_HOME, and every value in it is redacted from the record")
+
+
+def plan(client, names, model, confirmed=(), tier_routing=None, login=False):
     spec = CLIENTS[client]
     tier_routing = tier_routing or routing(client)
     lines = ["plan: %s, model %s, one disposable %s per case, no client run"
              % (client, model, spec["home_var"]),
              "  tiers: " + qualification.describe(tier_routing)]
+    if login:
+        lines.append("  login: " + LOGIN_NOTE)
     lines += ["  note: " + note for note in tier_routing.get("notes", [])]
     caveat = unobserved_note(client, confirmed)
     if caveat:
@@ -3267,7 +3337,7 @@ def plan(client, names, model, confirmed=(), tier_routing=None):
 
 
 def record(client, names, model, keep, runner=probe, progress=None, confirmed=(),
-           tier_routing=None):
+           tier_routing=None, login=None):
     spec = CLIENTS[client]
     tier_routing = tier_routing or executed_by(routing(client), model)[1]
     if git("status", "--porcelain"):
@@ -3299,12 +3369,30 @@ def record(client, names, model, keep, runner=probe, progress=None, confirmed=()
             sys.stderr.write("resume: %s already %s at %s; not rerun\n"
                              % (name, kept[name], header["source_commit"][:12]))
             continue
-        item = (runner(client, name, model, keep, confirmed) if name in CASES
+        # The login is passed only when asked for, so a runner that never takes one still fits.
+        extra = {"login": login} if login is not None else {}
+        item = (runner(client, name, model, keep, confirmed, **extra) if name in CASES
                 else {"case": name, "result": "unverified", "observation": NOT_AUTOMATED})
         append_case(progress, header, item)
         results.append(item)
     return scoped(client, build_record(progress_lines(progress, header)
                                       or [dict(header, **item) for item in results]))
+
+
+def session_login(client, environ=None):
+    """The Codex home whose login `--codex-session-login` links, refusing a run it cannot serve.
+
+    Fails before any case: a Claude Code target passes its credential by name, and a missing
+    login file would otherwise surface as one `unverified` case after another.
+    """
+    if CLIENTS[client]["runtime"] != "codex":
+        raise SystemExit("--codex-session-login is for a Codex client; %s passes its credential "
+                         "by name (docs/qualification-runbook.md, Credentials)" % client)
+    source = login_source(environ)
+    if not (source / "auth.json").is_file():
+        raise SystemExit("--codex-session-login found no auth.json in the operator's Codex home; "
+                         "run codex login first")
+    return source
 
 
 def main(argv=None):
@@ -3326,16 +3414,23 @@ def main(argv=None):
     parser.add_argument("--home-confirmed", action="append", default=[], metavar="CLIENT",
                         help="a client whose configuration home was compared against a hand run; "
                              "repeat for each, and never for a surface nobody compared")
+    parser.add_argument("--codex-session-login", action="store_true",
+                        help="link the operator's Codex auth.json (from CODEX_HOME, or ~/.codex) "
+                             "into each disposable CODEX_HOME; off by default, Codex clients only")
     parser.add_argument("--execution-class", default=qualification.EXECUTION_DEFAULT,
                         help="the capability class of the worker running the cases")
     parser.add_argument("--assessment-class", default=qualification.ASSESSMENT_DEFAULT,
                         help="the capability class of the reader assessing the observations")
     args = parser.parse_args(argv)
     names = selected(args.cases)
+    # Rebuilding from the progress log runs no case, so it needs no login to link.
+    login = (session_login(args.client) if args.codex_session_login and not args.from_progress
+             else None)
     model, tier_routing = executed_by(
         routing(args.client, args.execution_class, args.assessment_class), args.model)
     if args.dry_plan:
-        print(plan(args.client, names, model, args.home_confirmed, tier_routing))
+        print(plan(args.client, names, model, args.home_confirmed, tier_routing,
+                   login=login is not None))
         return 0
     progress = args.progress or progress_path(args.client, args.out)
     if args.from_progress:
@@ -3346,7 +3441,7 @@ def main(argv=None):
         if mismatch:
             raise SystemExit(mismatch)
         data = record(args.client, names, model, args.keep_home, progress=progress,
-                      confirmed=args.home_confirmed, tier_routing=tier_routing)
+                      confirmed=args.home_confirmed, tier_routing=tier_routing, login=login)
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.write_text(rendered)
