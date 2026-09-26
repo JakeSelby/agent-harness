@@ -80,9 +80,10 @@ and each id is a unit of the `hooks` switch kind in the [selection document](pre
 | --- | --- |
 | `allow-plan-webfetch` | PreToolUse on WebFetch in plan mode |
 | `allow-readonly-bash` | the read-only Bash allow, plan-mode allows and `plan_allow_tools` |
+| `approvals` | UserPromptSubmit: records a prompt that is only `approve <code>` tokens, for `grade-bash` in auto mode, Claude Code only |
 | `brief-guard` (core) | PreToolUse on a spawn |
 | `filter-output` | PreToolUse on Bash |
-| `grade-bash` (core) | Bash grading, its ask or deny, and the decision log's Bash rows |
+| `grade-bash` (core) | Bash grading, its ask or deny, consuming an approval in auto mode, guarding the approvals store, and the decision log's Bash rows |
 | `harness-session` | SessionStart |
 | `neutralize-tool-output` (core) | PostToolUse |
 | `stage-user-files` | PreToolUse on SendUserFile, Claude Code only |

@@ -25,13 +25,19 @@ Behaviour:
     and says the selection is unresolved, because guessing the permissive one would drop a
     prompt the user asked for.
   - At or above it, prompting modes get `ask` and the non-prompting modes get `deny` with the
-    confirm marker in the reason, because per the Claude Code hooks reference, in
+    confirmation channel in the reason, because per the Claude Code hooks reference, in
     `bypassPermissions` and in `auto` mode 'The "ask" decision is ignored', while 'A hook that
     returns `permissionDecision: "deny"` blocks the tool even in `bypassPermissions` mode or
-    with `--dangerously-skip-permissions`'. A command prefixed `HARNESS_CONFIRMED=1` is the
-    confirmation channel: the marker is stripped and the command passes silently at any grade.
-    The marker is leading and confirms the whole command line, compounds included, because that
-    is the text the user was shown and said yes to; a marker in the middle confirms nothing.
+    with `--dangerously-skip-permissions`'.
+  - In `bypassPermissions`, a command prefixed `HARNESS_CONFIRMED=1` is the confirmation
+    channel: the marker is stripped and the command passes silently at any grade. The marker is
+    leading and confirms the whole command line, compounds included, because that is the text
+    the user was shown and said yes to; a marker in the middle confirms nothing.
+  - In `auto` mode the classifier refuses that marker as a bypass of this hook, so the deny
+    names an approval code instead (`approvals.py`): the user replies `approve <code>` as the whole
+    message, and the same command, with no marker, then passes once in that session within
+    thirty minutes. The approval is consumed here, at the point the hook would deny. A Bash command that writes to
+    the approvals store grades 3, so the agent cannot record an approval of its own.
   - Never raises: a missing sibling grammar and any unexpected error are a silent exit 0, so a
     fault here can only cost a prompt that native would not have shown either. The one thing it
     will not guess at is the stance, above.
@@ -77,6 +83,13 @@ def _sibling(name, alias):
 
 
 ro = _sibling("allow-readonly-bash.py", "grade_bash_readonly")
+approvals = _sibling("approvals.py", "grade_bash_approvals")
+APPROVAL_TAIL = (" Nothing can prompt in this permission mode, so the command was refused rather than"
+                 " asked about. Stop, say in chat what it would change and why that is hard to undo,"
+                 " and ask the user, if they agree, to reply with exactly `approve %s` as the whole"
+                 " message, since any other text in it records nothing. After that reply, run exactly"
+                 " the same command again with no marker: the approval covers this command once, in"
+                 " this session, for thirty minutes.")
 
 # One consequence clause per verb family, plus a generic fallback per grade. The clause is the
 # whole preview: the reason line is verb, target, clause.
@@ -96,6 +109,7 @@ CLAUSES = {
     "opaque": "runs text this hook cannot inspect",
     "remote": "changes shared state",
     "remote-delete": "deletes a remote resource",
+    "approvals": "records an approval only the user may give",
 }
 GENERIC = {1: "writes to the working tree", 2: "changes shared state", 3: "cannot be undone"}
 
@@ -870,7 +884,17 @@ def grade_tokens(tokens, cwd, depth):
 
 
 def grade_text(cmd, cwd="", depth=0):
-    """(grade, verb, target, family) for a whole command line: the maximum over its parts."""
+    """(grade, verb, target, family) for a whole command line: the maximum over its parts.
+
+    A command that is not read-only and names the approvals store grades 3, whatever else it
+    does: an approval must come from the user's prompt, never from a write the agent makes."""
+    best = _grade_text(cmd, cwd, depth)
+    if depth == 0 and 0 < best[0] < 3 and approvals is not None and approvals.mentions_store(cmd):
+        return 3, "write to", "the approvals store", "approvals"
+    return best
+
+
+def _grade_text(cmd, cwd, depth):
     if depth == 0 and ro.command_ok(cmd):
         return 0, None, None, None
     if depth >= MAX_DEPTH:
@@ -906,6 +930,27 @@ def reason(grade, verb, target, family, variant):
         grade, LABELS[grade], phrase or "this command", clause, PLAIN[grade], HOOK, variant)
 
 
+def approval_code(mode, session_id, command):
+    """The code the user replies with to approve `command`, or None where that channel is closed.
+
+    Only `auto` mode has it: a prompting mode asks natively, and `bypassPermissions` keeps the
+    marker. `command` is the raw text the agent sent, so the code names exactly that command."""
+    if mode != "auto" or approvals is None or approvals.store_path(session_id) is None:
+        return None
+    return approvals.code_for(session_id, command)
+
+
+def approved(mode, session_id, command):
+    """Consume a live approval of `command` in this session; True when one was used."""
+    code = approval_code(mode, session_id, command)
+    return code is not None and approvals.consume(session_id, code)
+
+
+def deny_tail(mode, session_id, command):
+    code = approval_code(mode, session_id, command)
+    return APPROVAL_TAIL % code if code else DENY_TAIL
+
+
 def main():
     if ro is None:
         return  # no grammar, no grading: fall through to the normal permission flow
@@ -921,6 +966,7 @@ def main():
     command = tool_input.get("command")
     if not isinstance(command, str) or not command.strip():
         return
+    raw = command
     command, confirmed = strip_marker(command)
     if confirmed:
         return
@@ -930,8 +976,11 @@ def main():
     if grade < threshold or grade == 0:
         return
     text = reason(grade, verb, target, family, label)
-    if payload.get("permission_mode") in DENY_MODES:
-        emit("deny", text + DENY_TAIL)
+    mode, session_id = payload.get("permission_mode"), payload.get("session_id")
+    if mode in DENY_MODES:
+        if approved(mode, session_id, raw):
+            return
+        emit("deny", text + deny_tail(mode, session_id, raw))
     else:
         emit("ask", text)
 
