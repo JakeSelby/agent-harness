@@ -30,10 +30,12 @@ written down before the run.
 committed to this repository before the first trial of the run it governs. Every section of the
 template has content or an explicit "none" with a reason. The order is checkable: the committer date
 of the commit that adds the filled plan precedes the start time of the earliest trial in the proof
-set's rows, and that commit is an ancestor of the commit the run was taken at. Push the commit before
-the first trial, so the date is also on a remote that others can read. An edit after the first trial
-does not change the plan; it is an appended, dated entry in the plan's deviation log, and the
-published result lists every deviation.
+set's rows, and that commit is an ancestor of the commit the run was taken at. Those two checks order
+the commits, but whoever commits sets the committer date, so they do not prove the plan was public
+before the run. Merge the plan's pull request before the first trial: the check also compares the
+merge time GitHub records for that pull request with the start of the earliest trial. An edit after
+the first trial does not change the plan; it is an appended, dated entry in the plan's deviation log,
+and the published result lists every deviation.
 
 SM-2 fixes the defaults the plan starts from. Its hypothesis:
 

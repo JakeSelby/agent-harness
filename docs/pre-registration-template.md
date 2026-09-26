@@ -2,9 +2,9 @@
 
 Copy this file for each proof run, fill every section, and commit the copy before the run's first
 trial. Name the copy for the date and the question, for example
-`benchmarks/preregistrations/2026-10-01-harness-vs-bare.md`, and push it before the first trial so
-its date is on a remote others can read. This is item 1 of the [evidence standard](evidence-standard.md),
-which says how the order is checked.
+`benchmarks/preregistrations/2026-10-01-harness-vs-bare.md`, and merge its pull request before the
+first trial, so the plan's publication time is one GitHub records rather than a date you set. This is
+item 1 of the [evidence standard](evidence-standard.md), which says how the order is checked.
 
 Replace each `<...>` with a value. A section that does not apply says "none" and why; a blank or a
 leftover `<...>` fails the check. SM-2's values are filled in as defaults; change one only by
@@ -54,10 +54,14 @@ an appended entry in the deviation log, never an edit above it.
 - **Trials per task and arm:** <m>, five or more.
 - **α and power:** α 0.05 two-sided, joint power 0.8 on both tests of the decision rule, assuming a
   true ratio of 0.85 and equal pass rates.
+- **Claim power:** <the joint power, at this k, n and m, of all three conditions a saving claim
+  needs: both tests of the decision rule and the long-task subset's interval win. Size for 0.8, or
+  state the lower figure and why.>
 - **Minimum detectable effect:** <at most 15%>
 - **Variance source:** <the pilot rows or earlier run the power analysis used, with its
   intra-cluster correlation>
-- **Power calculation:** <the command or formula that produced k and m, and its output>
+- **Power calculation:** <the command or formula that produced k, n and m for the decision rule and
+  for the claim, and its output>
 
 ## Stopping rule
 
