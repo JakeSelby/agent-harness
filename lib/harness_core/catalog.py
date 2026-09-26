@@ -10,7 +10,16 @@ IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
 # value a selection gives it and what sync projects it into. `variant` kinds pick one named file
 # per dimension; `switch` kinds are `on` or `off`, default `on`; a kind with no value is not
 # selectable. `policy/hooks/posture.py` reads this map to resolve a selection, so a new kind is
-# one entry here. `hooks` has no directory: its units are the lifecycle modules.
+# one entry here. `hooks` has no directory: its units are the lifecycle modules `HOOK_IDS` names.
+# Every policy module that answers a lifecycle event, by its basename under `policy/hooks/`. Both
+# runtimes' adapters dispatch through `lifecycle.py`, so this one list is every runtime's hook ids;
+# a module the other `policy/hooks/` files load as a library has no id and no switch.
+HOOK_IDS = ("allow-plan-webfetch", "allow-readonly-bash", "brief-guard", "filter-output", "grade-bash",
+            "harness-session", "neutralize-tool-output", "stage-user-files", "stop-gate",
+            "tier-agent-spawns", "usage-feed", "usage-log", "validate-plan-card")
+# The hooks that enforce rather than assist: `off` only with `core_switches_acknowledged` true.
+CORE_HOOKS = ("brief-guard", "grade-bash", "neutralize-tool-output", "stop-gate")
+HOOKS_DIRECTORY = "policy/hooks"
 KINDS = {
     "rules": {"directory": "rules", "pattern": "*.md", "value": "switch", "projection": "rule link"},
     "stances": {"directory": "stances", "pattern": "*/*.md", "value": "variant",
@@ -19,7 +28,8 @@ KINDS = {
     "roles": {"directory": "roles", "pattern": "*.md", "value": "switch", "projection": "agent definition"},
     "workflows": {"directory": "workflows", "pattern": "*.md", "value": "switch",
                   "projection": "command and generated skill"},
-    "hooks": {"directory": None, "pattern": None, "value": "switch", "projection": "settings hook"},
+    "hooks": {"directory": None, "pattern": None, "units": HOOK_IDS, "value": "switch",
+              "projection": "settings hook"},
     "presentation": {"directory": "presentation", "pattern": "*.md", "value": None, "projection": "output style"},
 }
 # Capability classes, strongest first. A shared role names the class its work needs; each
@@ -200,6 +210,12 @@ def catalog(root):
                 ident = path.parent.name
             entries.append({"id": ident, "kind": kind, "source": str(path.relative_to(root)),
                             "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    for ident in HOOK_IDS:
+        path = root / HOOKS_DIRECTORY / (ident + ".py")
+        if path.is_file():
+            entries.append({"id": ident, "kind": "hooks", "source": str(path.relative_to(root)),
+                            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                            "core": ident in CORE_HOOKS})
     return {"schema_version": 1, "version": (root / "VERSION").read_text().strip(),
             "primitives": entries}
 

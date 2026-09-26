@@ -106,6 +106,9 @@ EXTERNAL_RULES_DIR = "harness-roots"
 RULES_DIR = "harness"
 # The switch kinds sync projects; an `off` unit of one is absent from every runtime home.
 SYNC_SWITCH_KINDS = ("rules", "skills", "workflows", "roles")
+# Every switch kind `config set` writes. Hooks are not projected: the lifecycle dispatcher reads
+# their switches at each event, so a hook switched off needs no sync.
+CONFIG_SWITCH_KINDS = SYNC_SWITCH_KINDS + ("hooks",)
 BREW_PACKAGES = ["git", "gh", "node@22", "pnpm", "uv", "ripgrep", "fd", "jq"]
 # Bin directories of the keg-only formulae above, which Homebrew does not link into its prefix.
 KEG_ONLY_BINS = ["/opt/homebrew/opt/node@22/bin", "/usr/local/opt/node@22/bin"]
@@ -1913,6 +1916,38 @@ def jev_call_lines() -> List[str]:
             "    jev call detail: `harness usage --by provider` prices them per point and mode"]
 
 
+def known_providers() -> List[str]:
+    """Every provider name `governance.provider` may select, local and transport alike."""
+    return sorted(set(decisions_provider.PROVIDERS) | set(decisions_provider.TRANSPORT_PROVIDERS))
+
+
+def policy_files(name: str, root: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """The governance policy files provider `name` reads here, lowest precedence first.
+
+    Empty for `none`, which reads no file. `local`, and `jev` over it, read the user-level file
+    beside `config.json` and then this repository's `.agent-harness/governance.json`.
+    """
+    if name == decisions_provider.NullProvider.name or name not in known_providers():
+        return []
+    root = Path.cwd() if root is None else Path(root)
+    files = [(decisions_provider.USER_LAYER, decisions_provider.user_policy_file()),
+             (decisions_provider.REPOSITORY_LAYER, root / decisions_provider.POLICY_FILE)]
+    return [{"layer": layer, "path": str(path), "present": path.is_file()}
+            for layer, path in files]
+
+
+def policy_file_lines(name: str, root: Optional[Path] = None) -> List[str]:
+    """One line per policy file the provider reads, for `decide` and `doctor`."""
+    if name not in known_providers():
+        return [f"    governance.provider {name!r} is not a provider; known providers are "
+                + ", ".join(known_providers()) + "; no policy file is read"]
+    files = policy_files(name, root)
+    if not files:
+        return [f"    policy files: none read by provider {name}"]
+    return [f"    {entry['layer']}: {entry['path']} "
+            f"({'present' if entry['present'] else 'absent'})" for entry in files]
+
+
 def governance_lines(cfg: Dict[str, Any]) -> List[str]:
     """What `doctor` reports about the decision provider and what it may send.
 
@@ -1921,7 +1956,7 @@ def governance_lines(cfg: Dict[str, Any]) -> List[str]:
     """
     block = cfg.get("governance") if isinstance(cfg.get("governance"), dict) else {}
     name = str(block.get("provider") or decisions_provider.NullProvider.name)
-    lines = [f"  governance provider: {name}"]
+    lines = [f"  governance provider: {name}"] + policy_file_lines(name)
     try:
         controls = decision_controls.Controls.from_config(cfg)
     except decisions_provider.PolicyError as exc:
@@ -2641,8 +2676,11 @@ def cmd_selection(args: argparse.Namespace) -> int:
     module = load_posture()
     declared = module.manifests(read_json(config_path()) or {}, REPO)[0]
     say("mode=" + (data["mode"] or "none") + " (" + data["sources"]["mode"] + ")")
+    for kind, units in data.get("shadowed", {}).items():
+        for unit, source in units.items():
+            say("shadowed " + kind + "." + unit + ": the mode's value is overridden by " + source)
     for kind, units in data.items():
-        if kind in ("mode", "sources"):
+        if kind in ("mode", "sources", "shadowed"):
             continue
         for unit, value in units.items():
             # A switch unit reports what measures it; one with no instrument is unmeasured.
@@ -2671,15 +2709,18 @@ def cmd_decide(args: argparse.Namespace) -> int:
             answer = provider.decide(action, slug)
     except decisions_provider.PolicyError as exc:
         raise SystemExit(str(exc))
+    files = policy_files(provider.name)
     if args.json:
         print(json.dumps({"schema_version": 1, "action": action.as_dict(), "counterparty": slug,
-                          "decision": answer.as_dict()}, indent=2))
+                          "decision": answer.as_dict(), "policy_files": files}, indent=2))
         return 0
     say(f"{args.action} on {slug}: {answer.outcome} "
         f"(level {answer.autonomy_level}, provider {answer.provider})")
     say(answer.reason)
     for match in answer.injected_cognition["rule_matches"]:
         say("  rule: " + match)
+    for line in policy_file_lines(provider.name):
+        say(line.replace("    ", "  ", 1))
     if answer.injected_cognition["agent_message"]:
         say("  agent: " + answer.injected_cognition["agent_message"])
     say("No hook consults this yet; command grading still answers the permission question.")
@@ -3129,7 +3170,8 @@ def cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
-BOOL_KEYS = ["vscode.manage", "claude.manage", "codex.manage", "permissions_bypass_acknowledged"]
+BOOL_KEYS = ["vscode.manage", "claude.manage", "codex.manage", "permissions_bypass_acknowledged",
+             "core_switches_acknowledged"]
 
 
 def coerce_config_value(key: str, value: str) -> Any:
@@ -3165,7 +3207,14 @@ def coerce_config_value(key: str, value: str) -> Any:
         cfg["stances"][tail] = value
         resolve_stances(cfg)
         return value
-    if head in SYNC_SWITCH_KINDS:
+    if key == "mode":
+        # Resolved with the mode in place, so an unknown mode or one that fails its own
+        # validation is refused here rather than at the next sync.
+        user = read_json(config_path()) or {}
+        user["mode"] = value
+        load_selection(env={}, user=user)
+        return value
+    if head in CONFIG_SWITCH_KINDS:
         if not tail:
             raise SystemExit(f"a {head} switch names its unit: harness config set {head}.<name> on|off")
         if value not in ("on", "off"):
@@ -3192,7 +3241,8 @@ def coerce_config_value(key: str, value: str) -> Any:
             raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
         return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"rules|skills|workflows|roles.NAME, permissions, plan_allow_tools, governance.provider, governance.jev.*, "
+                     f"mode, rules|skills|workflows|roles|hooks.NAME, permissions, plan_allow_tools, "
+                     f"governance.provider, governance.jev.*, "
                      f"or one of {', '.join(BOOL_KEYS)}")
 
 
@@ -3243,16 +3293,24 @@ def config_set(key: str, value: Optional[str]) -> int:
             cfg = read_json(path)
             if cfg is None:
                 cfg = deepcopy(example_config())
+                mark_init_defaults(cfg, cfg.get("stances", {}))
             parts = (key.split(".") if key.startswith(("integrations.", "governance."))
                      else key.split(".", 1))
             reconcile.assign(cfg, parts, {"present": True, "value": coerced})
-            if parts[0] in SYNC_SWITCH_KINDS:
-                # Resolved as it will be written: a switch that breaks a module dependency is
-                # refused, and one that repairs a selection the resolver already refuses goes in.
+            if parts[0] == "stances":
+                # A stance set by hand is the user's choice from now on, above any mode.
+                unmark_init_default(cfg, parts[1])
+            if parts[0] in CONFIG_SWITCH_KINDS:
+                # Resolved as it will be written: a switch that breaks a module dependency, or turns
+                # a core hook off unacknowledged, is refused; one that repairs a selection the
+                # resolver already refuses goes in.
                 unset = deepcopy(cfg)
                 unset[parts[0]].pop(parts[1])
                 if parts[1] not in load_selection(env={}, user=unset)[parts[0]]:
                     raise SystemExit(f"{parts[0]} has no unit '{parts[1]}'; `harness selection` lists every unit")
+                load_selection(env={}, user=cfg)
+            elif key == "core_switches_acknowledged":
+                # Withdrawing the acknowledgement while a core hook is off is refused the same way.
                 load_selection(env={}, user=cfg)
             if key.startswith("integrations."):
                 selected = integrations.selection(cfg)
@@ -3268,7 +3326,8 @@ def config_set(key: str, value: Optional[str]) -> int:
         say(f"{key} set  ({path})")
     else:
         say(f"{key} = {json.dumps(coerced)}  ({path})")
-    say("applies to new viewer sessions" if key.startswith("integrations.") else "run `harness sync` to apply it")
+    say("applies to new viewer sessions" if key.startswith("integrations.")
+        else "applies from the next hook event" if key.startswith("hooks.") else "run `harness sync` to apply it")
     return 0
 
 
@@ -3314,6 +3373,12 @@ def cmd_viewer(args: argparse.Namespace) -> int:
 
 
 def _ask(prompt: str, default: str, choices: Optional[List[str]] = None, required: bool = False) -> str:
+    return _ask_entry(prompt, default, choices, required)[0]
+
+
+def _ask_entry(prompt: str, default: str, choices: Optional[List[str]] = None,
+               required: bool = False) -> Tuple[str, bool]:
+    """`_ask`'s answer, and whether it came from pressing Enter rather than typing it."""
     if choices:
         print(f"  {prompt}: {' · '.join(choices)}")
     label = "  " if choices else f"  {prompt}"
@@ -3330,7 +3395,7 @@ def _ask(prompt: str, default: str, choices: Optional[List[str]] = None, require
         if choices and value not in choices:
             print(f"    not one of: {', '.join(choices)}")
             continue
-        return value
+        return value, not raw
 
 
 def _detect_timezone() -> str:
@@ -3356,6 +3421,22 @@ def _detect_git_name() -> str:
     return out.stdout.strip() if out.returncode == 0 else ""
 
 
+def mark_init_defaults(cfg: Dict[str, Any], names: Any) -> None:
+    """Record `names` as stances init wrote as defaults, which resolve below a mode (AD-2).
+
+    Each name keeps the value init wrote, so a value edited by hand later counts as typed. The
+    key and its precedence are `posture.INIT_DEFAULTS`; `docs/modes.md` has the rule.
+    """
+    stances = cfg.get("stances", {})
+    cfg["init_defaults"] = {"stances": {name: stances[name] for name in sorted(names) if name in stances}}
+
+
+def unmark_init_default(cfg: Dict[str, Any], name: str) -> None:
+    listed = cfg.get("init_defaults")
+    if isinstance(listed, dict) and isinstance(listed.get("stances"), dict):
+        listed["stances"].pop(name, None)
+
+
 def init_defaults(args: argparse.Namespace, path: Path) -> int:
     """Write the config with no questions, for a scripted first run.
 
@@ -3378,6 +3459,7 @@ def init_defaults(args: argparse.Namespace, path: Path) -> int:
     identity["timezone"] = getattr(args, "timezone", None) or _detect_timezone()
     preset = getattr(args, "preset", None) or "software"
     cfg["stances"] = dict(example.get("stances", {}), **STANCE_PRESETS[preset])
+    mark_init_defaults(cfg, cfg["stances"])
     write_json_atomic(path, cfg)
     say(f"wrote {path} ({preset} defaults)")
     left = placeholder_identity(cfg)
@@ -3426,9 +3508,15 @@ def cmd_init(args: argparse.Namespace) -> int:
     print("\nPreferences. Every one has a default; Enter takes it.")
     print("They are described in docs/preferences.md and can be changed later.\n")
     stances = cfg.setdefault("stances", {})
+    entered = []
     for name in STANCE_NAMES:
         variants = stance_variants(name)
-        stances[name] = _ask(name, defaults.get(name, variants[0]), variants)
+        stances[name], took_default = _ask_entry(name, defaults.get(name, variants[0]), variants)
+        if took_default:
+            entered.append(name)
+    # Enter took the offered value, which a mode may replace; a typed answer is a choice, even
+    # when it names the offered value.
+    mark_init_defaults(cfg, entered)
     write_json_atomic(path, cfg)
     print(f"\nwrote {path}")
     print("next: bin/harness sync")

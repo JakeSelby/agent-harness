@@ -94,12 +94,23 @@ MAX_MULTIPLIER = 100
 MAX_BUDGET = 10 ** 9
 MAX_NUDGES = 8
 SIDECAR_KEYS = ("schema_version", "extends", "switches", "default_band", "rows")
-# The selection document: `mode`, then one object per kind in `catalog.KINDS`. `sources` is what
-# `harness selection --json` prints beside them; it selects nothing, and is accepted so that the
-# output reads back unchanged as a session file. Shape and precedence: `docs/preferences.md`.
-SELECTION_EXTRA_KEYS = ("mode", "sources")
+# The selection document: `mode`, then one object per kind in `catalog.KINDS`. `sources` and
+# `shadowed` are what `harness selection --json` prints beside them; they select nothing, and are
+# accepted so that the output reads back unchanged as a session file. Shape and precedence:
+# `docs/preferences.md`.
+SELECTION_EXTRA_KEYS = ("mode", "sources", "shadowed")
 SWITCH_STATES = ("on", "off")
 MODE_VARIABLE = "HARNESS_MODE"
+# A mode file carries these beside its selection keys. Contract and shipped modes: `docs/modes.md`.
+MODE_KEYS = ("schema_version", "description")
+# Hooks a layer, a mode included, may switch off only when the user configuration sets `CORE_ACK`
+# true (`core_refusals`). The same four ids as `catalog.CORE_HOOKS`, held here too because a hook
+# copied out of its checkout has no catalog; a test keeps the two equal.
+CORE_HOOKS = ("brief-guard", "grade-bash", "neutralize-tool-output", "stop-gate")
+CORE_ACK = "core_switches_acknowledged"
+# The user-configuration key naming, per kind, the units `harness init` wrote as defaults rather
+# than ones the user chose. Those resolve below the mode (AD-2); every other user key above it.
+INIT_DEFAULTS = "init_defaults"
 _KINDS = {}
 # A module's manifest (AD-22): what it claims to change, where it reaches the model, what measures
 # it, the one exclusive slot it takes, and the modules it needs or collides with. Authoring
@@ -789,49 +800,138 @@ def _mode_of(data):
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _mode_file(name, config, strict, root=None):
-    """The document `modes/<name>.json` holds in the first primitive root carrying it, or `{}`.
+def modes(config=None, root=None):
+    """`({name: path}, [refusal])`: every `modes/<name>.json` in the primitive roots.
 
-    No mode ships yet, so an unknown name selects nothing rather than failing.
+    A name two roots both define is a refusal rather than first-wins, so a user root cannot
+    silently replace a shipped mode; the first definition is still returned for a hook.
     """
-    if not _identifier(name):
-        return {}
+    found, errors = {}, []
     for directory in primitive_roots(config, root, "modes"):
-        path = directory / (name + ".json")
-        if not path.is_file():
+        for path in sorted(directory.glob("*.json")) if directory.is_dir() else []:
+            name = path.stem
+            if not _identifier(name):
+                errors.append("mode file " + str(path) + " is not named with lowercase letters, digits and hyphens")
+            elif name in found:
+                errors.append("mode '" + name + "' is defined in both " + str(found[name]) + " and " + str(path))
+            else:
+                found[name] = path
+    return found, errors
+
+
+def validate_mode(name, data, config, root=None):
+    """Every refusal the mode file `data` earns, as messages; empty when it is sound.
+
+    A mode carries `schema_version` 1, a `description`, and selection keys naming installed
+    units only; a stance variant is checked where every layer's is, by `sync`. A core hook it
+    switches off is refused where every layer's is, by `core_refusals`.
+    """
+    where = "mode file " + name
+    if not isinstance(data, dict):
+        return [where + " is not a JSON object"]
+    kinds = selection_kinds(root)
+    errors = []
+    extra = sorted(set(data) - set(MODE_KEYS) - set(kinds))
+    if extra:
+        errors.append(where + " may carry schema_version, description and selection keys only, not " +
+                      ", ".join("'" + key + "'" for key in extra))
+    if data.get("schema_version") != 1:
+        errors.append(where + " needs \"schema_version\": 1")
+    if not (isinstance(data.get("description"), str) and data["description"].strip()):
+        errors.append(where + " needs a nonempty \"description\"")
+    declared = None
+    for kind in sorted(set(data) & set(kinds)):
+        chosen, entry = data[kind], kinds[kind]
+        if not isinstance(chosen, dict):
+            errors.append(where + " sets " + kind + " to " + json.dumps(chosen) + "; a kind is an object of unit to value")
             continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise ValueError(str(path) + " is not a JSON object")
-            refused(data, "mode file " + str(path), root)
-            return data
-        except (OSError, ValueError):
-            if strict:
-                raise
-            return {}
-    return {}
+        if entry.get("directory"):
+            known = set(_units(kind, entry, config, root))
+        else:
+            if declared is None:
+                declared = manifests(config, root)[0]
+            known = set(declared.get(kind, {})) | (set(CORE_HOOKS) if kind == "hooks" else set())
+        for unit, value in sorted(chosen.items()):
+            label = where + " sets " + kind + "." + unit
+            if unit not in known:
+                errors.append(label + ", which is not an installed " + kind + " unit")
+            elif entry.get("value") == "switch" and value not in SWITCH_STATES:
+                errors.append(label + " to " + json.dumps(value) + "; a " + kind + " unit is on or off")
+            elif entry.get("value") == "variant" and not (isinstance(value, str) and value.strip()):
+                errors.append(label + " to " + json.dumps(value) + "; a " + kind + " unit names a variant")
+    return errors
+
+
+def _mode_file(name, config, strict, root=None):
+    """The selection keys of mode `name`, validated; `{}` when a hook cannot use it.
+
+    Strict callers hear about an unknown mode, a duplicate name, or a mode file that fails
+    `validate_mode`, before anything acts on the selection. A hook runs without a mode it cannot
+    use, and takes the first root's definition of a duplicated name.
+    """
+    found, errors = modes(config, root)
+    path = found.get(name)
+    if errors and strict:
+        raise ValueError("\n".join(errors))
+    try:
+        if path is None:
+            raise ValueError("unknown mode '" + name + "'; installed modes: " + (", ".join(sorted(found)) or "none"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        problems = validate_mode(name, data, config, root)
+        if problems:
+            raise ValueError("\n".join(problems))
+    except (OSError, ValueError):
+        if strict:
+            raise
+        return {}
+    return {key: value for key, value in data.items() if key not in MODE_KEYS}
+
+
+def _init_split(config):
+    """`(typed, defaults)`: the user configuration without, and with only, what init defaulted.
+
+    A unit counts as init's default only while it still holds the value init recorded for it, so
+    a value edited in `config.json` afterwards is typed and stays above the mode.
+    """
+    listed = config.get(INIT_DEFAULTS)
+    if not isinstance(listed, dict):
+        return config, {}
+    typed, defaults = dict(config), {}
+    for kind, names in listed.items():
+        chosen = config.get(kind)
+        if not isinstance(chosen, dict) or not isinstance(names, dict):
+            continue
+        moved = {unit: chosen[unit] for unit, recorded in names.items()
+                 if unit in chosen and chosen[unit] == recorded}
+        if moved:
+            defaults[kind] = moved
+            typed[kind] = {unit: value for unit, value in chosen.items() if unit not in moved}
+    return typed, defaults
 
 
 def layers(config, env, strict, root=None):
     """`(mode, [(source, document)])`, lowest precedence first: the one selection ladder.
 
-    Mode, user configuration, project file, session file, then the session's environment
-    sugar: `HARNESS_MODE` and `HARNESS_STANCE_*` resolve as the session layer's last word. The
-    mode is whichever layer named one last, and its file sits under every explicit layer.
+    What `harness init` wrote as a default (`init`), the mode, the user configuration, project
+    file, session file, then the session's environment sugar: `HARNESS_MODE` and
+    `HARNESS_STANCE_*` resolve as the session layer's last word. The mode is whichever layer named
+    one last, and its file sits under every explicit layer but over init's defaults.
     """
     project = _project_config(env, strict, root)
     session = _session_config(env, strict, root)
     sugar = {"stances": overrides(env)}
     if (env.get(MODE_VARIABLE) or "").strip():
         sugar["mode"] = env[MODE_VARIABLE]
-    explicit = [("user", config if isinstance(config, dict) else {}), ("project", project),
+    user, defaults = _init_split(config if isinstance(config, dict) else {})
+    explicit = [("user", user), ("project", project),
                 ("session", session), ("session", sugar)]
     mode = None
     for source, data in explicit:
         if _mode_of(data):
             mode = (_mode_of(data), source)
-    ladder = [("mode:" + mode[0], _mode_file(mode[0], config, strict, root))] if mode else []
+    ladder = [("init", defaults)] if defaults else []
+    if mode:
+        ladder.append(("mode:" + mode[0], _mode_file(mode[0], config, strict, root)))
     return mode, ladder + explicit
 
 
@@ -844,7 +944,13 @@ def _selection(config, env, strict, root=None):
 
 
 def _units(kind, entry, config, root=None):
-    """The installed units of one kind, sorted: stance dimensions, rule, skill or role names."""
+    """The installed units of one kind, sorted: stance dimensions, rule, skill or role names.
+
+    A kind the catalog enumerates, `hooks`, counts each listed id whose module is in this checkout.
+    """
+    if entry.get("units"):
+        base = (root or ROOT) / "policy" / "hooks"
+        return sorted(unit for unit in entry["units"] if (base / (unit + ".py")).is_file())
     directory, pattern = entry.get("directory"), entry.get("pattern")
     if not directory or not pattern:
         return []
@@ -983,6 +1089,20 @@ def manifest_refusals(document, declared, required, installed=None):
     return errors
 
 
+def core_refusals(document, sources, config):
+    """One message per core hook `document` switches off while the user has not acknowledged it.
+
+    The acknowledgement is read from the user configuration only: a project, session or mode file
+    cannot carry it, so no file a repository ships can turn enforcement off on its own authority.
+    """
+    if isinstance(config, dict) and config.get(CORE_ACK) is True:
+        return []
+    hooks = document.get("hooks") or {}
+    return [(sources.get("hooks") or {}).get(unit, "a layer") + " switches the core hook " + unit +
+            " off; set " + CORE_ACK + " true in the user configuration to allow it"
+            for unit in CORE_HOOKS if hooks.get(unit) == "off"]
+
+
 def measurement(manifest):
     """How a report shows a module: its instruments, or `unmeasured`, never `no effect`."""
     instruments = (manifest or {}).get("instruments") or []
@@ -993,11 +1113,14 @@ def selection(env=None, strict=True, config=None, root=None):
     """Every unit of every kind with its value, and the source that set it.
 
     Returns the selection document — `mode`, then `{kind: {unit: value}}` for each kind in
-    `catalog.KINDS` — plus `sources` in the same shape, each one of `default`, `mode:<name>`,
-    `user`, `project` or `session`, in that precedence. A variant kind's default is the built-in
+    `catalog.KINDS` — plus `sources` in the same shape, each one of `default`, `init`,
+    `mode:<name>`, `user`, `project` or `session`, in that precedence, and `shadowed`,
+    `{kind: {unit: source}}` for every mode key a higher layer overrode. A variant kind's default is the built-in
     stance or null; a switch kind's is `on`. `config` is the user configuration when the caller
     has already read it. A kind that is not an object, or a switch value other than `on` or `off`,
     is an error when strict and selects nothing otherwise; a unit a layer names that nothing installs is still reported.
+    So is a core hook switched off without `core_switches_acknowledged` true in the user
+    configuration, which resolves `on` when not strict (`core_refusals`).
     Strict resolution also enforces the switch kinds' manifests (AD-22): a shipped module without
     one, a field missing or malformed, a switched-on module whose dependency is not on, two that
     conflict, or two that claim one slot with neither ceding it, is a `ValueError` naming them.
@@ -1005,8 +1128,13 @@ def selection(env=None, strict=True, config=None, root=None):
     env = os.environ if env is None else env
     config = _user_config(env, strict) if config is None else config
     kinds = selection_kinds(root)
+    if strict:
+        duplicates = modes(config, root)[1]
+        if duplicates:
+            raise ValueError("\n".join(duplicates))
     mode, ladder = layers(config, env, strict, root)
     result, sources = {"mode": mode[0] if mode else None}, {"mode": mode[1] if mode else "default"}
+    shadowed = {}  # {kind: units the mode layer set}
     for kind, entry in kinds.items():
         switch = entry.get("value") == "switch"
         result[kind] = {unit: ("on" if switch else DEFAULT_STANCES.get(unit))
@@ -1033,7 +1161,17 @@ def selection(env=None, strict=True, config=None, root=None):
                     continue
                 if not isinstance(value, str) or not value:
                     continue
+                if source.startswith("mode:"):
+                    shadowed.setdefault(kind, set()).add(unit)
                 result[kind][unit], sources[kind][unit] = value, source
+    refusals = core_refusals(result, sources, config)
+    if refusals and strict:
+        raise ValueError("\n".join(refusals))
+    if refusals:
+        # A hook resolving non-strictly keeps enforcing: an unacknowledged `off` is not one.
+        for unit in CORE_HOOKS:
+            if result.get("hooks", {}).get(unit) == "off":
+                result["hooks"][unit], sources["hooks"][unit] = "on", "default"
     for kind in kinds:
         result[kind] = dict(sorted(result[kind].items()))
         sources[kind] = dict(sorted(sources[kind].items()))
@@ -1044,10 +1182,18 @@ def selection(env=None, strict=True, config=None, root=None):
         required = {kind: _units_in(base / kinds[kind]["directory"], kinds[kind]["pattern"])
                     for kind in switches if kinds[kind].get("directory") and kinds[kind].get("pattern")}
         installed = {kind: set(_units(kind, kinds[kind], config, root)) for kind in required}
+        # Hooks have no module directory, so `installed` keeps counting one as present when it
+        # declares a manifest; each hook this checkout ships must declare one.
+        required.update({kind: set(_units(kind, kinds[kind], config, root))
+                         for kind in switches if kinds[kind].get("units")})
         errors += manifest_refusals(result, declared, required, installed)
         if errors:
             raise ValueError("module manifest: " + "\nmodule manifest: ".join(errors))
     result["sources"] = sources
+    # A mode key is shadowed when a layer above the mode set the same unit, whatever its value.
+    shadowed = {kind: {unit: sources[kind][unit] for unit in sorted(units)
+                       if not sources[kind][unit].startswith("mode:")} for kind, units in sorted(shadowed.items())}
+    result["shadowed"] = {kind: units for kind, units in shadowed.items() if units}
     return result
 
 

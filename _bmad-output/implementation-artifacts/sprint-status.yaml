@@ -104,6 +104,7 @@ development_status:
   ah-s220-report-stance-drift-and-propose-promotions-or: ready-for-dev
   ah-s230-replay-judge-a-one-policy-arm-pair-on-cost-per: ready-for-dev
   ah-s245-jev-compliance-packs-calibrated-on-hand-labels: backlog
+  ah-s266-local-governance-add-coding-pr-merge-a-user: ready-for-dev
   ah-sp001-jev-verify-stop-claims-against-gate-evidence: ready-for-dev
   ah-sp002-jev-evaluate-advisory-action-risk-and-tool: done
   ah-sp003-jev-evaluate-short-source-to-output-fidelity: done
@@ -305,6 +306,13 @@ development_status:
 
   ah-e019-adopt-bmad-s-native-ticketing-once-upstream-s: in-progress
   ah-c073-record-the-bmad-ticketing-adoption-epic-and-its: done
+
+  ah-e020-rename-the-product-to-model-citizen: in-progress
+  ah-c078-record-the-model-citizen-rename-s-sprint-change: ready-for-dev
+  ah-c079-point-hardcoded-links-at-the-new-repo-and-domain: ready-for-dev
+  ah-s267-add-the-citizen-command-and-keep-harness-as-an: ready-for-dev
+  ah-s268-rename-the-plugin-to-model-citizen-and-keep: ready-for-dev
+  ah-s269-rename-the-product-copy-to-model-citizen: ready-for-dev
 
   # Items with no epic
   ah-b001-plan-mode-prompts-for-read-only-work-it-can-t: done

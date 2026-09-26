@@ -38,7 +38,7 @@ is `stances`, whose dimensions pick a named variant, or one of the switch kinds 
 `skills`, `workflows` and `roles`, whose units are `on` or `off` and default to `on`.
 
 ```json
-{"mode": "superpowers",
+{"mode": "minimal",
  "stances": {"testing": "required"},
  "rules": {"decisions-and-plans": "off"},
  "hooks": {"validate-plan-card": "off"},
@@ -50,7 +50,8 @@ this precedence, lowest first:
 
 1. **`default`** — the built-in stance variants, and `on` for every switch.
 2. **`mode:<name>`** — `modes/<name>.json` in a primitive root, for the mode the highest layer
-   names. No mode ships yet, so an unknown name selects nothing.
+   names. It sits above a stance `harness init` wrote as a default (`init`); how, and what the
+   shipped modes change, is [modes.md](modes.md).
 3. **`user`** — `~/.config/agent-harness/config.json`.
 4. **`project`** — the file `HARNESS_PROJECT_CONFIG` names.
 5. **`session`** — the file `HARNESS_SESSION_CONFIG` names, then `HARNESS_MODE` and
@@ -60,7 +61,7 @@ this precedence, lowest first:
 `sources` object in the same shape naming the layer that set each one. That output reads back
 unchanged as a session file. `harness stances` stays as the stance-only view;
 `harness config set rules.<name> off` writes one switch, and the same form works for `skills`,
-`workflows` and `roles`. It refuses a switch that would leave an `on` module depending on an
+`workflows` and `roles`, and for the `hooks` ids in [runtime controls](runtime-controls.md#hook-ids). It refuses a switch that would leave an `on` module depending on an
 `off` one, so switch the dependent off first. What sync does with an `off` unit is in
 [the sync model](sync-model.md).
 `sync` projects the user's layers only; a project or session layer stays in the session that set it, and an isolated

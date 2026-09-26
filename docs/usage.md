@@ -449,9 +449,10 @@ a context token.
 ```
 
 `module` names the hook that owns the decision, as `hooks/<id>`: `grade-bash`, `stop-gate` and
-`brief-guard` their own, and every refusal or notice on the spawn path, role confinement,
-framework and evasion refusals, the Workflow launch guard and the integration notice included,
-`hooks/tier-agent-spawns`. A point no hook owns, such as `decision-provider`, names `null`.
+`brief-guard` their own, and the band routing row and the integration notice
+`hooks/tier-agent-spawns`. Role confinement, framework and evasion refusals and the Workflow
+launch guard name `null`, because no hook id switches them off, and so does any other point no
+hook owns, such as `decision-provider`.
 `POINT_MODULES` in `decisions.py` is the map.
 
 The file is **append-only**: an outcome is its own record, joined to its decision by

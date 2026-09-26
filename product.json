@@ -12,7 +12,7 @@
     {
       "id": "guardrails",
       "title": "Guardrails that leave room for judgment",
-      "pitch": "Hooks handle the few things that should be deterministic. Everything else stays the agent's call.",
+      "pitch": "Hooks handle the few things that should be deterministic, and each has an id you can switch off; the four that enforce need your acknowledgement first. Everything else stays the agent's call.",
       "features": [
         {
           "name": "Graded shell commands",
@@ -201,7 +201,7 @@
         },
         {
           "name": "User, project, session",
-          "line": "Set a default, override it for one repo, override that for one session, and see which layer set each unit and what measures it with harness selection.",
+          "line": "Set a default or pick a mode, override it for one repo, override that for one session, and see which layer set each unit and what measures it with harness selection.",
           "doc": "docs/preferences.md"
         },
         {
