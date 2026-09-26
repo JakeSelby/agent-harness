@@ -301,7 +301,7 @@ class NativeInstallTests(TempHome):
 
     def test_uninstall_preserves_redirected_link_and_its_recovery_record(self):
         self.assertEqual(self.sync(), 0)
-        link = self.home / ".claude" / "rules" / "harness"
+        link = self.home / ".claude" / "rules" / "harness" / "secrets.md"
         link.unlink()
         link.symlink_to(self.home / "user-target")
         self.assertEqual(harness.cmd_uninstall(harness.argparse.Namespace()), 2)

@@ -106,7 +106,8 @@ class Parity(unittest.TestCase):
     def test_a_user_selected_mode_agrees(self):
         roots = self.home / "roots"
         (roots / "modes").mkdir(parents=True)
-        (roots / "modes" / "focus.json").write_text(json.dumps({"stances": {"testing": "off"}}), encoding="utf-8")
+        mode = {"schema_version": 1, "description": "a test mode", "stances": {"testing": "off"}}
+        (roots / "modes" / "focus.json").write_text(json.dumps(mode), encoding="utf-8")
         self.user({"mode": "focus", "primitive_roots": [str(roots)]})
         printed, sources = self.printed({})
         self.assertEqual((printed["testing"], sources["testing"]), ("off", "mode:focus"))

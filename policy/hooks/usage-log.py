@@ -194,13 +194,72 @@ def usage_path():
 # change to what a row carries, and add a rename to FIELD_FOLDS as `old name: new name`, never
 # by rewriting old rows. See docs/usage.md, "Ledger schema".
 SCHEMA_KEY = "schema_version"
+# Version 1 is first released in v0.14.0 and carries every field that release adds,
+# `profile_fingerprint` among them.
 SCHEMA_VERSION = 1
 FIELD_FOLDS = {}
+FINGERPRINT_KEY = "profile_fingerprint"
+_POSTURE = []
+
+
+def profile_fingerprint():
+    """The fingerprint of the profile in force, from `posture.py`; None when it cannot be had.
+
+    A copy of this hook away from its resolver, or a resolver that fails, stamps null: an
+    unattributed row, never a guessed one. The resolver remembers the answer for the process.
+    """
+    if not _POSTURE:
+        _POSTURE.append(sibling("posture", required=False))
+    try:
+        return _POSTURE[0].fingerprint() if _POSTURE[0] else None
+    except Exception:
+        return None
 
 
 def stamped(record):
-    """A copy of `record` naming the schema this writer writes. The caller's dict is untouched."""
-    return dict(record, **{SCHEMA_KEY: SCHEMA_VERSION})
+    """A copy of `record` naming the schema and the profile. The caller's dict is untouched.
+
+    A record that already names its profile keeps it, null included: a worker's row carries the
+    profile its run started under, and a backfilled row carries only what the ledger already
+    knew, so neither is stamped with the profile of whoever happens to write it.
+    """
+    out = dict(record, **{SCHEMA_KEY: SCHEMA_VERSION})
+    if FINGERPRINT_KEY not in out:
+        out[FINGERPRINT_KEY] = profile_fingerprint()
+    return out
+
+
+ATTRIBUTION_KEY = "context_attribution"
+
+
+def context_attribution():
+    """Per-module context tokens for the selection in force, from `posture.py`; None without it.
+
+    A soft estimate, labelled with its method: see `posture.context_attribution`.
+    """
+    if not _POSTURE:
+        _POSTURE.append(sibling("posture", required=False))
+    try:
+        return _POSTURE[0].context_attribution() if _POSTURE[0] else None
+    except Exception:
+        return None
+
+
+def attributed(record, prior=None, rescan=False):
+    """Give a session row its context attribution: the ledger's own, a live read, or none.
+
+    The same rule as the fingerprint's. A transcript does not say which modules its session
+    loaded, so a rescan keeps what the ledger already holds for that session and otherwise
+    leaves the field out, rather than attributing a past session to this minute's selection.
+    """
+    known = prior.get(ATTRIBUTION_KEY) if isinstance(prior, dict) else None
+    if isinstance(known, dict):
+        record[ATTRIBUTION_KEY] = known
+    elif not rescan:
+        value = context_attribution()
+        if value is not None:
+            record[ATTRIBUTION_KEY] = value
+    return record
 
 
 def fold(row, folds=None):
@@ -1169,6 +1228,7 @@ def scan(transcript, session_id="", cwd="", prior=None, rescan=False, agents=Non
         record["stances"] = stances()
         if rescan:
             record["stances_source"] = "rescan"
+    attributed(record, prior, rescan)
     try:
         module = detectors()
         record["counts"] = module.counts(events)
@@ -1442,6 +1502,7 @@ def scan_codex(transcript, session_id="", cwd="", prior=None, rescan=False):
               "cache_read": None, "cache_write": None, "parse_failures": malformed}
     if rescan and not (prior or {}).get("stances"):
         record["stances_source"] = "rescan"
+    attributed(record, prior, rescan)
     codex_totals(record, totals)
     chosen = dominant(weights) or effort
     record["effort"] = chosen or None
@@ -1669,6 +1730,8 @@ def worker_rows(cutoff=0.0):
                # Stamped by `workers.py` when the run started, so a sweep months later still
                # names the version that ran it rather than the version reading the file.
                "harness_version": record.get("harness_version"),
+               # The same for the profile; a run from before the field is unattributed.
+               FINGERPRINT_KEY: record.get(FINGERPRINT_KEY),
                "session_id": record["id"], "agent_id": record["id"],
                "agent_type": record["role"], "repo": os.path.basename(str(record.get("workspace") or "").rstrip("/")),
                "model": record.get("model") or "", "effort": record.get("effort") or "",
@@ -1740,6 +1803,12 @@ def rescan(days=30):
         except (OSError, ValueError):
             pass
         records = scan_all(path, prior=prior.get(ident), rescan=True)
+        # A transcript does not say which profile ran it. A session the ledger already holds
+        # keeps the fingerprint its live row was written with, and its subagents ran under the
+        # same profile; a session it does not is unattributed.
+        known = (prior.get(ident) or {}).get(FINGERPRINT_KEY)
+        for record in records:
+            record[FINGERPRINT_KEY] = known
         if records:
             batch.extend(records)
             found += 1

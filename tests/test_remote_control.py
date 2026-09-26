@@ -117,6 +117,17 @@ class PlistTests(unittest.TestCase):
         self.assertNotIn("X_FLAG", other["EnvironmentVariables"])
         self.assertEqual(dsa["Label"], remote_control.label("/w/dsa"))
 
+    def test_every_host_turns_on_uploads_for_the_files_its_sessions_send(self):
+        data = plistlib.loads(remote_control.render("/w/app", self.OPTS, "/bin/claude", "/home/u", "/logs"))
+        self.assertEqual(data["EnvironmentVariables"]["CLAUDE_CODE_BRIEF_UPLOAD"], "1")
+
+    def test_a_folder_s_own_env_can_turn_uploads_off(self):
+        opts = dict(self.OPTS, folder_options={
+            Path("/w/dsa"): {"env": {"CLAUDE_CODE_BRIEF_UPLOAD": "", "X_FLAG": "1"}}})
+        dsa = plistlib.loads(remote_control.render("/w/dsa", opts, "/bin/claude", "/home/u", "/logs"))
+        self.assertEqual(dsa["EnvironmentVariables"]["CLAUDE_CODE_BRIEF_UPLOAD"], "")
+        self.assertEqual(dsa["EnvironmentVariables"]["X_FLAG"], "1")
+
     def test_keep_awake_wraps_the_server(self):
         argv = remote_control.command("/w/r", dict(self.OPTS, keep_awake=True), "/bin/claude")
         self.assertEqual(argv[:3], ["/usr/bin/caffeinate", "-is", "/bin/claude"])

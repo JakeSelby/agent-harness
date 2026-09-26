@@ -82,7 +82,34 @@ def normalize(payload):
     return event
 
 
+# The hooks selection for the dispatch in progress, so one event resolves the ladder once.
+_SWITCHES = []
+
+
+def switches():
+    """`{hook id: "on"|"off"}` from the selection, resolved as a hook resolves it: not strictly.
+
+    A selection that will not resolve leaves every hook on, and a core hook switched off without
+    its acknowledgement resolves `on` (`posture.core_refusals`), so a broken file never turns
+    enforcement off.
+    """
+    if _SWITCHES:
+        return _SWITCHES[-1]
+    try:
+        return load("posture").selection(strict=False).get("hooks") or {}
+    except Exception:
+        return {}
+
+
+def enabled(name):
+    """Whether hook id `name` is on. Ids are `catalog.HOOK_IDS`, the same on every runtime."""
+    return switches().get(name) != "off"
+
+
 def invoke(name, event):
+    """Run policy module `name` on `event`; `{}`, without loading it, when its id is off."""
+    if not enabled(name):
+        return {}
     module = load(name)
     output = io.StringIO()
     old = sys.stdin
@@ -234,6 +261,159 @@ def marker_role(prompt):
         if fields is not None:
             return name, fields
     return None
+
+
+# A workflow script's `agent()` calls never reach the `Agent` hooks, so the launch is the one call
+# the harness sees (docs/spikes/2026-09-22-workflow-tool-band-routing-and-ledger.md). The script
+# is JavaScript: a role is named as a quoted `agentType` value, and a brief's `harness-role:` line
+# usually sits inside a string literal, bounded by a quote or a `\n` escape rather than a newline.
+WORKFLOW_POINT = "workflow-launch"
+WORKFLOW_AGENT_TYPE = re.compile(r"\bagentType\b")
+# A literal counts only when it is the whole value: `'worker-a' && 'reviewer'` is computed.
+WORKFLOW_AGENT_VALUE = re.compile(r"""['"]?\s*[:=]\s*(['"`])([^'"`\\\n]*)\1(?=\s*(?:[,;)\]}]|$))""")
+WORKFLOW_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+WORKFLOW_LITERAL = re.compile(r"""(['"`])([a-z][a-z0-9-]*)\1""")
+# A literal with an escape in it, such as `'re\u0076iewer'`, which evaluates to a role name.
+WORKFLOW_ESCAPED = re.compile(r"""(['"`])((?:(?!\1)[^\\\n])*\\.(?:(?!\1)[^\\\n]|\\.)*)\1""")
+WORKFLOW_ESCAPE = re.compile(r"""\\(?:u\{([0-9A-Fa-f]{1,6})\}|u([0-9A-Fa-f]{4})|x([0-9A-Fa-f]{2})|([nrtvfb0])|(.))""",
+                             re.S)
+WORKFLOW_CONTROL = {"n": "\n", "r": "\r", "t": "\t", "v": "\v", "f": "\f", "b": "\b", "0": "\0"}
+WORKFLOW_MARKER = re.compile(r"""(?:^|\\n|['"`])[ \t]*harness-role:[ \t]*([a-z][a-z0-9-]*)[ \t]*"""
+                             r"""(?=$|\\n|\\r|['"`])""", re.M)
+WORKFLOW_SCRIPT_MAX = 1024 * 1024
+# A file longer than the read limit runs in full but cannot be judged in full, so it is refused.
+WORKFLOW_TOO_LARGE = object()
+
+
+def workflow_script(event):
+    """The text a `Workflow` launch will run, None when this hook cannot read it, or
+    `WORKFLOW_TOO_LARGE` for a file past `WORKFLOW_SCRIPT_MAX` characters.
+
+    The runtime takes `scriptPath` over `script` over `name`; a name resolves to a file under a
+    `.claude/workflows/` directory, project first. A built-in workflow and a resume by run id
+    carry no text here: the first is the runtime's own script, and the second re-runs one whose
+    launch this hook already judged.
+    """
+    inputs = event.get("tool_input") or {}
+    cwd = Path(event.get("cwd") or os.getcwd())
+    candidates = []
+    if isinstance(inputs.get("scriptPath"), str) and inputs["scriptPath"]:
+        candidates.append(cwd / Path(inputs["scriptPath"]).expanduser())
+    elif isinstance(inputs.get("script"), str):
+        return inputs["script"]
+    elif isinstance(inputs.get("name"), str) and WORKFLOW_NAME.fullmatch(inputs["name"]):
+        for base in (cwd, Path(os.environ.get("HOME") or Path.home())):
+            for suffix in (".js", ".mjs", ".ts"):
+                candidates.append(base / ".claude" / "workflows" / (inputs["name"] + suffix))
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                with open(str(candidate), encoding="utf-8", errors="replace") as stream:
+                    text = stream.read(WORKFLOW_SCRIPT_MAX + 1)
+                return WORKFLOW_TOO_LARGE if len(text) > WORKFLOW_SCRIPT_MAX else text
+        except OSError:
+            continue
+    return None
+
+
+def workflow_literal(text, keep_quoting=False):
+    """`text` with its JavaScript escapes decoded: a literal's body, or with `keep_quoting` a
+    whole script, where a quote or backslash escape stays escaped so literals keep their bounds."""
+    def decode(match):
+        code = match.group(1) or match.group(2) or match.group(3)
+        if code is not None:
+            return chr(min(int(code, 16), 0x10FFFF))
+        if match.group(4) is not None:
+            return WORKFLOW_CONTROL[match.group(4)]
+        return match.group(0) if keep_quoting else match.group(5)
+    return WORKFLOW_ESCAPE.sub(decode, text)
+
+
+def workflow_role(script):
+    """`(name, fields, how)` for the first constrained role a workflow script names, else None.
+
+    The script is read twice, as written and with its escapes decoded, because an escaped key
+    (`agent\\u0054ype`) or an escaped newline around a `harness-role:` line reads as the plain
+    form once JavaScript evaluates it. See `workflow_role_in` for one reading.
+    """
+    if not isinstance(script, str):
+        return None
+    named = workflow_role_in(script)
+    decoded = workflow_literal(script, keep_quoting=True)
+    if named is None and decoded != script:
+        named = workflow_role_in(decoded)
+    return named
+
+
+def workflow_role_in(script):
+    """The constrained role one reading of a workflow script names, as `workflow_role` returns it.
+
+    A quoted `agentType` value is read directly. Any other mention of `agentType` — a computed
+    value, a shorthand property — cannot be, so then any whole string literal naming a
+    constrained role counts: a script that picks its agent type at run time from a list holding
+    `'reviewer'` names that role as surely as one that writes it inline. That errs towards
+    refusing, as `constrained_role` does for a contract it cannot load. A marker is matched as `marker_role` matches one, a standalone
+    declaration naming a constrained shared role.
+    """
+    computed = False
+    for mention in WORKFLOW_AGENT_TYPE.finditer(script):
+        match = WORKFLOW_AGENT_VALUE.match(script, mention.end())
+        if match is None or "${" in match.group(2):
+            computed = True
+            continue
+        fields = constrained_role(match.group(2))
+        if fields is not None:
+            return match.group(2), fields, "names `" + match.group(2) + "` in agentType"
+    for name in WORKFLOW_MARKER.findall(script):
+        fields = constrained_role(name)
+        if fields is not None:
+            return name, fields, "carries a `harness-role: " + name + "` marker"
+    if computed:
+        literals = [m.group(2) for m in WORKFLOW_LITERAL.finditer(script)]
+        literals += [workflow_literal(m.group(2)) for m in WORKFLOW_ESCAPED.finditer(script)]
+        for value in literals:
+            fields = constrained_role(value) if re.fullmatch(r"[a-z][a-z0-9-]*", value) else None
+            if fields is not None:
+                return (value, fields, "computes agentType and names `" + value
+                        + "` in a string literal")
+    return None
+
+
+def workflow_results(runtime, event):
+    """The answers to a `Workflow` launch, with its decision row written.
+
+    Every launch is a row, allowed ones included, because a launch is a batch of spawns no other
+    row accounts for. The row's input is the script as judged, or the tool input when the script
+    could not be read.
+    """
+    results = []
+    script = workflow_script(event)
+    if script is WORKFLOW_TOO_LARGE:
+        results.append({"hookSpecificOutput": {"permissionDecision": "deny",
+            "permissionDecisionReason": "This workflow script is longer than the "
+            + str(WORKFLOW_SCRIPT_MAX) + " characters the guard reads, so the constrained roles "
+            "it names cannot be checked; split it or send it inline."}})
+    elif selected("delegation", "tiered") == "off":
+        results.append({"hookSpecificOutput": {"permissionDecision": "deny",
+            "permissionDecisionReason": "Delegation is off, and every agent() call in a workflow "
+            "script is a spawn; perform the work inline or change the selected stance."}})
+    else:
+        named = workflow_role(script)
+        if named is not None:
+            results.append(role_deny(runtime, named[0], named[1],
+                                     "This workflow script " + named[2] + ", and a script's "
+                                     "agent() calls run in session, past every spawn guard."))
+    if not results and enabled("allow-readonly-bash") and investigating(runtime, event) \
+            and plan_allowed_tool("Workflow"):
+        results.append({"hookSpecificOutput": {"permissionDecision": "allow",
+            "permissionDecisionReason": "Plan-mode research tool named by plan_allow_tools, "
+            "run at the permission posture you selected."}})
+    module = decisions()
+    if module is not None:
+        denied = any(r["hookSpecificOutput"].get("permissionDecision") == "deny" for r in results)
+        text = script if isinstance(script, str) else json.dumps(event.get("tool_input") or {}, sort_keys=True)
+        module.record(WORKFLOW_POINT, "deny" if denied else "allow", text, event, runtime)
+    return results
 
 
 def framework_deny(runtime, session_id, prompt, subagent_type):
@@ -490,6 +670,19 @@ def patch_paths(event):
 def dispatch(runtime, payload):
     if runtime not in ("claude-code", "codex"):
         raise ValueError("unknown runtime")
+    _SWITCHES.append(switches())
+    try:
+        return _dispatch(runtime, payload)
+    finally:
+        _SWITCHES.pop()
+
+
+def _dispatch(runtime, payload):
+    """Compose the policies for one event. Logic that is not an `invoke` checks its owning id:
+    Bash grading, its ask and its decision log are `grade-bash`; plan-mode and read-only allows
+    are `allow-readonly-bash`; the integration notice is `tier-agent-spawns`. Role confinement,
+    by name, marker, framework mapping or evasion, has no id and runs with every hook off, as the
+    Workflow launch guard does: a switch routes spawns, it never unconfines a role."""
     event = normalize(payload)
     kind, tool = event.get("hook_event_name"), event.get("tool_name")
     if kind == "PreToolUse":
@@ -498,14 +691,18 @@ def dispatch(runtime, payload):
         if tool == "SendUserFile" and runtime == "claude-code":
             results.append(invoke("stage-user-files", event))
         if tool == "Bash":
-            grader = load("grade-bash")
-            if grader.ro is None:
+            grading, readonly = enabled("grade-bash"), enabled("allow-readonly-bash")
+            grader = load("grade-bash") if grading or readonly else None
+            if grader is not None and grader.ro is None:
                 raise RuntimeError("command classifier unavailable")
             # Shared stance resolution includes explicit project and session selections.
             variant = selected("autonomy", "execute")
-            command, confirmed = grader.strip_marker(event["tool_input"]["command"])
-            grade, verb, target, family = grader.grade_text(command, event.get("cwd", ""))
-            asked = bool(grade) and not confirmed and grade >= grader.THRESHOLDS.get(variant, 1)
+            command, confirmed = event["tool_input"]["command"], False
+            grade = verb = target = family = None
+            if grader is not None:
+                command, confirmed = grader.strip_marker(command)
+                grade, verb, target, family = grader.grade_text(command, event.get("cwd", ""))
+            asked = grading and bool(grade) and not confirmed and grade >= grader.THRESHOLDS.get(variant, 1)
             if asked:
                 decision = "deny" if runtime == "codex" or event.get("permission_mode") in grader.DENY_MODES else "ask"
                 results.append({"hookSpecificOutput": {"permissionDecision": decision,
@@ -514,8 +711,8 @@ def dispatch(runtime, payload):
             # ones native plan mode prompts on: a script the grammar cannot read through, a
             # scratch redirect, a test run. Under an open posture the first is investigation and
             # the second is not, and the autonomy stance still outranks both when it already asked.
-            plan = investigating(runtime, event)
-            if grade == 0:
+            plan = readonly and investigating(runtime, event)
+            if readonly and grade == 0:
                 results.append({"hookSpecificOutput": {"permissionDecision": "allow"}})
             elif plan and not asked and grade == 1:
                 results.append({"hookSpecificOutput": {"permissionDecision": "allow",
@@ -526,7 +723,8 @@ def dispatch(runtime, payload):
                     "planning. Plan mode widens investigation, not the build. "
                     + grader.reason(grade, verb, target, family, variant)}})
             results.append(invoke("filter-output", event))
-            log_bash_decision(runtime, event, results, command, confirmed)
+            if grading:
+                log_bash_decision(runtime, event, results, command, confirmed)
         elif tool == "Agent":
             delegation = selected("delegation", "tiered")
             inputs = event["tool_input"]
@@ -558,7 +756,7 @@ def dispatch(runtime, payload):
                         evaded = framed or evasion_deny(runtime, session, prompt)
                         if evaded is not None:
                             results.append(evaded)
-                notice = descriptor_notice(session)
+                notice = descriptor_notice(session) if enabled("tier-agent-spawns") else None
                 if notice is not None:
                     results.append(notice)
             if delegation == "off":
@@ -568,16 +766,18 @@ def dispatch(runtime, payload):
                 if runtime == "claude-code":
                     results.append(invoke("tier-agent-spawns", event))
                 results.append(invoke("brief-guard", event))
+        elif tool == "Workflow":
+            results.extend(workflow_results(runtime, event))
         elif tool == "WebFetch":
             results.append(invoke("allow-plan-webfetch", event))
-        elif investigating(runtime, event) and plan_allowed_tool(tool):
+        elif enabled("allow-readonly-bash") and investigating(runtime, event) and plan_allowed_tool(tool):
             results.append({"hookSpecificOutput": {"permissionDecision": "allow",
                 "permissionDecisionReason": "Plan-mode research tool named by plan_allow_tools, "
                 "run at the permission posture you selected."}})
         return encode_pre(runtime, payload, event, results)
     if kind == "PostToolUse":
         contexts = []
-        if tool == "Bash":
+        if tool == "Bash" and enabled("grade-bash"):
             log_bash_outcome(runtime, event)
         if selected("plan-ceremony", "review-card") == "review-card":
             for path in patch_paths(event):
@@ -610,6 +810,8 @@ def dispatch(runtime, payload):
         log = decisions()
         if log is not None:
             log.close_session(event.get("session_id") or "")
+        if not enabled("usage-log"):
+            return {}
         module = load("usage-log")
         old = sys.stdin
         try:
