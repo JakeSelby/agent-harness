@@ -89,3 +89,37 @@ Update the corpus in the same PR as the change that makes it stale:
   - Each amendment goes through the matching skill's update intent, with a memlog entry.
 - **Sprint status is derived.** It is generated from `issue-map.json` by the sync tool; never edit it by
   hand.
+
+## Parallel reservations merge through a driver
+
+Two branches that each reserve a BMad ID both append to `items` in `_bmad-output/issue-map.json`
+and bump `next_ids`, so without help the second to merge conflicts. `.gitattributes` routes the
+map and the derived sprint status through the merge drivers in `scripts/bmad_merge_driver.py`:
+
+- **The map** merges item by item. Main's map is kept, the branch's new entries are added in the
+  tool's own JSON format, and `next_ids` takes the larger counter per kind. When main and the
+  branch mapped the same GitHub issue under different IDs, main's entry wins and the driver names
+  the dropped ID; remove that ID's story file from the branch. In a merge, main is the incoming
+  side, since you merge main into your branch; in a rebase, it is the upstream side.
+- **Sprint status** is rendered afresh from the merged map and the merged story files, and that
+  render is the merge result, so the merge commit itself carries the regeneration. It needs the
+  incoming commit, which `git merge` and `git pull` name; in a rebase or cherry-pick it reports a
+  conflict instead, and you run `python3 scripts/bmad_issue_sync.py sprint-status`.
+- **Anything it cannot settle exactly is a conflict**: an unparsable side, a field both sides
+  changed differently, or one ID reserved for two issues. The last keeps both entries, so the
+  audit's duplicate checks still fail on it. Resolve by hand, then regenerate sprint status.
+
+`citizen worktree create` registers both drivers in the repository's git config each time it
+runs, writing only a value that differs from the one it expects. It registers them only in the
+repository the running `citizen` checkout belongs to, so another repository that ships a script of
+the same name never has its merges routed through it. To register them in an existing checkout, run:
+
+```sh
+git config merge.bmad-issue-map.name "BMad issue map"
+git config merge.bmad-issue-map.driver "python3 scripts/bmad_merge_driver.py map %O %A %B"
+git config merge.bmad-sprint-status.name "BMad sprint status"
+git config merge.bmad-sprint-status.driver "python3 scripts/bmad_merge_driver.py sprint-status %O %A %B"
+```
+
+Git config is shared by every worktree of a repository, so once is enough. Unregistered, git
+merges both files as text, as it did before.

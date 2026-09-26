@@ -6735,6 +6735,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B107",
+      "github_number": 900,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/900",
+      "title": "grade-bash says `gh repo rename` locks the repository read-only",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B107.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B108",
       "github_number": 903,
       "github_url": "https://github.com/JakeSelby/model-citizen/issues/903",
