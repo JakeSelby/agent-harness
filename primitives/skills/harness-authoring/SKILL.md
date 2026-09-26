@@ -77,7 +77,7 @@ the user is a personal file, outside the repo.
      tests) carry a test; content changes are gated by the lint and review.
    - **Fork user:** commit to your fork's `main`, which is your live harness. If the change is
      worth sharing, `git fetch upstream && git rebase upstream/main`, push a branch to the fork,
-     and `gh pr create --repo <owner>/model-citizen`.
+     and `gh pr create --repo <owner>/<name>`, naming the repository your `upstream` remote points at.
 5. Record in one line where the item went and why, so the placement is auditable.
 
 ## Writing rule and comment text: the conciseness examples
