@@ -270,6 +270,12 @@ class HookTests(Base):
             self.assertNotIn("permissionDecision", self.edit()["hookSpecificOutput"])
         self.assertEqual([r["variant"] for r in self.rows()], ["warn"] * 3)
 
+    def test_the_hook_id_switched_off_answers_nothing(self):
+        self.config(json.dumps({"hooks": {"intent-overlap": "off"}}))
+        self.claim_a("shared.py")
+        self.assertEqual(self.edit(), {})
+        self.assertEqual(self.rows(), [])
+
     def test_a_setting_that_cannot_be_honoured_only_warns(self):
         for text in ("{not json", json.dumps({"coordination": {"repeat_overlap": "block"}}),
                      json.dumps({"coordination": "deny"})):
