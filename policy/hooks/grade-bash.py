@@ -34,9 +34,9 @@ Behaviour:
     leading and confirms the whole command line, compounds included, because that is the text
     the user was shown and said yes to; a marker in the middle confirms nothing.
   - In `auto` mode the classifier refuses that marker as a bypass of this hook, so the deny
-    names an approval code instead (`approvals.py`): the user replies `approve <code>`, and the
-    same command, with no marker, then passes once in that session within thirty minutes. The
-    approval is consumed here, at the point the hook would deny. A Bash command that writes to
+    names an approval code instead (`approvals.py`): the user replies `approve <code>` as the whole
+    message, and the same command, with no marker, then passes once in that session within
+    thirty minutes. The approval is consumed here, at the point the hook would deny. A Bash command that writes to
     the approvals store grades 3, so the agent cannot record an approval of its own.
   - Never raises: a missing sibling grammar and any unexpected error are a silent exit 0, so a
     fault here can only cost a prompt that native would not have shown either. The one thing it
@@ -86,7 +86,8 @@ ro = _sibling("allow-readonly-bash.py", "grade_bash_readonly")
 approvals = _sibling("approvals.py", "grade_bash_approvals")
 APPROVAL_TAIL = (" Nothing can prompt in this permission mode, so the command was refused rather than"
                  " asked about. Stop, say in chat what it would change and why that is hard to undo,"
-                 " and ask the user to reply `approve %s` if they agree. After that reply, run exactly"
+                 " and ask the user, if they agree, to reply with exactly `approve %s` as the whole"
+                 " message, since any other text in it records nothing. After that reply, run exactly"
                  " the same command again with no marker: the approval covers this command once, in"
                  " this session, for thirty minutes.")
 

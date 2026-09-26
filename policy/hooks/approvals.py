@@ -11,9 +11,12 @@ approves a refused command by replying `approve <code>`, and nothing else can cr
   `sha256(session_id + "\\n" + command)`, over the raw command text. The same command in the same
   session always gets the same code, so there is no pending store to protect: knowing a code is
   worth nothing without an approval recorded from a prompt.
-- `record(session_id, prompt)` keeps every `approve <code>` token in the prompt (case-insensitive,
-  several allowed) in `~/.local/state/agent-harness/approvals/<session_id>.json` with its time.
-  A code without the keyword records nothing.
+- `record(session_id, prompt)` keeps the prompt's approvals in
+  `~/.local/state/agent-harness/approvals/<session_id>.json` with their time, but only when the
+  whole prompt is `approve <code>` tokens (case-insensitive, several allowed, separated by
+  whitespace or commas). Any other text records nothing: UserPromptSubmit also fires on turns the
+  user never typed, such as task notifications, subagent hand-backs and cross-session messages,
+  and those carry agent-controlled text that could otherwise smuggle in an approval.
 - `consume(session_id, code)` marks one unused approval younger than `TTL` seconds used and says
   whether it found one. An approval confirms one run of one command in one session.
 - The store is the user's alone: `grade-bash` grades a Bash write to it 3, and the dispatcher
@@ -38,7 +41,10 @@ TTL = 30 * 60
 SESSION_ID_MAX = 128
 # Bounded so a long session cannot grow its file without limit; the oldest approvals go first.
 KEEP = 64
-APPROVE_RE = re.compile(r"(?<![A-Za-z0-9])approve\s+([A-Za-z2-7]{%d})(?![A-Za-z0-9])" % CODE_LENGTH, re.I)
+TOKEN = r"approve\s+([A-Za-z2-7]{%d})" % CODE_LENGTH
+APPROVE_RE = re.compile(TOKEN, re.I)
+# The whole prompt, stripped: one or more tokens and nothing else.
+ONLY_TOKENS_RE = re.compile(r"(?:%s)(?:[\s,]+%s)*" % (TOKEN, TOKEN), re.I)
 # A Bash command naming the store in any of these spellings is treated as a write to it once it
 # is anything but read-only; see `mentions_store`.
 STORE_RE = re.compile(r"agent-harness[/\\]+approvals(?=$|[/\\\s\"'`;|&)<>])|\.local[/\\]+state[/\\]+agent-harness"
@@ -71,9 +77,13 @@ def code_for(session_id, command):
 
 
 def codes_in(prompt):
-    """The codes a prompt approves, upper-cased, in order, without repeats."""
+    """The codes a prompt approves, upper-cased, in order, without repeats; none unless the
+    stripped prompt is nothing but `approve <code>` tokens."""
     seen = []
-    for match in APPROVE_RE.finditer(prompt if isinstance(prompt, str) else ""):
+    text = prompt.strip() if isinstance(prompt, str) else ""
+    if not ONLY_TOKENS_RE.fullmatch(text):
+        return seen
+    for match in APPROVE_RE.finditer(text):
         code = match.group(1).upper()
         if code not in seen:
             seen.append(code)

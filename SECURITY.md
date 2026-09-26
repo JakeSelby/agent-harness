@@ -33,7 +33,9 @@ never returns a deny, so a bug in it can only fall through to the normal permiss
 `claude/hooks/grade-bash.py` is graded the same way: a false low grade is a missed prompt, never
 worse than the native permission flow, and a false high grade costs one extra prompt or, where no
 prompt exists, one re-run: with the confirm marker in `bypassPermissions`, and in `auto` after the
-user replies `approve <code>`. That approval is recorded only from the user's prompt, covers one
+user replies `approve <code>` as the whole message. That approval is recorded only from a prompt
+that is nothing but approve tokens, so text an agent can place in a notification turn cannot carry
+one, and it covers one
 run of one command in one session for thirty minutes, and its store is closed to the agent's writes.
 The stop gate runs a repository's own `## Gate` commands only in a folder trusted through
 Claude Code's dialog or `harness trust`, so a clone cannot run code on the first Stop. The
