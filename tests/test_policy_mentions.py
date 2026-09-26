@@ -3,8 +3,8 @@
 
 A policy path inside a quoted argument or a here-document body is data, so a command that only
 mentions one goes to the decision provider like any other. A redirect, `tee`, `sed -i`, a `cp`
-or `mv` operand, an unresolved operand named `governance.json` or `config.json`, inline
-interpreter code and a here-document a shell runs as its script are still level-1 writes.
+or `mv` operand, an unresolved operand named `governance.json` or `config.json`, any
+argument of an interpreter and a here-document a shell runs as its script are still level-1 writes.
 
 Run: python3 -m unittest discover tests
 """
@@ -21,7 +21,6 @@ MENTIONS = [
     'echo "edit .agent-harness/governance.json by hand" > notes.md',
     'git commit -m "document .agent-harness/governance.json"',
     "gh pr comment 1 --body '~/.config/agent-harness/config.json selects the provider'",
-    "python3 script.py -c .agent-harness/governance.json",
 ]
 
 WRITES = [
@@ -36,6 +35,12 @@ WRITES = [
     'cd "$T" && tee governance.json < x',
     "python3 -c 'open(\".agent-harness/governance.json\",\"w\")'",
     "node -e 'fs.writeFileSync(\"~/.config/agent-harness/config.json\", \"{}\")'",
+    # An option that takes a separate value must not hide the code that follows it.
+    "python3 -W ignore -c 'open(\".agent-harness/governance.json\",\"w\")'",
+    "python3 -X dev -c 'open(\".agent-harness/governance.json\",\"w\")'",
+    "node -r mod -e 'fs.writeFileSync(\".agent-harness/governance.json\", \"{}\")'",
+    "python3 -m json.tool /tmp/p.json .agent-harness/governance.json",
+    "python3 script.py -c .agent-harness/governance.json",
     "bash <<'EOF'\necho {} > .agent-harness/governance.json\nEOF",
     'echo "x > .agent-harness/governance.json',
 ]
@@ -62,21 +67,23 @@ class PolicyMentions(Home):
             self.assertIn("level 1", reason, command)
 
 
-class InlineCode(unittest.TestCase):
-    """Which arguments an interpreter runs as code."""
+class InterpreterArguments(unittest.TestCase):
+    """A policy path in any argument of an interpreter is written, wherever it stands."""
 
-    def test_the_code_option_value_is_inline_code(self):
-        self.assertEqual(grader._inline_code("python3", ["-c", "a", "-c", "b"]), ["a"])
-        self.assertEqual(grader._inline_code("python3.12", ["-Bc", "a"]), ["a"])
-        self.assertEqual(grader._inline_code("perl", ["-ne", "a"]), ["a"])
-        self.assertEqual(grader._inline_code("ruby", ["-ea"]), ["a"])
-        self.assertEqual(grader._inline_code("node", ["--eval=a", "-p", "b"]), ["a", "b"])
-        self.assertEqual(grader._inline_code("php", ["-r", "a"]), ["a"])
+    POLICY = "open('.agent-harness/governance.json','w')"
 
-    def test_a_script_its_arguments_and_stdin_are_not_inline_code(self):
-        self.assertEqual(grader._inline_code("python3", ["script.py", "-c", "a"]), [])
-        self.assertEqual(grader._inline_code("python3", ["-"]), [])
-        self.assertEqual(grader._inline_code("gh", ["-e", "a"]), [])
+    def test_every_argument_of_an_interpreter_is_judged(self):
+        for prog, args in (("python3.12", ["-W", "ignore", "-c", self.POLICY]),
+                           ("perl", ["-I", "lib", "-ne", self.POLICY]),
+                           ("ruby", ["-e" + self.POLICY]),
+                           ("node", ["--require", "mod", "--eval=" + self.POLICY]),
+                           ("php", ["-r", self.POLICY])):
+            self.assertIn(".agent-harness/governance.json",
+                          grader._written(prog, args, [], "/repo"), prog)
+
+    def test_another_program_is_not_judged_by_its_arguments(self):
+        self.assertEqual(grader._written("gh", ["-e", self.POLICY], [], "/repo"), [])
+        self.assertEqual(grader._written("python3", ["-c", "print(1)"], [], "/repo"), [])
 
 
 if __name__ == "__main__":
