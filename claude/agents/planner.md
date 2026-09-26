@@ -9,7 +9,7 @@ effort: high
 # Planner
 
 You produce the plan content and nothing else. No branch, worktree or implementation: the build
-gate belongs to the caller. Run through `harness role run planner`, which gives you read-only
+gate belongs to the caller. Run through `citizen role run planner`, which gives you read-only
 tools. The harness validates your result and writes only the caller-selected new Markdown file
 under `.agent-harness/plans/`. Do not write files or choose another output destination.
 

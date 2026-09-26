@@ -6,9 +6,15 @@ and no two rounds were driven quite the same way. This is that driver, committed
 deterministic smoke tier once, then `scripts/native_acceptance.py` per target from the frozen
 clone, and writes one record per target beside a summary an operator reads.
 
-It decides nothing. A target's verdict is the runner's, a failed target does not stop the
-others — a round collects every target's defects before any of them is fixed, which is the rule
-in docs/releasing.md — and the exit status is 0 only when every case of every target passed.
+A smoke tier that does not pass, failed or timed out, stops the round before any target runs:
+the tier spends no model turn, so a round it would have failed is refused before one is spent.
+The round record names the tier's result and why nothing ran. `--skip-smoke`, for a tier already
+run green at this commit, is recorded as `skipped` and runs every target.
+
+Past the tier it decides nothing. A target's verdict is the runner's, a failed target does not
+stop the others — a round collects every target's defects before any of them is fixed, which is
+the rule in docs/releasing.md — and the exit status is 0 only when the tier passed or was skipped
+and every case of every target passed.
 
     python3 scripts/qualification_round.py --round ../round-0.13.0 --targets claude-code-cli-macos
     python3 scripts/qualification_round.py --round ../round-0.13.0 --plan
@@ -34,6 +40,8 @@ from native_acceptance import (CLIENTS, catalog, confirmed_targets,  # noqa: E40
 SMOKE = "smoke_tier.py"
 RUNNER = "native_acceptance.py"
 PASSED = "passed"
+SKIPPED = "skipped"
+RUNNING = "running"
 ROUND_TIMEOUT = 5400
 
 
@@ -173,13 +181,20 @@ def run_round(round_dir, targets, model, confirmed, skip_smoke=False, tier_routi
     records_dir = Path(report["records"])
     records_dir.mkdir(parents=True, exist_ok=True)
     env = environment(report)
-    result = {"source_commit": report.get("source_commit"), "smoke": "skipped", "targets": {},
+    # A round killed mid-tier must not read as a deliberate skip.
+    result = {"source_commit": report.get("source_commit"),
+              "smoke": SKIPPED if skip_smoke else RUNNING, "targets": {},
               "tier_routing": tier_routing}
     write_round(round_dir, result)
     if not skip_smoke:
         finished = smoke(clone, env, targets)
         result["smoke"] = ("timed out" if finished is None
                            else PASSED if finished.returncode == 0 else "failed")
+        if result["smoke"] != PASSED:
+            result["stopped"] = ("the smoke tier %s, so no target ran; fix what it names and "
+                                 "run the round again" % result["smoke"])
+            result["not_run"] = list(targets)
+            return write_round(round_dir, result)
     for client in targets:
         out = records_dir / (client + ".json")
         note = unobserved_note(client, confirmed)
@@ -220,7 +235,8 @@ def main(argv=None):
                         help="a client whose configuration home was compared against a hand run; "
                              "repeat for each, and never for a surface nobody compared")
     parser.add_argument("--skip-smoke", action="store_true",
-                        help="the smoke tier was already run at this commit")
+                        help="the smoke tier already passed at this commit; recorded as "
+                             "skipped, and every target runs")
     parser.add_argument("--execution-class", action="append", metavar="[TARGET=]CLASS",
                         help="capability class running the cases (default %s, per target with "
                              "TARGET=CLASS)" % qualification.EXECUTION_DEFAULT)
@@ -262,10 +278,13 @@ def main(argv=None):
         result["not_run_here"] = elsewhere
     result = write_round(args.round, result)
     print("smoke tier: " + result["smoke"])
+    if result.get("stopped"):
+        print("round stopped: " + result["stopped"])
+        return 1
     print(summarise(result["targets"]))
     for client in here:
         print("%-24s %s" % (client, qualification.describe(tier_routing[client])))
-    clean = result["smoke"] != "failed" and all(
+    clean = result["smoke"] in (PASSED, SKIPPED) and all(
         value == PASSED
         for data in result["targets"].values()
         for value in (data.get("cases") or {"none": "unverified"}).values())

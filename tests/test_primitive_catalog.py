@@ -101,7 +101,8 @@ class CatalogTests(unittest.TestCase):
     def test_catalog_uses_neutral_unique_source_ids(self):
         items = catalog.catalog(REPO)["primitives"]
         self.assertEqual(len(items), len({(x["kind"], x["id"]) for x in items}))
-        self.assertTrue(all(x["source"].startswith("primitives/") for x in items))
+        self.assertTrue(all(x["source"].startswith("policy/hooks/" if x["kind"] == "hooks" else "primitives/")
+                            for x in items))
         self.assertEqual(len([x for x in items if x["kind"] == "roles"]), 11)
 
     def test_custom_stance_switch_changes_both_instruction_projections(self):
@@ -148,5 +149,5 @@ class CatalogTests(unittest.TestCase):
                 env["HARNESS_STANCE_TESTING"] = "required"
                 self.assertEqual(harness.load_config(env)["stances"]["testing"], "required")
                 project.write_text(json.dumps({"permissions": "bypass"}))
-                with self.assertRaisesRegex(SystemExit, "stances only"):
+                with self.assertRaisesRegex(SystemExit, "selection keys only"):
                     harness.load_config(env)

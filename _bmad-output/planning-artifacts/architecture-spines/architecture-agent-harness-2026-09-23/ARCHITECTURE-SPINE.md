@@ -1,5 +1,5 @@
 ---
-name: 'Agent Harness'
+name: 'Model Citizen'
 type: architecture-spine
 purpose: build-substrate
 altitude: initiative
@@ -7,7 +7,7 @@ paradigm: 'policy kernel with ports and adapters, enforced at hook ports'
 scope: 'the harness CLI, its primitive catalog, policy kernel, hook dispatch, adapters, measurement, integrations and planning traceability'
 status: final
 created: '2026-09-23'
-updated: '2026-09-24'
+updated: '2026-09-26'
 supersedes: '../architecture-agent-harness-2026-09-19/ARCHITECTURE-SPINE.md'
 binds: [FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-13, FR-14, FR-15, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25, FR-26, FR-27, FR-28, FR-29, FR-30, FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-37, FR-38, FR-39, FR-40, FR-41, FR-42, FR-43, FR-44, FR-45, FR-46, FR-47, FR-48, FR-49, FR-50, FR-51, FR-52, FR-53, FR-54, FR-55, FR-56, FR-57, FR-58, FR-59, FR-60, FR-61, FR-62, FR-63, FR-64, FR-65, FR-66, FR-67, FR-68, FR-69, FR-70]
 sources:
@@ -20,7 +20,7 @@ companions:
   - ../../ux-designs/ux-agent-harness-2026-09-23/EXPERIENCE.md
 ---
 
-# Architecture Spine: Agent Harness
+# Architecture Spine: Model Citizen
 
 ## Design Paradigm
 
@@ -130,6 +130,10 @@ flowchart TB
   - `policy/hooks/posture.py` is the only resolver. Its precedence runs from the defaults, through the
     user and project layers, to the session.
   - Project configuration may select stances only.
+    *Amended 2026-09-25:* a project file now carries the whole selection document, so it may also
+    switch rules, hooks, skills, workflows and roles and name a mode (#554). Identity, permissions,
+    runtime flags, `primitive_roots` and telemetry stay user-owned, and a project file that sets one
+    is refused with a message naming the key. Invariants still sit outside every switch.
   - `bin/harness` stops resolving on its own and calls the resolver. #294 and #554 carry that
     migration, and no new code may read the ladder directly. The session hook reports stances through
     `bin/harness stances --json`, so that output keeps its shape across the migration.
@@ -137,6 +141,15 @@ flowchart TB
   - For modes, a developer's explicit choice shadows a mode key, while a value `harness init` wrote as a
     default does not. The resolver must therefore be able to tell the two apart. #557 picks the
     mechanism within that constraint.
+    *Amended 2026-09-25, confirmed by the owner on 2026-09-25:* per #557, `config.json` records the
+    stances `harness init` wrote as defaults, each with the value it wrote, under
+    `init_defaults: {"stances": {name: value}}`, and each one still holding its recorded value
+    resolves in a new `init` layer between the defaults and the mode. `harness init --yes` and
+    a `config set` that creates the file mark every stance, interactive init marks only the answers
+    Enter accepted, and `harness config set stances.NAME` or a hand edit of the value makes that
+    stance typed again. A config written before this change has no
+    `init_defaults`, so every stance in it stays typed and shadows a mode. This adds a key to the
+    user config schema and a layer to the precedence.
   - Invariants sit outside every switch.
 
 ### AD-3: Reversible configuration ownership [ADOPTED]
@@ -168,6 +181,9 @@ flowchart TB
     - a change to `bindings.json`, `capabilities.json` or `worker.py` under either adapter invalidates
       every target, because shared code reads them for every runtime;
     - so does a change to any other shared source path.
+  - Within a target, invalidation is per case, through the catalog's versioned `case_paths` map: a change
+    under a path a case names makes that case stale, a change under a path no case names invalidates the
+    whole record, and a record that states no map, or another map, keeps the whole-target rule (#582).
   - The catalog states are `qualified`, `unqualified`, `planned` and `unsupported`.
   - A round runs frozen on a release branch. A model-free smoke tier runs before any native case.
   - Every public surface reads its version and status from the catalog and `product.json`. The plugin
@@ -226,6 +242,9 @@ flowchart TB
     - the Workflow tool's `agent()` (#576);
     - the plugin channel, which installs constrained roles as native agents with no hook (the plugin
       follow-up under #634).
+    *Amended 2026-09-25:* the Workflow tool's launch is guarded (#576): the pre-tool hook reads the script
+    and refuses one naming a constrained role, so the remaining gap there is band routing of its
+    `agent()` calls, not confinement.
 
 ### AD-9: Checks bind subagents; decisions flow up [ADOPTED]
 
@@ -456,6 +475,11 @@ flowchart TB
   - **Registration:** observation has its own registered hook entry point beside `hook.py`, and is not
     routed through the dispatcher. It reads which events each runtime raises from the same event table
     AD-7 names as the one declaration, so the two entry points cannot disagree on events.
+    *Amended 2026-09-25, confirmed by the owner on 2026-09-25:* #791 ships the entry point, its registration
+    built from that table and the bare arm's install, but `harness sync` does not yet register it beside
+    `hook.py`. Registering it would start a second process on every hook event for every user, make Codex
+    users re-trust their hooks, and break tests that assume one entry per event. A follow-up issue adds
+    opt-in registration; until then only `bare_install` writes it, and nothing outside the tests calls that.
   - **Failure:** it fails open and silent. On any exception it exits 0 with no output, never a deny, a
     block or a `systemMessage`. The error goes to a local error log only.
   - In the bare arm, only the observation-only path is installed.
@@ -472,12 +496,33 @@ flowchart TB
   - Decision-log rows carry the attribution of hook decisions, not token counts.
   - Adherence events are observation, not instruction.
 
+### AD-24: The brand is Model Citizen; stable identifiers keep agent-harness [PLANNED: v0.14.0, #875]
+
+- **Binds:** FR-9, FR-17, FR-18, FR-25, FR-53, FR-54, FR-66; the CLI name, the plugin ID, living copy,
+  on-disk state, planning IDs and telemetry.
+- **Prevents:** an install, uninstall or reconcile that can no longer find what it wrote; a dashboard that
+  stops matching; planning anchors and dated records rewritten by a rename; a user whose `harness` command
+  or plugin stops working without notice.
+- **Rule:**
+  - The product's name in living copy and public addresses is Model Citizen, and its slug is
+    `model-citizen`.
+  - `citizen` is the command, and `harness` stays a supported alias with no deprecation. `bin/harness`
+    stays the real file, because hooks and the installer locate the checkout by that path; `bin/citizen`
+    points at it. Removing `harness` needs a major under the compatibility policy.
+  - The plugin ID is `model-citizen@model-citizen`. Doctor recognizes `agent-harness@agent-harness` too,
+    and warns when both are enabled.
+  - These keep `agent-harness`: on-disk names (`~/.config/agent-harness`, `.agent-harness/`,
+    `~/.local/state/agent-harness/`, launchd labels, install markers and managed blocks), the `AH-` IDs,
+    the issue map's slug, the planning directory names, telemetry's `service.name`, and every dated record.
+    Renaming any of them needs an automatic, reversible migration or a major with notice.
+  - The lower-case category noun "agent harness" is not the brand, and stays.
+
 ## Consistency Conventions
 
 | Concern | Convention |
 | --- | --- |
 | Where logic goes | Logic a hook needs at event time goes in the kernel, `policy/hooks/`, as an import-cheap, standard-library module. CLI-only logic goes in `lib/harness_core/`. `bin/harness` stays a command layer and gains no new domain logic. |
-| Hook ids | The runtime registers `adapters/<runtime>/hook.py` and, beside it, the observation entry point (AD-23), which bypasses the dispatcher. A hook id is the name of a `policy/hooks/` script that the dispatcher's table invokes for an event. Every other module there is a kernel library: `posture`, `pricing`, `telemetry`, `decisions`, `filter-lines`, `otel-headers`, `rule-detectors`, `allow-readonly-bash` and `usage-log` as loaded. The named decision points are listed in `policy/hooks/decisions.py`, the authority. `lib/harness_core/decisions/controls.py` mirrors that list, and a test keeps the two in step. Switches apply in the dispatcher, never inside a script. |
+| Hook ids | The runtime registers `adapters/<runtime>/hook.py` and, beside it, the observation entry point (AD-23), which bypasses the dispatcher. A hook id is the name of a `policy/hooks/` script that the dispatcher's table invokes for an event. Every other module there is a kernel library: `posture`, `pricing`, `telemetry`, `decisions`, `filter-lines`, `otel-headers`, `rule-detectors`, `allow-readonly-bash`, `adherence` and `usage-log` as loaded. The named decision points are listed in `policy/hooks/decisions.py`, the authority. `lib/harness_core/decisions/controls.py` mirrors that list, and a test keeps the two in step. Switches apply in the dispatcher, never inside a script. |
 | Hook cost | Kernel modules do no work at import. The dispatcher sets per-event timeouts. Each hook's p95 wall time is measured against the NFR-16 bound. |
 | Status words | Catalog states are `qualified`, `unqualified`, `planned` and `unsupported`. Capability modes are `instruction`, `instruction-and-hook` and `instruction-and-setting`. The tier restriction is `enforced`, `advisory` or `none`. Evidence results are `passed`, `failed` and `unverified`. Decision stages are `off`, `shadow`, `advise` and `act`. Estimand labels are measured, soft estimate and unmeasured, with unattributed as a qualifier (AD-12), orthogonal to FR-11's known, partial, unavailable and failed. Documentation shows "preview" for an unqualified surface. |
 | Data and formats | Ledgers are JSON lines with ISO-8601 UTC timestamps. Dollars carry `price_as_of`. Unknown values are `null`, never `0`. Issue numbers are keyed `github_number`. |
@@ -554,7 +599,7 @@ flowchart LR
 | Primitives and projection (FR-1, FR-3, FR-10, FR-13) | `primitives/`, `lib/harness_core/catalog.py`, `importer.py`, `collisions.py`, `adapters/` | AD-1, AD-7 |
 | Stances and selection (FR-2, FR-14 to FR-16) | `policy/hooks/posture.py`, `primitives/constraints.json`, `bin/harness` `load_config` (retiring) | AD-2, AD-6, AD-22 |
 | Configuration lifecycle (FR-4, FR-5, FR-17, FR-66, FR-69, FR-70) | `bin/harness` (sync, init, config), `lib/harness_core/reconcile.py`, `compatibility/migration.json` | AD-3, AD-18 |
-| Distribution (FR-17, FR-18, FR-53, FR-54) | `scripts/install.sh`, `.claude-plugin/`, `product.json`, `scripts/advance_stable.py`, `scripts/sync_about.py` | AD-19 |
+| Distribution (FR-17, FR-18, FR-53, FR-54) | `scripts/install.sh`, `.claude-plugin/`, `product.json`, `scripts/advance_stable.py`, `scripts/sync_about.py` | AD-19, AD-24 |
 | Measured rules (FR-19 to FR-22, FR-67) | `policy/hooks/rule-detectors.py`, `lib/vendor/ruleprobe` | AD-13, AD-22 |
 | Ledgers, pricing, telemetry (FR-11, FR-23 to FR-27) | `policy/hooks/usage-log.py`, `pricing.py`, `telemetry.py`, `decisions.py`, `otel-headers.py` | AD-11, AD-12, AD-23 |
 | Cost posture (FR-28 to FR-34) | `tier-agent-spawns.py`, `brief-guard.py`, `usage-feed.py`, `posture.py`, `adapters/*/bindings.json` | AD-14 |
@@ -571,7 +616,6 @@ flowchart LR
 
 - **Mode precedence mechanism.** #557 decides it, within the AD-2 constraint.
 - **Floor semantics for core hook ids.** Plain override holds until the selection model decides.
-- **Per-case evidence invalidation (#582).** Per-runtime scoping (AD-4) holds until then.
 - **Codex prompt-submit and subagent events.** The event table stays as declared until a probe on the
   current client settles the disputed support (AD-7).
 - **The session archive's row format.** The #541 spike decides it, bound by AD-11 and AD-16.

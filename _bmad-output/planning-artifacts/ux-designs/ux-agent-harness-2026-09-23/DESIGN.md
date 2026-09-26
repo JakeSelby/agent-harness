@@ -1,8 +1,8 @@
 ---
-title: Agent Harness design contract
+title: Model Citizen design contract
 status: final
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-25
 supersedes: ../ux-agent-harness-2026-09-19/DESIGN.md
 colors:
   status: semantic-names-not-fixed-terminal-colors
@@ -29,7 +29,7 @@ sources:
 
 # Brand and style
 
-Agent Harness is direct, inspectable and calm. It leads with what a developer can find out or do, and then
+Model Citizen is direct, inspectable and calm. It leads with what a developer can find out or do, and then
 states its limits without promotional inflation. This contract governs three surfaces:
 - the terminal;
 - the agent's own answers and plans, which the `voice` stance and the Review Card shape;
@@ -79,7 +79,7 @@ Consistency Conventions):
 - **Evidence callout.**
   - It states the observed behaviour, the exact surface and version, and the limitation.
   - It names whether the claim rests on generated configuration, a hook, or native evidence.
-- **Usage table (`harness usage`).**
+- **Usage table (`citizen usage`).**
   - One row per group, with fixed columns and one grouping per run.
   - Partial data is reported in the header and in the `unpriced` footer.
   - Dollars are list-price equivalents, and the documentation says so beside the `usd` column.

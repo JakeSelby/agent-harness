@@ -17,9 +17,14 @@ selected stance through its linked rules; Codex reads the same text in generated
 Use `HARNESS_STANCE_VOICE=scannable bin/harness stances --json` to inspect a session selection.
 Setting an environment variable on a running agent does not itself rewrite its loaded context.
 
-Resolution order is distribution defaults, user configuration, the optional file explicitly
-named by `HARNESS_PROJECT_CONFIG`, then `HARNESS_STANCE_*` session values. Project files can
-select stances only. They cannot change identity, runtime targets or permission configuration.
+A project or session selection that differs from the synced one reaches the model at the next
+session start: the session hook injects the selected variant's text, within the always-loaded
+budget, and names its file instead when the text does not fit. Keep a variant you expect to select
+per project or per session short, so it arrives as text rather than as a pointer.
+[Synchronization](sync-model.md#project-and-session-stance-selections) gives the budget.
+
+Resolution order, and what a project or session file may carry, is the selection document in
+[preferences](preferences.md#the-selection-document).
 
 ## Define a personal stance
 
@@ -39,8 +44,8 @@ source and full resolved behavior. Custom dimensions are optional until selected
 use lowercase letters, digits and hyphens. Duplicate dimension/variant definitions, unknown
 selections and path traversal are errors, not fallback behavior.
 
-A skill, role or workflow name defined in two roots is an error as well. `harness lint` names
-both sources and `harness sync` refuses before it writes anything, because a runtime resolves a
+A skill, role or workflow name defined in two roots is an error as well. `citizen lint` names
+both sources and `citizen sync` refuses before it writes anything, because a runtime resolves a
 duplicate name silently, first-wins. A project's own `.claude/agents/` or `.claude/skills/` name
 is not a duplicate: the project definition is meant to win, so sync reports the shadow as a
 notice and carries on.
@@ -68,9 +73,9 @@ while `designer` and `design-judge` are allowed to declare it:
   "reason": "Only the design roles the delegation-tiering skill exempts may declare frontier"}]}
 ```
 
-A violated constraint is a finding in `harness stances --json` (a `conflicts` array) and in
-`harness lint`, which evaluates the shipped constraints against `config.example.json`. It stays
-a hard error in the resolver, so `harness sync` refuses the selection rather than projecting a
+A violated constraint is a finding in `citizen stances --json` (a `conflicts` array) and in
+`citizen lint`, which evaluates the shipped constraints against `config.example.json`. It stays
+a hard error in the resolver, so `citizen sync` refuses the selection rather than projecting a
 contradiction; validation runs before sync changes files.
 
 ## A cost variant with numbers in it
@@ -98,7 +103,7 @@ chain routes nothing at all.
 
 A row is keyed by a role name or by a band — `A`, `B` or `C` — and may set `class`, `effort`,
 `budget_output_tokens` and `budget_tool_calls`; any of them may be omitted, and a null budget
-means unbudgeted. `budget_multiplier` scales both budgets, and `harness stances --json` reports
+means unbudgeted. `budget_multiplier` scales both budgets, and `citizen stances --json` reports
 the base figure and the scaled one. `class` never names the top class: reaching it by request is
 exactly what the `delegation` stance forbids, and it only applies at all when that stance
 resolves to `tiered`. A role whose frontmatter says `posture: fixed` — the verifiers — keeps its
@@ -129,7 +134,7 @@ bin/harness import ~/code/project/CLAUDE.md --dry-run   # the plan, then the syn
 bin/harness import ~/code/project/CLAUDE.md             # writes exactly that plan
 ```
 
-The first run only prints — the rules it would write, then `harness sync --dry-run` for the root
+The first run only prints — the rules it would write, then `citizen sync --dry-run` for the root
 that would carry them — and a second run applies the plan it printed; a source that changed in
 between is printed again rather than written. Rules land under
 `~/.config/agent-harness/imported/<name>/` unless `--root` names another absolute directory,
@@ -139,11 +144,51 @@ journal says the harness generated is refused with its record, and so is a skill
 workflow name the new root would define twice, in sync's own words and before anything is
 written.
 
-Once the root is registered, `harness sync` projects it like any other: the imported rules are
+Once the root is registered, `citizen sync` projects it like any other: the imported rules are
 linked into `~/.claude/rules/harness-roots/<root>/` and rendered into the Codex `AGENTS.md`
 after this repository's own rules, and any skills the root carries are linked beside the shared
 ones. [The sync model](sync-model.md) covers the ordering, the drift reporting and what
 uninstall takes back.
+
+## Declare a module's manifest
+
+A switch says whether a rule, skill, role, workflow or hook is on. Its manifest says what the
+module is for and how its effect could be told apart from the rest, so a flipped switch can be
+attributed and scored. Shipped modules declare theirs in `primitives/manifests.json`, and hooks
+in `policy/hooks/manifests.json`. A root in `primitive_roots` may carry a `manifests.json` of the
+same shape at its top level. Stance variants are chosen, not switched, and carry none.
+
+```json
+{"schema_version": 1,
+ "rules": {"secrets": {"claims": ["Keeps credentials out of every tracked file."],
+                       "surface": ["resident-context"],
+                       "instruments": ["detector:secrets/secret-in-write"],
+                       "slot": null, "dependencies": [], "conflicts": []}}}
+```
+
+| Field | Holds |
+| --- | --- |
+| `claims` | What the module is for, one or more sentences. |
+| `surface` | Where it reaches the model: `resident-context` (loaded every session, a skill's or role's listing included), `on-demand-context` (loaded when invoked) and `hook-events` (runs at runtime events). |
+| `instruments` | What measures it, such as `detector:<id>` from `policy/hooks/rule-detectors.py`. Empty means unmeasured, and every report says `unmeasured`, never that the module has no effect. |
+| `slot` | `null`, or `{"id": <identifier>, "cedes": true or false}` for an exclusive position. |
+| `dependencies` | `kind/unit` modules that must be switched on while this one is. |
+| `conflicts` | `kind/unit` modules that must not be switched on with this one. |
+
+The resolver, `posture.selection()`, enforces them whenever it runs strictly, so `harness
+selection` and every command that reads a selection refuse, naming each module involved, when:
+
+- a shipped module has no manifest, or a manifest lacks a field or holds a malformed one;
+- a switched-on module depends on one that is off or not installed;
+- two switched-on modules conflict;
+- two switched-on modules claim one slot and neither cedes it;
+- one module is declared in two manifest files.
+
+A module switched off asks nothing of its dependencies and holds no slot. A module from your own
+root may omit its manifest: it resolves and reports as unmeasured, and a root written before
+manifests existed keeps working. A dependency is a module whose absence breaks this one. A
+pointer to further reading is not a dependency. `citizen selection` shows each switch unit's
+instruments, or `unmeasured`, beside its value.
 
 ## Contribute shared primitives
 
@@ -151,7 +196,9 @@ Author rules, stances, skills, roles, workflows and presentation under `primitiv
 Role instructions and authority are shared; native model/tool settings belong in
 `adapters/<runtime>/bindings.json`. Workflow bodies use `{{arguments}}`; the Claude command
 projection translates that to its native argument syntax. Existing `claude/` source paths are
-compatibility links or generated views, not another authoring home.
+compatibility links or generated views, not another authoring home. A new rule, skill, role or
+workflow also needs its entry in `primitives/manifests.json`
+([above](#declare-a-modules-manifest)).
 
 Run `bin/harness generate` after editing roles, workflows or base instruction templates.
 `bin/harness generate --check` and lint reject projection drift. `bin/harness catalog` emits

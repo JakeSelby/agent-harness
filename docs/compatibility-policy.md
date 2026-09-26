@@ -1,7 +1,7 @@
 # Compatibility and release policy
 
 Version 1 protects the interfaces a user or integration must rely on while leaving implementation
-details free to improve. A compatibility claim applies to agent-harness itself; it cannot promise
+details free to improve. A compatibility claim applies to Model Citizen itself; it cannot promise
 that an external runtime, model provider or client will preserve behavior outside the harness's
 control. The versioned [compatibility catalog](compatibility.md) records what was actually observed.
 

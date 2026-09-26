@@ -90,7 +90,7 @@ For most people, most of the time:
   The report gives each rule its opportunities, a compliance figure and a verdict, then sorts
   violations by cause and proposes a hook for the rules worth enforcing. Rule to "did it fire" is the
   same direction as this repository, and for one person's own CLAUDE.md it answers today what
-  `harness usage --rules` answers only for rules that carry a detector.
+  `citizen usage --rules` answers only for rules that carry a detector.
 - **RuleReceipt** ([rulereceipt/rulereceipt](https://github.com/rulereceipt/rulereceipt), read
   2026-09-23) checks whether a Claude Code session followed its CLAUDE.md or AGENTS.md, with
   deterministic checks over git commands and file operations and a quoted line of evidence for each
@@ -124,7 +124,7 @@ Stated as narrowly as the evidence allows. Each line names the file that impleme
 - **Rules that are measured, and a lint that refuses an unmeasured one.** Every rule file names a
   deterministic detector over the agent's own transcript or carries a one-line reason nothing in a
   transcript can decide it; `check_detectors` in `bin/harness` fails the commit otherwise.
-  `harness usage --rules` reports hit rate per rule, grouped by repository and by which preference
+  `citizen usage --rules` reports hit rate per rule, grouped by repository and by which preference
   variant was selected. Binding a check to each rule and reporting whether it was followed is no
   longer unique: claude-md-doctor and RuleReceipt both do it on Claude Code transcripts (§4). What I
   did not find elsewhere, as of 2026-09-23, is the rest: a lint that refuses an unmeasured rule,
@@ -135,7 +135,7 @@ Stated as narrowly as the evidence allows. Each line names the file that impleme
   rule fired.
 - **An ownership journal for the files it manages.** `lib/harness_core/reconcile.py` records prior
   and applied content per owned field, refuses an unmanaged path ("adopt explicitly before replacing
-  it"), exits non-zero on conflict, and `harness uninstall` restores prior values only while the
+  it"), exits non-zero on conflict, and `citizen uninstall` restores prior values only while the
   current value still matches what was last applied. rulesync's equivalent covers hooks only, opt-in.
 - **Shell commands graded 0 to 3 before they run.** `claude/hooks/grade-bash.py` decomposes
   compounds, substitutions and heredocs and grades reversibility; the autonomy stance sets which grade
@@ -183,7 +183,7 @@ The section that decides whether the rest is credible.
   `OPT_OUT` reason and no measurement. The LLM-judge machinery that Langfuse, Opik and Phoenix ship
   is exactly what those rules need, and it is not here.
 - **The conflict engine ships four constraints and has never used `requires`.**
-  `constraints.json` supports `when`/`requires`/`excludes`, `harness lint` fails and `harness sync`
+  `constraints.json` supports `when`/`requires`/`excludes`, `citizen lint` fails and `citizen sync`
   refuses on a selection that violates one, and the four shipped constraints include the
   contradiction that motivated it: always-loaded `delegation/tiered.md` says "Never `frontier`", so
   a role declaring `tier: frontier` is excluded unless the delegation-tiering skill exempts it

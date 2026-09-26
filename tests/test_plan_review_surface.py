@@ -153,7 +153,7 @@ class WorkflowTextTests(unittest.TestCase):
     def test_the_planner_worker_runs_before_plan_mode_starts(self):
         """It writes an artifact, and plan mode permits no write but its own plan file."""
         body = flat(PLAN)
-        self.assertLess(body.index("harness role run planner"), body.index("entering plan mode"))
+        self.assertLess(body.index("citizen role run planner"), body.index("entering plan mode"))
 
     def test_plan_keeps_the_no_plan_mode_branch_and_names_the_file_only_there(self):
         body = flat(PLAN)

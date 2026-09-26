@@ -1,4 +1,4 @@
-# agent-harness
+# Model Citizen
 
 A user-aligned, model-provider-agnostic harness with shared custom primitives and switchable
 personal stances. `bin/harness` projects one policy authority into Claude Code and Codex. The global
@@ -60,6 +60,33 @@ contract are in `docs/bmad-governance.md`, which every BMad workflow loads.
   change. Content changes (rules, stances, skill text, docs) are gated by the lint and review.
 - Nothing personal, nothing project-specific, nothing copyleft. The lint enforces the first;
   review enforces the rest.
+
+## CodeRabbit review and merging
+
+CodeRabbit reviews pull requests into `main`, as `.coderabbit.yaml` configures it. On every pull
+request, work through its review with `/build` step 6 and without asking first: push fixes to the
+branch, reply in its threads and resolve them, and request each further pass with
+`@coderabbitai review`, since a push never starts one. Request the first pass the same way when
+automatic review skips the pull request, as it does drafts, `chore(release)` titles and Dependabot.
+A pass has finished when the `CodeRabbit` commit status reads `success: Review completed`, seven to
+eleven minutes after it starts, so allow fifteen. The `Review skipped` status it posts on every push
+is not a pass, and neither is the empty review each of its thread replies creates. Comments in the
+review body, outside the diff or marked as nitpicks, are findings too: fix them, or answer them in a
+pull request comment.
+
+**These conditions are the go-ahead `/land` asks for.** Merge a pull request from a branch of this
+repository, never from a fork, without asking once all three hold:
+
+1. **Nothing waits on the maintainer:** no question to them is open, no default you took on their
+   behalf awaits their confirmation, and the diff does what the issue asks and no more.
+2. **It is tested:** the Gate block passed before your last push, and every required check is green
+   on the head commit.
+3. **The review is worked through:** a pass completed after your last change to a file CodeRabbit
+   reviews, each of its findings is fixed or answered with the reason, every thread is resolved,
+   and no human's thread is open. Bringing in `main` needs no new pass.
+
+Short of all three, report what remains with the pull request link and wait. A release, a tag and
+`sync_about.py --apply` keep their own approvals.
 
 ## Issues, milestones and releases
 

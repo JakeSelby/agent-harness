@@ -124,6 +124,10 @@ class DoctorTests(unittest.TestCase):
     def test_doctor_says_when_nothing_is_registered(self):
         self.assertIn("hooks: none registered", self._doctor())
 
+    def test_doctor_points_constrained_roles_at_citizen_role_run(self):
+        self.assertIn("constrained roles: use `citizen role run`; `citizen role status` reports workers",
+                      self._doctor())
+
     def test_doctor_names_the_guards_that_are_off(self):
         path = Path(self.tmp.name) / ".claude" / "settings.json"
         path.parent.mkdir(parents=True)
@@ -172,7 +176,7 @@ class MessageTests(unittest.TestCase):
 
     def test_the_untrusted_message_names_the_command_that_fixes_it(self):
         text = (REPO / "claude" / "hooks" / "stop-gate.py").read_text()
-        self.assertIn("Run `harness trust .` in this folder", text)
+        self.assertIn("Run `citizen trust .` in this folder", text)
 
 
 if __name__ == "__main__":

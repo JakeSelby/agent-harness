@@ -70,12 +70,14 @@ class RecordTests(unittest.TestCase):
         automated = {case: (None, "stub") for case in MODULE.catalog()["required_cases"]}
         with patch.dict(MODULE.CASES, automated):
             data = self.record()
-        self.assertEqual(sorted(data), ["cases", "client", "client_version", "harness_version",
-                                        "invalidation_scope", "kind", "model_run",
+        self.assertEqual(sorted(data), ["case_map", "cases", "client", "client_version",
+                                        "harness_version", "invalidation_scope", "kind",
+                                        "model_run",
                                         "observations", "platform", "runtime_version",
                                         "source_commit", "tier_routing"])
         # The record states the path set it survives, and the validator grants that one only.
         self.assertEqual(data["invalidation_scope"]["excluded"], ["adapters/codex"])
+        self.assertEqual(data["case_map"], compatibility.case_map_identity(MODULE.catalog()))
         catalog = MODULE.catalog()
         # A released catalog accepts evidence for its pinned qualification source, not for HEAD.
         source = compatibility.qualification_source(catalog)

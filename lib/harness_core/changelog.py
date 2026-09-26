@@ -181,13 +181,30 @@ def hand_written_release_open(root, fork):
     return not re.search(r"^## \[%s\]" % re.escape(LAST_HAND_WRITTEN), base, re.MULTILINE)
 
 
+VERSION_HEADING = re.compile(r"^## \[([0-9][^\]]*)\]", re.MULTILINE)
+
+
+def assembles_release(root, fork):
+    """Whether the branch is a release: its CHANGELOG.md gains a `## [<version>]` section the base
+    lacks and it deletes fragments the base carried, which is what `release_notes.py --changelog`
+    leaves behind. Such a branch consumes fragments, so asking it for one would strand a waiver."""
+    path = Path(root) / "CHANGELOG.md"
+    after = set(VERSION_HEADING.findall(path.read_text(encoding="utf-8") if path.is_file() else ""))
+    before = set(VERSION_HEADING.findall(_git(root, "show", "%s:CHANGELOG.md" % fork) or ""))
+    if not after - before:
+        return False
+    deleted = _git(root, "diff", "--name-only", "--diff-filter=D", fork, "--", DIRECTORY + "/")
+    return any(is_candidate(Path(name).name) and name.count("/") == 1 for name in _lines(deleted))
+
+
 def reason_words(text):
     return [word for word in text.split() if re.search(r"[A-Za-z]", word)]
 
 
 def findings(root, notes=None):
     """Lint findings: a malformed or misplaced fragment, a thin waiver, or a branch that touches
-    ROOTS without adding a fragment. Why the rule was skipped, if it was, goes to `notes`."""
+    ROOTS without adding a fragment, unless it assembles a release. Why the rule was skipped, if
+    it was, goes to `notes`."""
     root = Path(root)
     hits = []
     try:
@@ -222,6 +239,8 @@ def findings(root, notes=None):
         if new:
             return hits
         if hand_written_release_open(root, fork) and touches_unreleased(root, fork):
+            return hits
+        if assembles_release(root, fork):
             return hits
     except GitUnavailable as error:
         if notes is not None:

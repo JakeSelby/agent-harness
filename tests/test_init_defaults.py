@@ -81,7 +81,7 @@ class InitDefaultsTests(unittest.TestCase):
         self.assertEqual(cfg["identity"]["timezone"], "Europe/Lisbon")
         # The one field nothing on the machine can answer stays at the example value, and says so.
         self.assertEqual(harness.placeholder_identity(cfg), ["role"])
-        self.assertIn("harness config set identity.role", out.getvalue())
+        self.assertIn("citizen config set identity.role", out.getvalue())
 
     def test_the_general_preset_selects_its_own_stances(self):
         rc, _, path = self.init(preset="general")

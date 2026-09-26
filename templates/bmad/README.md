@@ -9,6 +9,6 @@ is a copy of a framework file.
     bin/harness bmad apply <repo>   # install what is missing; --force replaces a differing one
 
 The `harness-session` hook runs `check` when a session starts. Installation is explicit:
-run `harness bmad apply` to add compatible templates while preserving differing overrides.
+run `citizen bmad apply` to add compatible templates while preserving differing overrides.
 A template the installed skill no longer declares is skipped, never written. See
 [BMad integration](../../docs/bmad.md) for the installation and compatibility procedures.
