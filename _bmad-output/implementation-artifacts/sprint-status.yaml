@@ -552,4 +552,4 @@ development_status:
   ah-t031-the-generated-compatibility-block-carries-an-em: backlog
   ah-t032-add-a-merge-driver-for-the-bmad-issue-map-so: ready-for-dev
   ah-t033-keep-plans-committed-by-build-lint-clean-in-this: backlog
-  ah-t034-let-bmad-code-review-run-without-halts-inside-an: backlog
+  ah-t034-let-bmad-code-review-run-without-halts-inside-an: ready-for-dev
