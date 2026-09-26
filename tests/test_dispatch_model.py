@@ -41,6 +41,7 @@ POLICIES = {
     "plan-webfetch": "allow-plan-webfetch.py",
     "tier-spawns": "tier-agent-spawns.py",
     "stage-files": "stage-user-files.py",
+    "intent-overlap": "intent-overlap.py",
     "brief-guard": "brief-guard.py",
     "plan-card": "validate-plan-card.py",
     "neutralize": "neutralize-tool-output.py",

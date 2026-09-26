@@ -964,7 +964,7 @@ class RegistrationTests(Fixture):
         self.stop("aaa")
         self.assertTrue(self.feed_dir().exists())
         source = (REPO / "bin" / "harness").read_text(encoding="utf-8")
-        self.assertIn('for name in ("feed", "sessions"):', source)
+        self.assertIn('for name in ("feed", "sessions", "intents"):', source)
         self.assertIn("shutil.rmtree(str(directory)", source)
 
     def test_codex_declares_the_feed_uncovered(self):

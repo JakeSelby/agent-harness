@@ -28,7 +28,7 @@ The per-run `turns` field in `benchmarks/<harness version>/results.jsonl` is the
 what the replay fakes.
 
 **What was done about it.** Nothing to the stance yet, which is the honest part.
-[#429](https://github.com/JakeSelby/agent-harness/issues/429) is open and frames the measurement as
+[#429](https://github.com/JakeSelby/model-citizen/issues/429) is open and frames the measurement as
 a question with two answers rather than as a defect: either the stance does not bind under
 `claude -p`, or the four pinned tasks are too small for delegation to be worth it and an agent
 declining to delegate on an 11-call task is correct. The issue closes on a run pair showing a spawn
@@ -59,7 +59,7 @@ The detector is `transcript-hygiene/model-wrote-no-cap` today; `--rules` folds t
 new one as it reads, so the series does not split at the rename.
 
 **What was done about it.** The cause was established from a recorded transcript, and it was
-neither of the two guesses in [#324](https://github.com/JakeSelby/agent-harness/issues/324). The
+neither of the two guesses in [#324](https://github.com/JakeSelby/model-citizen/issues/324). The
 hook was registered and firing. Claude Code records a tool call's input as the model wrote it, and
 a `PreToolUse` hook's `updatedInput` lands in a separate entry the ledger scan never reads — so
 capping a brief could not move a number derived from the pre-hook text, whatever the hook did. The
@@ -80,7 +80,7 @@ exists only because the number was being kept before the hook shipped.
   corpus.** The vendored `ruleprobe` wheel labels the detectors the engine ships and
   `tests/fixtures/detector-corpus/` labels the ones written for this repository's own rules, and
   the `corpus` job runs `scripts/detector_corpus.py --floor 0.9` over both on every pull request
-  ([#522](https://github.com/JakeSelby/agent-harness/issues/522)). What that buys is a detector
+  ([#522](https://github.com/JakeSelby/model-citizen/issues/522)). What that buys is a detector
   measured against what its author says it should find; `secrets/git-add-secret-file` and
   `autonomy/denied-by-grade` are recorded under the floor at p=0.83 rather than the floor being
   moved to meet them. A rate over real

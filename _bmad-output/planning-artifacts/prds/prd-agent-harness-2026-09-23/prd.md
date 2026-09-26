@@ -1246,7 +1246,8 @@ closed as unverified. **Status:** implemented (0.11).
 #### FR-63: Coordination for parallel agents
 Parallel builders must declare the paths they will write, including new paths they plan to create. A
 pre-write check must warn when an edit overlaps a live sibling's claim. Sessions must be archived across
-runtimes for later search. **Status:** planned (backlog, #542, #543, after the #541 spike).
+runtimes for later search. **Status:** partial: path claims and the pre-write check are implemented
+(0.14, #542); the session archive is planned (backlog, #543, after the #541 spike).
 
 **Consequences (testable):**
 - Every overlap lands in the decision log.
