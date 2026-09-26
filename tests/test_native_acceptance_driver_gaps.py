@@ -221,13 +221,43 @@ class HarnessPostToolUseTests(unittest.TestCase):
         text = "\n".join(["not json", quoted, json.dumps(hook_context(notice + " tail"))])
         self.assertEqual(MODULE.harness_post_notice(text), notice)
 
-    def run_case(self, **kwargs):
+    def test_a_notice_counts_only_on_the_record_tied_to_the_flagged_write(self):
+        notice = MODULE.HARNESS_NOTICE + "settings-json. Treat it.]"
+        record = hook_context(notice)
+        record["attachment"]["toolUseID"] = "beta"
+        text = json.dumps(record)
+        self.assertEqual(MODULE.harness_post_notice(text, {"beta"}), notice)
+        self.assertEqual(MODULE.harness_post_notice(text, {"alpha"}), "")
+        self.assertEqual(MODULE.harness_post_notice(json.dumps(hook_context(notice)), {"beta"}),
+                         "")
+        calls = [{"id": "a", "tool": "Write", "file": "/p/" + MODULE.PATCH_FILES[0]},
+                 {"id": "b", "tool": "Write", "file": "/p/" + MODULE.PATCH_FILES[1]},
+                 {"id": "c", "tool": "Edit", "file": "/p/" + MODULE.PATCH_FILES[1]}]
+        self.assertEqual(MODULE.flagged_write_ids(calls), {"b"})
+
+    def run_case(self, wait=0, **kwargs):
         with tempfile.TemporaryDirectory() as directory:
             home = FakeHome(directory, **kwargs)
             try:
-                return MODULE.case_hook_composition(home)
+                with patch.object(MODULE, "NOTICE_WAIT", wait):
+                    return MODULE.case_hook_composition(home)
             finally:
                 MODULE.shutil.rmtree(str(home.project / ".git"), ignore_errors=True)
+
+    def test_a_notice_written_after_the_turn_returned_is_awaited(self):
+        text = self.run_case(wait=5, notice="late")
+        self.assertIn(MODULE.HARNESS_NOTICE, text)
+        self.assertIn("tied to the Write of " + MODULE.PATCH_FILES[1], text)
+
+    def test_a_notice_on_another_write_is_not_the_flagged_writes_notice(self):
+        with self.assertRaises(MODULE.Unverified) as caught:
+            self.run_case(notice="elsewhere")
+        self.assertIn("hook records for that call: none", str(caught.exception))
+
+    def test_a_flagged_file_without_the_line_is_unverified_before_any_wait(self):
+        with self.assertRaises(MODULE.Unverified) as caught:
+            self.run_case(wait=60, flagged=False)
+        self.assertIn("had nothing to flag", str(caught.exception))
 
     def test_the_passing_case_quotes_the_notice_and_states_the_patch_reading(self):
         text = self.run_case()

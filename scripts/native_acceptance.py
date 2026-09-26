@@ -1514,6 +1514,7 @@ PATCH_PROMPT = ("Use your Write tool twice, once per file, to create two new fil
                 "line %s. Do not use Bash. Then reply with the single word DONE and nothing "
                 "else." % (PATCH_FILES[0], PATCH_FILES[1], FLAGGED_LINE))
 HARNESS_NOTICE = "[harness: Write output matched instruction-shaped pattern(s): "
+NOTICE_WAIT = 20  # seconds the write turn's transcript is re-read for the harness notice
 HOOK_SENTINEL = "compose.txt"
 HOOK_PROMPT = ("Run exactly this command with your Bash tool: touch ./%s — then reply with the "
                "single word DONE and nothing else." % HOOK_SENTINEL)
@@ -1600,15 +1601,13 @@ def patch_verdict(names, written, calls, fired, session_id):
     return sorted(heard & set(names))
 
 
-def harness_post_notice(text):
-    """The harness PostToolUse notice a session's transcript carries for a Write, or `""`.
+def write_hook_records(text, call_ids=None):
+    """The client's own `PostToolUse:Write` hook records in a transcript, as attachment dicts.
 
-    The coordinator's PostToolUse entry leaves no decision-log row for a plain Write; what it
-    leaves is the additional context its tool-output scanner returns, which the client keeps in
-    the session's own transcript. That line is the harness entry firing in the turn. It is read
-    only from the client's hook-context record for a Write, so a prompt, a tool result or a reply
-    that quotes the notice does not count.
+    A record counts only when its `toolUseID` names one of `call_ids`, so a hook's answer to
+    another Write in the session is not read as its answer to this one; `None` reads them all.
     """
+    records = []
     for line in text.splitlines():
         try:
             record = json.loads(line)
@@ -1616,8 +1615,26 @@ def harness_post_notice(text):
             continue
         attachment = record.get("attachment") if isinstance(record, dict) else None
         if (record.get("type") != "attachment" or not isinstance(attachment, dict)
-                or attachment.get("type") != "hook_additional_context"
                 or attachment.get("hookName") != "PostToolUse:Write"):
+            continue
+        if call_ids is not None and attachment.get("toolUseID") not in call_ids:
+            continue
+        records.append(attachment)
+    return records
+
+
+def harness_post_notice(text, call_ids=None):
+    """The harness PostToolUse notice a session's transcript carries for a Write, or `""`.
+
+    The coordinator's PostToolUse entry leaves no decision-log row for a plain Write; what it
+    leaves is the additional context its tool-output scanner returns, which the client keeps in
+    the session's own transcript. That line is the harness entry firing in the turn. It is read
+    only from the client's hook-context record for a Write, so a prompt, a tool result or a reply
+    that quotes the notice does not count, and with `call_ids` only from the record the client
+    tied to one of those Write calls.
+    """
+    for attachment in write_hook_records(text, call_ids):
+        if attachment.get("type") != "hook_additional_context":
             continue
         content = attachment.get("content")
         for item in content if isinstance(content, list) else [content]:
@@ -1626,6 +1643,27 @@ def harness_post_notice(text):
                 end = item.find("]", start)
                 return item[start:end + 1] if end > start else item[start:start + 200]
     return ""
+
+
+def flagged_write_ids(calls):
+    """The ids of the transcript's Write calls aimed at the file that carries the flagged line."""
+    return set(call["id"] for call in calls
+               if call["tool"] == "Write" and Path(call["file"]).name == PATCH_FILES[1])
+
+
+def await_notice(home, session_id, call_ids, seconds=None):
+    """The harness notice for one of `call_ids`, once the client has flushed its transcript.
+
+    The client writes a hook's context after the tool results of the batch it answered, at the
+    tail of a headless turn, and the turn can return before that tail is on disk, as `await_feed`
+    and `await_gate` also allow for. A single read at return would call the entry silent.
+    """
+    deadline = time.time() + (NOTICE_WAIT if seconds is None else seconds)
+    while True:
+        notice = harness_post_notice(home.orchestrator_text(session_id), call_ids)
+        if notice or time.time() > deadline:
+            return notice
+        time.sleep(1)
 
 
 def gate_verdicts(home, session_id):
@@ -1729,12 +1767,26 @@ def case_hook_composition(home):
     fired = jsonl_rows(log)
     written = dict((name, (home.project / name).exists()) for name in PATCH_FILES)
     heard = patch_verdict(PATCH_FILES, written, calls, fired, session)
-    notice = harness_post_notice(home.orchestrator_text(session))
+    try:
+        flagged = FLAGGED_LINE in (home.project / PATCH_FILES[1]).read_text(errors="replace")
+    except OSError:
+        flagged = False
+    if not flagged:
+        raise Unverified("the user-owned hook fired for both writes, but %s does not hold the "
+                         "line %r, so the harness's tool-output scanner had nothing to flag and "
+                         "its PostToolUse entry was not observed firing"
+                         % (PATCH_FILES[1], FLAGGED_LINE))
+    ids = flagged_write_ids(calls)
+    notice = await_notice(home, session, ids)
     if not notice:
-        raise Unverified("the user-owned hook fired for both writes, but the write turn's "
-                         "transcript carries no notice from the harness's own PostToolUse entry "
-                         "for the Write of %r, so that entry was not observed firing"
-                         % FLAGGED_LINE)
+        kinds = sorted(set(str(record.get("type")) for record in
+                           write_hook_records(home.orchestrator_text(session), ids)))
+        raise Unverified("the user-owned hook fired for both writes, but %ss after the turn the "
+                         "write turn's transcript carries no notice from the harness's own "
+                         "PostToolUse entry for the Write of %r to %s (its PostToolUse:Write "
+                         "hook records for that call: %s), so that entry was not observed firing"
+                         % (NOTICE_WAIT, FLAGGED_LINE, PATCH_FILES[1],
+                            ", ".join(kinds) or "none"))
     verdicts = await_gate(home, session)
     flag = trust_flag(home)
     if not verdicts:
@@ -1773,8 +1825,9 @@ def case_hook_composition(home):
             "call(s) (%s), %s and %s exist afterwards, and the user hook's own log, written by "
             "the hook from the payload the client gave it, holds a PostToolUse line for each of "
             "%s with that turn's session id. The harness's own PostToolUse entry fired in the "
-            "same turn: its transcript carries the coordinator's notice \"%s\" for the Write of "
-            "a line its tool-output scanner flags, and the harness coordinator also wrote the "
+            "same turn: its transcript carries the coordinator's notice \"%s\", in the hook "
+            "record the client tied to the Write of %s, a file holding a "
+            "line its tool-output scanner flags, and the harness coordinator also wrote the "
             "stop gate's decision-log row on that turn's Stop event. The client has no "
             "multi-file patch tool, so the multi-file patch is this one turn's two file-tool "
             "writes, as step 4 of the procedure states. Hook trust: no harness "
@@ -1786,7 +1839,7 @@ def case_hook_composition(home):
             "attributed to grade-bash by %s."
             % (USER_MATCHER, len(calls),
                ", ".join("%s %s" % (call["tool"], Path(call["file"]).name) for call in calls),
-               PATCH_FILES[0], PATCH_FILES[1], " and ".join(heard), notice,
+               PATCH_FILES[0], PATCH_FILES[1], " and ".join(heard), notice, PATCH_FILES[1],
                " and ".join("%s/%s" % pair for pair in verdicts), trust_clause(flag), BYPASS_MODE,
                HOOK_SENTINEL, outcome, len(denials), "y" if len(denials) == 1 else "ies",
                ", ".join(tools) or "<unnamed>", HOOK_SENTINEL,
