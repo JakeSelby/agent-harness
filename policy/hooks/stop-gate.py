@@ -284,7 +284,7 @@ def main():
         return
     if not trusted(root, cwd):
         sys.stderr.write("stop-gate: folder not trusted in Claude Code and not listed by "
-                         "`harness trust`; gate skipped. Run `harness trust .` in this folder to "
+                         "`citizen trust`; gate skipped. Run `citizen trust .` in this folder to "
                          "let it run the repository's own checks.\n")
         log_gate(payload, root, commands, "skipped", "untrusted")
         return

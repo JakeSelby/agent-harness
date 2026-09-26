@@ -162,7 +162,7 @@ def integration_lines(repo, cwd):
         except Exception:
             continue
         notable = [ln.strip() for ln in (out.stdout or "").splitlines()
-                   if "not installed (harness" in ln or "differs" in ln or "drift:" in ln]
+                   if "not installed (citizen" in ln or "differs" in ln or "drift:" in ln]
         if notable:
             lines.append(name + " integration check: " + "; ".join(notable))
     return lines
@@ -243,7 +243,7 @@ def main():
     if manifest and manifest.get("repo"):
         d = drift_line(manifest["repo"])
         if d:
-            lines.append("agent-harness drift: " + d)
+            lines.append("model-citizen drift: " + d)
     if manifest and manifest.get("repo"):
         lines.extend(resolved_overrides(manifest["repo"], config))
     else:
