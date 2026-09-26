@@ -9,7 +9,7 @@
     "decision": 14,
     "epic": 20,
     "spike": 16,
-    "story": 267,
+    "story": 271,
     "task": 35
   },
   "items": [
@@ -6612,6 +6612,19 @@
       "type": "story",
       "native_type": "Feature",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-S266.md",
+      "parent_bmad_id": "AH-E003",
+      "parent_github_number": 135,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-S270",
+      "github_number": 884,
+      "github_url": "https://github.com/JakeSelby/agent-harness/issues/884",
+      "title": "Local governance: bind the decision provider into Bash command grading",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S270.md",
       "parent_bmad_id": "AH-E003",
       "parent_github_number": 135,
       "lifecycle": "active",
