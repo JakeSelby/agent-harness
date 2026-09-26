@@ -14,9 +14,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from isolation import isolate_home, without_config_dir
 
@@ -284,6 +286,70 @@ class StoreGuard(Home):
                 self.assertEqual(self.write(store, tool), "deny")
                 self.assertNotEqual(self.write(self.cwd / "notes.json", tool), "deny")
         self.assertEqual(self.write(store, "write_file", runtime="codex"), "deny")
+
+
+class Concurrency(Home):
+    """The lock around each read-modify-write: one approval, one use, and no record lost."""
+
+    def race(self, targets):
+        start = threading.Barrier(len(targets))
+        results = [None] * len(targets)
+
+        def run(index, target):
+            start.wait()
+            results[index] = target()
+
+        threads = [threading.Thread(target=run, args=(i, t)) for i, t in enumerate(targets)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        return results
+
+    def test_parallel_consumers_of_one_approval_get_exactly_one_true(self):
+        for _ in range(5):
+            approvals.record(SESSION, "approve ABC234")
+            results = self.race([lambda: approvals.consume(SESSION, "ABC234")] * 12)
+            self.assertEqual(results.count(True), 1, results)
+
+    def test_records_interleaved_with_consumes_lose_nothing(self):
+        codes = [approvals.code_for(SESSION, str(i)) for i in range(16)]
+        approvals.record(SESSION, "approve ABC234")
+        targets = []
+        for code in codes:
+            targets.append(lambda code=code: approvals.record(SESSION, "approve " + code))
+            targets.append(lambda: approvals.consume(SESSION, "ABC234"))
+        results = self.race(targets)
+        self.assertEqual(results[1::2].count(True), 1, results)
+        for code in codes:
+            with self.subTest(code=code):
+                self.assertTrue(approvals.consume(SESSION, code))
+
+    def test_a_lock_that_cannot_be_taken_fails_closed(self):
+        approvals.record(SESSION, "approve ABC234")
+        with patch.object(approvals, "fcntl", None):
+            self.assertFalse(approvals.consume(SESSION, "ABC234"))
+            self.assertEqual(approvals.record(SESSION, "approve DEF567"), [])
+        self.assertTrue(approvals.consume(SESSION, "ABC234"))
+
+
+class BrokenModule(Home):
+    """With `approvals.py` unloadable, the dispatcher still guards the store and nothing else."""
+
+    def test_the_store_stays_guarded_and_other_writes_pass_when_the_module_cannot_load(self):
+        real = lifecycle.load
+
+        def load(name):
+            if name == "approvals":
+                raise ImportError("approvals.py is broken")
+            return real(name)
+
+        store = self.home / ".local" / "state" / "agent-harness" / "approvals" / (SESSION + ".json")
+        with patch.object(lifecycle, "load", load):
+            for tool in ("Write", "Edit"):
+                with self.subTest(tool=tool):
+                    self.assertEqual(self.write(store, tool), "deny")
+                    self.assertNotEqual(self.write(self.cwd / "notes.json", tool), "deny")
 
 
 class StandaloneHook(unittest.TestCase):

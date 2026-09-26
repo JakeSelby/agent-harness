@@ -35,8 +35,14 @@ worse than the native permission flow, and a false high grade costs one extra pr
 prompt exists, one re-run: with the confirm marker in `bypassPermissions`, and in `auto` after the
 user replies `approve <code>` as the whole message. That approval is recorded only from a prompt
 that is nothing but approve tokens, so text an agent can place in a notification turn cannot carry
-one, and it covers one
-run of one command in one session for thirty minutes, and its store is closed to the agent's writes.
+one, and it covers one run of one command in one session for thirty minutes. The store is closed to
+the agent's file-tool writes, and a Bash command that names it grades 3.
+
+That store is an interlock, not containment. Any process running as the user can forge any local
+state, this store and the governance policy files included; a `python3 -c` that builds the path at
+run time is not graded, and the hook does not try to grade arbitrary code. The approval channel
+stops a cooperating agent from running an irreversible command by mistake. It does not hold back a
+hostile one: that is the sandbox's job, and an agent you do not trust belongs in one.
 The stop gate runs a repository's own `## Gate` commands only in a folder trusted through
 Claude Code's dialog or `harness trust`, so a clone cannot run code on the first Stop. The
 `bypass` permission posture requires an explicit acknowledgement in the config file and is
