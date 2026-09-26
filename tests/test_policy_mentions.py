@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: MIT
 """The policy-file guard judges what a command writes, not what its text mentions.
 
-A policy path inside a quoted argument or a here-document body is data, so a command that only
-mentions one goes to the decision provider like any other. A redirect, `tee`, `sed -i`, a `cp`
-or `mv` operand, an unresolved operand named `governance.json` or `config.json`, any
-argument of an interpreter and a here-document a shell runs as its script are still level-1 writes.
+A line made only of commands that run no code from their input, such as `gh`, `git` and `echo`,
+may mention a policy path in a quoted argument or a here-document body as data. A redirect,
+`tee`, `sed -i`, a `cp` or `mv` operand and an unresolved operand named `governance.json` or
+`config.json` are still level-1 writes, and so is a policy path anywhere in a line that runs
+code the walk cannot see into: a shell, an interpreter, a leading assignment or a substitution.
 
 Run: python3 -m unittest discover tests
 """
@@ -16,11 +17,11 @@ MENTIONS = [
     "gh issue create --title x --body-file - <<'EOF'\n"
     "The guard reads .agent-harness/governance.json and ~/.config/agent-harness/config.json.\n"
     "EOF",
-    "python3 - <<'EOF'\nprint('see ~/.config/agent-harness/governance.json')\nEOF",
     "cat > notes.md <<EOF\nedit .agent-harness/governance.json by hand\nEOF",
     'echo "edit .agent-harness/governance.json by hand" > notes.md',
     'git commit -m "document .agent-harness/governance.json"',
     "gh pr comment 1 --body '~/.config/agent-harness/config.json selects the provider'",
+    'cd sub && git commit -m "see .agent-harness/governance.json" | cat',
 ]
 
 WRITES = [
@@ -41,7 +42,14 @@ WRITES = [
     "node -r mod -e 'fs.writeFileSync(\".agent-harness/governance.json\", \"{}\")'",
     "python3 -m json.tool /tmp/p.json .agent-harness/governance.json",
     "python3 script.py -c .agent-harness/governance.json",
+    # A leading assignment is part of the command it prefixes.
+    "P=.agent-harness/governance.json python3 -c 'import os; open(os.environ[\"P\"],\"w\")'",
+    # Code a shell or an interpreter reads from a pipe or a here-document.
+    "printf 'echo hi > .agent-harness/governance.json\\n' | sh",
+    "python3 - <<'EOF'\nopen('.agent-harness/governance.json', 'w').write('{}')\nEOF",
+    "python3 - <<'EOF'\nprint('see ~/.config/agent-harness/governance.json')\nEOF",
     "bash <<'EOF'\necho {} > .agent-harness/governance.json\nEOF",
+    "gh issue create --body \"$(python3 -c 'open(\\\".agent-harness/governance.json\\\",\\\"w\\\")')\"",
     'echo "x > .agent-harness/governance.json',
 ]
 
@@ -67,23 +75,20 @@ class PolicyMentions(Home):
             self.assertIn("level 1", reason, command)
 
 
-class InterpreterArguments(unittest.TestCase):
-    """A policy path in any argument of an interpreter is written, wherever it stands."""
+class DataOnly(unittest.TestCase):
+    """Which lines may mention a policy path as data."""
 
-    POLICY = "open('.agent-harness/governance.json','w')"
+    def test_a_line_of_data_commands_is_data_only(self):
+        for command in ('gh issue create --body "x"', "git status && echo x > out | cat",
+                        "cat > notes.md <<'EOF'\nx\nEOF"):
+            self.assertTrue(grader.data_only(command), command)
 
-    def test_every_argument_of_an_interpreter_is_judged(self):
-        for prog, args in (("python3.12", ["-W", "ignore", "-c", self.POLICY]),
-                           ("perl", ["-I", "lib", "-ne", self.POLICY]),
-                           ("ruby", ["-e" + self.POLICY]),
-                           ("node", ["--require", "mod", "--eval=" + self.POLICY]),
-                           ("php", ["-r", self.POLICY])):
-            self.assertIn(".agent-harness/governance.json",
-                          grader._written(prog, args, [], "/repo"), prog)
-
-    def test_another_program_is_not_judged_by_its_arguments(self):
-        self.assertEqual(grader._written("gh", ["-e", self.POLICY], [], "/repo"), [])
-        self.assertEqual(grader._written("python3", ["-c", "print(1)"], [], "/repo"), [])
+    def test_a_line_that_may_run_unseen_code_is_not(self):
+        for command in ("P=x gh issue list", "printf x | sh", "python3 - <<'EOF'\nx\nEOF",
+                        "eval echo x", "xargs rm < list", "find . -exec rm {} +",
+                        "source env.sh", ". env.sh", "env gh issue list", "/tmp/git status",
+                        'echo "$(date)"', "cat <(ls)", "(sh x)", 'echo "unclosed'):
+            self.assertFalse(grader.data_only(command), command)
 
 
 if __name__ == "__main__":

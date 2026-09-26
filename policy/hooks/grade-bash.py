@@ -976,8 +976,7 @@ RANK = {"allow": 0, "ask": 1, "deny": 2}
 POLICY_NAME = "governance.json"
 POLICY_DIR = ".agent-harness"
 # The repository's `.agent-harness/governance.json` and the user's
-# `.config/agent-harness/governance.json`, found by name only where a command's written paths
-# cannot be known: a line the walk cannot decompose.
+# `.config/agent-harness/governance.json`, found by name in any line that is not `data_only`.
 POLICY_RE = re.compile(r"agent-harness[/\\]+governance\.json")
 # The user configuration selects the provider, so a write to it can switch governance off; it is
 # guarded like a policy file, and so is the command that sets a `governance` key in it.
@@ -989,11 +988,11 @@ CONFIG_SET_RE = re.compile(r"(?:harness|citizen)\b[^;&|\n]*\bconfig\s+set\s+[\"'
 PATH_WRITERS = {"tee", "cp", "mv", "install", "ln", "rm", "unlink", "truncate", "touch", "rsync",
                 "shred", "dd"}
 IN_PLACE = {"sed", "gsed", "perl", "ruby"}
-# Interpreters, by name without a version suffix: a policy path named in any argument of one
-# counts as written, since its code may write any path it is given.
-INTERPRETER_RE = re.compile(r"^(python|node|perl|ruby|php)[0-9.]*$")
-MENTION_RE = re.compile(r"[^\s'\"(),;=`]*(?:agent-harness[/\\]+governance"
-                        r"|\.config[/\\]+agent-harness[/\\]+config)\.json")
+# Commands that neither run their arguments or input as code nor write anywhere but the redirect,
+# `tee`, `cp` and `mv` targets the walk checks. A line made only of these may mention a policy
+# path as data; any other line is searched for one by name.
+DATA_COMMANDS = {"gh", "git", "echo", "printf", "cat", "grep", "jq", "tee", "cp", "mv", "cd",
+                 "ls", "head", "tail", "wc", "true", "false"}
 POLICY_LEVEL = 1
 FILE_APPROVAL_TAIL = (" Nothing can prompt in this permission mode, so the edit was refused rather"
                       " than asked about. Stop, say in chat what the edit changes, and ask the user,"
@@ -1239,13 +1238,6 @@ def _written(prog, args, targets, cwd):
         head = os.path.dirname(path)
         resolved = None if (PLACEHOLDER in head or "$" in head) else _resolve(path, cwd)
         out.append(resolved or path)
-    # An interpreter may write any path any of its arguments names, whether as inline code, a
-    # module's or a script's argument, or an option's value, so every policy path named in its
-    # arguments counts, wherever it stands. It is left as written: which directory the code
-    # resolves it against is not known, so `_policy_hits` judges it by name.
-    if INTERPRETER_RE.match(prog):
-        for arg in args:
-            out.extend(match.group(0) for match in MENTION_RE.finditer(arg))
     return out
 
 
@@ -1397,51 +1389,47 @@ def unresolved(operand):
     return None
 
 
-def _stdin_scripts(command):
-    """The paths written by here-document bodies a shell reads as its script, as in
-    `bash <<'EOF'`. A body is data to every other program, so a policy path it only mentions is
-    not a write; a shell runs it, so its writes are walked, with the directory taken as unknown."""
-    text, bodies = normalize(command)
-    stripped, _inners = _extract_subs(text)
-    parts = segments(stripped) if (bodies and stripped is not None) else None
+def data_only(command):
+    """Whether every command on the line is in `DATA_COMMANDS`, run by its bare name, with no
+    leading assignment and no command or process substitution. Such a line runs no code the walk
+    cannot see, so a policy path in its quoted arguments or here-document bodies is data. Any
+    doubt, including a line that does not decompose, is False."""
+    text, _bodies = normalize(command)
+    stripped, inners = _extract_subs(text)
+    if stripped is None or inners:
+        return False
+    parts = segments(stripped)
     if not parts:
-        return []
+        return False
+    delimiters = {match.group(2) for match in HEREDOC_RE.finditer(stripped)}
     for tokens in parts:
+        if any(t.startswith(("<(", ">(")) for t in tokens):
+            return False
         body, _targets = _redirects(list(tokens))
-        while body and ASSIGN_RE.match(body[0]):
-            body = body[1:]
-        args = body[1:]
-        if (body and body[0].rpartition("/")[2] in SHELLS and not operands(args)
-                and not any(DASH_C_RE.match(a) for a in args)):
-            break
-    else:
-        return []
-    written = []
-    for script in bodies:
-        found = governed_text(script, None, 1)
-        if found is None:
-            written.extend(match.group(0) for match in MENTION_RE.finditer(script))
-        else:
-            written.extend(p for entry in found for p in entry[3])
-    return written
+        if body == tokens and len(body) == 1 and body[0] in delimiters:
+            continue  # the line that closes a here-document, left in place by `normalize`
+        if body and body[0] not in DATA_COMMANDS:
+            return False
+    return True
 
 
 def _policy_hits(command, found, walked=True):
     """What a command changes that is a level-1 action: a policy file, the user configuration or
     a `governance` key set through `harness config set`.
 
-    A policy path is judged from the paths the walk found written: redirect targets, the
-    operands of `tee`, `cp`, `mv`, `sed -i` and the like, and names in any argument of an interpreter.
-    Only a line the walk could not decompose (`walked` false) is searched for the path by name,
-    so a path that a quoted argument or a here-document body merely mentions is not a write."""
-    try:
-        scripts = _stdin_scripts(command)
-    except Exception:
-        scripts, walked = [], False
-    paths = [p for entry in found for p in entry[3]] + scripts
+    A policy path is judged first from the paths the walk found written: redirect targets and
+    the operands of `tee`, `cp`, `mv`, `sed -i` and the like. The whole text, here-document
+    bodies included, is then searched for a policy path by name unless the walk decomposed the
+    line and it is `data_only`: a shell, an interpreter, `eval`, `xargs`, `find -exec` or a
+    leading assignment may run code that writes a path it only names, so it fails closed."""
+    paths = [p for entry in found for p in entry[3]]
     hits = sorted(set(filter(None, (guarded(p) if os.path.isabs(p) else unresolved(p)
                                     for p in paths))))
-    if not hits and not walked:
+    try:
+        exempt = walked and data_only(command)
+    except Exception:
+        exempt = False
+    if not hits and not exempt:
         match = POLICY_RE.search(command)
         if match:
             hits = ["the governance policy file " + match.group(0)]
