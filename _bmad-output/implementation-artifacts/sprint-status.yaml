@@ -307,6 +307,13 @@ development_status:
   ah-e019-adopt-bmad-s-native-ticketing-once-upstream-s: in-progress
   ah-c073-record-the-bmad-ticketing-adoption-epic-and-its: done
 
+  ah-e020-rename-the-product-to-model-citizen: in-progress
+  ah-c078-record-the-model-citizen-rename-s-sprint-change: ready-for-dev
+  ah-c079-point-hardcoded-links-at-the-new-repo-and-domain: ready-for-dev
+  ah-s267-add-the-citizen-command-and-keep-harness-as-an: ready-for-dev
+  ah-s268-rename-the-plugin-to-model-citizen-and-keep: ready-for-dev
+  ah-s269-rename-the-product-copy-to-model-citizen: ready-for-dev
+
   # Items with no epic
   ah-b001-plan-mode-prompts-for-read-only-work-it-can-t: done
   ah-b002-fix-rules-the-always-loaded-delegation: done
