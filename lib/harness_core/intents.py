@@ -60,6 +60,9 @@ EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 # Hit counters are per session and carry no pid, so they age out instead: a fortnight, the same
 # horizon the session registry keeps.
 SWEEP_DAYS = 14
+# How long `hit()` polls for the counter lock before counting unlocked, and how often.
+HITS_LOCK_BUDGET = 0.5
+HITS_LOCK_POLL = 0.01
 SESSION = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 GLOB = re.compile(r"[*?\[]")
 # Processes between a runtime and the command it ran. The runtime is the first ancestor not named
@@ -469,15 +472,26 @@ def overlaps(path, session=None, pid=None, cwd=None, env=None):
 def _hits_lock(directory):
     """Hold an exclusive lock on the hit counters, or proceed unlocked if none can be taken.
 
-    One lock file for the whole directory, so there is no per-counter lock file to sweep. Failing
-    to lock must never be what blocks an edit, so any error degrades to the unlocked count.
+    One lock file for the whole directory, so there is no per-counter lock file to sweep. The lock
+    is polled without blocking for at most `HITS_LOCK_BUDGET` seconds: ordinary contention lasts
+    one small read and write, while a holder that never lets go would otherwise stall the edit hook
+    until the runtime's own timeout. Failing to lock must never be what blocks an edit, so running
+    out of budget, or any error, degrades to the unlocked count.
     """
     stream = None
     if fcntl is not None:
         try:
             directory.mkdir(parents=True, exist_ok=True)
             stream = open(str(directory / ".lock"), "a")
-            fcntl.flock(stream, fcntl.LOCK_EX)
+            deadline = time.monotonic() + HITS_LOCK_BUDGET
+            while True:
+                try:
+                    fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(HITS_LOCK_POLL)
         except OSError:
             if stream is not None:
                 stream.close()
