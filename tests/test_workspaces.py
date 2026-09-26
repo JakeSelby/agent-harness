@@ -10,6 +10,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -85,12 +86,8 @@ class MemberTests(Fixture):
         home = self.root / "home"
         (home / "code").mkdir(parents=True)
         self.workspace("demo", "~/code")
-        old = os.environ.get("HOME")
-        os.environ["HOME"] = str(home)
-        try:
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
             parsed = ws.parse_workspace(str(self.dir / "demo.code-workspace"))
-        finally:
-            os.environ["HOME"] = old
         self.assertEqual(parsed["members"], [str(home / "code")])
 
     def test_a_uri_folder_is_skipped_and_a_missing_one_reported(self):
