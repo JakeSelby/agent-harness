@@ -4,6 +4,10 @@ What the harness costs you, measured against Claude Code with no harness at all.
 below exists today. The live replay that compares whole tasks has a runner and no published
 result yet, so nothing here claims a saving.
 
+A result published from these runs must meet the [evidence standard](evidence-standard.md), and
+its plan is a filled [pre-registration template](pre-registration-template.md) committed before
+the first trial.
+
 ## Static context figure
 
 Every session the harness manages starts with its global instructions, rules, selected stances and
