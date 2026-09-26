@@ -5,7 +5,7 @@
   "generated_at": "2026-09-22",
   "next_ids": {
     "bug": 115,
-    "chore": 80,
+    "chore": 81,
     "decision": 14,
     "epic": 21,
     "spike": 16,
@@ -6833,6 +6833,19 @@
       "type": "bug",
       "native_type": "Bug",
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B113.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-C080",
+      "github_number": 933,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/933",
+      "title": "Restore headroom in the always-loaded budget",
+      "type": "chore",
+      "native_type": "Task",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-C080.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
       "lifecycle": "active",
