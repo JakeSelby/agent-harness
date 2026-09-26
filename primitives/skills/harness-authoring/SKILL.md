@@ -20,8 +20,9 @@ git -C "$(…)" remote -v
 ```
 
 If the manifest is missing, locate or install the harness before editing managed content.
-Do not create a second authority in a runtime configuration directory. If `origin` is `<owner>/model-citizen`, or
-`<owner>/agent-harness` from before the rename, and you are that owner, you are the **maintainer**. If `origin` is a fork and `upstream` is the harness, you are a **fork user**.
+Do not create a second authority in a runtime configuration directory. If `origin` is a fork and `upstream` is the
+harness, you are a **fork user**. Otherwise, if `origin` is `<owner>/model-citizen`, or `<owner>/agent-harness` from
+before the rename, and you are that owner, you are the **maintainer**.
 
 ## The ladder — first match wins
 
