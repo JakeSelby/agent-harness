@@ -32,6 +32,7 @@ never be what blocks an edit. Every warn or deny is an `intent-overlap` row in t
 and `harness intent merge` adds a `landing-merge` row per landing, so `harness usage --conflicts`
 can put the two side by side per week. No model judgment anywhere.
 """
+import contextlib
 import datetime
 import fnmatch
 import hashlib
@@ -42,6 +43,11 @@ import re
 import subprocess
 import time
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - no POSIX locks on this platform
+    fcntl = None
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 1
@@ -459,17 +465,47 @@ def overlaps(path, session=None, pid=None, cwd=None, env=None):
     return found
 
 
-def hit(session, worktree, rel, env=None):
-    """Count one overlap on `rel` for `session` editing in `worktree`; return the count so far."""
-    safe = session if SESSION.match(str(session or "")) else "unknown"
-    target = hits_dir(env) / slot(safe, worktree)
-    counts = _read(target) or {}
-    count = int(counts.get(rel, 0) or 0) + 1
-    counts[rel] = count
+@contextlib.contextmanager
+def _hits_lock(directory):
+    """Hold an exclusive lock on the hit counters, or proceed unlocked if none can be taken.
+
+    One lock file for the whole directory, so there is no per-counter lock file to sweep. Failing
+    to lock must never be what blocks an edit, so any error degrades to the unlocked count.
+    """
+    stream = None
+    if fcntl is not None:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            stream = open(str(directory / ".lock"), "a")
+            fcntl.flock(stream, fcntl.LOCK_EX)
+        except OSError:
+            if stream is not None:
+                stream.close()
+            stream = None
     try:
-        _write(target, counts)
-    except OSError:
-        pass
+        yield
+    finally:
+        if stream is not None:
+            stream.close()
+
+
+def hit(session, worktree, rel, env=None):
+    """Count one overlap on `rel` for `session` editing in `worktree`; return the count so far.
+
+    The read-modify-write runs under `_hits_lock`, so two concurrent edits get 1 and 2, never 1
+    and 1, and the repeat is still denied.
+    """
+    safe = session if SESSION.match(str(session or "")) else "unknown"
+    directory = hits_dir(env)
+    target = directory / slot(safe, worktree)
+    with _hits_lock(directory):
+        counts = _read(target) or {}
+        count = int(counts.get(rel, 0) or 0) + 1
+        counts[rel] = count
+        try:
+            _write(target, counts)
+        except OSError:
+            pass
     return count
 
 

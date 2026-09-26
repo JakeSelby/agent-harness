@@ -15,6 +15,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -235,6 +237,39 @@ class SharedSessionTests(Base):
         self.assertEqual(intents.hit("S", str(self.b), "shared.py", self.env), 1)
         self.assertEqual(intents.hit("S", str(self.b), "shared.py", self.env), 2)
         self.assertEqual(intents.hit("S", str(self.a), "shared.py", self.env), 2)
+
+
+class ConcurrentHitTests(Base):
+    """Two edits at once from one session and worktree, such as parallel tool calls."""
+
+    def test_two_concurrent_hits_on_one_claim_warn_once_and_deny_once(self):
+        read = intents._read
+
+        def slow_read(path):
+            # Widen the read-modify-write window so an unlocked pair would both read zero.
+            data = read(path)
+            time.sleep(0.3)
+            return data
+
+        start = threading.Barrier(2)
+        counts = []
+
+        def edit():
+            start.wait()
+            counts.append(intents.hit("S", str(self.a), "shared.py", self.env))
+
+        intents._read = slow_read
+        self.addCleanup(setattr, intents, "_read", read)
+        workers = [threading.Thread(target=edit) for _ in range(2)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(10)
+        self.assertEqual(sorted(counts), [1, 2])
+        self.assertEqual(sorted(intents.answer_for(c, "deny") for c in counts), ["deny", "warn"])
+        stored = json.loads((intents.hits_dir(self.env) / intents.slot("S", str(self.a)))
+                            .read_text())
+        self.assertEqual(stored, {"shared.py": 2})
 
 
 class HookTests(Base):
