@@ -106,6 +106,9 @@ EXTERNAL_RULES_DIR = "harness-roots"
 RULES_DIR = "harness"
 # The switch kinds sync projects; an `off` unit of one is absent from every runtime home.
 SYNC_SWITCH_KINDS = ("rules", "skills", "workflows", "roles")
+# Every switch kind `config set` writes. Hooks are not projected: the lifecycle dispatcher reads
+# their switches at each event, so a hook switched off needs no sync.
+CONFIG_SWITCH_KINDS = SYNC_SWITCH_KINDS + ("hooks",)
 BREW_PACKAGES = ["git", "gh", "node@22", "pnpm", "uv", "ripgrep", "fd", "jq"]
 # Bin directories of the keg-only formulae above, which Homebrew does not link into its prefix.
 KEG_ONLY_BINS = ["/opt/homebrew/opt/node@22/bin", "/usr/local/opt/node@22/bin"]
@@ -320,6 +323,17 @@ def say(msg: str) -> None:
 SESSION_SCOPED = ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG", "HARNESS_MODE", "HARNESS_PERMISSIONS")
 
 
+def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """`env` without the layers a session scopes to itself, which is what a sync projects.
+
+    The resolver still decides precedence; this only chooses which layers it is handed, so a
+    session override never rewrites the user's global selection.
+    """
+    env = os.environ if env is None else env
+    return {key: value for key, value in env.items()
+            if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_")) and key not in SESSION_SCOPED}
+
+
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     env = os.environ if env is None else env
     base = read_json(REPO / "config.example.json") or {}
@@ -333,10 +347,10 @@ def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         else:
             cfg[key] = value
     cfg.setdefault("identity", {})
-    # The stances in force come from the one resolver, over every layer of the selection ladder.
-    stances = cfg.get("stances") if isinstance(cfg.get("stances"), dict) else {}
-    cfg["stances"] = dict(stances, **load_selection(env, user)["stances"])
-    cfg["stances"] = {name: value for name, value in cfg["stances"].items() if value is not None}
+    # The stances in force are the resolver's answer and nothing else: no layer is merged here,
+    # so the CLI and the hooks cannot hold two answers for one selection (AD-2).
+    cfg["stances"] = {name: value for name, value in load_selection(env, user)["stances"].items()
+                      if value is not None}
     for key, value in env.items():
         if key.startswith("HARNESS_IDENTITY_"):
             cfg["identity"][key[len("HARNESS_IDENTITY_"):].lower()] = value
@@ -1297,12 +1311,11 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         say(UNSUPPORTED)
         return 1
     dry = args.dry_run
-    session_keys = [key for key in os.environ if key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
-                    or key in SESSION_SCOPED]
-    sync_env = {key: value for key, value in os.environ.items() if key not in session_keys}
-    cfg = load_config(sync_env)
+    defaults = user_defaults_env()
+    session_keys = [key for key in os.environ if key not in defaults]
+    cfg = load_config(defaults)
     # What the user's layers switch off, which no runtime home receives.
-    off = switched_off(load_selection(sync_env))
+    off = switched_off(load_selection(defaults))
     # A root the caller is about to register, so `import` can show the projection of a root the
     # configuration does not carry yet. Nothing else sets it, and a dry run is the only user.
     for extra in getattr(args, "extra_roots", None) or []:
@@ -1695,10 +1708,8 @@ def _diff_lines() -> List[str]:
             lines.append(f"redirected link {p} -> {os.readlink(p)}{origin}")
         elif not p.exists():
             lines.append(f"broken link {p}{origin}")
-    user_env = {key: value for key, value in os.environ.items()
-                if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
-                and key not in SESSION_SCOPED}
-    cfg = load_config(user_env)
+    defaults = user_defaults_env()
+    cfg = load_config(defaults)
     template = runtime_template()
     applied = read_json(applied_path()) or {}
     live = read_json(claude_dir() / "settings.json") or {}
@@ -1725,7 +1736,7 @@ def _diff_lines() -> List[str]:
     if manifest.get("config", {}).get("stances") and manifest["config"]["stances"] != stances_now:
         lines.append("pending sync: stance selection changed since last sync")
     if "config" in manifest:
-        off_now = {kind: sorted(units) for kind, units in switched_off(load_selection(user_env)).items()}
+        off_now = {kind: sorted(units) for kind, units in switched_off(load_selection(defaults)).items()}
         recorded = manifest["config"].get("off") or {kind: [] for kind in SYNC_SWITCH_KINDS}
         if recorded != off_now:
             lines.append("pending sync: switch selection changed since last sync")
@@ -3211,7 +3222,7 @@ def coerce_config_value(key: str, value: str) -> Any:
         user["mode"] = value
         load_selection(env={}, user=user)
         return value
-    if head in SYNC_SWITCH_KINDS:
+    if head in CONFIG_SWITCH_KINDS:
         if not tail:
             raise SystemExit(f"a {head} switch names its unit: harness config set {head}.<name> on|off")
         if value not in ("on", "off"):
@@ -3238,7 +3249,7 @@ def coerce_config_value(key: str, value: str) -> Any:
             raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
         return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"mode, rules|skills|workflows|roles.NAME, permissions, plan_allow_tools, "
+                     f"mode, rules|skills|workflows|roles|hooks.NAME, permissions, plan_allow_tools, "
                      f"governance.provider, governance.jev.*, "
                      f"or one of {', '.join(BOOL_KEYS)}")
 
@@ -3297,13 +3308,17 @@ def config_set(key: str, value: Optional[str]) -> int:
             if parts[0] == "stances":
                 # A stance set by hand is the user's choice from now on, above any mode.
                 unmark_init_default(cfg, parts[1])
-            if parts[0] in SYNC_SWITCH_KINDS:
-                # Resolved as it will be written: a switch that breaks a module dependency is
-                # refused, and one that repairs a selection the resolver already refuses goes in.
+            if parts[0] in CONFIG_SWITCH_KINDS:
+                # Resolved as it will be written: a switch that breaks a module dependency, or turns
+                # a core hook off unacknowledged, is refused; one that repairs a selection the
+                # resolver already refuses goes in.
                 unset = deepcopy(cfg)
                 unset[parts[0]].pop(parts[1])
                 if parts[1] not in load_selection(env={}, user=unset)[parts[0]]:
                     raise SystemExit(f"{parts[0]} has no unit '{parts[1]}'; `harness selection` lists every unit")
+                load_selection(env={}, user=cfg)
+            elif key == "core_switches_acknowledged":
+                # Withdrawing the acknowledgement while a core hook is off is refused the same way.
                 load_selection(env={}, user=cfg)
             if key.startswith("integrations."):
                 selected = integrations.selection(cfg)
@@ -3319,7 +3334,8 @@ def config_set(key: str, value: Optional[str]) -> int:
         say(f"{key} set  ({path})")
     else:
         say(f"{key} = {json.dumps(coerced)}  ({path})")
-    say("applies to new viewer sessions" if key.startswith("integrations.") else "run `harness sync` to apply it")
+    say("applies to new viewer sessions" if key.startswith("integrations.")
+        else "applies from the next hook event" if key.startswith("hooks.") else "run `harness sync` to apply it")
     return 0
 
 

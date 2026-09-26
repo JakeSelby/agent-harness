@@ -412,6 +412,21 @@ routed to a band worker — see [runtime controls](runtime-controls.md). It hold
 timestamp, nothing about the work; the files are owner-only in an owner-only directory, swept
 after a fortnight of not being used, and removed by `harness uninstall`.
 
+### Adherence events
+
+The fresh-session line is a recommendation, so saying it also appends an `emitted` row to
+`~/.local/state/agent-harness/adherence.jsonl`: the recommendation, the module that said it
+(`hooks/usage-feed`), the session id, the turn it was said on and the profile fingerprint. A
+`response` row joined to it by `adherence_id` later says `followed`, `not_followed` or
+`unknown`, and `policy/hooks/adherence.py` computes a rate per recommendation from the two. No
+row holds a prompt, a tool call or the line's own text, and recording never changes what the feed
+says: a ledger it cannot write is skipped in silence.
+
+The response is read from the observation ledger (`observation.jsonl`). A session that ends
+within three prompts of the line followed it; one that carries on past them did not. Until the
+observation entry point is registered in live sessions, that ledger holds no rows, so every
+emission is answered `unknown` with reason `unobserved` once it is a day old.
+
 ## The decision log
 
 `~/.local/state/agent-harness/decisions.jsonl`, beside the ledger and written by the same
@@ -434,9 +449,10 @@ a context token.
 ```
 
 `module` names the hook that owns the decision, as `hooks/<id>`: `grade-bash`, `stop-gate` and
-`brief-guard` their own, and every refusal or notice on the spawn path, role confinement,
-framework and evasion refusals, the Workflow launch guard and the integration notice included,
-`hooks/tier-agent-spawns`. A point no hook owns, such as `decision-provider`, names `null`.
+`brief-guard` their own, and the band routing row and the integration notice
+`hooks/tier-agent-spawns`. Role confinement, framework and evasion refusals and the Workflow
+launch guard name `null`, because no hook id switches them off, and so does any other point no
+hook owns, such as `decision-provider`.
 `POINT_MODULES` in `decisions.py` is the map.
 
 The file is **append-only**: an outcome is its own record, joined to its decision by

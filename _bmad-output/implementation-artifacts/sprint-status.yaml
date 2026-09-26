@@ -228,7 +228,7 @@ development_status:
   ah-s233-stamp-the-profile-fingerprint-on-every-ledger: ready-for-dev
   ah-s234-attribute-context-tokens-and-hook-decisions-to: ready-for-dev
   ah-s235-zero-footprint-observation-watching-the-bare-arm: ready-for-dev
-  ah-s236-adherence-events-record-each-recommendation-and: backlog
+  ah-s236-adherence-events-record-each-recommendation-and: ready-for-dev
   ah-s237-replay-fix-the-six-defects-that-keep-the-two: ready-for-dev
   ah-s238-an-evidence-standard-and-a-pre-registration: backlog
   ah-s239-replay-cost-of-pass-and-pass-rate-with-paired: backlog
@@ -307,6 +307,13 @@ development_status:
 
   ah-e019-adopt-bmad-s-native-ticketing-once-upstream-s: in-progress
   ah-c073-record-the-bmad-ticketing-adoption-epic-and-its: done
+
+  ah-e020-rename-the-product-to-model-citizen: in-progress
+  ah-c078-record-the-model-citizen-rename-s-sprint-change: ready-for-dev
+  ah-c079-point-hardcoded-links-at-the-new-repo-and-domain: ready-for-dev
+  ah-s267-add-the-citizen-command-and-keep-harness-as-an: ready-for-dev
+  ah-s268-rename-the-plugin-to-model-citizen-and-keep: ready-for-dev
+  ah-s269-rename-the-product-copy-to-model-citizen: ready-for-dev
 
   # Items with no epic
   ah-b001-plan-mode-prompts-for-read-only-work-it-can-t: done
