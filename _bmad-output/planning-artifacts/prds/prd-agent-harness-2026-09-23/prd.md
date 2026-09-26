@@ -1379,6 +1379,24 @@ makes stale, in the same pull request:
 - **NFR-15 Experiment discipline:**
   - Every spike and mechanism change carries a numeric exit criterion, written before the run.
   - The criterion is never adjusted after the result.
+  - Every published result meets the evidence standard (planned 0.14, #794), which
+    `docs/evidence-standard.md` states with what satisfies each item. It carries twelve items:
+    1. a pre-registered plan (hypotheses, primary metric, guardrails, sample size, stopping rule and
+       multiplicity), committed before the first trial from `docs/pre-registration-template.md`;
+    2. a frozen task set with a reference solution per task, audited for task and outcome validity;
+    3. the pinned model, CLI, effort, date, container digest, seeds and fallback rate;
+    4. a dated price table;
+    5. paired per-task results with clustered or Wilson intervals, and the intra-cluster correlation;
+    6. a cost-effectiveness view, such as a Pareto frontier;
+    7. trajectories and a command that reproduces the run;
+    8. judge agreement: κ, a confusion matrix and bias audits;
+    9. a contamination check;
+    10. estimand labels: intention to treat, adherence, complier effects, and hypotheticals marked as
+        such;
+    11. field checks: sample ratio, novelty, CUPED and dilution;
+    12. a "what we do not claim" section.
+
+    Where SM-2 defines a term the standard uses, SM-2 governs.
 - **NFR-16 Hook overhead:**
   - Each hook's p95 wall time per call is measured and reported with the static estimate.
   - No hook exceeds 250 ms p95 on the reference machines. `[ASSUMPTION: bound to be confirmed by the first
@@ -1539,7 +1557,7 @@ observation, then evaluation, then proof. Each entry names what the milestone ne
   - every ledger row carries a profile fingerprint and per-module attribution (#482);
   - the bare arm is observed like the harness arm, with nothing added to model context;
   - the replay defects found on 2026-09-24 are fixed;
-  - an evidence standard and a pre-registration template.
+  - an evidence standard and a pre-registration template (#794, NFR-15).
 - **v0.15.0, Measured:**
   - evaluation tiers (#510, #511, #512);
   - harness against bare at five or more trials, with confidence intervals (#559, #560);
