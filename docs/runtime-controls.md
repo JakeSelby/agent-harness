@@ -122,18 +122,35 @@ an `injected_cognition` block of rule matches and optional agent and user messag
 approvals and may be a no-op. The shape deliberately mirrors the `decide`/`record`/`learn` surface
 of an external control plane, so a hosted provider can be added later without a second contract.
 An action names a class — `coding.shell_exec`, `coding.git_commit`, `coding.git_push`,
-`coding.deploy`, `coding.file_write` — and the command grade where one is known. A counterparty is
+`coding.deploy`, `coding.file_write`, `coding.pr_merge` — and the command grade where one is known. A counterparty is
 the `repo:<name>/<branch>` slug the usage ledger already derives.
 
 Two providers ship. `none` is the default: every action is allowed at level 3 with the reason
-`governance: none`. `local` reads `.agent-harness/governance.json` in the repository
-(`defaults`, `pairs`, `caps`) and resolves a level in that order — an explicit counterparty pair,
-then the action class default, then the level the autonomy stance implies (`execute` 3,
-`confirm-writes` 2, `ask` 1, and 1 when nothing resolves). A cap is a ceiling the resolved level
-never exceeds; `coding.deploy` carries a built-in cap of 2 that a policy file may lower and may not
-raise. Level 3 allows every grade, level 2 asks at grade 2 and up, level 1 asks at grade 1 and up,
-and an unknown grade is judged as 1. A policy file that cannot be honoured as written is an error
-naming the file, never a silent "no policy". Both providers write to the existing
+`governance: none`, and no policy file is read. `local` reads two policy files in one schema
+(`defaults`, `pairs`, `caps`): a user-level `governance.json` beside `config.json`
+(`~/.config/agent-harness/governance.json`, under `HARNESS_HOME` when that is set), and
+`.agent-harness/governance.json` in the repository. It merges them before resolving anything.
+The repository file wins for a class default and for each class inside a pair; caps combine by the
+lower value, so neither file can lift a ceiling the other set. The user file holds levels that apply
+everywhere, and levels for repositories that carry no file of their own.
+
+```json
+{"defaults": {"coding.git_push": 2},
+ "pairs": {"repo:agent-harness": {"coding.pr_merge": 3},
+           "repo:agent-harness/main": {"coding.git_push": 1}},
+ "caps": {"coding.deploy": 2}}
+```
+
+A level is then resolved in this order: the exact `repo:<name>/<branch>` pair, then the
+whole-repository `repo:<name>` pair, then the action class default, then the level the autonomy
+stance implies (`execute` 3, `confirm-writes` 2, `ask` 1, and 1 when nothing resolves). The
+repository name in a slug ends at the first `/`, so a branch such as `feat/x` still reaches
+`repo:<name>`. A cap is a ceiling the resolved level never exceeds; `coding.deploy` carries a
+built-in cap of 2 that a policy file may lower and may not raise, and `coding.pr_merge` has no
+built-in cap. The reason and each rule match name the file that supplied the level or the cap, or
+say `autonomy stance` or `built-in`. Level 3 allows every grade, level 2 asks at grade 2 and up, level 1 asks at grade 1 and up,
+and an unknown grade is judged as 1. A policy file at either level that cannot be honoured as
+written is an error naming that file, never a silent "no policy". Both providers write to the existing
 `decisions.jsonl` ledger and neither reaches the network.
 
 A third provider, `jev`, lives in `lib/harness_core/decisions/jev.py` and answers over the
@@ -277,7 +294,9 @@ four base fields and differ in nothing. A live run sends under the user's own al
 evaluation cannot send a field a hook is not allowed to send.
 
 `governance.provider` selects one; the default is `none`. `harness decide --action <class>
-[--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository.
+[--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository and
+the policy files it read, each marked present or absent; `harness doctor` lists the same files
+under the governance provider.
 Nothing consults a provider yet: command grading still answers the permission question on its own,
 and binding the two is separate work.
 
