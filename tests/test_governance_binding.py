@@ -466,6 +466,19 @@ class PolicyWrites(Home):
         answer, _ = self.bash("cd ~/.config/agent-harness && tee governance.json < x")
         self.assertEqual(answer, "ask")
 
+    def test_a_policy_write_under_an_unknown_directory_is_gated_by_its_name(self):
+        for command in ('cd "$T" && echo x > governance.json',
+                        'cd "$(git rev-parse --show-toplevel)/.agent-harness" && '
+                        "sed -i '' s/2/3/ governance.json",
+                        'cd "$T" && tee config.json < x',
+                        'echo x > "$T"/governance.json'):
+            answer, reason = self.bash(command)
+            self.assertEqual(answer, "ask", command)
+            self.assertIn("level 1", reason, command)
+
+    def test_another_write_under_an_unknown_directory_is_not_gated(self):
+        self.assertIsNone(self.bash('cd "$T" && echo x > notes.txt')[0])
+
     def test_reading_the_policy_is_not_gated(self):
         self.policy({})
         self.assertEqual(self.bash("cat .agent-harness/governance.json")[0], "allow")

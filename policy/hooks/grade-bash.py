@@ -1130,14 +1130,20 @@ def _git_dir(args, cwd):
 
 
 def _written(prog, args, targets, cwd):
-    """The resolved paths one simple command may write, move or remove."""
+    """The paths one simple command may write, move or remove: absolute where the directory is
+    known, and otherwise the operand as written, so `_policy_hits` can still judge it by name."""
     paths = [t for t in targets if t and not t.isdigit() and t != "/dev/null"]
     if prog in PATH_WRITERS:
         paths.extend(operands(args))
         paths.extend(a.split("=", 1)[1] for a in args if a.startswith("of="))
     if prog in IN_PLACE and (short(args, "i") or has(args, "--in-place")):
         paths.extend(operands(args))
-    return [r for r in (_resolve(p, cwd) for p in paths) if r]
+    out = []
+    for path in paths:
+        head = os.path.dirname(path)
+        resolved = None if (PLACEHOLDER in head or "$" in head) else _resolve(path, cwd)
+        out.append(resolved or path)
+    return out
 
 
 def _governed(tokens, cwd, depth):
@@ -1266,10 +1272,25 @@ def _log(action_class, slug, level, grade, outcome, provider, event, runtime,
                   runtime)
 
 
+def unresolved(operand):
+    """What a write operand whose directory is unknown may be, judged by its name alone.
+
+    An operand under a `cd` the walk cannot follow, or with a variable or substitution in its
+    directory, has no path to check, so a name ending in `governance.json` or `config.json` is
+    taken to be the file it names. An operand that is itself a variable is not judged here."""
+    name = operand.strip("\"'")
+    for suffix, what in ((POLICY_NAME, "a governance policy file"),
+                         (CONFIG_NAME, "the harness configuration")):
+        if name.endswith(suffix):
+            return what + ", " + name + ", in a directory that cannot be known before it runs"
+    return None
+
+
 def _policy_hits(command, found):
     """What a command changes that is a level-1 action: a policy file, the user configuration or
     a `governance` key set through `harness config set`."""
-    hits = sorted(set(filter(None, (guarded(p) for entry in found for p in entry[3]))))
+    hits = sorted(set(filter(None, (guarded(p) if os.path.isabs(p) else unresolved(p)
+                                    for entry in found for p in entry[3]))))
     if not hits:
         match = POLICY_RE.search(command)
         if match:
