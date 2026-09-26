@@ -6800,6 +6800,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-S271",
+      "github_number": 935,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/935",
+      "title": "Workspace map from .code-workspace files, with workspace list and open",
+      "type": "story",
+      "native_type": "Feature",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-S271.md",
+      "parent_bmad_id": "AH-E002",
+      "parent_github_number": 116,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-S272",
       "github_number": 936,
       "github_url": "https://github.com/JakeSelby/model-citizen/issues/936",

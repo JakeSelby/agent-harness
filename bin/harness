@@ -24,6 +24,7 @@ guidance, and reports drift. Python 3.9+ with a bundled style-preserving TOML pa
     citizen worktree audit [REPO]
     citizen worktree remove NAME [REPO] [--merged] [--also-clear NAME]
     citizen workspace create NAME FOLDER... [--no-harness] [--force]
+    citizen workspace list | open NAME [--codex] [--dry-run] [-- ARGS...]
     citizen config get KEY | set KEY VALUE
     citizen integrations show|register|doctor [architecture-viewer]
     citizen viewer validate|open|status|replace-document|close [OPTIONS]
@@ -58,6 +59,7 @@ sys.path.insert(0, str(REPO / "lib"))
 from harness_core import catalog as primitive_catalog
 from harness_core import reconcile, lifecycle, tasks, compatibility, workers, integrations
 from harness_core import frameworks
+from harness_core import workspaces
 from harness_core import remote_control
 from harness_core import codex_client, keychain, collisions, importer, cache_prefix
 from harness_core import intents
@@ -2941,8 +2943,10 @@ def cmd_decide(args: argparse.Namespace) -> int:
 
 
 def cmd_workspace(args: argparse.Namespace) -> int:
-    if args.action != "create":
-        raise SystemExit("workspace: only `create` is supported")
+    if args.action == "list":
+        return workspace_list()
+    if args.action == "open":
+        return workspace_open(args.name, args.passthrough, codex=args.codex, dry_run=args.dry_run)
     name = args.name
     folders = [str(Path(f).expanduser().resolve()) for f in args.folders]
     if not folders:
@@ -2973,6 +2977,128 @@ def cmd_workspace(args: argparse.Namespace) -> int:
         os.symlink(os.path.relpath(store, projects), key)
         say(f"  session key {key.name} -> workspaces/{name}")
     say(f"open with: code {out}")
+    return 0
+
+
+WORKSPACES_UNSET = ("workspaces_dir is not set; point it at the folder holding your .code-workspace "
+                    "files: citizen config set workspaces_dir ~/path/to/folder")
+
+
+def workspaces_dir() -> Optional[str]:
+    """The configured folder of `.code-workspace` files, or None: unset turns the feature off."""
+    value = load_config().get("workspaces_dir")
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def workspace_list() -> int:
+    """Every workspace with its members and instruction size, then how each shared folder resolves."""
+    directory = workspaces_dir()
+    if directory is None:
+        print(WORKSPACES_UNSET, file=sys.stderr)
+        return 1
+    found = workspaces.workspace_map(directory)
+    names = {ws["name"] for ws in found["workspaces"]}
+    overrides = workspaces.read_overrides(directory, names)
+    print(f"workspaces in {found['directory']}")
+    if not found["workspaces"]:
+        print("  none: no .code-workspace file in this folder")
+    for ws in found["workspaces"]:
+        sizes = {m: sum(len(text) for _, text in workspaces.member_instructions(m)["files"])
+                 for m in ws["members"]}
+        print(f"{ws['name']}: {len(ws['members'])} member(s), {sum(sizes.values()):,} characters of instructions")
+        for index, folder in enumerate(ws["folders"], 1):
+            detail = f"{sizes[folder]:,} characters" if folder in sizes else "missing"
+            print(f"  {index}. {folder}  ({detail})")
+    counts: Dict[str, int] = {}
+    for ws in found["workspaces"]:
+        for folder in ws["members"]:
+            counts[folder] = counts.get(folder, 0) + 1
+    shared = sorted(folder for folder, count in counts.items() if count > 1)
+    if shared:
+        print("shared folders")
+    for folder in shared:
+        answer = workspaces.resolve(folder, directory, env={}, ws_map=found, overrides=overrides)
+        if answer["workspace"] is not None:
+            print(f"  {folder} -> {answer['workspace']['name']} ({answer['rule']})")
+        elif answer["rule"] == "override-none":
+            print(f"  {folder} -> none (override-none)")
+        else:
+            print(f"  {folder} -> none: candidates {', '.join(answer['candidates'])}; "
+                  f"pin one in {Path(found['directory']) / workspaces.OVERRIDES}")
+    ignored = dict(overrides["unknown"])
+    for folder, name in overrides["overrides"].items():
+        holders = [ws["name"] for ws in found["workspaces"] if folder in ws["members"]]
+        if name is not None and name not in holders:
+            ignored[folder] = name
+    if ignored:
+        print("ignored overrides")
+    for folder, name in sorted(ignored.items()):
+        reason = "no such workspace" if name not in names else "that workspace does not contain it"
+        print(f"  {folder} -> {name}: {reason}")
+    problems = found["errors"] + overrides["errors"]
+    if problems:
+        print("unreadable")
+    for line in problems:
+        print("  " + line)
+    return 0
+
+
+class PassthroughParser(argparse.ArgumentParser):
+    """A subcommand parser that hands everything after the first `--` to `passthrough`.
+
+    Python 3.9's argparse fills an optional positional with nothing when an option comes before
+    `--`, then rejects what follows, so `open NAME --dry-run -- ARGS` needs the split done here.
+    """
+
+    def parse_known_args(self, args=None, namespace=None):  # type: ignore[override]
+        args = list(sys.argv[1:] if args is None else args)
+        tail: List[str] = []
+        if "--" in args:
+            at = args.index("--")
+            args, tail = args[:at], args[at + 1:]
+        namespace, extras = super().parse_known_args(args, namespace)
+        if hasattr(namespace, "passthrough"):
+            namespace.passthrough = list(namespace.passthrough) + tail
+        elif tail:
+            extras = extras + ["--"] + tail
+        return namespace, extras
+
+
+def workspace_open(name: str, passthrough: Sequence[str], codex: bool = False, dry_run: bool = False) -> int:
+    """Launch Claude Code or Codex in a workspace's first member with the others as `--add-dir`.
+
+    Passthrough arguments go before the `--add-dir` flags: Claude's `--add-dir` is variadic, so a
+    prompt after it would be read as one more folder.
+    """
+    directory = workspaces_dir()
+    if directory is None:
+        raise SystemExit(WORKSPACES_UNSET)
+    path = Path(directory).expanduser() / f"{name}{workspaces.SUFFIX}"
+    if not path.is_file():
+        raise SystemExit(f"no workspace {name}: {path} does not exist; `citizen workspace list` shows them")
+    try:
+        ws = workspaces.parse_workspace(str(path))
+    except ValueError as exc:
+        raise SystemExit(f"workspace {name} is unreadable: {exc}")
+    if not ws["members"]:
+        raise SystemExit(f"workspace {name} has no existing folder to open")
+    first, others = ws["members"][0], ws["members"][1:]
+    for folder in ws["missing"]:
+        print(f"skipping missing folder {folder}", file=sys.stderr)
+    added = [part for folder in others for part in ("--add-dir", folder)]
+    command = (["codex"] + list(passthrough) + ["-C", first] + added if codex
+               else ["claude"] + list(passthrough) + added)
+    if dry_run:
+        print("cd " + shlex.quote(first))
+        print(f"{workspaces.ENV}={shlex.quote(name)} " + " ".join(shlex.quote(part) for part in command))
+        return 0
+    env = dict(os.environ)
+    env[workspaces.ENV] = name
+    os.chdir(first)
+    try:
+        os.execvpe(command[0], command, env)
+    except OSError as exc:
+        raise SystemExit(f"could not run {command[0]}: {exc.strerror}")
     return 0
 
 
@@ -3486,6 +3612,11 @@ def coerce_config_value(key: str, value: str) -> Any:
         if value != "inherit" and value not in POSTURES:
             raise SystemExit(f"permissions must be inherit, bypass, auto or manual; got '{value}'")
         return value
+    if key == "workspaces_dir":
+        folder = Path(value).expanduser()
+        if not value.strip() or not folder.is_absolute():
+            raise SystemExit("workspaces_dir must be an absolute directory path, or ~/ followed by one")
+        return str(folder)
     if key == "plan_allow_tools":
         try:
             globs = json.loads(value)
@@ -3495,7 +3626,7 @@ def coerce_config_value(key: str, value: str) -> Any:
             raise SystemExit("plan_allow_tools must be a JSON array of tool-name globs")
         return [item.strip() for item in globs]
     raise SystemExit(f"{key} is not a key this command sets; try identity.NAME, stances.NAME, "
-                     f"mode, rules|skills|workflows|roles|hooks.NAME, permissions, plan_allow_tools, "
+                     f"mode, rules|skills|workflows|roles|hooks.NAME, permissions, plan_allow_tools, workspaces_dir, "
                      f"governance.provider, governance.jev.*, "
                      f"or one of {', '.join(BOOL_KEYS)}")
 
@@ -5509,13 +5640,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--remove", action="store_true", help="forget the root instead")
     p.set_defaults(func=cmd_trust)
 
-    p = sub.add_parser("workspace", help="create a multi-root workspace with a shared session store")
-    p.add_argument("action")
-    p.add_argument("name")
-    p.add_argument("folders", nargs="*")
-    p.add_argument("--no-harness", action="store_true")
-    p.add_argument("--force", action="store_true")
-    p.set_defaults(func=cmd_workspace)
+    p = sub.add_parser("workspace", help="create, list and open multi-root workspaces")
+    workspace_sub = p.add_subparsers(dest="action", required=True, parser_class=PassthroughParser)
+    create = workspace_sub.add_parser("create", help="write NAME.code-workspace with a shared session store")
+    create.add_argument("name")
+    create.add_argument("folders", nargs="*")
+    create.add_argument("--no-harness", action="store_true")
+    create.add_argument("--force", action="store_true")
+    create.set_defaults(func=cmd_workspace)
+    listing = workspace_sub.add_parser("list", help="show the workspaces in workspaces_dir and how shared folders resolve")
+    listing.set_defaults(func=cmd_workspace)
+    opening = workspace_sub.add_parser("open", help="launch claude in a workspace's first folder with the rest as --add-dir")
+    opening.add_argument("name")
+    opening.set_defaults(passthrough=[])
+    opening.add_argument("--codex", action="store_true", help="launch codex instead of claude")
+    opening.add_argument("--dry-run", action="store_true", help="print the command instead of running it")
+    opening.set_defaults(func=cmd_workspace)
 
     p = sub.add_parser("worktree", help="create and manage task checkouts under a dedicated root")
     worktree_sub = p.add_subparsers(dest="action", required=True)

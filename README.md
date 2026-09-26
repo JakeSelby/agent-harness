@@ -101,6 +101,7 @@ Planned, not promised.
 
 - **Measured against bare:** Proof set 1 runs the harness against bare Claude Code, and harness evidence verify re-derives every published figure from its rows, whatever they show.
 - **The superpowers mode:** One switch hands planning and testing to Superpowers while every hook stays on, and doctor names the mode when it finds the plugin.
+- **Workspaces from your .code-workspace files:** Your .code-workspace files decide which repositories belong together, citizen workspace open launches Claude Code or Codex across them, and a session in any member folder gets the others' instructions.
 
 ## The delivery loop
 
