@@ -976,7 +976,7 @@ RANK = {"allow": 0, "ask": 1, "deny": 2}
 POLICY_NAME = "governance.json"
 POLICY_DIR = ".agent-harness"
 # The repository's `.agent-harness/governance.json` and the user's
-# `.config/agent-harness/governance.json`, found by name in any line that is not `data_only`.
+# `.config/agent-harness/governance.json`, found by name in any line that is not `gh_text_only`.
 POLICY_RE = re.compile(r"agent-harness[/\\]+governance\.json")
 # The user configuration selects the provider, so a write to it can switch governance off; it is
 # guarded like a policy file, and so is the command that sets a `governance` key in it.
@@ -988,11 +988,12 @@ CONFIG_SET_RE = re.compile(r"(?:harness|citizen)\b[^;&|\n]*\bconfig\s+set\s+[\"'
 PATH_WRITERS = {"tee", "cp", "mv", "install", "ln", "rm", "unlink", "truncate", "touch", "rsync",
                 "shred", "dd"}
 IN_PLACE = {"sed", "gsed", "perl", "ruby"}
-# Commands that neither run their arguments or input as code nor write anywhere but the redirect,
-# `tee`, `cp` and `mv` targets the walk checks. A line made only of these may mention a policy
-# path as data; any other line is searched for one by name.
-DATA_COMMANDS = {"gh", "git", "echo", "printf", "cat", "grep", "jq", "tee", "cp", "mv", "cd",
-                 "ls", "head", "tail", "wc", "true", "false"}
+# The one line that may mention a policy path as data (`gh_text_only`): issue and pull request
+# text passed to gh's built-in subcommands, which aliases and extensions cannot shadow.
+GH_TEXT_SUBCOMMANDS = {("issue", "create"), ("issue", "comment"), ("issue", "edit"),
+                       ("pr", "create"), ("pr", "comment"), ("pr", "edit"), ("pr", "review")}
+GH_TEXT_FLAGS = {"--body", "--title", "-b", "-t"}
+HEREDOC_DELIMITER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 POLICY_LEVEL = 1
 FILE_APPROVAL_TAIL = (" Nothing can prompt in this permission mode, so the edit was refused rather"
                       " than asked about. Stop, say in chat what the edit changes, and ask the user,"
@@ -1389,26 +1390,94 @@ def unresolved(operand):
     return None
 
 
-def data_only(command):
-    """Whether every command on the line is in `DATA_COMMANDS`, run by its bare name, with no
-    leading assignment and no command or process substitution. Such a line runs no code the walk
-    cannot see, so a policy path in its quoted arguments or here-document bodies is data. Any
-    doubt, including a line that does not decompose, is False."""
-    text, _bodies = normalize(command)
-    stripped, inners = _extract_subs(text)
-    if stripped is None or inners:
+def _plain_words(line):
+    """([(word, quoted, marks)], the quoted delimiter of the line's one here-document or None)
+    for one line of shell. `marks` holds, per character of the word, whether it sat inside
+    quotes, and `quoted` is True only when every character did. None for anything but plain
+    words: a backslash, a `$` or backtick outside single quotes, an unquoted operator other than
+    one `<<` opening a word before a quoted delimiter, or an unclosed quote."""
+    words, delimiter = [], None
+    word, marks, started, quote, i, n = [], [], False, None, 0, len(line)
+    while i < n:
+        c = line[i]
+        if quote == "'" and c != "'" or quote == '"' and c not in '"$`\\':
+            word.append(c)
+            marks.append(True)
+        elif quote and c == quote:
+            quote = None
+        elif c in "$`\\":
+            return None
+        elif c in "'\"":
+            quote, started = c, True
+        elif c in " \t":
+            if started:
+                words.append(("".join(word), all(marks), marks))
+            word, marks, started = [], [], False
+        elif line.startswith("<<", i) and not started and delimiter is None:
+            rest = line[i + 2:].lstrip(" \t")
+            close = rest.find(rest[0], 1) if rest and rest[0] in "'\"" else -1
+            if close < 0 or not HEREDOC_DELIMITER_RE.match(rest[1:close]):
+                return None
+            delimiter = rest[1:close]
+            i = n - len(rest) + close + 1
+            if i < n and line[i] not in " \t":
+                return None
+            continue
+        elif c in ";&|<>()":
+            return None
+        else:
+            word.append(c)
+            marks.append(False)
+            started = True
+        i += 1
+    if quote:
+        return None
+    if started:
+        words.append(("".join(word), all(marks), marks))
+    return words, delimiter
+
+
+def _names_policy(text):
+    return bool(POLICY_RE.search(text) or CONFIG_RE.search(text))
+
+
+def gh_text_only(command):
+    """Whether `command` is the one shape that may mention a policy path as data: exactly one
+    `gh issue|pr create|comment|edit|review` command on one line, every policy path in it inside
+    a quoted `--body`, `--title`, `-b` or `-t` value or inside the body of one quoted
+    here-document fed to `--body-file -` or `-F -`, and nothing else on the line: no separator,
+    pipe, background job, substitution, expansion or other redirect. Every other command that
+    names a policy path may run code that writes it, so any doubt is False."""
+    lines = command.split("\n")
+    parsed = _plain_words(lines[0])
+    if parsed is None:
         return False
-    parts = segments(stripped)
-    if not parts:
+    words, delimiter = parsed
+    if len(words) < 3 or words[0][:2] != ("gh", False) or any(w[1] for w in words[:3]):
         return False
-    delimiters = {match.group(2) for match in HEREDOC_RE.finditer(stripped)}
-    for tokens in parts:
-        if any(t.startswith(("<(", ">(")) for t in tokens):
+    if (words[1][0], words[2][0]) not in GH_TEXT_SUBCOMMANDS:
+        return False
+    tail = lines[1:]
+    if delimiter is not None:
+        if delimiter not in tail:
             return False
-        body, _targets = _redirects(list(tokens))
-        if body == tokens and len(body) == 1 and body[0] in delimiters:
-            continue  # the line that closes a here-document, left in place by `normalize`
-        if body and body[0] not in DATA_COMMANDS:
+        end = tail.index(delimiter)
+        tail = tail[end + 1:]
+    if any(line.strip() for line in tail):
+        return False
+    plain = [w[0] for w in words]
+    if delimiter is not None and not any(
+            plain[k:k + 2] in (["--body-file", "-"], ["-F", "-"]) for k in range(len(plain))) \
+            and "--body-file=-" not in plain:
+        return False
+    for k, (w, quoted, marks) in enumerate(words):
+        if not _names_policy(w):
+            continue
+        name, eq, _value = w.partition("=")
+        if eq and name in GH_TEXT_FLAGS and all(marks[len(name) + 1:]) and not any(
+                marks[:len(name) + 1]) and not _names_policy(name):
+            continue  # `--body='...'`: the value after `=` is quoted
+        if not (quoted and k and words[k - 1][0] in GH_TEXT_FLAGS and not words[k - 1][1]):
             return False
     return True
 
@@ -1420,13 +1489,13 @@ def _policy_hits(command, found, walked=True):
     A policy path is judged first from the paths the walk found written: redirect targets and
     the operands of `tee`, `cp`, `mv`, `sed -i` and the like. The whole text, here-document
     bodies included, is then searched for a policy path by name unless the walk decomposed the
-    line and it is `data_only`: a shell, an interpreter, `eval`, `xargs`, `find -exec` or a
-    leading assignment may run code that writes a path it only names, so it fails closed."""
+    line and it is `gh_text_only`: almost any command may run code that writes a path it only
+    names, so the search fails closed."""
     paths = [p for entry in found for p in entry[3]]
     hits = sorted(set(filter(None, (guarded(p) if os.path.isabs(p) else unresolved(p)
                                     for p in paths))))
     try:
-        exempt = walked and data_only(command)
+        exempt = walked and gh_text_only(command)
     except Exception:
         exempt = False
     if not hits and not exempt:

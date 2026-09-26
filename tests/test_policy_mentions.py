@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-"""The policy-file guard judges what a command writes, not what its text mentions.
+"""The policy-file guard exempts one inert shape of mention, and gates every other.
 
-A line made only of commands that run no code from their input, such as `gh`, `git` and `echo`,
-may mention a policy path in a quoted argument or a here-document body as data. A redirect,
-`tee`, `sed -i`, a `cp` or `mv` operand and an unresolved operand named `governance.json` or
-`config.json` are still level-1 writes, and so is a policy path anywhere in a line that runs
-code the walk cannot see into: a shell, an interpreter, a leading assignment or a substitution.
+Issue and pull request text passed to gh's built-in create, comment, edit and review
+subcommands, in a quoted `--body` or `--title` value or a quoted here-document fed to
+`--body-file -`, may mention a policy path as data. Any other line that names one is a level-1
+write, since almost any command may run code that writes a path it only names: a shell, an
+interpreter, a git alias, a leading assignment, a substitution or an unquoted here-document.
 
 Run: python3 -m unittest discover tests
 """
@@ -13,18 +13,18 @@ import unittest
 
 from test_governance_binding import Home, grader
 
+GH_BODY = ("gh issue create --title x --body-file - <<'EOF'\n"
+           "The guard reads .agent-harness/governance.json and ~/.config/agent-harness/config.json.\n"
+           "EOF")
+
 MENTIONS = [
-    "gh issue create --title x --body-file - <<'EOF'\n"
-    "The guard reads .agent-harness/governance.json and ~/.config/agent-harness/config.json.\n"
-    "EOF",
-    "cat > notes.md <<EOF\nedit .agent-harness/governance.json by hand\nEOF",
-    'echo "edit .agent-harness/governance.json by hand" > notes.md',
-    'git commit -m "document .agent-harness/governance.json"',
+    GH_BODY,
     "gh pr comment 1 --body '~/.config/agent-harness/config.json selects the provider'",
-    'cd sub && git commit -m "see .agent-harness/governance.json" | cat',
+    'gh pr create -t "edit .agent-harness/governance.json" -F - <<"EOF"\nsee above\nEOF',
+    "gh issue edit 3 --body='.agent-harness/governance.json is read'",
 ]
 
-WRITES = [
+GATED = [
     "echo {} > .agent-harness/governance.json",
     "cat > .agent-harness/governance.json <<'EOF'\n{}\nEOF",
     "tee ~/.config/agent-harness/config.json < x",
@@ -51,44 +51,63 @@ WRITES = [
     "bash <<'EOF'\necho {} > .agent-harness/governance.json\nEOF",
     "gh issue create --body \"$(python3 -c 'open(\\\".agent-harness/governance.json\\\",\\\"w\\\")')\"",
     'echo "x > .agent-harness/governance.json',
+    # A git alias runs a shell; a `<<sh` inside a quoted argument is not a here-document.
+    "git -c alias.x='!printf x > .agent-harness/governance.json' x",
+    "printf '<<sh\\necho hi > .agent-harness/governance.json\\nsh\\n' | sh",
+    # An unquoted here-document expands a substitution in its body.
+    "gh issue create --body-file - <<EOF\n$(echo {} > .agent-harness/governance.json)\nEOF",
+    GH_BODY + "\nsh -c 'echo {} > .agent-harness/governance.json'",
+    GH_BODY.replace("<<'EOF'\n", "<<'EOF'; sh\n", 1),
+    # Commands other than gh's text subcommands stay gated when they mention a policy path.
+    'git commit -m "document .agent-harness/governance.json"',
+    'echo "edit .agent-harness/governance.json by hand" > notes.md',
 ]
 
 
 class PolicyMentions(Home):
-    """A policy path the command only mentions is not a policy-file write."""
+    """Only gh issue and pull request text may mention a policy path ungated."""
 
     def setUp(self):
         super().setUp()
         self.configure("local")
 
-    def test_regression_a_mention_in_data_is_not_gated(self):
+    def test_regression_gh_text_mentioning_a_policy_path_is_not_gated(self):
         for command in MENTIONS:
             _answer, reason = self.bash(command)
             self.assertNotIn("policy file", reason, command)
             self.assertNotIn("harness configuration", reason, command)
             self.assertNotIn("level 1", reason, command)
 
-    def test_a_real_write_is_still_gated(self):
-        for command in WRITES:
+    def test_every_other_line_naming_a_policy_path_is_gated(self):
+        for command in GATED:
             answer, reason = self.bash(command)
             self.assertEqual(answer, "ask", command)
             self.assertIn("level 1", reason, command)
 
 
-class DataOnly(unittest.TestCase):
-    """Which lines may mention a policy path as data."""
+class GhTextOnly(unittest.TestCase):
+    """The one exempt shape, and near misses of it."""
 
-    def test_a_line_of_data_commands_is_data_only(self):
-        for command in ('gh issue create --body "x"', "git status && echo x > out | cat",
-                        "cat > notes.md <<'EOF'\nx\nEOF"):
-            self.assertTrue(grader.data_only(command), command)
+    def test_the_exempt_shapes(self):
+        for command in MENTIONS:
+            self.assertTrue(grader.gh_text_only(command), command)
 
-    def test_a_line_that_may_run_unseen_code_is_not(self):
-        for command in ("P=x gh issue list", "printf x | sh", "python3 - <<'EOF'\nx\nEOF",
-                        "eval echo x", "xargs rm < list", "find . -exec rm {} +",
-                        "source env.sh", ". env.sh", "env gh issue list", "/tmp/git status",
-                        'echo "$(date)"', "cat <(ls)", "(sh x)", 'echo "unclosed'):
-            self.assertFalse(grader.data_only(command), command)
+    def test_near_misses_are_not_exempt(self):
+        path = ".agent-harness/governance.json"
+        for command in ("gh issue list --search '%s'" % path,
+                        "gh api repos/x --field body='%s'" % path,
+                        "gh issue create --body %s" % path,
+                        "gh issue create --label '%s'" % path,
+                        "gh issue create --body='x'%s" % path,
+                        "gh issue create --body-file - <<EOF\n%s\nEOF" % path,
+                        "gh issue create <<'EOF'\n%s\nEOF" % path,
+                        "gh issue create --body-file - <<'EOF'\n%s\n" % path,
+                        "gh issue create --body-file - <<'EOF'x\n%s\nEOF" % path,
+                        "gh issue create --body '%s' 2>&1" % path,
+                        "gh issue create --body '%s' \\\n  --title x" % path,
+                        "'gh' issue create --body '%s'" % path,
+                        "GH_HOST=x gh issue create --body '%s'" % path):
+            self.assertFalse(grader.gh_text_only(command), command)
 
 
 if __name__ == "__main__":
