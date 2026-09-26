@@ -94,7 +94,7 @@ have to become that checkout, so the script clones one instead.
 Claude Code can load the projected primitives without a checkout. In a session:
 
 ```
-/plugin marketplace add JakeSelby/model-citizen
+/plugin marketplace add JakeSelby/agent-harness
 /plugin install model-citizen@model-citizen
 ```
 
@@ -105,17 +105,19 @@ style. Claude Code namespaces them: a plugin skill is `/model-citizen:<name>`.
 
 ### Moving an `agent-harness` plugin install to `model-citizen`
 
-The plugin was published as `agent-harness@agent-harness` before the rename. Claude Code keys an
-install by that ID, so an existing install keeps it until you reinstall. In a session:
+The plugin was published as `agent-harness@agent-harness` before the rename. Claude Code keeps that
+ID when its copy of the marketplace updates, and the plugin then fails to load, because the
+marketplace no longer lists a plugin by that name. Adding the same repository again does nothing
+while the old marketplace is registered, so remove it first. In a session:
 
 ```
-/plugin marketplace add JakeSelby/model-citizen
-/plugin install model-citizen@model-citizen
 /plugin uninstall agent-harness@agent-harness
 /plugin marketplace remove agent-harness
+/plugin marketplace add JakeSelby/agent-harness
+/plugin install model-citizen@model-citizen
 ```
 
-Skills move from `/agent-harness:<name>` to `/model-citizen:<name>`. `harness doctor` recognizes
+Skills move from `/agent-harness:<name>` to `/model-citizen:<name>`. `citizen doctor` recognizes
 either ID and warns while both are enabled, because every skill would then load twice. A checkout
 install is unaffected by the plugin rename.
 

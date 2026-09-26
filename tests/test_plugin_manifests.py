@@ -60,16 +60,26 @@ class CatalogSurfaceTests(unittest.TestCase):
     def test_the_install_doc_names_what_the_marketplace_path_leaves_out(self):
         text = (REPO / "docs" / "runtime-installation.md").read_text()
         self.assertIn("## Install from the plugin marketplace", text)
-        self.assertIn("/plugin marketplace add JakeSelby/model-citizen", text)
+        self.assertIn("/plugin marketplace add JakeSelby/agent-harness", text)
         self.assertIn("/plugin install %s@%s" % (PLUGIN["name"], MARKETPLACE["name"]), text)
         for missing in ("ownership journal", "Stance selection", "Codex projection", "hooks"):
             self.assertIn(missing.lower(), text.lower(), msg=missing)
 
     def test_the_install_doc_carries_the_migration_from_the_old_plugin_id(self):
         text = (REPO / "docs" / "runtime-installation.md").read_text()
-        for step in ("/plugin uninstall agent-harness@agent-harness",
-                     "/plugin marketplace remove agent-harness", "/model-citizen:<name>"):
-            self.assertIn(step, text, msg=step)
+        heading = "### Moving an `agent-harness` plugin install"
+        self.assertIn(heading, text)
+        section = text.split(heading, 1)[1]
+        self.assertIn("/model-citizen:<name>", section)
+        # Claude Code ignores a second add of a repository whose old marketplace is still
+        # registered, so the old plugin and marketplace go before the new install.
+        steps = ("/plugin uninstall agent-harness@agent-harness",
+                 "/plugin marketplace remove agent-harness", "/plugin marketplace add ",
+                 "/plugin install %s@%s" % (PLUGIN["name"], MARKETPLACE["name"]))
+        for step in steps:
+            self.assertIn(step, section, msg=step)
+        positions = [section.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
 
 
 class DoctorInstallPathTests(unittest.TestCase):
