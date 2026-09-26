@@ -7,6 +7,8 @@ taken over silently, a different one is left and reported, and on unset the key 
 what it held before the harness first wrote it, only when the journal holds it. Every sync runs
 under a temporary HOME. Run: python3 -m unittest discover -s tests -p test_workspace_env_ownership.py
 """
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -123,6 +125,18 @@ class Sync(unittest.TestCase):
         self.configure(str(self.home / "spaces"))
         self.assertEqual(self.sync(), 2)
         self.assertEqual(self.env(), {VAR: "0"})
+
+
+    def test_the_telemetry_removal_line_stays_quiet_when_only_the_workspace_key_is_owned(self):
+        self.configure(str(self.home / "spaces"))
+        for _ in range(2):  # the second sync holds the key, so it is an owned native path
+            out = io.StringIO()
+            os.environ.pop("HARNESS_QUIET", None)
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(self.sync(), 0)
+            self.assertNotIn("no longer names claude-code", out.getvalue())
+            self.assertIn("sync complete", out.getvalue())
+        self.assertEqual(self.env(), {VAR: "1"})
 
 
 if __name__ == "__main__":

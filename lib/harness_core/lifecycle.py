@@ -952,19 +952,20 @@ def workspace(runtime, payload):
 def main(runtime, argv=None):
     os.environ["HARNESS_RUNTIME"] = runtime
     argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == [WORKSPACE_ARG]:
+        # A workspace block that fails, bad input included, is left out: it prints `{}` and
+        # never speaks for policy or blocks.
+        try:
+            payload = json.load(sys.stdin)
+            result = workspace(runtime, payload) if isinstance(payload, dict) else {}
+        except Exception:
+            result = {}
+        print(json.dumps(result or {}))
+        return
     kind = ""
     try:
         payload = json.load(sys.stdin)
         kind = payload.get("hook_event_name", "")
-        if argv[:1] == [WORKSPACE_ARG]:
-            # A workspace block that fails is left out; it never speaks for policy or blocks.
-            try:
-                result = workspace(runtime, payload)
-            except Exception:
-                result = {}
-            if result:
-                print(json.dumps(result))
-            return
         result = dispatch(runtime, payload)
     except Exception as exc:
         message = "Harness policy is unverified: " + type(exc).__name__ + ": " + str(exc)

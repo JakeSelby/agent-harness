@@ -4,25 +4,27 @@
 
 `lib/harness_core/workspaces.py` decides which workspace the session's folder belongs to; this
 hook supplies what the surface does not load itself. Claude Code loads an added folder's
-`CLAUDE.md` and rules only when `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` and the folder
-was passed as `--add-dir`, so a member counts as loaded natively only when the variable is in
-this hook's environment, the member is an `--add-dir` argument of `CLAUDE_PID`, and it has a
-`CLAUDE.md`; a member with only `AGENTS.md` is always supplied. Codex loads nothing from an added
-folder, so every member is supplied there.
+`CLAUDE.md` (or `.claude/CLAUDE.md`) and rules only when
+`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` and the folder was passed as `--add-dir`, so a
+member counts as loaded natively only when the variable is in this hook's environment, the member
+is an `--add-dir` value in the exact argument vector of `CLAUDE_PID`, and it has one of those
+files; a member with only `AGENTS.md` is always supplied. The vector is read from `/proc` on Linux
+and through `sysctl` on macOS; elsewhere nothing counts as native. Codex loads nothing from an
+added folder, so every member is supplied there.
 
 It has its own SessionStart entry, and so its own 10,000-character output cap. A block of at most
-`INLINE_LIMIT` characters goes inline; a longer one is written to
-`~/.local/state/agent-harness/workspaces/<name>.md` and only the member list and that path are
-inlined. Silent while `workspaces_dir` is unset or the folder is in no workspace; any failure
+`INLINE_LIMIT` characters goes inline; a longer one is written to a bundle file named for the
+workspace and its content under the harness state folder, and only the member list and that path
+are inlined. Silent while `workspaces_dir` is unset or the folder is in no workspace; any failure
 returns nothing, so a session is never blocked. Test:
 
     echo '{"hook_event_name":"SessionStart","cwd":"'"$PWD"'"}' | python3 workspace-session.py
 """
+import hashlib
 import importlib.util
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import time
@@ -32,6 +34,9 @@ HOOKS = Path(__file__).resolve().parent
 LIB = HOOKS.parents[1] / "lib" / "harness_core" / "workspaces.py"
 NATIVE_VAR = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD"
 INLINE_LIMIT = 9000
+# The supplied instructions stop here; a bundle is for reading, not for a whole repository.
+TOTAL_LIMIT = 256 * 1024
+BUNDLE_DAYS = 7
 BUDGET_SECONDS = 4.0
 
 _started = time.monotonic()
@@ -44,9 +49,12 @@ def _load(name, path):
     return module
 
 
-def config(env):
+def over_budget():
+    return time.monotonic() - _started > BUDGET_SECONDS
+
+
+def config(posture, env):
     """The resolved configuration, from the file `posture.config_path` names."""
-    posture = _load("harness_posture", HOOKS / "posture.py")
     try:
         with open(str(posture.config_path(env)), encoding="utf-8") as handle:
             data = json.load(handle)
@@ -55,81 +63,87 @@ def config(env):
     return data if isinstance(data, dict) else {}
 
 
-def bundle_dir(env):
-    return Path(env.get("HOME") or Path.home()) / ".local" / "state" / "agent-harness" / "workspaces"
+def _darwin_argv(pid):
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    mib = (ctypes.c_int * 3)(1, 49, int(pid))  # CTL_KERN, KERN_PROCARGS2
+    size = ctypes.c_size_t(0)
+    if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0 or not size.value:
+        return []
+    buf = ctypes.create_string_buffer(size.value)
+    if libc.sysctl(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+        return []
+    data = buf.raw[:size.value]
+    argc = int.from_bytes(data[:4], sys.byteorder)
+    rest = data[4:]
+    # The executable path, then NUL padding, then argc NUL-terminated arguments.
+    rest = rest[rest.find(b"\0"):].lstrip(b"\0")
+    return [a.decode("utf-8", "replace") for a in rest.split(b"\0")[:argc]]
 
 
 def parent_command(pid):
-    """The parent runtime's argument vector, or [] when it cannot be read inside the budget."""
+    """The parent runtime's exact argument vector, or [] when it cannot be read."""
     if not pid or not str(pid).isdigit():
         return []
-    proc = Path("/proc") / str(pid) / "cmdline"
-    if proc.is_file():
-        try:
-            return [a for a in proc.read_bytes().decode("utf-8", "replace").split("\0") if a]
-        except OSError:
-            return []
     try:
-        done = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True,
-                              text=True, timeout=max(0.2, BUDGET_SECONDS / 4))
-    except (OSError, subprocess.SubprocessError):
+        proc = Path("/proc") / str(pid) / "cmdline"
+        if proc.is_file():
+            return [a for a in proc.read_bytes().decode("utf-8", "replace").split("\0") if a]
+        if sys.platform == "darwin":
+            return _darwin_argv(pid)
+    except Exception:
         return []
-    # `ps` joins the vector with spaces, so a path holding one is matched by `add_dir_listed`.
-    return done.stdout.split() if done.returncode == 0 else []
+    return []
 
 
 def add_dirs(argv, base):
-    """Every folder passed as `--add-dir`, which takes one or more values, or `--add-dir=<path>`."""
+    """Every folder given as an `--add-dir` value: `--add-dir=<path>`, or the run of values after
+    `--add-dir` up to the next token starting with `-`, resolved against `base`."""
     found, taking = [], False
     for arg in argv:
         if arg == "--add-dir":
             taking = True
-            continue
-        if arg.startswith("--add-dir="):
+        elif arg.startswith("--add-dir="):
             found.append(arg.split("=", 1)[1])
             taking = False
-            continue
-        if arg.startswith("-"):
+        elif arg.startswith("-"):
             taking = False
-            continue
-        if taking:
+        elif taking:
             found.append(arg)
-    return [os.path.realpath(os.path.join(base, os.path.expanduser(p))) for p in found]
+    return [os.path.realpath(os.path.join(base, os.path.expanduser(p))) for p in found if p]
 
 
-def add_dir_listed(member, given, argv):
-    """Whether `member` was an `--add-dir`: by realpath, or by its literal text in the command."""
-    if member in given:
-        return True
-    text = " " + " ".join(argv) + " "
-    at = text.find(" --add-dir")
-    return at >= 0 and (" " + member + " ") in text[at:]
-
-
-def classify(members, folder, env, runtime, given, argv):
+def classify(ws_module, members, folder, env, runtime, given):
     """[(member, status)] for every member but the session's own: `native` or `supplied`."""
     native_on = runtime == "claude-code" and env.get(NATIVE_VAR) == "1"
     out = []
     for member in members:
         if member == folder:
             continue
-        loaded = (native_on and os.path.isfile(os.path.join(member, "CLAUDE.md"))
-                  and add_dir_listed(member, given, argv))
+        loaded = native_on and member in given and bool(ws_module.claude_files(member))
         out.append((member, "native" if loaded else "supplied"))
     return out
 
 
 def instructions(ws_module, supplied):
-    """The instruction text for the supplied members, and the path-scoped rules left out of it."""
-    parts = []
+    """(text, file paths) for the supplied members, capped at `TOTAL_LIMIT` characters."""
+    parts, paths, used, left = [], [], 0, []
     for member in supplied:
         found = ws_module.member_instructions(member)
         for path, text in found["files"]:
+            paths.append(path)
+            if used + len(text) > TOTAL_LIMIT:
+                left.append(path)
+                continue
+            used += len(text)
             parts.append("### " + path + "\n\n" + text.strip())
         if found["scoped"]:
             parts.append("### Path-scoped rules in " + member + "\n\nRead each before working on "
                          "files it covers:\n" + "\n".join("- " + p for p in found["scoped"]))
-    return "\n\n".join(parts)
+    if left:
+        parts.append("### Not included, too long\n\nRead each before working in its folder:\n"
+                     + "\n".join("- " + p for p in left))
+    return "\n\n".join(parts), paths
 
 
 LABELS = {"native": "loaded natively", "supplied": "supplied by this hook"}
@@ -153,10 +167,24 @@ def desktop_line(env):
             "from this chat's next launch.")
 
 
+def prune(directory, now=None):
+    """Remove bundle files older than `BUNDLE_DAYS`; a file that will not go is left."""
+    cutoff = (time.time() if now is None else now) - BUNDLE_DAYS * 86400
+    for entry in directory.glob("*.md"):
+        try:
+            if entry.stat().st_mtime < cutoff:
+                entry.unlink()
+        except OSError:
+            pass
+
+
 def write_bundle(directory, name, text):
+    """Write `text` to `<name>-<12 hex of its sha256>.md`, so sessions never overwrite each other."""
     directory.mkdir(parents=True, exist_ok=True)
-    target = directory / (re.sub(r"[^A-Za-z0-9._-]", "_", name) + ".md")
-    fd, temp = tempfile.mkstemp(dir=str(directory), prefix=".bundle-", suffix=".md")
+    prune(directory)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    target = directory / (re.sub(r"[^A-Za-z0-9._-]", "_", name) + "-" + digest + ".md")
+    fd, temp = tempfile.mkstemp(dir=str(directory), prefix=".bundle-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
@@ -171,7 +199,8 @@ def write_bundle(directory, name, text):
 def context(event, env=None):
     """The block for this session, or None when there is nothing to say."""
     env = os.environ if env is None else env
-    directory = config(env).get("workspaces_dir")
+    posture = _load("harness_posture", HOOKS / "posture.py")
+    directory = config(posture, env).get("workspaces_dir")
     if not isinstance(directory, str) or not directory.strip():
         return None
     directory = os.path.expanduser(directory)
@@ -191,19 +220,28 @@ def context(event, env=None):
     ws = result["workspace"]
     if ws is None:
         return None
-    statuses = classify(result["members"], result["folder"], env, runtime, set(given), argv)
+    statuses = classify(ws_module, result["members"], result["folder"], env, runtime, set(given))
     if not statuses and not ws.get("missing"):
         return None
     head = header(ws, result["folder"], result["rule"], statuses)
     grant = desktop_line(env)
     if grant:
         head += "\n\n" + grant
-    body = instructions(ws_module, [m for m, s in statuses if s == "supplied"])
+    body, paths = instructions(ws_module, [m for m, s in statuses if s == "supplied"])
     whole = head + ("\n\n## Member instructions\n\n" + body if body else "")
     if len(whole) <= INLINE_LIMIT:
         return whole
-    path = write_bundle(bundle_dir(env), ws["name"], "# Workspace " + ws["name"]
-                        + " member instructions\n\n" + body + "\n")
+    path = None
+    if not over_budget():
+        try:
+            path = write_bundle(posture.state_dir(env) / "workspaces", ws["name"],
+                                "# Workspace " + ws["name"] + " member instructions\n\n" + body + "\n")
+        except Exception:
+            path = None
+    if path is None:
+        return (head + "\n\nThe supplied members' instructions are too long to show here. Read "
+                "each of these files before you work in its folder:\n"
+                + "\n".join("- " + p for p in paths))
     return (head + "\n\nThe supplied members' instructions (" + str(len(body)) + " characters) "
             "are part of your instructions for this session, but too long to show here: they are "
             "in " + str(path) + ". Read that file with your file-reading tool now, before you "
@@ -216,7 +254,7 @@ def main():
         text = context(event if isinstance(event, dict) else {})
     except Exception:
         text = None
-    if text and time.monotonic() - _started <= BUDGET_SECONDS:
+    if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
                                                  "additionalContext": text}}))
     else:

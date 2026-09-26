@@ -6,12 +6,14 @@ points `workspaces_dir` at a synthetic workspace. A member counts as loaded nati
 real parent process carries it as `--add-dir`, so the tests spawn one and pass its pid as
 `CLAUDE_PID`. Run: python3 -m unittest tests.test_workspace_session_hook
 """
+import hashlib
 import importlib.util
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -79,11 +81,12 @@ class Fixture(unittest.TestCase):
         data = json.loads(out.stdout)
         return data.get("hookSpecificOutput", {}).get("additionalContext", "")
 
-    def parent(self, *add_dirs):
+    def parent(self, *add_dirs, tail=()):
         """A live process whose arguments carry `--add-dir`, standing in for the runtime."""
         argv = [sys.executable, "-c", "import time; time.sleep(30)"]
         for path in add_dirs:
             argv += ["--add-dir", str(path)]
+        argv += list(tail)
         proc = subprocess.Popen(argv)
         self.addCleanup(proc.wait)
         self.addCleanup(proc.kill)
@@ -141,14 +144,71 @@ class Delivery(Fixture):
     def test_past_the_inline_limit_the_instructions_go_to_a_bundle_file(self):
         (self.ws / "member-a" / "CLAUDE.md").write_text("filler line\n" * 900 + "Codeword ALPHA.\n")
         text = self.context(self.run_hook())
-        bundle = self.home / ".local" / "state" / "agent-harness" / "workspaces" / "demo.md"
+        bundles = list(self.bundles().glob("*.md"))
+        self.assertEqual(len(bundles), 1)
+        bundle = bundles[0]
+        digest = hashlib.sha256(bundle.read_bytes()).hexdigest()[:12]
+        self.assertEqual(bundle.name, "demo-" + digest + ".md")
         self.assertLess(len(text), 9000)
         self.assertIn(str(bundle), text)
         self.assertIn("before you answer or take any other action", text)
         self.assertNotIn("Codeword", text)
         self.assertIn("Codeword ALPHA.", bundle.read_text())
         self.assertIn("Codeword BRAVO.", bundle.read_text())
-        self.assertEqual([p.name for p in bundle.parent.iterdir()], ["demo.md"])
+        self.assertEqual([p.name for p in bundle.parent.iterdir()], [bundle.name])
+
+    def bundles(self, home=None):
+        return (home or self.home) / ".local" / "state" / "agent-harness" / "workspaces"
+
+    def big(self):
+        (self.ws / "member-a" / "CLAUDE.md").write_text("filler line\n" * 900 + "Codeword ALPHA.\n")
+
+    def test_a_session_supplied_different_members_gets_its_own_bundle(self):
+        self.big()
+        self.context(self.run_hook())
+        self.context(self.run_hook(CLAUDE_CODE_ENTRYPOINT="claude-desktop"))
+        self.context(self.run_hook(cwd=self.ws / "member-b"))
+        self.assertEqual(len(list(self.bundles().glob("demo-*.md"))), 2)
+
+    def test_the_bundle_follows_harness_home_like_the_rest_of_the_state(self):
+        self.big()
+        other = self.home.parent / "other-home"
+        other.mkdir()
+        text = self.context(self.run_hook(HOME=str(other), HARNESS_HOME=str(self.home)))
+        self.assertIn(str(self.bundles()), text)
+        self.assertFalse(self.bundles(other).exists())
+
+    def test_bundles_older_than_seven_days_are_pruned_on_write(self):
+        self.big()
+        folder = self.bundles()
+        folder.mkdir(parents=True)
+        old, fresh = folder / "gone-000000000000.md", folder / "kept-000000000000.md"
+        old.write_text("old")
+        fresh.write_text("fresh")
+        stale = time.time() - 8 * 86400
+        os.utime(str(old), (stale, stale))
+        self.context(self.run_hook())
+        self.assertFalse(old.exists())
+        self.assertTrue(fresh.exists())
+
+    def test_a_bundle_that_cannot_be_written_lists_each_instruction_file(self):
+        self.big()
+        self.bundles().parent.mkdir(parents=True)
+        self.bundles().write_text("a file where the folder should be")
+        text = self.context(self.run_hook())
+        self.assertIn("Workspace demo", text)
+        self.assertIn("- " + str(self.ws / "member-a" / "CLAUDE.md"), text)
+        self.assertIn("- " + str(self.ws / "member-b" / "AGENTS.md"), text)
+        self.assertNotIn("Codeword", text)
+
+    def test_a_dot_claude_claude_md_is_read_like_claude_md(self):
+        (self.ws / "member-a" / "CLAUDE.md").unlink()
+        (self.ws / "member-a" / ".claude").mkdir()
+        (self.ws / "member-a" / ".claude" / "CLAUDE.md").write_text("Codeword DELTA.\n")
+        self.assertIn("Codeword DELTA.", self.context(self.run_hook()))
+        pid = self.parent(self.ws / "member-a")
+        text = self.context(self.run_hook(CLAUDE_PID=pid, **{NATIVE_VAR: "1"}))
+        self.assertIn("loaded natively", self.line(text, "member-a"))
 
     def test_the_desktop_app_is_told_to_request_a_folder_on_first_use(self):
         text = self.context(self.run_hook(CLAUDE_CODE_ENTRYPOINT="claude-desktop"))
@@ -190,6 +250,12 @@ class NativeSkip(Fixture):
         text = self.context(self.run_hook(CLAUDE_PID=pid, **{NATIVE_VAR: "1"}))
         self.assertIn("supplied by this hook", self.line(text, "member-a"))
 
+    def test_a_member_named_only_in_the_prompt_is_not_native(self):
+        pid = self.parent("../member-b", tail=["-p", "fix " + str(self.ws / "member-a") + " now"])
+        text = self.context(self.run_hook(CLAUDE_PID=pid, **{NATIVE_VAR: "1"}))
+        self.assertIn("supplied by this hook", self.line(text, "member-a"))
+        self.assertIn("Codeword ALPHA.", text)
+
     def test_a_relative_add_dir_resolves_against_the_session_folder(self):
         pid = self.parent("../member-a")
         text = self.context(self.run_hook(CLAUDE_PID=pid, **{NATIVE_VAR: "1"}))
@@ -213,10 +279,41 @@ class Parsing(unittest.TestCase):
         self.assertEqual(self.hook.add_dirs(argv, base),
                          [os.path.realpath(p) for p in ("/a", "/b", "/c")])
 
-    def test_a_path_with_a_space_is_matched_in_the_joined_command(self):
-        argv = "claude --add-dir /x/my folder --model haiku".split()
-        self.assertTrue(self.hook.add_dir_listed("/x/my folder", set(), argv))
-        self.assertFalse(self.hook.add_dir_listed("/x/other", set(), argv))
+    def test_a_value_after_another_flag_is_not_an_added_folder(self):
+        argv = ["--add-dir", "/a", "-p", "/b", "--add-dir=", "/c"]
+        self.assertEqual(self.hook.add_dirs(argv, "/"), [os.path.realpath("/a")])
+
+    def test_the_exact_argument_vector_keeps_a_path_with_a_space_whole(self):
+        if not (sys.platform == "darwin" or os.path.isdir("/proc")):
+            self.skipTest("no exact argument source on this platform")
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)",
+                                 "--add-dir", "/x/my folder"])
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        deadline = time.time() + 5
+        argv = []
+        while time.time() < deadline and "--add-dir" not in argv:
+            argv = self.hook.parent_command(proc.pid)
+            time.sleep(0.05)
+        self.assertEqual(argv[-2:], ["--add-dir", "/x/my folder"])
+
+    def test_the_supplied_text_stops_at_the_total_limit_and_names_the_rest(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for name in ("a", "b"):
+                os.mkdir(os.path.join(temp, name))
+                with open(os.path.join(temp, name, "CLAUDE.md"), "w") as handle:
+                    handle.write(name * 100)
+            ws = module("harness_workspaces_limit_test", REPO / "lib" / "harness_core" / "workspaces.py")
+            saved = self.hook.TOTAL_LIMIT
+            self.hook.TOTAL_LIMIT = 150
+            try:
+                text, paths = self.hook.instructions(ws, [os.path.join(temp, "a"), os.path.join(temp, "b")])
+            finally:
+                self.hook.TOTAL_LIMIT = saved
+        self.assertIn("a" * 100, text)
+        self.assertNotIn("b" * 100, text)
+        self.assertIn("- " + os.path.join(temp, "b", "CLAUDE.md"), text)
+        self.assertEqual(len(paths), 2)
 
     def test_an_unreadable_parent_has_no_arguments(self):
         self.assertEqual(self.hook.parent_command("not-a-pid"), [])
@@ -234,14 +331,35 @@ class Registration(unittest.TestCase):
                 self.assertIn(str(ADAPTERS[runtime]), command)
                 self.assertEqual(entries[1]["hooks"][0]["timeout"], 10)
 
-    def test_the_plain_entry_never_runs_the_workspace_hook(self):
+    def test_the_workspace_entry_on_another_event_prints_an_empty_answer(self):
         with tempfile.TemporaryDirectory() as temp:
             env = without_harness_vars()
             env["HOME"] = temp
             out = subprocess.run([sys.executable, str(ADAPTERS["claude-code"]), "workspace"],
                                  input=json.dumps({"hook_event_name": "Stop", "cwd": temp}),
                                  env=env, capture_output=True, text=True, timeout=30)
-        self.assertEqual((out.returncode, out.stdout), (0, ""))
+        self.assertEqual((out.returncode, out.stdout.strip()), (0, "{}"))
+
+
+class PlainEntry(Fixture):
+    def test_the_plain_session_start_entry_never_carries_the_workspace_block(self):
+        control = self.run_hook()
+        self.assertIn("Workspace demo", self.context(control))
+        out = self.run_hook(argument=None)
+        self.assertEqual(out.returncode, 0, msg=out.stderr)
+        self.assertNotIn("Workspace demo", out.stdout)
+        self.assertNotIn("Codeword", out.stdout)
+
+
+class Deadline(Fixture):
+    def test_past_the_deadline_no_bundle_is_written_and_the_files_are_listed(self):
+        (self.ws / "member-a" / "CLAUDE.md").write_text("filler line\n" * 900 + "Codeword ALPHA.\n")
+        hook = module("harness_workspace_session_deadline", REPO / "policy" / "hooks" / "workspace-session.py")
+        hook.over_budget = lambda: True
+        env = {"HOME": str(self.home), "HARNESS_RUNTIME": "claude-code"}
+        text = hook.context({"cwd": str(self.ws / "root")}, env)
+        self.assertIn("- " + str(self.ws / "member-a" / "CLAUDE.md"), text)
+        self.assertFalse((self.home / ".local" / "state" / "agent-harness" / "workspaces").exists())
 
 
 class Workers(unittest.TestCase):

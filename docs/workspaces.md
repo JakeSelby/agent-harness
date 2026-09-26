@@ -98,7 +98,7 @@ The added folders' `CLAUDE.md` files load natively because `sync` sets
 While `workspaces_dir` is set, a session opened in any member folder is told its workspace at
 start-up: the workspace's name and the rule that attached it, each other member's path marked
 `loaded natively`, `supplied by this hook` or `missing`, and the instructions of every supplied
-member. Instructions are the member's `CLAUDE.md`, else its `AGENTS.md`, then `CLAUDE.local.md`
+member. Instructions are the member's `CLAUDE.md` and `.claude/CLAUDE.md`, else its `AGENTS.md`, then `CLAUDE.local.md`
 and each `.claude/rules/*.md` without `paths:` frontmatter, with their `@` imports; a path-scoped
 rule is listed by path only. A folder in several workspaces that no rule decides gets one line
 naming the candidates and the overrides file, and a folder in none, or with the key unset, gets
@@ -106,15 +106,19 @@ nothing.
 
 On Claude Code a member counts as loaded natively, and is not supplied twice, only when the
 variable is set in the hook's environment, the member is an `--add-dir` argument of the running
-Claude process, and it has a `CLAUDE.md`. A member with only an `AGENTS.md` is always supplied.
+Claude process, read exactly from `/proc` on Linux or `sysctl` on macOS (elsewhere no member
+counts as native), and it has a `CLAUDE.md` or `.claude/CLAUDE.md`. A member with only an `AGENTS.md` is always supplied.
 On Codex every member is supplied.
 
 The hook is `workspace-session`, registered as its own SessionStart entry beside the start-up
 block's, because each hook's output is capped at 10,000 characters and that block already uses
 most of one. A block of at most 9,000 characters goes inline. A longer one is written to
-`~/.local/state/agent-harness/workspaces/<name>.md`, which the settings template allows reading,
-and only the member list and that path are inlined, with an instruction to read the file before
-the first action. `citizen config set hooks.workspace-session off` switches it off from the next
+`~/.local/state/agent-harness/workspaces/<name>-<hash>.md`, named for the workspace and a hash of
+its content so two sessions never overwrite each other's, and only the member list and that path
+are inlined, with an instruction to read the file before answering. The template's `Read(~/**)`
+allow rule already covers it, and bundles older than seven days are removed on the next write. If
+the file cannot be written, the block lists each member's instruction file to read instead. Each
+instruction file is read up to 64 KiB. `citizen config set hooks.workspace-session off` switches it off from the next
 session. Any failure leaves the block out; it never stops a session starting.
 
 What each surface gets:

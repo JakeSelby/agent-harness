@@ -375,7 +375,7 @@ class WorkspaceEntry(Fixture):
                 self.assertIn("harness-session", loaded)
                 self.assertNotIn("workspace-session", loaded)
 
-    def test_main_routes_the_workspace_argument_and_prints_nothing_for_an_empty_answer(self):
+    def test_main_routes_the_workspace_argument_and_prints_an_empty_object_for_no_answer(self):
         self.configure({"workspace-session": "off"})
         out = io.StringIO()
         with patch.object(sys, "stdin", io.StringIO(json.dumps(
@@ -383,7 +383,15 @@ class WorkspaceEntry(Fixture):
                 patch.object(lifecycle, "dispatch", side_effect=AssertionError("plain entry ran")), \
                 redirect_stdout(out):
             lifecycle.main("claude-code", ["workspace"])
-        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(out.getvalue().strip(), "{}")
+
+    def test_bad_input_on_the_workspace_entry_prints_an_empty_answer_not_a_policy_message(self):
+        for text in ("not json", "[1, 2]", ""):
+            with self.subTest(text=text):
+                out = io.StringIO()
+                with patch.object(sys, "stdin", io.StringIO(text)), redirect_stdout(out):
+                    lifecycle.main("claude-code", ["workspace"])
+                self.assertEqual(out.getvalue().strip(), "{}")
 
 
 if __name__ == "__main__":
