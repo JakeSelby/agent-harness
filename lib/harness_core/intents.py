@@ -420,10 +420,23 @@ def own(item, session, pid, root):
         pid is not None and item.get("pid") == pid)
 
 
+def editor_root(cwd, target_root):
+    """The worktree the editor runs in: the one holding `cwd`, or None outside a checkout.
+
+    Only when no `cwd` is known does the target's worktree stand in. An absolute path can reach
+    into a sibling's worktree, so the target never decides whose claim is the editor's own.
+    """
+    if not cwd:
+        return target_root
+    repo = repository(str(cwd))
+    return repo["root"] if repo else None
+
+
 def overlaps(path, session=None, pid=None, cwd=None, env=None):
     """Live siblings' claims covering `path`: a list of `(claim, pattern, rel)`.
 
     Empty outside a repository, for a path outside its worktree, and for the session's own claims.
+    Repository and path come from the target; whose claims are the editor's own, from `cwd`.
     """
     target = Path(path)
     if not target.is_absolute():
@@ -434,9 +447,10 @@ def overlaps(path, session=None, pid=None, cwd=None, env=None):
     rel = relative(target, repo["root"])
     if rel is None:
         return []
+    editor = editor_root(cwd, repo["root"])
     found = []
     for item in claims(env):
-        if item.get("repo") != repo["common"] or own(item, session, pid, repo["root"]):
+        if item.get("repo") != repo["common"] or own(item, session, pid, editor):
             continue
         for pattern in item["paths"]:
             if isinstance(pattern, str) and matches(pattern, rel):

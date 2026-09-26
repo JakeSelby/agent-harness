@@ -188,11 +188,28 @@ class SharedSessionTests(Base):
         return intents.claim(list(paths), cwd=str(worktree), session="S", pid=os.getpid(),
                              env=self.env)
 
-    def edit(self, worktree, name="shared.py"):
+    def edit(self, worktree, name="shared.py", cwd=None):
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Edit", "session_id": "S",
-                   "cwd": str(worktree), "tool_input": {"file_path": str(worktree / name),
-                                                        "old_string": "x", "new_string": "y"}}
+                   "cwd": str(cwd or worktree),
+                   "tool_input": {"file_path": str(worktree / name),
+                                  "old_string": "x", "new_string": "y"}}
         return lifecycle.dispatch("claude-code", payload)
+
+    def test_an_absolute_path_into_a_sibling_worktree_is_the_siblings_claim(self):
+        os.environ["CLAUDE_PID"] = str(os.getpid())
+        self.claim(self.b, "shared.py")
+        found = intents.overlaps(self.b / "shared.py", "S", os.getpid(), str(self.a), self.env)
+        self.assertEqual([(c["worktree"], r) for c, _, r in found], [(str(self.b), "shared.py")])
+        self.assertEqual(intents.overlaps(self.b / "shared.py", "S", os.getpid(), str(self.b),
+                                          self.env), [])
+        first = self.edit(self.b, cwd=self.a)
+        self.assertIn("intent-overlap warning", first["hookSpecificOutput"]["additionalContext"])
+        # The overlap counts under the editor's worktree, never under the sibling's.
+        hits = intents.hits_dir(self.env)
+        self.assertTrue((hits / intents.slot("S", str(self.a))).exists())
+        self.assertFalse((hits / intents.slot("S", str(self.b))).exists())
+        self.assertEqual(self.edit(self.b, cwd=self.a)["hookSpecificOutput"]["permissionDecision"],
+                         "deny")
 
     def test_two_worktrees_under_one_session_keep_both_claims(self):
         self.claim(self.a, "shared.py")
