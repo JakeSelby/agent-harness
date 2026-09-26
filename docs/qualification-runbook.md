@@ -108,7 +108,7 @@ git -c safe.directory='*' clone -q /frozen harness && cd harness
 codex login --device-auth
 python3 scripts/smoke_tier.py --only credentials --targets codex-cli-linux,claude-code-cli-linux
 python3 scripts/native_acceptance.py --client codex-cli-linux --model <cheapest> \
-    --out /records/codex-cli-linux.json
+    --codex-session-login --out /records/codex-cli-linux.json
 ```
 
 The writable clone exists because the runner refuses a tree it cannot prove clean, and the
@@ -119,12 +119,16 @@ runner hands its disposable home only those pointers. `codex login --device-auth
 ChatGPT session, so no host login file is copied into it; whether the 0.11.x Linux rounds logged
 in this way or used a copy of the host's login is not recorded.
 
-**The runner's disposable `CODEX_HOME` does not carry the session login.** `adapters/codex/worker.py`
-links `auth.json` into an isolated worker home; the acceptance runner copies no credential and
-passes only the variables in [credentials](#credentials), so a runner-driven Codex case has no
-login, and every Codex record to date was produced by hand rather than by this runner. Until the runner links the login the way
-the worker does, the precondition check above proves the login exists, not that the runner can
-use it.
+**The runner's disposable `CODEX_HOME` carries the session login only under
+`--codex-session-login`.** With the flag, each case's home gets an `auth.json` symlink to the
+operator's login, read from `CODEX_HOME` or `~/.codex` before the disposable home replaces it, the
+way `adapters/codex/worker.py` links it into a worker home. It is a link, never a copy, so a kept
+home holds no credential and a token the client refreshes lands in the one login file. Every
+string in that file is redacted from each observation, the progress log and the record. Without
+the flag a runner-driven Codex case has no login. The flag is refused for a Claude Code target and
+when no `auth.json` exists, before any case runs. Every Codex record to date was produced by hand;
+the first runner-driven round is compared against a hand run as [client surfaces](#client-surfaces)
+describes.
 
 ## Provisioning the round
 
@@ -250,7 +254,8 @@ agree. Record that comparison with the round's observations.
 
 ## Credentials
 
-The runner copies no credential and prints none. Each case runs in a disposable `HOME` that
+The runner copies no credential and prints none; the one it links, a Codex session login under
+`--codex-session-login`, is described in [target hosts](#target-hosts). Each case runs in a disposable `HOME` that
 inherits, **by name only**, the authentication variables this machine already uses — the
 `ANTHROPIC_*` variables, `CLAUDE_CODE_OAUTH_TOKEN`, the Bedrock and Vertex switches, `AWS_PROFILE` and the AWS region,
 credentials-file and session variables (`AWS_ACCESS_KEY_ID`, `AWS_SESSION_TOKEN` and the
