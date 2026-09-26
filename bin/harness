@@ -337,6 +337,25 @@ def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
             if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_")) and key not in SESSION_SCOPED}
 
 
+def selection_override(env: Optional[Dict[str, str]] = None) -> bool:
+    """Whether a project or session layer changes a stance here, which a sync never links.
+
+    Asks the resolver for the stances with and without those layers, so a blank variable, an
+    identity override or a config that names no stance does not count.
+    """
+    env = os.environ if env is None else env
+    module = load_posture()
+    if module is None:
+        return False
+    user = read_json(config_path()) or {}
+    try:
+        full = module.selection(env, strict=False, config=user, root=REPO)["stances"]
+        base = module.selection(user_defaults_env(env), strict=False, config=user, root=REPO)["stances"]
+    except (OSError, ValueError, KeyError):
+        return False
+    return full != base
+
+
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     env = os.environ if env is None else env
     base = read_json(REPO / "config.example.json") or {}
@@ -1988,6 +2007,10 @@ def _checkout_state() -> str:
 
 def cmd_diff(args: argparse.Namespace) -> int:
     lines = _diff_lines()
+    # Drift is measured against what a sync would link, the user's layers. A project or session
+    # selection is never linked, so `citizen stances` can differ here with nothing drifting.
+    if not args.quiet and selection_override():
+        say("  scope   diff compares the user defaults; a project or session selection is not drift")
     if not lines:
         if not args.quiet:
             say("no drift")
