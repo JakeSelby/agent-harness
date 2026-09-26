@@ -743,6 +743,73 @@ def resume_verdict(record, announced, agent_type, ran):
             % kind)
 
 
+def role_links(directory):
+    """Each installed role definition as `{name: (link target or None, text)}`.
+
+    Step 8 asks that a role the cost variant does not change keeps its link, which content alone
+    cannot show: a link replaced by an identical copy reads the same.
+    """
+    found = {}
+    for path in sorted(Path(directory).glob("*.md")):
+        found[path.name] = (os.readlink(str(path)) if path.is_symlink() else None,
+                            path.read_text(errors="replace"))
+    return found
+
+
+def link_change(was, now):
+    """How one unchanged role's link moved between two syncs, or `""` when it did not."""
+    if was == now:
+        return ""
+    if was and not now:
+        return "its link became a copy"
+    if now and not was:
+        return "its copy became a link"
+    return "its link was retargeted"
+
+
+def link_verdict(before, after):
+    """Split the roles a variant switch rewrote from the ones it kept; returns `(rewritten, kept)`.
+
+    `before` and `after` are `role_links` readings either side of the switch. A kept role is one
+    whose text did not change, and each must still be what it was before, a link to the same
+    target; at least one of them must be a link, or no link was observed being kept.
+    """
+    rewritten = sorted(name for name in after
+                       if name not in before or before[name][1] != after[name][1])
+    kept = sorted(name for name in after if name not in rewritten)
+    if not rewritten or not kept:
+        raise AssertionError("the non-default variant rewrote %s of %s roles"
+                             % (len(rewritten), len(after)))
+    moved = ["%s (%s)" % (name, link_change(before[name][0], after[name][0])) for name in kept
+             if link_change(before[name][0], after[name][0])]
+    if moved:
+        raise AssertionError("the non-default variant left %s byte-identical but did not keep "
+                             "its link: %s" % ("a role" if len(moved) == 1 else "roles",
+                                               ", ".join(moved)))
+    if not any(after[name][0] for name in kept):
+        raise AssertionError("no role the non-default variant leaves unchanged is installed as a "
+                             "link, so no role was observed keeping its link")
+    return rewritten, kept
+
+
+def budget_ending(brief, sentence):
+    """Require the brief to end with the row's budget sentence; returns that sentence.
+
+    `sentence` is what `posture.budget_sentence` writes for the row that prices the spawn. Step 8
+    asks that the brief ends with it, which a brief merely mentioning a spend does not show.
+    """
+    wanted = (sentence or "").strip()
+    if not wanted:
+        raise AssertionError("the variant's default band row prices nothing, so no budget "
+                             "sentence could end the band worker's brief")
+    if brief.rstrip().endswith(wanted):
+        return wanted
+    if "Expected spend:" in brief:
+        raise AssertionError("the band worker's brief carries a budget sentence but does not end "
+                             "with the row's: " + quoted(brief[-300:], 300))
+    raise AssertionError("the band worker's brief carries no budget sentence")
+
+
 def case_cost_posture(home):
     root = home.primitives
     for name, body in (("unmanaged.md", NULL_PROSE),):
@@ -752,17 +819,14 @@ def case_cost_posture(home):
     (root / "stances" / "cost" / "unmanaged.json").write_text(json.dumps(NULL_COST) + "\n")
     home.seed(stances={"cost": "balanced", "delegation": "tiered"}, roots=[root])
     home.harness("sync")
-    before = {path.name: path.read_text() for path in (home.client_dir / "agents").glob("*.md")}
+    before = role_links(home.client_dir / "agents")
     data = home.config()
     data["stances"]["cost"] = "frugal"
     home.write_config(data)
     home.harness("sync")
-    after = {path.name: path.read_text() for path in (home.client_dir / "agents").glob("*.md")}
-    rewritten = sorted(name for name in after if before.get(name) != after[name])
-    unchanged = sorted(name for name in after if before.get(name) == after[name])
-    if not rewritten or not unchanged:
-        raise AssertionError("the non-default variant rewrote %s of %s roles"
-                             % (len(rewritten), len(after)))
+    after = role_links(home.client_dir / "agents")
+    rewritten, kept = link_verdict(before, after)
+    linked = sum(1 for name in kept if after[name][0])
     expected_model = json.loads((ROOT / "adapters" / "claude-code" / "bindings.json")
                                 .read_text())["tiers"]["light"]
     result = home.session(SPAWN_PROMPT)
@@ -776,9 +840,9 @@ def case_cost_posture(home):
     definition = (home.client_dir / "agents" / "worker-a.md").read_text()
     if "effort: low" not in definition:
         raise AssertionError("the band worker definition does not carry the row's effort")
-    brief = brief_of(records)
-    if "Expected spend:" not in brief:
-        raise AssertionError("the band worker's brief carries no budget sentence")
+    posture = hook_posture()
+    budget_ending(brief_of(records), posture.budget_sentence(
+        posture.row_for(posture.cost_table(env=home.env()), "worker-a")))
     feed = await_feed(home, result["session_id"], "usage-feed: worker-a")
     usage = home.harness("usage", "--rescan", "--by", "role")
     routed = "worker-a" in usage
@@ -816,11 +880,13 @@ def case_cost_posture(home):
     if complaint:
         raise AssertionError(complaint)
     return ("A non-default cost variant rewrote only the roles it changes (%s of %s) and left the "
-            "rest byte-identical; in a new native session an unnamed spawn ran as the variant's "
-            "default band worker on its row's model and effort with the budget sentence in its "
-            "brief, the orchestrator's context carried \"%s\", harness usage --rescan --by role "
-            "recorded the routed row, %s, and a null variant did none of it."
-            % (len(rewritten), len(after), feed[-1], resumed_clause))
+            "rest byte-identical, each still installed as it was before the switch, %s of them "
+            "as the same link to the same target; in a new native session an unnamed spawn ran as "
+            "the variant's default band worker on its row's model and effort with its brief "
+            "ending in that row's budget sentence, the orchestrator's context carried \"%s\", "
+            "harness usage --rescan --by role recorded the routed row, %s, and a null variant did "
+            "none of it."
+            % (len(rewritten), len(after), linked, feed[-1], resumed_clause))
 
 
 def descriptor_recipe(descriptor):
@@ -913,6 +979,10 @@ SENTINEL = "permission-probe.txt"
 SENTINEL_PROMPT = ("Run exactly this command with your Bash tool: touch ./%s — then reply "
                    "with the single word DONE and nothing else." % SENTINEL)
 BLOCKED, DECLINED, COMPLETED = "blocked", "declined", "completed"
+# Step 3's narrower claim for the auto posture, stated in every observation that reads it.
+AUTO_LIMIT = ("the auto posture is claimed as the mode the sync wrote and the client ran, not as "
+              "a restriction: what the client's own auto-mode classifier refuses is its "
+              "provider's judgement, and no probe here asks it to refuse anything")
 
 
 def turn_outcome(wrote, data):
@@ -1049,9 +1119,9 @@ def case_permission_controls(home):
     except Unverified as error:
         raise Unverified(observed(notes, str(error)))
     notes.append("permissions=auto synced %s, where the write was %s with %s permission denial(s) "
-                 "recorded, and %s"
+                 "recorded, and %s; %s"
                  % (AUTO_MODE, auto, len(permission_denials(auto_data)),
-                    mode_clause(turn_mode(home, auto_data))))
+                    mode_clause(turn_mode(home, auto_data)), AUTO_LIMIT))
     return "; ".join(notes) + "."
 
 
@@ -1488,10 +1558,18 @@ sys.exit(0)
 FILE_TOOLS = ("Write", "Edit", "MultiEdit")  # the client's own file-writing tools
 USER_MATCHER = "|".join(FILE_TOOLS)
 PATCH_FILES = ("alpha.txt", "beta.txt")
+# A line the harness's own PostToolUse scanner flags as instruction-shaped (`settings-json`), so
+# the Write that carries it makes the coordinator's PostToolUse entry answer where it can be read.
+FLAGGED_LINE = "beta keeps settings.json hooks"
+# Each line is quoted: unquoted, a live model read "the single line beta keeps ..." as the line
+# "beta", by analogy with "alpha", and wrote nothing for the scanner to flag.
 PATCH_PROMPT = ("Use your Write tool twice, once per file, to create two new files in the current "
-                "directory: %s containing the single line alpha, and %s containing the single "
-                "line beta. Do not use Bash. Then reply with the single word DONE and nothing "
-                "else." % PATCH_FILES)
+                "directory: %s containing exactly the single line \"alpha\", and %s containing "
+                "exactly the single line \"%s\", without the quotes. Do not use Bash. Then reply "
+                "with the single word DONE and nothing else."
+                % (PATCH_FILES[0], PATCH_FILES[1], FLAGGED_LINE))
+HARNESS_NOTICE = "[harness: Write output matched instruction-shaped pattern(s): "
+NOTICE_WAIT = 20  # seconds the write turn's transcript is re-read for the harness notice
 HOOK_SENTINEL = "compose.txt"
 HOOK_PROMPT = ("Run exactly this command with your Bash tool: touch ./%s — then reply with the "
                "single word DONE and nothing else." % HOOK_SENTINEL)
@@ -1555,6 +1633,10 @@ def patch_verdict(names, written, calls, fired, session_id):
     file-tool calls and `fired` the user hook's own log. A file the file tool wrote and the user
     hook never heard of is a composition failure. A turn that aimed the file tool at fewer than
     every file observed no multi-file patch, and one that never used it observed nothing.
+
+    The user hook's log names a file, not the call that wrote it, while the harness notice is read
+    by call id; only a turn with exactly one file-tool call per file ties each log line to the
+    same write the notice answers, so a repeated write is unverified.
     """
     aimed = set(Path(call["file"]).name for call in calls if call["file"])
     heard = set(Path(str(row.get("file") or "")).name for row in fired
@@ -1575,7 +1657,80 @@ def patch_verdict(names, written, calls, fired, session_id):
     if missing:
         raise Unverified("the turn did not write %s with its file tool, so a two-file patch was "
                          "not observed" % ", ".join(missing))
+    repeated = sorted(n for n in names
+                      if sum(1 for call in calls if Path(call["file"]).name == n) > 1)
+    if repeated:
+        raise Unverified("the turn aimed the file tool at %s more than once, and the user hook's "
+                         "log names the file but not the call, so its line cannot be tied to the "
+                         "write the harness notice answers" % ", ".join(repeated))
     return sorted(heard & set(names))
+
+
+def write_hook_records(text, call_ids=None):
+    """The client's own `PostToolUse:Write` hook records in a transcript, as attachment dicts.
+
+    A record counts only when its `toolUseID` names one of `call_ids`, so a hook's answer to
+    another Write in the session is not read as its answer to this one; `None` reads them all.
+    """
+    records = []
+    for line in text.splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        attachment = record.get("attachment")
+        if (record.get("type") != "attachment" or not isinstance(attachment, dict)
+                or attachment.get("hookName") != "PostToolUse:Write"):
+            continue
+        if call_ids is not None and attachment.get("toolUseID") not in call_ids:
+            continue
+        records.append(attachment)
+    return records
+
+
+def harness_post_notice(text, call_ids=None):
+    """The harness PostToolUse notice a session's transcript carries for a Write, or `""`.
+
+    The coordinator's PostToolUse entry leaves no decision-log row for a plain Write; what it
+    leaves is the additional context its tool-output scanner returns, which the client keeps in
+    the session's own transcript. That line is the harness entry firing in the turn. It is read
+    only from the client's hook-context record for a Write, so a prompt, a tool result or a reply
+    that quotes the notice does not count, and with `call_ids` only from the record the client
+    tied to one of those Write calls.
+    """
+    for attachment in write_hook_records(text, call_ids):
+        if attachment.get("type") != "hook_additional_context":
+            continue
+        content = attachment.get("content")
+        for item in content if isinstance(content, list) else [content]:
+            start = item.find(HARNESS_NOTICE) if isinstance(item, str) else -1
+            if start >= 0:
+                end = item.find("]", start)
+                return item[start:end + 1] if end > start else item[start:start + 200]
+    return ""
+
+
+def flagged_write_ids(calls):
+    """The ids of the transcript's Write calls aimed at the file that carries the flagged line."""
+    return set(call["id"] for call in calls
+               if call["tool"] == "Write" and Path(call["file"]).name == PATCH_FILES[1])
+
+
+def await_notice(home, session_id, call_ids, seconds=None):
+    """The harness notice for one of `call_ids`, once the client has flushed its transcript.
+
+    The client writes a hook's context after the tool results of the batch it answered, at the
+    tail of a headless turn, and the turn can return before that tail is on disk, as `await_feed`
+    and `await_gate` also allow for. A single read at return would call the entry silent.
+    """
+    deadline = time.time() + (NOTICE_WAIT if seconds is None else seconds)
+    while True:
+        notice = harness_post_notice(home.orchestrator_text(session_id), call_ids)
+        if notice or time.time() > deadline:
+            return notice
+        time.sleep(1)
 
 
 def gate_verdicts(home, session_id):
@@ -1679,6 +1834,26 @@ def case_hook_composition(home):
     fired = jsonl_rows(log)
     written = dict((name, (home.project / name).exists()) for name in PATCH_FILES)
     heard = patch_verdict(PATCH_FILES, written, calls, fired, session)
+    try:
+        flagged = FLAGGED_LINE in (home.project / PATCH_FILES[1]).read_text(errors="replace")
+    except OSError:
+        flagged = False
+    if not flagged:
+        raise Unverified("the user-owned hook fired for both writes, but %s does not hold the "
+                         "line %r, so the harness's tool-output scanner had nothing to flag and "
+                         "its PostToolUse entry was not observed firing"
+                         % (PATCH_FILES[1], FLAGGED_LINE))
+    ids = flagged_write_ids(calls)
+    notice = await_notice(home, session, ids)
+    if not notice:
+        kinds = sorted(set(str(record.get("type")) for record in
+                           write_hook_records(home.orchestrator_text(session), ids)))
+        raise Unverified("the user-owned hook fired for both writes, but %ss after the turn the "
+                         "write turn's transcript carries no notice from the harness's own "
+                         "PostToolUse entry for the Write of %r to %s (its PostToolUse:Write "
+                         "hook records for that call: %s), so that entry was not observed firing"
+                         % (NOTICE_WAIT, FLAGGED_LINE, PATCH_FILES[1],
+                            ", ".join(kinds) or "none"))
     verdicts = await_gate(home, session)
     flag = trust_flag(home)
     if not verdicts:
@@ -1716,9 +1891,13 @@ def case_hook_composition(home):
             "patch, from one headless claude -p turn: its transcript records %s file-tool "
             "call(s) (%s), %s and %s exist afterwards, and the user hook's own log, written by "
             "the hook from the payload the client gave it, holds a PostToolUse line for each of "
-            "%s with that turn's session id. The harness's own evidence for the same session is "
-            "the stop gate's decision-log row, written by the harness coordinator on that turn's "
-            "Stop event (its PostToolUse leaves no row for a plain Write). Hook trust: no harness "
+            "%s with that turn's session id. The harness's own PostToolUse entry fired in the "
+            "same turn: its transcript carries the coordinator's notice \"%s\", in the hook "
+            "record the client tied to the Write of %s, a file holding a "
+            "line its tool-output scanner flags, and the harness coordinator also wrote the "
+            "stop gate's decision-log row on that turn's Stop event. The client has no "
+            "multi-file patch tool, so the multi-file patch is this one turn's two file-tool "
+            "writes, as step 4 of the procedure states. Hook trust: no harness "
             "trust list existed and no trust step was taken, yet both hooks ran in the headless "
             "turn, as their log lines show; the stop gate's logged verdict (answer/outcome) for "
             "that git workspace with a ## Gate block was %s, its gate ran 0 times, and %s. "
@@ -1727,7 +1906,7 @@ def case_hook_composition(home):
             "attributed to grade-bash by %s."
             % (USER_MATCHER, len(calls),
                ", ".join("%s %s" % (call["tool"], Path(call["file"]).name) for call in calls),
-               PATCH_FILES[0], PATCH_FILES[1], " and ".join(heard),
+               PATCH_FILES[0], PATCH_FILES[1], " and ".join(heard), notice, PATCH_FILES[1],
                " and ".join("%s/%s" % pair for pair in verdicts), trust_clause(flag), BYPASS_MODE,
                HOOK_SENTINEL, outcome, len(denials), "y" if len(denials) == 1 else "ies",
                ", ".join(tools) or "<unnamed>", HOOK_SENTINEL,
@@ -2444,6 +2623,43 @@ def reworded_refused(home, data, spawn, instructions, notes):
                                           % match["spawn"] if match else "matched no spawn in it")))
 
 
+def worker_state(home, printed, role):
+    """The routed run's worker record and its state directory, from what the run printed.
+
+    Raises AssertionError when the printed record names no run whose `status.json` exists under
+    the harness state home's workers directory: step 9 counts a run with no worker state written
+    as a failed case, never a passed review.
+    """
+    record = last_json_object(printed)
+    state = home.root / ".local" / "state" / "agent-harness" / "workers"
+    run_dir = state / str((record or {}).get("id") or "")
+    if record is None or not record.get("id") or not (run_dir / "status.json").is_file():
+        raise AssertionError("harness role run %s for the same layer wrote no isolated worker "
+                             "state under the harness state home's workers directory, so no "
+                             "routed review ran: %s"
+                             % (role, redact(printed[-300:], [home.root])))
+    return record, run_dir
+
+
+def missing_state_fails(home, printed, role, run_dir):
+    """Re-judge the routed run with its worker state moved aside; returns the refusal it drew.
+
+    The rule that a run with no worker state fails the case is otherwise only ever read on runs
+    that wrote it. Moving this run's own directory aside and judging the same printed record
+    exercises the rule on live output, and the directory is put back whatever happens.
+    """
+    aside = run_dir.with_name(run_dir.name + ".aside")
+    run_dir.rename(aside)
+    try:
+        worker_state(home, printed, role)
+    except AssertionError as error:
+        return str(error)
+    finally:
+        aside.rename(run_dir)
+    raise AssertionError("with its worker state moved aside, the routed %s run still read as a "
+                         "run that wrote worker state" % role)
+
+
 def routed_layer(home, data, spawn, instructions, notes):
     """Step 9's routed half: the same layer through `harness role run` writes worker state."""
     roots = [home.project / root for root in data.get("input_roots") or []
@@ -2457,14 +2673,10 @@ def routed_layer(home, data, spawn, instructions, notes):
                      % (REVIEW_FILE, layer_name(spawn), instructions))
     printed = role_run(home, spawn["role"], brief, *extra, expected=None)
     code = home.last_code
-    record = last_json_object(printed)
-    state = home.root / ".local" / "state" / "agent-harness" / "workers"
-    run_dir = state / str((record or {}).get("id") or "")
-    if record is None or not record.get("id") or not (run_dir / "status.json").is_file():
-        raise AssertionError(observed(notes, "harness role run %s for the same layer wrote no "
-                                      "isolated worker state under the harness state home's "
-                                      "workers directory, so no routed review ran: %s"
-                                      % (spawn["role"], redact(printed[-300:], [home.root]))))
+    try:
+        record, run_dir = worker_state(home, printed, spawn["role"])
+    except AssertionError as error:
+        raise AssertionError(observed(notes, str(error)))
     if record.get("status") == "timed-out":
         raise Unverified(observed(notes, "harness role run %s timed out, so no findings came "
                                   "back to read" % spawn["role"]))
@@ -2490,12 +2702,17 @@ def routed_layer(home, data, spawn, instructions, notes):
         raise AssertionError(observed(notes, "the %s worker completed but returned no findings "
                                       "about %s: %s" % (spawn["role"], REVIEW_FILE,
                                                         quoted(result[-300:]))))
+    try:
+        missing_state_fails(home, printed, spawn["role"], run_dir)
+    except AssertionError as error:
+        raise AssertionError(observed(notes, str(error)))
     notes.append("the same layer run the routed way, harness role run %s with %s as --read-dir, "
                  "exited 0 printing a worker record with mode isolated-cli and status completed, "
                  "wrote status.json and result.md in its own directory under the harness state "
                  "home's workers directory, recorded those input roots as read roots, and "
-                 "returned %s characters of findings naming %s (a run whose worker state is "
-                 "missing fails this case)"
+                 "returned %s characters of findings naming %s; with that run's state "
+                 "directory moved aside, the same printed record was judged a failed case, "
+                 "because a run whose worker state is missing fails this case"
                  % (spawn["role"], ", ".join(root.name for root in roots), len(result.strip()),
                     REVIEW_FILE if REVIEW_FILE in result.casefold() else REVIEW_SUBJECT))
 
@@ -2914,6 +3131,32 @@ def hand_edit_owned_setting(home):
     return path
 
 
+LIVE_ONLY = "live-only change: settings."
+
+
+def drift_named(output, key):
+    """The `harness diff` line reporting a live-only change to one settings key, or `""`."""
+    for line in output.splitlines():
+        if LIVE_ONLY + key + " " in line:
+            return line.strip().lstrip("- ")
+    return ""
+
+
+def drift_verdict(home, key):
+    """Read a hand edit as drift before anything is uninstalled; returns the line that named it.
+
+    Step 7 asks that drift preserves user data, and uninstall is not the only reader of drift:
+    `harness diff` must name the edited key and exit 1 while the harness is still installed.
+    """
+    output = home.harness("diff", expected=None)
+    line = drift_named(output, key)
+    if home.last_code != 1 or not line:
+        raise AssertionError("after the user changed the harness-owned %s by hand, harness diff "
+                             "exited %s without naming it as drift: %s"
+                             % (key, home.last_code, redact(output[-300:], [home.root])))
+    return line
+
+
 def case_migration_uninstall(home):
     """docs/compatibility.md step 7: adoption is refused until it is asked for, and reversed.
 
@@ -2936,7 +3179,15 @@ def case_migration_uninstall(home):
         raise AssertionError("the adopting sync dropped the user's own settings key")
     if before["skill"][0].read_bytes() != before["skill"][1]:
         raise AssertionError("the adopting sync rewrote the user's own skill")
+    clean = home.harness("diff", expected=None)
+    if drift_named(clean, HAND_EDIT_KEY[0]):
+        raise AssertionError("harness diff already reported %s as drift before any hand edit: %s"
+                             % (HAND_EDIT_KEY[0], redact(clean[-300:], [home.root])))
     edited = hand_edit_owned_setting(home)
+    drift = drift_verdict(home, HAND_EDIT_KEY[0])
+    if json.loads(edited.read_text()).get(HAND_EDIT_KEY[0]) != HAND_EDIT_VALUE:
+        raise AssertionError("harness diff changed the hand-edited %s it reported"
+                             % HAND_EDIT_KEY[0])
     removed = home.harness("uninstall", expected=2)
     if PRESERVED not in removed or HAND_EDIT_KEY[0] not in removed:
         raise AssertionError("harness uninstall did not report the hand-edited %s as preserved: "
@@ -2965,11 +3216,13 @@ def case_migration_uninstall(home):
     return ("harness sync without %s exited 2 and named the pre-existing rules/%s and the non-link "
             "instructions file without overwriting anything; %s then exited 0, kept the user's own "
             "settings key and left the user's own skill byte-identical; after the user changed the "
-            "harness-owned %s by hand, harness uninstall exited 2 reporting \"%s\" for it, kept "
+            "harness-owned %s by hand, harness diff, which had not named it before the edit, "
+            "exited 1 reporting \"%s\" and left the value as it was, then harness uninstall "
+            "exited 2 reporting \"%s\" for it, kept "
             "that value and the user's own key, restored every adopted file byte-identical, left "
             "no harness link under the client directory, and a native turn afterwards answered "
             "from the user's restored instructions."
-            % (ADOPT_HINT, LEGACY_RULE, ADOPT_HINT, HAND_EDIT_KEY[0], PRESERVED))
+            % (ADOPT_HINT, LEGACY_RULE, ADOPT_HINT, HAND_EDIT_KEY[0], drift, PRESERVED))
 
 
 CASES = {
@@ -2995,8 +3248,9 @@ CASES = {
                             "native turn asking for one file write then did"),
     "hook-composition": (case_hook_composition,
                          "merge a user-owned file-tool hook through a sync, run a two-file Write "
-                         "turn in an untrusted gated repository and read the user hook's log and "
-                         "the stop gate's logged verdict, then read the turn permission denials "
+                         "turn in an untrusted gated repository and read the user hook's log, "
+                         "the harness PostToolUse notice in the turn's transcript and the stop "
+                         "gate's logged verdict, then read the turn permission denials "
                          "of a grade-bash deny under an acknowledged bypass"),
     "role-confinement": (case_role_confinement,
                          "spawn a constrained role natively and read the refusal, run the same "
@@ -3010,12 +3264,13 @@ CASES = {
                           "command from the decision log and the tool result; require the brief "
                           "the model writes itself for the layer to be refused too; run the same "
                           "layer through harness role run and read its worker state and "
-                          "findings; and "
+                          "findings, then judge that run again with its state moved aside; and "
                           "spawn ordinary work mentioning review words and editing the "
                           "framework's input roots, which must still run"),
     "cost-posture": (case_cost_posture,
-                     "sync a non-default cost variant, spawn an unnamed subagent in a new native "
-                     "session, and read its meta record, brief, the usage feed and the usage rows"),
+                     "sync a non-default cost variant and read each role's link either side, "
+                     "spawn an unnamed subagent in a new native session, and read its meta "
+                     "record, the end of its brief, the usage feed and the usage rows"),
     "gate-invalidation": (case_gate_invalidation,
                           "trust a disposable repository with a gate that logs each run, and read "
                           "the hook's own state through reuse, invalidation, a bounded red block "
@@ -3025,8 +3280,9 @@ CASES = {
                               "stale revision, and continue it from the other runtime"),
     "migration-uninstall": (case_migration_uninstall,
                             "sync over a user's own files without and then with adoption, "
-                            "change a harness-owned setting by hand, uninstall, read that the "
-                            "edit was kept, and compare every restored file byte for byte"),
+                            "change a harness-owned setting by hand, read harness diff report it "
+                            "as drift, uninstall, read that the edit was kept, and compare every "
+                            "restored file byte for byte"),
 }
 
 
