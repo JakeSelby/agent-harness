@@ -183,6 +183,94 @@ def same_scope(declared, scope):
     return True
 
 
+def case_path_map(data):
+    """The catalog's validated case-to-path map, or `{}` when none is declared.
+
+    Every required case is a key, so adding a case forces a claim about it. A case's list names
+    the mapped source paths whose change can alter what that case observes; an empty list claims
+    the case depends on none of them. A changed file under no case's paths invalidates every case,
+    so the map fails closed. The rule and the argument for each entry are in docs/compatibility.md.
+    """
+    declared = (data.get("evidence_invalidation") or {}).get("case_paths")
+    if not declared:
+        return {}
+    version = declared.get("version") if isinstance(declared, dict) else None
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise ValueError("the case-to-path map requires a positive integer version")
+    cases, required = declared.get("cases"), data.get("required_cases") or []
+    if not isinstance(cases, dict) or set(cases) != set(required):
+        raise ValueError("the case-to-path map must name every required case and no other")
+    for case in sorted(cases):
+        paths = cases[case]
+        if not isinstance(paths, list) or len(set(map(str, paths))) != len(paths) \
+                or not all(mapped_path(path) for path in paths):
+            raise ValueError("the case-to-path map gives " + case + " a path that is not a "
+                             "literal file or directory under the runtime source")
+    return {"version": version, "cases": {case: sorted(cases[case]) for case in cases}}
+
+
+def mapped_path(path):
+    """Whether `path` is a literal repository path under one of the runtime source paths."""
+    if not isinstance(path, str) or not path or any(mark in path for mark in "*?[]\\"):
+        return False
+    parts = path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return False
+    return parts[0] in SOURCE_PATHS
+
+
+def case_map_identity(data):
+    """What a new evidence record states about the map it assumed, or None with no map.
+
+    The digest is what keeps the version honest: a map edited without a version bump no longer
+    matches the digest an older record carries, so that record falls back to the whole target.
+    """
+    declared = case_path_map(data)
+    if not declared:
+        return None
+    text = json.dumps(declared["cases"], sort_keys=True, separators=(",", ":"))
+    return {"version": declared["version"], "sha256": hashlib.sha256(text.encode()).hexdigest()}
+
+
+def under(changed, path):
+    return changed == path or changed.startswith(path + "/")
+
+
+def stale_cases(data, record, changed):
+    """The cases a record's changed files invalidate, as `{case: [files]}`, or None for all.
+
+    None means the whole record is stale: it states no map, a map other than the catalog's, or a
+    changed file lies under no case's paths.
+    """
+    identity = case_map_identity(data)
+    if identity is None or record.get("case_map") != identity:
+        return None
+    cases = case_path_map(data)["cases"]
+    stale = {}
+    for name in changed:
+        owners = [case for case, paths in cases.items() if any(under(name, path) for path in paths)]
+        if not owners:
+            return None
+        for case in owners:
+            stale.setdefault(case, []).append(name)
+    return {case: sorted(names) for case, names in stale.items()}
+
+
+def changed_files(root, commit, target, paths, carved):
+    """The files under `paths`, and under the carved-back `carved`, that differ between the two
+    commits, or None when git cannot say, which the caller treats as all of them."""
+    names = set()
+    for spec in (paths, carved):
+        if not spec:
+            continue
+        done = subprocess.run(["git", "-C", str(root), "diff", "--name-only", "--no-renames",
+                               commit, target, "--", *spec], capture_output=True, text=True)
+        if done.returncode:
+            return None
+        names.update(line for line in (done.stdout or "").splitlines() if line.strip())
+    return sorted(names)
+
+
 def catalog(root):
     data = json.loads((root / "compatibility" / "catalog.json").read_text())
     if data.get("schema_version") != 1:
@@ -193,6 +281,7 @@ def catalog(root):
     if len(identifiers) != len(set(identifiers)):
         raise ValueError("duplicate compatibility client")
     runtime_scopes(data)
+    case_path_map(data)
     target = qualification_source(data)
     if target != "HEAD":
         available = subprocess.run(["git", "-C", str(root), "cat-file", "-e", target + "^{commit}"],
@@ -213,7 +302,7 @@ def catalog(root):
 
 
 def evidence_errors(root, data, client):
-    errors, passed = [], set()
+    errors, passed, outdated = [], set(), {}
     target = qualification_source(data)
     scope = evidence_scope(data, client)
     if not client.get("runtime_version") or not client.get("client_version"):
@@ -258,12 +347,11 @@ def evidence_errors(root, data, client):
         # positive pattern, so the shared files inside an excluded directory need their own diff.
         carved = scope["shared"] if declared is not None else []
         ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", commit, target], capture_output=True)
-        unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target, "--",
-                                    *paths], capture_output=True)
-        if carved and not unchanged.returncode:
-            unchanged = subprocess.run(["git", "-C", str(root), "diff", "--quiet", commit, target,
-                                        "--", *carved], capture_output=True)
-        if ancestry.returncode or unchanged.returncode:
+        changed = None if ancestry.returncode else changed_files(root, commit, target, paths, carved)
+        # Per-case scoping narrows only within the target's path set, and only for a record that
+        # states the catalog's current map; anything else keeps the whole-target rule.
+        stale = {} if changed == [] else (stale_cases(data, record, changed) if changed else None)
+        if stale is None:
             errors.append("runtime source changed or evidence commit is unavailable")
             continue
         cases = record.get("cases")
@@ -273,12 +361,20 @@ def evidence_errors(root, data, client):
         for case, result in cases.items():
             if case not in data["required_cases"] or result not in ("passed", "failed", "unverified"):
                 errors.append("unknown acceptance case or result")
+            elif case in stale:
+                # The result describes source that has since changed under this case's paths, so
+                # it neither passes nor blocks; a rerun linked beside it answers for the case.
+                outdated.setdefault(case, set()).update(stale[case])
             elif result != "passed":
                 # Every linked record is part of the claim; another pass cannot hide a failure.
                 errors.append(case + " is " + result + " in linked evidence")
             else:
                 passed.add(case)
     missing = set(data["required_cases"]) - passed
+    for case in sorted(missing & set(outdated)):
+        errors.append(case + " is stale in linked evidence: source changed under "
+                      + ", ".join(sorted(outdated[case])))
+    missing -= set(outdated)
     if missing:
         errors.append("missing acceptance cases: " + ", ".join(sorted(missing)))
     return errors
