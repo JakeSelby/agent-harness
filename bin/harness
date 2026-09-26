@@ -3071,6 +3071,46 @@ def merged_head_refusal(repo: Path, branch: str, tip: str) -> Optional[str]:
     return f"local tip {tip[:12]} is not the merged head ({heads})"
 
 
+#: The BMad merge drivers `.gitattributes` names, keyed by driver name: (description, command).
+#: The command runs from the worktree's top level, so each checkout uses its own copy of the script.
+BMAD_MERGE_DRIVERS = {
+    "bmad-issue-map": ("BMad issue map", "python3 scripts/bmad_merge_driver.py map %O %A %B"),
+    "bmad-sprint-status": ("BMad sprint status", "python3 scripts/bmad_merge_driver.py sprint-status %O %A %B"),
+}
+
+
+def _git_common_dir(checkout: Path) -> Optional[Path]:
+    """The resolved shared git directory of `checkout`, or None outside a git checkout."""
+    out = _git(checkout, "rev-parse", "--git-common-dir", capture=True)
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    return (checkout / out.stdout.strip()).resolve()
+
+
+def register_bmad_merge_drivers(checkout: Path, harness_checkout: Optional[Path] = None) -> bool:
+    """Register the BMad merge drivers in this harness's own repository; returns whether config changed.
+
+    Only a checkout sharing `harness_checkout`'s git directory qualifies, so another repository
+    that ships a script of the same name never has its merges routed through it. Idempotent: a
+    key already holding its value is left alone. The config is the repository's, so every
+    worktree of it, and the main checkout, merges the issue map through the driver.
+    """
+    if not (checkout / "scripts" / "bmad_merge_driver.py").is_file():
+        return False
+    own = _git_common_dir(REPO if harness_checkout is None else harness_checkout)
+    if own is None or _git_common_dir(checkout) != own:
+        return False
+    changed = False
+    for name, (description, command) in BMAD_MERGE_DRIVERS.items():
+        for key, value in (("name", description), ("driver", command)):
+            current = _git(checkout, "config", "--get", f"merge.{name}.{key}", capture=True)
+            if current.returncode == 0 and current.stdout.rstrip("\n") == value:
+                continue
+            _git(checkout, "config", f"merge.{name}.{key}", value, capture=True)
+            changed = True
+    return changed
+
+
 def cmd_worktree(args: argparse.Namespace) -> int:
     repo = git_root(args.repo or ".")
     if args.action == "create":
@@ -3085,6 +3125,7 @@ def cmd_worktree(args: argparse.Namespace) -> int:
         branch = args.branch or args.name
         created = _git(repo, "worktree", "add", "-b", branch, str(dest), args.base, capture=True)
         if created.returncode == 0:
+            register_bmad_merge_drivers(dest)
             say(str(dest))
         elif created.stderr:
             say(created.stderr.strip())
