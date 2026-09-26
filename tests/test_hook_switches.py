@@ -27,7 +27,7 @@ posture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(posture)
 
 RUNTIMES = ("claude-code", "codex")
-LIBRARIES = {"decisions", "posture", "pricing", "telemetry", "rule-detectors", "otel-headers", "filter-lines"}
+LIBRARIES = {"adherence", "decisions", "posture", "pricing", "telemetry", "rule-detectors", "otel-headers", "filter-lines"}
 # Loaded for real: the resolver, the decision log, and the grader the inline Bash logic reads.
 REAL = {"posture", "decisions", "grade-bash"}
 FORCE_PUSH = "git push --force origin main"
