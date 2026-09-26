@@ -125,6 +125,8 @@ class MergeTests(Base):
                                else ("repository policy", self.repo_path))
                 self.assertEqual(answer.injected_cognition["rule_matches"][-1],
                                  "caps.coding.git_push = 1 (" + layer + " " + str(path) + ")")
+                self.assertIn("capped by caps.coding.git_push = 1 (" + layer + " " + str(path)
+                              + ")", answer.reason)
 
     def test_the_built_in_deploy_cap_still_applies_over_both_files(self):
         answer = self.decide(self.local(user={"defaults": {"coding.deploy": 3},
@@ -134,6 +136,7 @@ class MergeTests(Base):
         self.assertEqual((answer.outcome, answer.autonomy_level), ("ask", 2))
         self.assertEqual(answer.injected_cognition["rule_matches"][-1],
                          "caps.coding.deploy = 2 (built-in)")
+        self.assertIn("capped by caps.coding.deploy = 2 (built-in)", answer.reason)
 
     def test_merge_policies_reports_where_each_entry_came_from(self):
         merged, sources = decision.merge_policies([
@@ -249,6 +252,10 @@ class CommandTests(Base):
         self.assertIn("repository policy: ", joined)
         none = "\n".join(cli.governance_lines({}))
         self.assertIn("policy files: none read by provider none", none)
+        unknown = "\n".join(cli.governance_lines({"governance": {"provider": "nonesuch"}}))
+        self.assertIn("'nonesuch' is not a provider", unknown)
+        self.assertNotIn("user policy:", unknown)
+        self.assertEqual(cli.policy_files("nonesuch"), [])
 
 
 if __name__ == "__main__":

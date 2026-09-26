@@ -1913,13 +1913,18 @@ def jev_call_lines() -> List[str]:
             "    jev call detail: `harness usage --by provider` prices them per point and mode"]
 
 
+def known_providers() -> List[str]:
+    """Every provider name `governance.provider` may select, local and transport alike."""
+    return sorted(set(decisions_provider.PROVIDERS) | set(decisions_provider.TRANSPORT_PROVIDERS))
+
+
 def policy_files(name: str, root: Optional[Path] = None) -> List[Dict[str, Any]]:
     """The governance policy files provider `name` reads here, lowest precedence first.
 
     Empty for `none`, which reads no file. `local`, and `jev` over it, read the user-level file
     beside `config.json` and then this repository's `.agent-harness/governance.json`.
     """
-    if name == decisions_provider.NullProvider.name:
+    if name == decisions_provider.NullProvider.name or name not in known_providers():
         return []
     root = Path.cwd() if root is None else Path(root)
     files = [(decisions_provider.USER_LAYER, decisions_provider.user_policy_file()),
@@ -1930,6 +1935,9 @@ def policy_files(name: str, root: Optional[Path] = None) -> List[Dict[str, Any]]
 
 def policy_file_lines(name: str, root: Optional[Path] = None) -> List[str]:
     """One line per policy file the provider reads, for `decide` and `doctor`."""
+    if name not in known_providers():
+        return [f"    governance.provider {name!r} is not a provider; known providers are "
+                + ", ".join(known_providers()) + "; no policy file is read"]
     files = policy_files(name, root)
     if not files:
         return [f"    policy files: none read by provider {name}"]

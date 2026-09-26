@@ -574,15 +574,21 @@ class LocalProvider(DecisionProvider):
             origin = self._sources.get(source)
         matches.append(source + " = " + str(level) + (" (" + origin + ")" if origin else ""))
         cap = cap_for(name, policy)
+        capped = None
         if cap is not None and level > cap:
             file_cap = policy["caps"].get(name)
             cap_origin = (self._sources.get("caps." + name)
                           if file_cap is not None and file_cap == cap else BUILTIN_SOURCE)
-            matches.append("caps." + name + " = " + str(cap) + " (" + cap_origin + ")")
+            capped = "caps." + name + " = " + str(cap) + " (" + cap_origin + ")"
+            matches.append(capped)
             level = cap
         grade = action.effective_grade()
         outcome = outcome_for(level, grade)
         described = source + (" in " + origin if origin else "")
+        if capped:
+            # The level reported is the cap's, so the reason names the cap, not only the rule
+            # it lowered.
+            described += ", capped by " + capped
         reason = ("governance: local, level %d, grade %s -> %s (%s)"
                   % (level, "unknown" if action.grade is None else str(grade), outcome,
                      described))
