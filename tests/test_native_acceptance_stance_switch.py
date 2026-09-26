@@ -209,6 +209,16 @@ class Cases(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "HARNESS_STANCE_PROOF=plain closed TAGGED"):
             MODULE.case_custom_stance(home)
 
+    def test_a_plain_session_turn_without_the_hooks_line_is_unverified(self):
+        home = self.home()
+        carried = home.orchestrator_text
+        home.orchestrator_text = lambda sid: "" if [t for t in home.turns if t["id"] == sid][0]["session"] \
+            else carried(sid)
+        with self.assertRaises(MODULE.Unverified) as caught:
+            MODULE.case_custom_stance(home)
+        self.assertIn("did not carry", str(caught.exception))
+        self.assertIn("through the session hook", str(caught.exception))
+
     def test_an_override_the_turn_ignores_fails(self):
         home = self.home(obey_override=False)
         with self.assertRaisesRegex(AssertionError, "closed TAGGED like the turn outside"):

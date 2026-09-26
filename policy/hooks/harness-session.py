@@ -99,6 +99,7 @@ def override_lines(config):
 ALWAYS_LOADED_TOKEN_CAP = 12607 // 3 + 620
 CHARS_PER_TOKEN = 4.0
 STANCE_LINKS = "/rules/harness-stances/"
+ROOT_RULE_LINKS = "/rules/harness-roots/"  # a `primitive_roots` rule, linked beside the checkout's
 
 
 def est_tokens(text):
@@ -112,7 +113,7 @@ def synced_stances(manifest, config):
 
 
 def synced_tokens(repo, manifest):
-    """Estimated tokens the sync made always-loaded: instructions, rules it linked, stance links."""
+    """Estimated tokens the sync made always-loaded: instructions, rules, root rules and stances."""
     def read(path):
         try:
             return Path(path).read_text(encoding="utf-8")
@@ -124,7 +125,7 @@ def synced_tokens(repo, manifest):
     total = est_tokens(read(claude / "CLAUDE.md"))
     total += sum(est_tokens(read(p)) for p in sorted((claude / "rules").glob("*.md")) if p.stem not in off)
     total += sum(est_tokens(read(link.get("target", ""))) for link in (manifest or {}).get("links") or []
-                 if STANCE_LINKS in str(link.get("path", "")))
+                 if STANCE_LINKS in str(link.get("path", "")) or ROOT_RULE_LINKS in str(link.get("path", "")))
     return total
 
 

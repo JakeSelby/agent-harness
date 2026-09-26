@@ -1360,6 +1360,12 @@ def session_override(home, variants):
         raise Unverified("the turn started with %s=plain closed %s, not PLAIN, so the session "
                          "selection was not observed; %s"
                          % (SESSION_VARIABLE, word or "<nothing>", context))
+    if not carried:
+        # A PLAIN reply alone could come from anywhere; the hook's line is what shows the session
+        # selection reached the client by the path under test.
+        raise Unverified("the turn started with %s=plain closed PLAIN, but %s, so nothing shows "
+                         "the session selection reached the client through the session hook"
+                         % (SESSION_VARIABLE, context))
     return ("a fresh turn started with %s=plain and no project file closed PLAIN (%s), with the "
             "global proof link unmoved" % (SESSION_VARIABLE, context))
 

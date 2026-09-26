@@ -101,6 +101,24 @@ class Injection(unittest.TestCase):
     def test_the_synced_layer_counts_linked_rules_and_stances_but_not_switched_off_ones(self):
         self.assertEqual(HOOK.synced_tokens(self.repo, self.manifest), 100 + 200 + 50)
 
+    def test_an_installed_root_rule_counts_against_the_budget(self):
+        root_rule = self.repo / "root-rule.md"
+        root_rule.write_text("r" * 4000)
+        before = HOOK.synced_tokens(self.repo, self.manifest)
+        budget = HOOK.ALWAYS_LOADED_TOKEN_CAP - before
+        text = "x" * int((budget - 600) * HOOK.CHARS_PER_TOKEN)
+        out = resolved(testing=("off", text), voice=("concise", "C"))
+        env = clean_env(HARNESS_STANCE_TESTING="off")
+        fits, _ = self.run_hook(out, env)
+        self.assertTrue(fits[0].endswith(text))
+        self.manifest["links"].append({"path": "/h/.claude/rules/harness-roots/mine/extra.md",
+                                       "target": str(root_rule)})
+        self.assertEqual(HOOK.synced_tokens(self.repo, self.manifest), before + 1000)
+        lines, _ = self.run_hook(out, env)
+        self.assertIn("does not fit what is left of the always-loaded budget", lines[0])
+        self.assertLessEqual(sum(HOOK.est_tokens(line) for line in lines),
+                             HOOK.ALWAYS_LOADED_TOKEN_CAP - before - 1000)
+
     def test_no_selection_costs_nothing_and_runs_nothing(self):
         lines, calls = self.run_hook(resolved(testing=("off", "OFF TEXT")), clean_env())
         self.assertEqual((lines, calls), ([], []))
