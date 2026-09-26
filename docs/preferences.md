@@ -116,10 +116,15 @@ rule about repositories, tests or pull requests simply does not apply when the t
 work, and the always-loaded preamble says so.
 
 Env overrides win over the file: `HARNESS_STANCE_LICENSING=open-source`,
-`HARNESS_STANCE_COMMITS=off`. At sync time the env value is what gets linked. At session start
-the `harness-session.py` hook compares the environment with the synced config and injects one
-line of context for any difference, so `HARNESS_STANCE_TESTING=off claude` works for one
-session without a re-sync.
+`HARNESS_STANCE_COMMITS=off`. Such a variable is a session selection: `citizen stances` and the
+hooks resolve it, but a sync never links it, and keeps linking your user-level variant with a
+notice that project and session selections stay in the session. At session start the
+`harness-session.py` hook compares the resolved selection with the synced one and injects the
+differing variant's text, within the always-loaded budget
+([synchronization](sync-model.md#project-and-session-stance-selections)), so
+`HARNESS_STANCE_TESTING=off claude` works for one session without a re-sync. For the same reason
+`citizen diff` compares the links against your user-level selection, so a session selection is
+not drift, and `citizen diff` can report none while `citizen stances` shows the session's variant.
 
 The `plan-ceremony` stance also decides whether the plan-card validator runs. Registration is
 unconditional — one coordinator per lifecycle event, as in
