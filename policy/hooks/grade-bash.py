@@ -48,7 +48,6 @@ import importlib.util
 import json
 import os
 import re
-import shlex
 import sys
 from pathlib import Path
 
@@ -389,10 +388,7 @@ def segments(text):
     tokenize."""
     text = " ; ".join(text.split("\n"))
     try:
-        lex = shlex.shlex(text, posix=True, punctuation_chars=True)
-        lex.commenters = ""
-        lex.whitespace_split = True
-        tokens = list(lex)
+        tokens = ro.tokenize(text)
     except ValueError:
         return None
     out, cur, skipping = [], [], False
