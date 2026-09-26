@@ -6735,6 +6735,19 @@
       "provenance": "authored"
     },
     {
+      "bmad_id": "AH-B110",
+      "github_number": 898,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/898",
+      "title": "Policy-file guard gates commands that only mention a policy path",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B110.md",
+      "parent_bmad_id": null,
+      "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
       "bmad_id": "AH-B111",
       "github_number": 899,
       "github_url": "https://github.com/JakeSelby/model-citizen/issues/899",
