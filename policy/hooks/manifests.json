@@ -86,6 +86,18 @@
       "dependencies": [],
       "conflicts": []
     },
+    "intent-overlap": {
+      "claims": [
+        "Warns on an edit to a path a live sibling session has claimed, and denies a repeat under the default variant."
+      ],
+      "surface": [
+        "hook-events"
+      ],
+      "instruments": [],
+      "slot": null,
+      "dependencies": [],
+      "conflicts": []
+    },
     "neutralize-tool-output": {
       "claims": [
         "Flags instruction-shaped text arriving in tool output, so it is read as data rather than obeyed."

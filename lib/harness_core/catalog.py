@@ -15,8 +15,9 @@ IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
 # runtimes' adapters dispatch through `lifecycle.py`, so this one list is every runtime's hook ids;
 # a module the other `policy/hooks/` files load as a library has no id and no switch.
 HOOK_IDS = ("allow-plan-webfetch", "allow-readonly-bash", "approvals", "brief-guard", "filter-output",
-            "grade-bash", "harness-session", "neutralize-tool-output", "stage-user-files", "stop-gate",
-            "tier-agent-spawns", "usage-feed", "usage-log", "validate-plan-card")
+            "grade-bash", "harness-session", "intent-overlap", "neutralize-tool-output",
+            "stage-user-files", "stop-gate", "tier-agent-spawns", "usage-feed", "usage-log",
+            "validate-plan-card")
 # The hooks that enforce rather than assist: `off` only with `core_switches_acknowledged` true.
 CORE_HOOKS = ("brief-guard", "grade-bash", "neutralize-tool-output", "stop-gate")
 HOOKS_DIRECTORY = "policy/hooks"
