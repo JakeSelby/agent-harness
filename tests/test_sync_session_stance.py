@@ -72,5 +72,12 @@ class SyncWithSessionStance(unittest.TestCase):
         self.assertNotIn("scope", diff.stdout)
 
 
+    def test_an_identity_override_alone_prints_no_scope_line(self):
+        synced = self.cli({}, "sync")
+        self.assertEqual(synced.returncode, 0, synced.stdout + synced.stderr)
+        diff = self.cli({"HARNESS_IDENTITY_NAME": "Someone"}, "diff")
+        self.assertEqual(diff.returncode, 0, diff.stdout + diff.stderr)
+        self.assertNotIn("scope", diff.stdout)
+
 if __name__ == "__main__":
     unittest.main()

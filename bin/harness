@@ -324,6 +324,8 @@ def say(msg: str) -> None:
 
 # The environment a session scopes its own selection with; sync projects user defaults without it.
 SESSION_SCOPED = ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG", "HARNESS_MODE", "HARNESS_PERMISSIONS")
+#: The session-scoped layers that choose stance variants; identity and permissions choose none.
+SELECTION_SCOPED = ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG", "HARNESS_MODE")
 
 
 def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
@@ -335,6 +337,12 @@ def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     env = os.environ if env is None else env
     return {key: value for key, value in env.items()
             if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_")) and key not in SESSION_SCOPED}
+
+
+def selection_override(env: Optional[Dict[str, str]] = None) -> bool:
+    """Whether `env` chooses a stance for this project or session, which a sync never links."""
+    env = os.environ if env is None else env
+    return any(key.startswith("HARNESS_STANCE_") or key in SELECTION_SCOPED for key in env)
 
 
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -1990,7 +1998,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
     lines = _diff_lines()
     # Drift is measured against what a sync would link, the user's layers. A project or session
     # selection is never linked, so `citizen stances` can differ here with nothing drifting.
-    if not args.quiet and len(user_defaults_env()) != len(os.environ):
+    if not args.quiet and selection_override():
         say("  scope   diff compares the user defaults; a project or session selection is not drift")
     if not lines:
         if not args.quiet:
