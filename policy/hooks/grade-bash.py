@@ -38,6 +38,17 @@ Behaviour:
     message, and the same command, with no marker, then passes once in that session within
     thirty minutes. The approval is consumed here, at the point the hook would deny. A Bash command that writes to
     the approvals store grades 3, so the agent cannot record an approval of its own.
+  - When `governance.provider` names a decision provider other than `none`, a command the stance
+    lets through is put to it as well (`govern`): each simple command is classified as
+    `coding.git_push`, `coding.git_commit`, `coding.pr_merge`, `coding.deploy` or
+    `coding.shell_exec`, its counterparty is the repository and branch of the directory it runs in
+    (a `git -C <dir>` and an earlier `cd <dir>` move it), and the strictest answer across the
+    segments stands. The provider only tightens: its `ask` is emitted through the same mode split
+    and approval channel as the grader's, and it is never asked about a command the grader
+    already gates. A configured provider that raises asks, naming the error, rather than allows,
+    and a write to a governance policy file is always asked about, as a level-1 action. Each
+    decision is one `governance` row in the decision log. Under `none` nothing is imported and
+    the output is exactly the stance's.
   - Never raises: a missing sibling grammar and any unexpected error are a silent exit 0, so a
     fault here can only cost a prompt that native would not have shown either. The one thing it
     will not guess at is the stance, above.
@@ -951,6 +962,297 @@ def deny_tail(mode, session_id, command):
     return APPROVAL_TAIL % code if code else DENY_TAIL
 
 
+# ------------------------------------------------------------------ governance
+
+GOVERNANCE_POINT = "governance"
+NO_PROVIDER = "none"
+PUSH, COMMIT, MERGE = "coding.git_push", "coding.git_commit", "coding.pr_merge"
+DEPLOY, SHELL, FILE_WRITE = "coding.deploy", "coding.shell_exec", "coding.file_write"
+# A deploy is the grader's `deploy` family plus the preview deploys and stack deploys it grades
+# under another family, so a policy on `coding.deploy` covers every verb the grader knows ships.
+DEPLOY_VERBS = ("vercel deploy", "netlify deploy", "cdk deploy")
+RANK = {"allow": 0, "ask": 1, "deny": 2}
+POLICY_NAME = "governance.json"
+POLICY_DIR = ".agent-harness"
+# Either policy file named in a command that is not read-only is a write to it: the repository's
+# `.agent-harness/governance.json` and the user's `.config/agent-harness/governance.json`.
+POLICY_RE = re.compile(r"agent-harness[/\\]+governance\.json")
+# Programs every operand of which may be a path they write, move or remove.
+PATH_WRITERS = {"tee", "cp", "mv", "install", "ln", "rm", "unlink", "truncate", "touch", "rsync",
+                "shred", "dd"}
+IN_PLACE = {"sed", "gsed", "perl", "ruby"}
+POLICY_LEVEL = 1
+FILE_APPROVAL_TAIL = (" Nothing can prompt in this permission mode, so the edit was refused rather"
+                      " than asked about. Stop, say in chat what the edit changes, and ask the user,"
+                      " if they agree, to reply with exactly `approve %s` as the whole message."
+                      " After that reply, make exactly the same edit again: the approval covers it"
+                      " once, in this session, for thirty minutes.")
+FILE_DENY_TAIL = (" Nothing can prompt in this permission mode, so the edit was refused. Ask the"
+                  " user to make this change to the policy file themselves.")
+
+
+def _config():
+    """The user configuration, found as `posture.py` finds it; `{}` when it cannot be read."""
+    home = os.environ.get("HARNESS_HOME") or os.environ.get("HOME") or str(Path.home())
+    try:
+        data = json.loads((Path(home) / ".config" / "agent-harness" / "config.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def provider_name(config):
+    """The provider `governance.provider` names, read as `decision.select_provider` reads it."""
+    block = config.get("governance")
+    name = block.get("provider") if isinstance(block, dict) else None
+    return name if isinstance(name, str) and name.strip() else NO_PROVIDER
+
+
+def _decision_module():
+    """`harness_core.decision`, imported only once a provider is configured."""
+    lib = str(Path(__file__).resolve().parents[2] / "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    return importlib.import_module("harness_core.decision")
+
+
+def _resolve(target, cwd):
+    """`target` as an absolute path, relative to `cwd`, with `~` and `$HOME` expanded."""
+    path = _expand(target)
+    if not path:
+        return cwd
+    return path if os.path.isabs(path) else os.path.normpath(os.path.join(cwd or os.getcwd(), path))
+
+
+def _user_policy():
+    home = os.environ.get("HARNESS_HOME") or os.environ.get("HOME") or str(Path.home())
+    return os.path.join(home, ".config", "agent-harness", POLICY_NAME)
+
+
+def is_policy_file(path):
+    """Whether `path` is a governance policy file: any repository's or the user's."""
+    try:
+        real = os.path.realpath(os.path.expanduser(str(path)))
+        user = os.path.realpath(_user_policy())
+    except (OSError, ValueError):
+        return False
+    if os.path.basename(real) != POLICY_NAME:
+        return False
+    return real == user or os.path.basename(os.path.dirname(real)) == POLICY_DIR
+
+
+def _git_dir(args, cwd):
+    """(the directory a git command runs in, after each `-C <dir>`, and its subcommand)."""
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in GIT_VALUE_GLOBALS and i + 1 < len(args):
+            if a == "-C":
+                cwd = _resolve(args[i + 1], cwd)
+            i += 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        break
+    return cwd, (args[i] if i < len(args) else "")
+
+
+def _written(prog, args, targets, cwd):
+    """The resolved paths one simple command may write, move or remove."""
+    paths = [t for t in targets if t and not t.isdigit() and t != "/dev/null"]
+    if prog in PATH_WRITERS:
+        paths.extend(operands(args))
+        paths.extend(a.split("=", 1)[1] for a in args if a.startswith("of="))
+    if prog in IN_PLACE and (short(args, "i") or has(args, "--in-place")):
+        paths.extend(operands(args))
+    return [_resolve(p, cwd) for p in paths]
+
+
+def _governed(tokens, cwd, depth):
+    """[(action class, grade, directory, paths written)] for one simple command.
+
+    Wrappers, runners, `sudo` and a shell's `-c` text are looked through, as the grader looks
+    through them, and the inner command is governed at the higher of the two grades."""
+    grade, verb, _target, family = grade_tokens(list(tokens), cwd, depth)
+    body, targets = _redirects(list(tokens))
+    while body and ASSIGN_RE.match(body[0]):
+        body = body[1:]
+    if not body:
+        return [(SHELL, grade, cwd, _written("", [], targets, cwd))]
+    prog, args = body[0].rpartition("/")[2], body[1:]
+    ops = operands(args)
+    written = _written(prog, args, targets, cwd)
+    inner = None
+    if depth < MAX_DEPTH:
+        if prog in WRAPPERS:
+            rest = strip_options(args, WRAPPERS[prog])
+            while rest and ASSIGN_RE.match(rest[0]):
+                rest = rest[1:]
+            inner = ("tokens", rest[1:] if prog == "timeout" else rest)
+        elif prog in SUDO:
+            inner = ("tokens", strip_options(args, SUDO[prog]))
+        elif (prog, ops[0] if ops else "") in RUNNERS:
+            rest = args[args.index(ops[0]) + 1:]
+            while rest and (rest[0].startswith("-") or ASSIGN_RE.match(rest[0])):
+                rest = rest[1:]
+            inner = ("tokens", rest)
+        elif prog in SHELLS:
+            for i, a in enumerate(args):
+                if DASH_C_RE.match(a) and i + 1 < len(args):
+                    inner = ("text", args[i + 1])
+                    break
+        elif prog == "eval":
+            inner = ("text", " ".join(args))
+    if inner is not None and inner[1]:
+        if inner[0] == "tokens":
+            found = _governed(inner[1], cwd, depth + 1)
+        else:
+            found = governed_text(inner[1], cwd, depth + 1)
+        if found:
+            return [(c, max(g, grade), d, w + written) for c, g, d, w in found]
+    if prog == "git":
+        where, sub = _git_dir(args, cwd)
+        return [({"push": PUSH, "commit": COMMIT}.get(sub, SHELL), grade, where, written)]
+    if prog == "gh" and ops[:2] == ["pr", "merge"]:
+        return [(MERGE, grade, cwd, written)]
+    if family == "deploy" or verb in DEPLOY_VERBS:
+        return [(DEPLOY, grade, cwd, written)]
+    return [(SHELL, grade, cwd, written)]
+
+
+def governed_text(cmd, cwd, depth=0):
+    """[(action class, grade, directory, paths written)] for every simple command in `cmd`, in
+    order, or None when the text does not decompose. A `cd <dir>` moves the directory of the
+    commands after it, so `cd ../other && git push` is a push from `../other`."""
+    if depth >= MAX_DEPTH:
+        return None
+    text, _bodies = normalize(cmd)
+    stripped, inners = _extract_subs(text)
+    parts = segments(stripped) if stripped is not None else None
+    if parts is None:
+        return None
+    found = []
+    for inner in inners:
+        found.extend(governed_text(inner, cwd, depth + 1)
+                     or [(SHELL, _scan(inner)[0], cwd, [])])
+    here = cwd
+    for tokens in parts:
+        body, _targets = _redirects(list(tokens))
+        while body and ASSIGN_RE.match(body[0]):
+            body = body[1:]
+        if body and body[0] == "cd":
+            ops = operands(body[1:])
+            if ops[:1] != ["-"]:
+                here = _resolve(ops[0] if ops else "~", here)
+            continue
+        found.extend(_governed(tokens, here, depth))
+    return found
+
+
+_LEDGER = []
+
+
+def _log(action_class, slug, level, grade, outcome, provider, event, runtime,
+         error=None):
+    """One `governance` row: the class, counterparty, level, grade and outcome, never the text."""
+    if not _LEDGER:
+        _LEDGER.append(_sibling("decisions.py", "grade_bash_decisions"))
+    module = _LEDGER[0]
+    if module is None:
+        return
+    detail = {"action": action_class, "counterparty": slug, "level": level, "grade": grade,
+              "outcome": outcome, "provider": provider}
+    if error:
+        detail["error"] = error
+    module.record(GOVERNANCE_POINT, outcome, json.dumps(detail, sort_keys=True), event or {},
+                  runtime)
+
+
+def _policy_hits(command, found):
+    hits = sorted(set(p for entry in found for p in entry[3] if is_policy_file(p)))
+    if not hits:
+        match = POLICY_RE.search(command)
+        if match:
+            hits = [match.group(0)]
+    return hits
+
+
+def govern(command, cwd, grade, variant, event=None, runtime=""):
+    """What the decision provider adds to a command the grader lets through.
+
+    None when nothing is added: provider `none`, a grade-0 command, or a provider that allows.
+    Otherwise `(outcome, sentence)`, `ask` or `deny`, the sentence naming the class, counterparty,
+    level and its source. Tighten-only by construction: the caller asks this only when its own
+    answer is to let the command through. A configured provider that cannot answer is an ask
+    naming the error, never an allow."""
+    config = _config()
+    name = provider_name(config)
+    if name == NO_PROVIDER or not grade:
+        return None
+    cwd = cwd or os.getcwd()
+    try:
+        found = governed_text(command, cwd)
+    except Exception:
+        found = None
+    if not found:
+        found = [(SHELL, grade, cwd, [])]
+    hits = _policy_hits(command, found)
+    if hits:
+        _log(FILE_WRITE, None, POLICY_LEVEL, grade, "ask", name, event, runtime)
+        return "ask", ("Governance: this writes the governance policy file %s, which is level %d:"
+                       " every change to it needs the user's explicit yes." % (", ".join(hits),
+                                                                             POLICY_LEVEL))
+    worst = None
+    try:
+        decision = _decision_module()
+        places, providers = {}, {}
+        for action_class, level_grade, where, _written_paths in found:
+            if level_grade <= 0:
+                continue
+            if where not in places:
+                places[where] = decision.locate(where)
+            slug, top = places[where]
+            root = top or where
+            if root not in providers:
+                providers[root] = decision.select_provider(config, root=root, variant=variant)
+            answer = providers[root].decide(decision.Action(action_class, level_grade), slug)
+            if answer.outcome not in RANK:
+                raise decision.PolicyError("provider %s answered %r, not allow, ask or deny"
+                                           % (name, answer.outcome))
+            _log(action_class, slug, answer.autonomy_level, level_grade, answer.outcome,
+                 answer.provider, event, runtime)
+            if answer.outcome != "allow" and (worst is None
+                                              or RANK[answer.outcome] > RANK[worst[0]]):
+                worst = (answer.outcome, "Governance: %s on %s is level %d (%s)."
+                         % (action_class, slug, answer.autonomy_level, answer.reason))
+    except Exception as exc:
+        error = "%s: %s" % (type(exc).__name__, exc)
+        _log(None, None, None, grade, "ask", name, event, runtime, error=type(exc).__name__)
+        return "ask", ("Governance: provider %s could not answer, so this asks rather than runs"
+                       " (%s)." % (name, error))
+    return worst
+
+
+def govern_file(tool, tool_input, paths, event=None, runtime=""):
+    """`(subject, sentence)` for a file-tool write to a governance policy file, or None.
+
+    Only when a provider other than `none` is configured. `subject` is what an approval code
+    names: the tool and its exact input, so an approval covers that one edit."""
+    name = provider_name(_config())
+    if name == NO_PROVIDER:
+        return None
+    hits = sorted(p for p in paths if is_policy_file(p))
+    if not hits:
+        return None
+    _log(FILE_WRITE, None, POLICY_LEVEL, 1, "ask", name, event, runtime)
+    subject = tool + "\n" + json.dumps(tool_input, sort_keys=True)
+    return subject, ("Governance: this edits the governance policy file %s, which is level %d:"
+                     " every change to it needs the user's explicit yes." % (", ".join(hits),
+                                                                           POLICY_LEVEL))
+
+
 def main():
     if ro is None:
         return  # no grammar, no grading: fall through to the normal permission flow
@@ -973,11 +1275,20 @@ def main():
     variant, label = stance()
     threshold = THRESHOLDS.get(variant, THRESHOLDS[DEFAULT_STANCE])
     grade, verb, target, family = grade_text(command, payload.get("cwd") or "")
-    if grade < threshold or grade == 0:
+    if grade == 0:
         return
     text = reason(grade, verb, target, family, label)
+    decision = "ask"
+    if grade < threshold:
+        governed = govern(command, payload.get("cwd") or "", grade, variant, payload)
+        if governed is None:
+            return
+        decision, sentence = governed
+        text = text + " " + sentence
     mode, session_id = payload.get("permission_mode"), payload.get("session_id")
-    if mode in DENY_MODES:
+    if decision == "deny":
+        emit("deny", text)
+    elif mode in DENY_MODES:
         if approved(mode, session_id, raw):
             return
         emit("deny", text + deny_tail(mode, session_id, raw))

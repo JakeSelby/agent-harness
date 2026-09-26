@@ -656,6 +656,31 @@ def _encode_pre(runtime, original, normalized, results):
     return {"hookSpecificOutput": fields} if len(fields) > 1 else {}
 
 
+def policy_file_result(runtime, event):
+    """The answer to a file-tool write to a governance policy file, or None.
+
+    Asked about in a prompting mode. Where nothing can prompt it is refused, and in Claude
+    Code's auto mode the refusal names an approval code for that exact edit, which the user's
+    `approve <code>` reply lets through once, as it does a Bash command `grade-bash` refused.
+    """
+    grader = load("grade-bash")
+    guarded = grader.govern_file(event["tool_name"], event["tool_input"], patch_paths(event),
+                                 event, runtime)
+    if guarded is None:
+        return None
+    subject, sentence = guarded
+    mode, session = event.get("permission_mode"), event.get("session_id")
+    if runtime != "codex" and mode not in grader.DENY_MODES:
+        return {"hookSpecificOutput": {"permissionDecision": "ask",
+                                       "permissionDecisionReason": sentence}}
+    code = grader.approval_code(mode, session, subject) if runtime == "claude-code" else None
+    if code is not None and grader.approved(mode, session, subject):
+        return None
+    tail = grader.FILE_APPROVAL_TAIL % code if code else grader.FILE_DENY_TAIL
+    return {"hookSpecificOutput": {"permissionDecision": "deny",
+                                   "permissionDecisionReason": sentence + tail}}
+
+
 def patch_paths(event):
     inputs = event["tool_input"]
     paths = [inputs.get("file_path"), inputs.get("path")]
@@ -695,6 +720,12 @@ def _dispatch(runtime, payload):
             forged = load("approvals").file_write_deny(patch_paths(event))
             if forged is not None:
                 results.append(forged)
+            else:
+                # A governance policy file is edited only with the user's yes, each time: the
+                # provider reads it, so the agent it governs must not grant itself a level.
+                guarded = policy_file_result(runtime, event)
+                if guarded is not None:
+                    results.append(guarded)
         # Only a rewrite: the plan-mode approval below still answers for this tool.
         if tool == "SendUserFile" and runtime == "claude-code":
             results.append(invoke("stage-user-files", event))
@@ -712,7 +743,17 @@ def _dispatch(runtime, payload):
                 command, confirmed = grader.strip_marker(command)
                 grade, verb, target, family = grader.grade_text(command, event.get("cwd", ""))
             asked = grading and bool(grade) and not confirmed and grade >= grader.THRESHOLDS.get(variant, 1)
-            if asked:
+            # The decision provider, when one is configured, is asked only about what the stance
+            # lets through, so it can add a prompt and never remove one.
+            governed = None
+            if grading and bool(grade) and not confirmed and not asked:
+                governed = grader.govern(command, event.get("cwd", ""), grade, variant, event, runtime)
+                asked = governed is not None
+            if asked and governed is not None and governed[0] == "deny":
+                results.append({"hookSpecificOutput": {"permissionDecision": "deny",
+                    "permissionDecisionReason": grader.reason(grade, verb, target, family, variant)
+                    + " " + governed[1]}})
+            elif asked:
                 mode, session = event.get("permission_mode"), event.get("session_id")
                 decision = "deny" if runtime == "codex" or mode in grader.DENY_MODES else "ask"
                 # Codex raises no UserPromptSubmit, so only Claude Code's auto mode can carry an
@@ -722,6 +763,8 @@ def _dispatch(runtime, payload):
                     asked, confirmed = False, True
                 else:
                     why = grader.reason(grade, verb, target, family, variant)
+                    if governed is not None:
+                        why += " " + governed[1]
                     code = grader.approval_code(mode, session, raw) if channel else None
                     results.append({"hookSpecificOutput": {"permissionDecision": decision,
                         "permissionDecisionReason": why + (grader.APPROVAL_TAIL % code if code else "")}})

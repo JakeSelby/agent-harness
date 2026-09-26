@@ -124,7 +124,9 @@ approvals and may be a no-op. The shape deliberately mirrors the `decide`/`recor
 of an external control plane, so a hosted provider can be added later without a second contract.
 An action names a class — `coding.shell_exec`, `coding.git_commit`, `coding.git_push`,
 `coding.deploy`, `coding.file_write`, `coding.pr_merge` — and the command grade where one is known. A counterparty is
-the `repo:<name>/<branch>` slug the usage ledger already derives.
+a `repo:<name>/<branch>` slug. `<name>` is the repository's, read from its common git directory, so
+a linked worktree in a directory named for its task names the repository it belongs to; the usage
+ledger's `repo` field keeps the worktree directory's name.
 
 Two providers ship. `none` is the default: every action is allowed at level 3 with the reason
 `governance: none`, and no policy file is read. `local` reads two policy files in one schema
@@ -298,8 +300,42 @@ evaluation cannot send a field a hook is not allowed to send.
 [--grade N] [--counterparty <slug>] [--json]` prints the decision for the current repository and
 the policy files it read, each marked present or absent; `harness doctor` lists the same files
 under the governance provider.
-Nothing consults a provider yet: command grading still answers the permission question on its own,
-and binding the two is separate work.
+
+### How command grading consults the provider
+
+`grade-bash` consults the selected provider for every Bash command the autonomy stance lets
+through, and only when `governance.provider` is not `none`. Under `none` it imports nothing and
+its output is exactly what the stance alone gives.
+
+- **Classification.** Each simple command in the line is classified: `git push` is
+  `coding.git_push`, `git commit` is `coding.git_commit`, `gh pr merge` is `coding.pr_merge`, a
+  deploy verb the grader knows (its `deploy` family, `vercel deploy`, `netlify deploy`,
+  `cdk deploy`) is `coding.deploy`, and anything else is `coding.shell_exec`. Wrappers, runners,
+  `sudo` and a shell's `-c` text are looked through as the grader looks through them. A
+  read-only command, grade 0, is not put to the provider, since no level asks at grade 0.
+- **Counterparty.** Each command's counterparty is the repository and branch of the directory it
+  runs in: a `git -C <dir>` moves it for that command, and a `cd <dir>` earlier in the line moves
+  it for the commands after it. The repository policy read is that repository's own
+  `.agent-harness/governance.json`.
+- **Tighten-only.** The provider is asked with the command's grade, and the strictest answer
+  across the segments stands. It is never asked about a command the stance already gates, so it
+  can add a prompt and never remove one. An `ask` is an ask in a prompting mode and, in `auto` and
+  `bypassPermissions`, a deny through the same channel the grader uses: an approval code in
+  `auto`, which the user's `approve <code>` reply lets through once, and the confirm marker in
+  `bypassPermissions`. A provider `deny` is a deny in every mode. The reason names the class, the
+  counterparty, the level and the rule or file that supplied it.
+- **Fail closed.** A configured provider that cannot answer — an unknown provider name, a policy
+  file that raises `PolicyError`, any other exception — makes the command ask, naming the error.
+  It never falls back to allow.
+- **Policy files.** An agent write to the user-level `governance.json` or to any
+  `.agent-harness/governance.json` is a level-1 action: always asked about. A Bash command that is
+  not read-only and names either file, or writes one through a redirect, `tee`, `sed -i`,
+  `cp`, `mv` or a similar path writer, asks; a `Write`, `Edit`, `MultiEdit`, `NotebookEdit` or
+  `apply_patch` to one asks too, and in `auto` mode is refused with an approval code covering that
+  exact edit once.
+- **Rows.** Each decision the hook asks for is one `governance` row in `decisions.jsonl`, owned by
+  `hooks/grade-bash`, whose `input` records the action class, counterparty, level, grade, outcome
+  and provider, and never the command text. `telemetry.decisions: false` stops them with the rest.
 
 Session start checks a declared integration's configuration without installing it. Installation
 remains explicit. See [task continuation](task-continuation.md), the [BMad integration](bmad.md),
