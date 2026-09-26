@@ -208,6 +208,21 @@ Run the worker before entering plan mode: it writes an artifact, and plan mode p
 but the designated plan file — so inside it, copy the worker's card across rather than delegating.
 See `docs/role-workers.md` for input directories, status and native qualification limits.
 
+## A plan that gets committed passes the repository's lint as approved
+
+`/build` commits the approved plan into its pull request, so the plan meets the same content
+checks as any other file in that repository. A plan that fails them gets reworded at build time,
+and the committed copy is then not the one the reviewer approved. So when the repository names a
+lint in its agent instructions, run it on the plan before you post the review message, and again
+after every revision.
+
+- **Write around what the lint withholds.** Name a check by what it does, not by a project name
+  the lint allows only in docs; say "the Co-Authored-By trailer" rather than quoting its address.
+- **The harness lint takes a directory.** Copy the plan alone into an empty temporary directory
+  and run `<harness checkout>/bin/citizen lint <that directory>`, since `citizen` is not on
+  `PATH`; it must print `0 finding(s)`. The `harness-authoring` skill shows how to find the
+  checkout. Linting the plans directory itself reads every other plan in it too.
+
 ## Self-check before handing it over
 
 Run it, do not eyeball it:
@@ -223,6 +238,7 @@ awk '/^---$/{exit} {n++} END{print n" card lines"}' <plan file>
 - [ ] Every step has a real exit test
 - [ ] Decisions numbered and answerable by number
 - [ ] Nothing above the rule repeated below it
+- [ ] The repository's lint, where it names one, reports no finding on the plan
 
 ## Rationale relocated from the resident rules
 
