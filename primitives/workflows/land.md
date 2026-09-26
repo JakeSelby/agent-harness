@@ -13,10 +13,10 @@ any of the three is missing, say which and stop. Merging is approval-gated — g
 go-ahead before the merge — and this command never tags and never deploys.
 
 1. **Verify the head that will merge.** Every required check green on the current head, not on an
-   earlier push; where the repository runs an issue-ownership or closing-link check, confirm that it
-   passed on that same head. A pending, failing or stale check stops the workflow, named. So does an
-   unresolved review thread (GraphQL `reviewThreads`): name it and stop. A fix belongs to `/build`,
-   before approval, and a human's thread is theirs to resolve.
+   earlier push, and any issue-ownership or closing-link check the repository runs passed there too.
+   A pending, failing or stale one stops the workflow, named, as does an unresolved review thread
+   (GraphQL `reviewThreads`). Name each check or status that is not required, with its state, but
+   never wait on it. A fix belongs to `/build`, before approval; a human resolves their own thread.
 2. **Record the merge,** from the worktree after a fetch: `citizen intent merge --base origin/main`
    (the default branch) probes with `git merge-tree`, or pass `clean` or `conflicted` for a
    merge you ran. `citizen usage --conflicts` reports it weekly. A conflict stops the workflow.

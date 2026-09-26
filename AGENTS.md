@@ -14,14 +14,18 @@ bin/harness sync --dry-run                # what a sync would do from this check
 bin/harness doctor                        # versions, logins, links, drift
 ```
 
-**Expected clean-tree output:** `lint: 0 finding(s) in …` and `OK` from unittest with no
-skipped tests. Tests run under the system Python 3.9 and under a current Python; keep the
-code free of syntax newer than 3.9.
+**Expected clean-tree output:** `lint: 0 finding(s) in …`, `audit: N issue(s), 0 finding(s)`
+and `OK` from unittest with no skipped tests; `sprint-status --check` prints nothing when the
+file is current, and `python3 scripts/bmad_issue_sync.py sprint-status` regenerates it. Tests
+run under the system Python 3.9 and under a current Python; keep the code free of syntax newer
+than 3.9.
 
 ## Gate
 
 ```sh
 python3 bin/harness lint
+python3 scripts/bmad_issue_sync.py sprint-status --check
+python3 scripts/bmad_issue_sync.py audit
 python3 -m unittest discover -s tests
 ```
 
