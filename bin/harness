@@ -323,6 +323,17 @@ def say(msg: str) -> None:
 SESSION_SCOPED = ("HARNESS_PROJECT_CONFIG", "HARNESS_SESSION_CONFIG", "HARNESS_MODE", "HARNESS_PERMISSIONS")
 
 
+def user_defaults_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """`env` without the layers a session scopes to itself, which is what a sync projects.
+
+    The resolver still decides precedence; this only chooses which layers it is handed, so a
+    session override never rewrites the user's global selection.
+    """
+    env = os.environ if env is None else env
+    return {key: value for key, value in env.items()
+            if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_")) and key not in SESSION_SCOPED}
+
+
 def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     env = os.environ if env is None else env
     base = read_json(REPO / "config.example.json") or {}
@@ -336,10 +347,10 @@ def load_config(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         else:
             cfg[key] = value
     cfg.setdefault("identity", {})
-    # The stances in force come from the one resolver, over every layer of the selection ladder.
-    stances = cfg.get("stances") if isinstance(cfg.get("stances"), dict) else {}
-    cfg["stances"] = dict(stances, **load_selection(env, user)["stances"])
-    cfg["stances"] = {name: value for name, value in cfg["stances"].items() if value is not None}
+    # The stances in force are the resolver's answer and nothing else: no layer is merged here,
+    # so the CLI and the hooks cannot hold two answers for one selection (AD-2).
+    cfg["stances"] = {name: value for name, value in load_selection(env, user)["stances"].items()
+                      if value is not None}
     for key, value in env.items():
         if key.startswith("HARNESS_IDENTITY_"):
             cfg["identity"][key[len("HARNESS_IDENTITY_"):].lower()] = value
@@ -1300,12 +1311,11 @@ def _cmd_sync_unlocked(args: argparse.Namespace) -> int:
         say(UNSUPPORTED)
         return 1
     dry = args.dry_run
-    session_keys = [key for key in os.environ if key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
-                    or key in SESSION_SCOPED]
-    sync_env = {key: value for key, value in os.environ.items() if key not in session_keys}
-    cfg = load_config(sync_env)
+    defaults = user_defaults_env()
+    session_keys = [key for key in os.environ if key not in defaults]
+    cfg = load_config(defaults)
     # What the user's layers switch off, which no runtime home receives.
-    off = switched_off(load_selection(sync_env))
+    off = switched_off(load_selection(defaults))
     # A root the caller is about to register, so `import` can show the projection of a root the
     # configuration does not carry yet. Nothing else sets it, and a dry run is the only user.
     for extra in getattr(args, "extra_roots", None) or []:
@@ -1698,10 +1708,8 @@ def _diff_lines() -> List[str]:
             lines.append(f"redirected link {p} -> {os.readlink(p)}{origin}")
         elif not p.exists():
             lines.append(f"broken link {p}{origin}")
-    user_env = {key: value for key, value in os.environ.items()
-                if not key.startswith(("HARNESS_STANCE_", "HARNESS_IDENTITY_"))
-                and key not in SESSION_SCOPED}
-    cfg = load_config(user_env)
+    defaults = user_defaults_env()
+    cfg = load_config(defaults)
     template = runtime_template()
     applied = read_json(applied_path()) or {}
     live = read_json(claude_dir() / "settings.json") or {}
@@ -1728,7 +1736,7 @@ def _diff_lines() -> List[str]:
     if manifest.get("config", {}).get("stances") and manifest["config"]["stances"] != stances_now:
         lines.append("pending sync: stance selection changed since last sync")
     if "config" in manifest:
-        off_now = {kind: sorted(units) for kind, units in switched_off(load_selection(user_env)).items()}
+        off_now = {kind: sorted(units) for kind, units in switched_off(load_selection(defaults)).items()}
         recorded = manifest["config"].get("off") or {kind: [] for kind in SYNC_SWITCH_KINDS}
         if recorded != off_now:
             lines.append("pending sync: switch selection changed since last sync")
