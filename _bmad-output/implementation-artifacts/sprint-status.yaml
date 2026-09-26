@@ -395,6 +395,7 @@ development_status:
   ah-b108-governance-attributes-a-piped-push-after-a: ready-for-dev
   ah-b110-policy-file-guard-gates-commands-that-only: ready-for-dev
   ah-b111-grade-bash-grades-a-redirect-only-segment-after: ready-for-dev
+  ah-b112-lock-the-intent-overlap-counter-s-read-modify: ready-for-dev
   ah-b113-test-worker-context-budget-rewrites-a-tracked: ready-for-dev
   ah-b114-the-governance-config-set-check-gates-commands: ready-for-dev
   ah-c001-refactor-rules-cap-always-loaded-context-at-200: done
@@ -441,6 +442,7 @@ development_status:
   ah-c075-re-derive-the-prd-s-stale-unreleased-status: backlog
   ah-c076-file-the-coderabbit-build-session-s-follow-ups: ready-for-dev
   ah-c077-add-the-bmad-issue-map-audit-to-the-agents-md: ready-for-dev
+  ah-c080-restore-headroom-in-the-always-loaded-budget: ready-for-dev
   ah-d001-docs-bmad-decide-the-builder-routing-follow-up: done
   ah-d003-decide-whether-the-credential-probe-names-the: done
   ah-d004-decide-whether-repeated-agent-pairs-get-an: done
