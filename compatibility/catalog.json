@@ -30,7 +30,36 @@
     "runtime_files": [
       "hook.py",
       "observe.py"
-    ]
+    ],
+    "case_paths": {
+      "version": 1,
+      "cases": {
+        "installation": [],
+        "stance-switch": [],
+        "custom-stance": [],
+        "permission-controls": [],
+        "hook-composition": [],
+        "role-confinement": [
+          "adapters/claude-code/worker.py",
+          "adapters/codex/worker.py"
+        ],
+        "cost-posture": [
+          "adapters/claude-code/worker.py",
+          "adapters/codex/worker.py"
+        ],
+        "gate-invalidation": [],
+        "framework-spawn-routing": [
+          "adapters/claude-code/worker.py",
+          "adapters/codex/worker.py"
+        ],
+        "bidirectional-handoff": [],
+        "migration-uninstall": [],
+        "spawn-confinement": [
+          "adapters/claude-code/worker.py",
+          "adapters/codex/worker.py"
+        ]
+      }
+    }
   },
   "clients": [
     {

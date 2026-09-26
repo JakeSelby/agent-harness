@@ -1070,7 +1070,7 @@ Evidence: `../../research/technical-runtime-platform-limits-and-qualification-20
 
 #### FR-51: Scoped evidence invalidation
 A change must invalidate qualification evidence only where its paths reach. **Status:** unreleased (#583,
-scoped per runtime). Per-case scoping is a pending decision (§11 Q1).
+scoped per runtime; #582, scoped per case through a versioned case-to-path map, decided 2026-09-26).
 
 **Consequences (testable):**
 - A change outside the source paths leaves all evidence valid. This covers docs, tests, scripts and
@@ -1078,6 +1078,9 @@ scoped per runtime). Per-case scoping is a pending decision (§11 Q1).
 - A change under one runtime's adapter directory invalidates that runtime's targets only, unless it
   touches a file shared code reads for every runtime.
 - A change to shared source invalidates every target.
+- Within a target, a change under a path the case-to-path map assigns invalidates only the cases that
+  name it, and a change under a path no case names invalidates every case. A record that states no map
+  version, or another one, keeps the whole-target rule.
 
 #### FR-52: One qualification round per release
 A release must be frozen on a release branch, and it must pass a model-free smoke tier before any native
@@ -1718,8 +1721,8 @@ answer.
 
 1. **Per-case or per-target invalidation?** Should qualification evidence be invalidated per case, or only
    per target (#582)?
-   - Blocks: FR-51.
-   - Needed by: v0.14.0.
+   - Answered 2026-09-26: per case, through a versioned case-to-path map in the catalog; a change under
+     an unmapped path invalidates every case (#582).
 2. **Keeping the issue map current.** How does the issue map's lifecycle stay current without a pull request
    after every merge (#420)? Does the derived sprint status (FR-65) change the answer?
    - Blocks: the issue map's lifecycle field (#420). FR-65's derived sprint status (0.13) does not settle
