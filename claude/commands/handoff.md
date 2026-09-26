@@ -25,9 +25,9 @@ Note to carry over: $ARGUMENTS
    else. **Decisions needed** is what only the user can settle. **Learnings** is what you would
    have wanted to know when this session started.
 
-2. **Save the shared task contract.** Read `harness task show` first. Write a JSON input with
+2. **Save the shared task contract.** Read `citizen task show` first. Write a JSON input with
    `objective`, `next_steps`, `decisions`, and `artifacts`; add the framework checkout and
-   baseline when a planning framework owns the artifacts. Save with `harness task save --input <file> --runtime <runtime>
+   baseline when a planning framework owns the artifacts. Save with `citizen task save --input <file> --runtime <runtime>
    --revision <current-revision>`. The next runtime reads the same data, rechecks the tree,
    and establishes its own permissions. A handoff never transfers an approval.
 

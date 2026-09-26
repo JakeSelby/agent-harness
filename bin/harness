@@ -2175,7 +2175,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if codex_credentials and shutil.which("codex") is None:
         say("    credentials with no `codex` on PATH: the client is installed somewhere this shell "
             "does not look, or was removed and left its login behind. Put it on PATH to use it.")
-    say("  constrained roles: use `harness role run`; `harness role status` reports workers, not native qualification")
+    say("  constrained roles: use `citizen role run`; `citizen role status` reports workers, not native qualification")
     cfg = load_config()
     if cfg.get("codex", {}).get("manage", True):
         reviewer = codex_client.detect()

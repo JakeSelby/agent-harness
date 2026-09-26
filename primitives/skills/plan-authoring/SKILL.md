@@ -200,7 +200,7 @@ shape, so it has to stay small enough to hold in working memory.
 
 ## Delegating
 
-Use `harness role run planner` with `--runtime`, the explicit session `--model`, `--workspace`,
+Use `citizen role run planner` with `--runtime`, the explicit session `--model`, `--workspace`,
 a `--prompt-file` brief and `--artifact <new-plan.md>`. The isolated worker receives the shared
 role and resolved stances, and returns plan content; the harness validates and publishes it.
 Read the artifact and post the review message yourself. Existing plans are not overwritten.

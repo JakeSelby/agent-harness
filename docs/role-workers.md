@@ -13,7 +13,7 @@ percent similar — is refused too, and told that dropping the role name changed
 a brief may declare its own role with a line of the exact form `harness-role: <role>`, standing
 alone, naming a role under `primitives/roles/` with read-only or artifact-write authority. A spawn
 whose prompt carries such a line is refused whatever `subagent_type` it names or omits, and
-`harness role run` accepts the line in a `--prompt-file` unchanged. A marker naming anything else
+`citizen role run` accepts the line in a `--prompt-file` unchanged. A marker naming anything else
 is ignored. Both guards are best effort: session state that cannot be read or written means no new
 refusal, never a failed hook, and `delegation: off` keeps its own single refusal.
 
@@ -31,12 +31,12 @@ no script for it to read.
 Write a bounded brief naming the input files, required result shape and allowed scope, then run:
 
 ```sh
-harness role run reviewer --runtime codex \
+citizen role run reviewer --runtime codex \
   --workspace /path/to/worktree --prompt-file /path/to/brief.md
-harness role run planner --runtime claude-code \
+citizen role run planner --runtime claude-code \
   --workspace /path/to/worktree --prompt-file /path/to/brief.md --artifact proposal.md
-harness role status
-harness role status <worker-id>
+citizen role status
+citizen role status <worker-id>
 ```
 
 `--prompt-file -` reads the brief from stdin. `--read-dir /path/to/artifacts` grants access to
@@ -71,7 +71,7 @@ the runtime, in the sense the compatibility table's tier-restriction row uses:
 
 `status.json` records the estimate under `context`: policy tokens, reference tokens and their
 total against a 50,000-token budget, counted with the same characters-per-token approximation
-`harness lint` uses on always-loaded context. A review role resolves at about 30,800 and the
+`citizen lint` uses on always-loaded context. A review role resolves at about 30,800 and the
 planner, which may read any skill, at about 43,800. The budget is recorded, not enforced: what a
 worker is shown is fixed by its contract and the policy's own pointers before any brief is read.
 
@@ -100,7 +100,7 @@ when a provider's lineup turns over; `role_bindings.<runtime>.<role>` sets `mode
 one role and wins over the class. Both reach workers and both runtimes' agent definitions, which
 sync renders from the adapter's table and the resolved cost variant.
 
-`harness tiers check` compares the Codex table with the model catalog Codex fetches from its
+`citizen tiers check` compares the Codex table with the model catalog Codex fetches from its
 provider (`models_cache.json` in the Codex home), offline. It fails on a mapped model the catalog
 no longer lists, one the catalog names a successor for, or a class the catalog ranks above a
 stronger one, and reports *unverified* rather than passing when there is no catalog to read.
@@ -114,7 +114,7 @@ The command returns a JSON status record, including the native version, resolved
 selected stances, policy digest, input roots and result path. Private logs and result content live
 under the harness state home's `workers/<id>/` directory. `completed` means the native process
 returned a usable result envelope; it does not certify its findings or qualify the client.
-A run records the pid supervising it and that process's start time, so `harness role status`
+A run records the pid supervising it and that process's start time, so `citizen role status`
 reports a worker whose process is gone with no result written as `orphaned` — the run ended
 without reporting — instead of leaving it `running` forever. The start time guards against a
 recycled pid, a status record from a release that stored no pid still reads as `running`, and
@@ -139,7 +139,7 @@ Run from inside a Claude Code session, where `CLAUDECODE` is set, a Claude worke
 before launch: the client's own `claude auth status` runs under the worker's environment from an
 empty directory, and a failed or unconfirmed login refuses the run with no worker state written.
 Claude Code strips `CLAUDE_CODE_OAUTH_TOKEN` from its tool subprocesses, so a session logged in
-with that token alone hands a worker nothing. Run `harness role run` from a shell that exports the token, or log
+with that token alone hands a worker nothing. Run `citizen role run` from a shell that exports the token, or log
 the client in with `claude auth login`. The harness never writes the token anywhere to work
 around it. Workers on Bedrock, Vertex or Foundry are launched unchecked.
 
@@ -150,7 +150,7 @@ back out, and a fetched page is untrusted input arriving inside a confined proce
 the role this is felt in, so its definition and `/research` say it: a file or repository dimension
 runs here, a dimension that needs the live web goes to an in-session band worker, which is subject
 to the session's own permission prompts and search budget. The refusal that routes a native
-`gatherer` spawn to `harness role run` says the same thing in one sentence.
+`gatherer` spawn to `citizen role run` says the same thing in one sentence.
 
 Both adapters enforce a narrower execution surface than the ordinary interactive client.
 Native configuration restrictions take precedence; unsupported flags or required settings fail

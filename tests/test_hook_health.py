@@ -124,6 +124,10 @@ class DoctorTests(unittest.TestCase):
     def test_doctor_says_when_nothing_is_registered(self):
         self.assertIn("hooks: none registered", self._doctor())
 
+    def test_doctor_points_constrained_roles_at_citizen_role_run(self):
+        self.assertIn("constrained roles: use `citizen role run`; `citizen role status` reports workers",
+                      self._doctor())
+
     def test_doctor_names_the_guards_that_are_off(self):
         path = Path(self.tmp.name) / ".claude" / "settings.json"
         path.parent.mkdir(parents=True)

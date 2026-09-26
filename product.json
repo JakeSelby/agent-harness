@@ -5,8 +5,8 @@
   "github_description": "The control plane for your coding agents, however you run them. One checkout of rules, skills, subagents, hooks and stances, projected into Claude Code and Codex with your own primitives: hook-enforced guardrails, usage telemetry, cost postures and model tiering, under any rules library or orchestration layer.",
   "hero": {
     "title": "The control plane for your coding agents, however you run them.",
-    "subtitle": "Agent Harness sits under the Claude Code and Codex you already run, and under whatever rules library you like. It keeps your rules, skills, roles and stances in one checkout, projects them into each agent with your own primitives, enforces them with hooks, and shows you what every session did and what it cost.",
-    "proof": "MIT licensed. One checkout, nothing hosted, and harness uninstall puts everything back. Every release names the clients it qualified and what it could not prove."
+    "subtitle": "Model Citizen sits under the Claude Code and Codex you already run, and under whatever rules library you like. It keeps your rules, skills, roles and stances in one checkout, projects them into each agent with your own primitives, enforces them with hooks, and shows you what every session did and what it cost.",
+    "proof": "MIT licensed. One checkout, nothing hosted, and citizen uninstall puts everything back. Every release names the clients it qualified and what it could not prove."
   },
   "capabilities": [
     {
@@ -68,7 +68,7 @@
         },
         {
           "name": "Declared integrations",
-          "line": "A planning framework declares itself in one descriptor. harness integration check|apply installs its overrides, and the spawn hook confines its review layers.",
+          "line": "A planning framework declares itself in one descriptor. citizen integration check|apply installs its overrides, and the spawn hook confines its review layers.",
           "doc": "docs/bmad.md"
         },
         {
@@ -164,12 +164,12 @@
         },
         {
           "name": "Hit rate per rule",
-          "line": "harness usage --rules reports how often each rule fired, by repository and by the variant you had selected; --by profile splits spend by the profile behind each row.",
+          "line": "citizen usage --rules reports how often each rule fired, by repository and by the variant you had selected; --by profile splits spend by the profile behind each row.",
           "doc": "docs/usage.md"
         },
         {
           "name": "Cache prefix held",
-          "line": "harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.",
+          "line": "citizen usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.",
           "doc": "docs/usage.md"
         },
         {
@@ -201,7 +201,7 @@
         },
         {
           "name": "User, project, session",
-          "line": "Set a default or pick a mode, override it for one repo, override that for one session, and see which layer set each unit and what measures it with harness selection.",
+          "line": "Set a default or pick a mode, override it for one repo, override that for one session, and see which layer set each unit and what measures it with citizen selection.",
           "doc": "docs/preferences.md"
         },
         {

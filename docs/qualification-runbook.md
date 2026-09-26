@@ -192,7 +192,7 @@ A bare class moves every target; `TARGET=CLASS` moves the one it names, so a Cod
 executed at a different class from a Claude Code one in the same round. Later arguments win.
 
 The classes are resolved through the target runtime's `adapters/<runtime>/bindings.json`, the
-same table `harness tiers` checks; a personal `tiers.<runtime>` override in a user configuration
+same table `citizen tiers` checks; a personal `tiers.<runtime>` override in a user configuration
 is not applied, because a round runs from a frozen clone. Two refusals, both before any client is
 launched:
 

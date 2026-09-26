@@ -11,7 +11,7 @@ What is finishing: $ARGUMENTS
 question it exists to ask. Outside a repository steps 3 and 5 do not apply; say so.
 
 1. **Name what is still open.** Uncommitted and untracked files in every checkout this session
-   touched, `harness worktree audit`, the pull requests this session opened and the state of their
+   touched, `citizen worktree audit`, the pull requests this session opened and the state of their
    checks, background work still running, and the decisions you parked for the user. Report that
    list first; an empty sweep is a result, so say it and move on.
 2. **Batch the follow-ups, then ask once.** One line each, title and why, for what this session

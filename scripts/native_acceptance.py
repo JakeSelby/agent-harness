@@ -2191,7 +2191,7 @@ def layer_request(data, spawn, instructions):
             % (REVIEW_FILE, layer_name(spawn), data["name"], instructions))
 
 
-ROLE_RUN_PLACEHOLDER = "harness role run <role>"
+ROLE_RUN_PLACEHOLDER = "citizen role run <role>"
 
 
 def refusal_gaps(text, data, spawn):
