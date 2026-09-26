@@ -37,13 +37,16 @@ decisions = _load("decisions_attribution", REPO / "policy" / "hooks" / "decision
 bench = _load("cost_bench_attribution", REPO / "scripts" / "cost_bench.py")
 KEY = posture.ATTRIBUTION_KEY
 STAMP = "2026-09-24T10:00:00.000Z"
+# The refusals that run with every hook off: no hook id owns them.
+CONFINEMENT_POINTS = {"evasion-deny", "framework-spawn", "role-confinement", "workflow-launch"}
 
 # One unit to switch off for every switch kind, and the entry it leaves in the attribution: a
 # hook keeps no resident text, so it has none. A kind added to the catalog without a line here
 # fails `test_every_switch_kind_is_covered`.
+# The hook is not core: a core hook switched off without the acknowledgement resolves on.
 SWITCHES = {"rules": ("beta", "rules/beta"), "skills": ("gamma", "skills/gamma"),
             "roles": ("delta", "roles/delta"), "workflows": ("epsilon", "workflows/epsilon"),
-            "hooks": ("grade-bash", None)}
+            "hooks": ("validate-plan-card", None)}
 
 FILES = {
     "VERSION": "1.0.0\n",
@@ -199,14 +202,14 @@ class DecisionRowTests(Home):
         return [json.loads(line) for line in self.target.read_text(encoding="utf-8").splitlines()]
 
     def test_every_answer_kind_names_the_owning_hook(self):
-        # allow, deny, ask and injected context (brief-guard's rewrite of a brief).
-        cases = [("workflow-launch", "allow"), ("evasion-deny", "deny"), ("grade-bash", "ask"),
-                 ("brief-guard", "cap")]
+        # A route, allow, deny, ask and injected context (brief-guard's rewrite of a brief). Role
+        # confinement runs with every hook off, so its points name no hook.
+        cases = [("tier-agent-spawns", "worker-a"), ("workflow-launch", "allow"), ("evasion-deny", "deny"),
+                 ("grade-bash", "ask"), ("brief-guard", "cap")]
         for point, answer in cases:
             decisions.record(point, answer, "text", {"session_id": "s-1"}, target=self.target)
         self.assertEqual([r["module"] for r in self.rows()],
-                         ["hooks/tier-agent-spawns", "hooks/tier-agent-spawns", "hooks/grade-bash",
-                          "hooks/brief-guard"])
+                         ["hooks/tier-agent-spawns", None, None, "hooks/grade-bash", "hooks/brief-guard"])
 
     def test_an_outcome_and_a_sampled_allow_name_it_too(self):
         identity = decisions.record("stop-gate", "blocked", "t", {"session_id": "s-1"}, target=self.target)
@@ -228,9 +231,10 @@ class DecisionRowTests(Home):
         for source in sources:
             points.update(a or b for a, b in pattern.findall(source.read_text(encoding="utf-8")))
         self.assertIn("workflow-launch", points)
+        # Role confinement has no hook id, because no switch turns it off, so it names no owner.
         missing = sorted(p for p in points if decisions.module_of(p) is None)
-        self.assertEqual(missing, [])
-        owners = {decisions.module_of(p).split("/", 1)[1] for p in points}
+        self.assertEqual(missing, sorted(CONFINEMENT_POINTS))
+        owners = {decisions.module_of(p).split("/", 1)[1] for p in points - CONFINEMENT_POINTS}
         for owner in owners:
             self.assertTrue((REPO / "policy" / "hooks" / (owner + ".py")).is_file(), owner)
 

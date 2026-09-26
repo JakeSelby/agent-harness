@@ -71,6 +71,47 @@ by `last_event_at`, so that read asserts the order rather than requesting it, an
 reported as not checked, never as nothing found. A count over a page that carries a cursor names
 the page it counted rather than the account.
 
+## Hook ids
+
+Every policy module that answers a lifecycle event has an id, its basename under `policy/hooks/`,
+and each id is a unit of the `hooks` switch kind in the [selection document](preferences.md#the-selection-document):
+
+| Id | Answers |
+| --- | --- |
+| `allow-plan-webfetch` | PreToolUse on WebFetch in plan mode |
+| `allow-readonly-bash` | the read-only Bash allow, plan-mode allows and `plan_allow_tools` |
+| `brief-guard` (core) | PreToolUse on a spawn |
+| `filter-output` | PreToolUse on Bash |
+| `grade-bash` (core) | Bash grading, its ask or deny, and the decision log's Bash rows |
+| `harness-session` | SessionStart |
+| `neutralize-tool-output` (core) | PostToolUse |
+| `stage-user-files` | PreToolUse on SendUserFile, Claude Code only |
+| `stop-gate` (core) | Stop |
+| `tier-agent-spawns` | band routing of a spawn, and the integration descriptor notice |
+| `usage-feed` | UserPromptSubmit, SubagentStart, SubagentStop and PostToolUse on a spawn, Claude Code only |
+| `usage-log` | SessionEnd |
+| `validate-plan-card` | PostToolUse on a plan file |
+
+`harness config set hooks.<id> off` switches one off, and it applies from the next event with no
+sync: the dispatcher resolves the selection at each event and neither loads nor runs a module
+whose id is `off`. The libraries those modules load (`decisions`, `posture`, `pricing`,
+`telemetry`, `rule-detectors`, `otel-headers`, `filter-lines`) have no id and no switch. Denying
+every spawn under `delegation: off` is the stance's own answer and stays with any id off.
+Role confinement has no id either: the constrained-role, `harness-role:` marker, framework and
+evasion denials and the Workflow launch guard run with every hook off, so switching
+`tier-agent-spawns` off stops band routing and never lets a constrained role run in session.
+
+The four core ids enforce rather than assist. A layer may switch one off only when the user
+configuration sets `"core_switches_acknowledged": true`; `config set`, `sync` and
+`harness selection` refuse it otherwise, before anything is written, and so does withdrawing the
+acknowledgement while a core hook is off. The acknowledgement is read from the user configuration
+alone, because a project, session or mode file may carry selection keys only. A hook that meets an
+unacknowledged `off` keeps running, and so does every hook when the selection will not resolve.
+
+Codex's adapter dispatches through the same `lifecycle.py` and reads the same id map. There is no
+Codex-only id; an id whose event Codex does not raise, such as `usage-feed`, simply never runs
+there. `harness catalog` lists each id with kind `hooks`, its source and whether it is core.
+
 ## Decision providers
 
 `lib/harness_core/decision.py` holds one transport-agnostic contract for the question "may this
