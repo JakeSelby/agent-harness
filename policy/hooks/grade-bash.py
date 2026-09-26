@@ -1104,8 +1104,10 @@ def _confined(text):
         tokens = ro.tokenize(" ; ".join(_unquoted_structure(text).split("\n")))
     except ValueError:
         return None
-    # [(pipeline index, paren depth, compound depth)] per segment, and each pipeline's flag.
-    places, piped = [], [False]
+    # [(pipeline index, paren depth, compound depth)] per segment; per pipeline, whether it is
+    # piped and its AND-OR list; per list, whether `&` backgrounds it. `&` ends and backgrounds
+    # the whole list, `cd d && true & git push` included; `;` ends one without confining it.
+    places, piped, list_of, backgrounded = [], [False], [0], [False]
     cur, skipping, parens, compounds = [], False, 0, 0
     for token in tokens:
         if token in ro.ALWAYS_DELIM:
@@ -1122,9 +1124,13 @@ def _confined(text):
                 if token in ("|", "|&"):
                     piped[-1] = True
                 elif token in LIST_ENDS:
-                    if token == "&":
-                        piped[-1] = True
                     piped.append(False)
+                    if token in ("&&", "||"):
+                        list_of.append(list_of[-1])
+                    else:
+                        backgrounded[-1] = token == "&"
+                        backgrounded.append(False)
+                        list_of.append(len(backgrounded) - 1)
             continue
         if skipping:
             continue
@@ -1146,7 +1152,8 @@ def _confined(text):
         places.append(open_at)
     if parens or compounds:
         return None
-    return [True if in_parens else None if in_compound else piped[index]
+    return [True if in_parens else None if in_compound
+            else piped[index] or backgrounded[list_of[index]]
             for index, in_parens, in_compound in places]
 
 

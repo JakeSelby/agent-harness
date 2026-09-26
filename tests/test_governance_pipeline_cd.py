@@ -54,6 +54,20 @@ class PipelineAfterCd(Home):
                         "cd %s & git push", "cd %s & git push | cat"):
             self.assertEqual(self.pushes(command % self.other), [None], command)
 
+    def test_regression_a_background_job_confines_its_whole_and_or_list(self):
+        for command in ("cd %s && true & git push", "cd %s || true & git push",
+                        "cd %s && true & git push | cat"):
+            command = command % self.other
+            self.assertEqual(self.pushes(command), [None], command)
+            answer, reason = self.bash(command)
+            self.assertEqual(answer, "ask", command)
+            self.assertIn("repo:unknown/local", reason, command)
+
+    def test_a_list_ended_by_a_separator_is_not_confined(self):
+        for command in ("cd %s && true; git push", "cd %s || true\ngit push"):
+            command = command % self.other
+            self.assertEqual(self.pushes(command), [str(self.other)], command)
+
     def test_a_pipeline_after_an_unknown_directory_stays_unknown(self):
         for command in ("cd - && git push | tail -1", 'cd "$D" && git push | tail -1',
                         "popd && git push | tail -1", "cd $(pwd) && git push | cat",
