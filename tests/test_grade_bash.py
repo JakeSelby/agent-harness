@@ -487,6 +487,16 @@ class GradeTests(unittest.TestCase):
         self.assertEqual(grade("(ls) > /tmp/out.txt"), grade("ls > /tmp/out.txt"))
         self.assertEqual(grade("(ls) > /dev/null"), 0)
 
+    def test_a_numeric_file_target_is_a_write_but_a_descriptor_duplication_is_not(self):
+        for command in ("ls >2", "ls > 2", "ls &>2", "ls 2>1"):
+            with self.subTest(command=command):
+                self.assertGreaterEqual(grade(command), 1)
+        for command in ("ls 2>&1", "ls >&2", "ls 2>&-"):
+            with self.subTest(command=command):
+                self.assertEqual(grade(command), 0)
+        self.assertEqual(grader._written("ls", [], ["2"], ""), ["2"])
+        self.assertEqual(grader._redirects(grader.ro.tokenize("ls 2>&1 >2"))[1], ["2"])
+
 
 class HookTests(unittest.TestCase):
     def test_stance_and_mode_matrix(self):
