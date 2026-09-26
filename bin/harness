@@ -1746,6 +1746,12 @@ def _diff_lines() -> List[str]:
     return lines
 
 
+# The plugin and marketplace names this project has shipped under, newest first. Claude Code keys
+# an install by `<plugin>@<marketplace>` and keeps the old key until the user reinstalls, so doctor
+# recognizes every name here, not only the one in this checkout's manifests.
+PLUGIN_NAMES = ("model-citizen", "agent-harness")
+
+
 def _plugin_names() -> Tuple[str, str, str]:
     """This checkout's plugin name, marketplace name and source repository, from its manifests.
 
@@ -1767,8 +1773,10 @@ def plugin_install_state() -> Dict[str, Any]:
     See docs/runtime-installation.md for what each one covers.
     """
     plugin, market, slug = _plugin_names()
+    names = {plugin, *PLUGIN_NAMES}
+    slugs = {slug, *PLUGIN_NAMES} - {""}
     state = {"plugin": plugin, "marketplace": market, "registered": [], "enabled": [],
-             "cached": [], "synced": manifest_path().is_file()}
+             "cached": [], "doubled": [], "synced": manifest_path().is_file()}
     plugins = claude_dir() / "plugins"
     try:
         known = read_json(plugins / "known_marketplaces.json") or {}
@@ -1777,14 +1785,20 @@ def plugin_install_state() -> Dict[str, Any]:
         return state
     state["registered"] = sorted(
         name for name, entry in known.items() if isinstance(entry, dict)
-        and bool(slug) and str((entry.get("source") or {}).get("repo", "")).split("/")[-1] == slug)
+        and str((entry.get("source") or {}).get("repo", "")).split("/")[-1] in slugs)
+    # The current name first, so the report names the install the manifests describe.
     state["enabled"] = sorted(
-        key for key, value in (settings.get("enabledPlugins") or {}).items()
-        if value is not False and str(key).split("@")[0] == plugin)
+        (key for key, value in (settings.get("enabledPlugins") or {}).items()
+         if value is not False and str(key).split("@")[0] in names),
+        key=lambda key: (str(key).split("@")[0] != plugin, key))
+    enabled_names = {str(key).split("@")[0] for key in state["enabled"]}
+    if len(enabled_names) > 1:
+        state["doubled"] = [key for key in state["enabled"] if str(key).split("@")[0] != plugin]
     cache = plugins / "cache"
     if cache.is_dir():
         state["cached"] = sorted(str(path.relative_to(cache))
-                                 for path in cache.glob("*/" + plugin) if path.is_dir())
+                                 for name in names for path in cache.glob("*/" + name)
+                                 if path.is_dir())
     return state
 
 
@@ -1802,7 +1816,12 @@ def _plugin_install_line() -> str:
         detail = " and ".join(live)
     if state["registered"] and not (state["enabled"] or state["cached"]):
         detail += "; marketplace registered, plugin not installed"
-    return "  install path: " + detail
+    line = "  install path: " + detail
+    if state["doubled"]:
+        line += ("\n  plugin warning: %s and %s are both enabled, so every skill loads twice; "
+                 "run %s" % (", ".join(state["doubled"]), state["enabled"][0], " and ".join(
+                     "`/plugin uninstall %s`" % key for key in state["doubled"])))
+    return line
 
 
 def _checkout_state() -> str:

@@ -94,14 +94,30 @@ have to become that checkout, so the script clones one instead.
 Claude Code can load the projected primitives without a checkout. In a session:
 
 ```
-/plugin marketplace add JakeSelby/agent-harness
-/plugin install agent-harness@agent-harness
+/plugin marketplace add JakeSelby/model-citizen
+/plugin install model-citizen@model-citizen
 ```
 
 `.claude-plugin/marketplace.json` lists one plugin whose source is the repository root, so the
 install reads `.claude-plugin/plugin.json` and nothing is duplicated between the two manifests.
 That manifest carries the skills, the eleven subagent roles, the slash commands and the output
-style. Claude Code namespaces them: a plugin skill is `/agent-harness:<name>`.
+style. Claude Code namespaces them: a plugin skill is `/model-citizen:<name>`.
+
+### Moving an `agent-harness` plugin install to `model-citizen`
+
+The plugin was published as `agent-harness@agent-harness` before the rename. Claude Code keys an
+install by that ID, so an existing install keeps it until you reinstall. In a session:
+
+```
+/plugin marketplace add JakeSelby/model-citizen
+/plugin install model-citizen@model-citizen
+/plugin uninstall agent-harness@agent-harness
+/plugin marketplace remove agent-harness
+```
+
+Skills move from `/agent-harness:<name>` to `/model-citizen:<name>`. `harness doctor` recognizes
+either ID and warns while both are enabled, because every skill would then load twice. A checkout
+install is unaffected by the plugin rename.
 
 A marketplace install is a strict subset of `bin/harness install`. It does not give you:
 
