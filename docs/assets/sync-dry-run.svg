@@ -1,22 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 422" width="960" height="422" role="img" aria-labelledby="t d">
-<title id="t">harness sync --dry-run on a fresh home</title>
+<title id="t">citizen sync --dry-run on a fresh home</title>
 <desc id="d">Terminal output. The dry run prints the resolved personal stances, then every link, rendered file and setting it would create for Claude Code and Codex, and writes nothing.</desc>
 <rect width="960" height="422" rx="10" fill="#0D1117"/>
 <rect width="960" height="36" rx="10" fill="#161B22"/><rect y="26" width="960" height="10" fill="#161B22"/>
 <circle cx="22" cy="18" r="6" fill="#FF5F56"/><circle cx="42" cy="18" r="6" fill="#FFBD2E"/><circle cx="62" cy="18" r="6" fill="#27C93F"/>
 <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" xml:space="preserve">
-<text x="22" y="58" fill="#E6EDF3" font-weight="600">$ bin/harness sync --dry-run</text>
-<text x="22" y="77" fill="#E6EDF3">agent-harness 0.11.1 · repo ~/repos/agent-harness · home ~ · DRY RUN</text>
+<text x="22" y="58" fill="#E6EDF3" font-weight="600">$ bin/citizen sync --dry-run</text>
+<text x="22" y="77" fill="#E6EDF3">model-citizen 0.13.1 · repo ~/repos/agent-harness · home ~ · DRY RUN</text>
 <text x="22" y="96" fill="#8B949E">stances: licensing=permissive-commercial, build-vs-buy=capability-ceiling,</text>
 <text x="22" y="115" fill="#8B949E">         commits=conventional-attributed, plan-ceremony=review-card, delegation=tiered,</text>
 <text x="22" y="134" fill="#8B949E">         testing=required, autonomy=execute, cost=balanced, voice=scannable · permissions=inherit</text>
 <text x="22" y="153" fill="#D29922">  notice  identity name, role, github still at the example value; the agent reads this</text>
-<text x="22" y="172" fill="#D29922">          as who you are. Fix with `harness init` or `harness config set identity.name &quot;…&quot;`</text>
-<text x="22" y="191"><tspan fill="#D97706">  link    </tspan><tspan fill="#C9D1D9">~/.claude/rules/harness  -&gt;  ~/repos/agent-harness/claude/rules</tspan></text>
-<text x="22" y="210"><tspan fill="#D97706">  link    </tspan><tspan fill="#C9D1D9">~/.claude/skills/plan-authoring  -&gt;  ~/repos/agent-harness/claude/skills/plan-authoring</tspan></text>
-<text x="22" y="229"><tspan fill="#D97706">  link    </tspan><tspan fill="#C9D1D9">~/.claude/skills/licensing-review  -&gt;  ~/repos/agent-harness/claude/skills/licensing-review</tspan></text>
+<text x="22" y="172" fill="#D29922">          as who you are. Fix with `citizen init` or `citizen config set identity.name &quot;…&quot;`</text>
+<text x="22" y="191"><tspan fill="#D97706">  link    </tspan><tspan fill="#C9D1D9">~/.claude/rules/harness/cache-hygiene.md  -&gt;  ~/repos/agent-harness/claude/rules/cache-hygiene.md</tspan></text>
+<text x="22" y="210"><tspan fill="#D97706">  link    </tspan><tspan fill="#C9D1D9">~/.claude/skills/licensing-review  -&gt;  ~/repos/agent-harness/claude/skills/licensing-review</tspan></text>
+<text x="22" y="229"><tspan fill="#D97706">  link    </tspan><tspan fill="#C9D1D9">~/.claude/skills/plan-authoring  -&gt;  ~/repos/agent-harness/claude/skills/plan-authoring</tspan></text>
 <text x="22" y="248"><tspan fill="#D97706">  link    </tspan><tspan fill="#C9D1D9">~/.claude/agents/builder.md  -&gt;  ~/repos/agent-harness/claude/agents/builder.md</tspan></text>
-<text x="22" y="267" fill="#8B949E">  …       55 more links: every rule, stance, skill, role and workflow, for both runtimes</text>
+<text x="22" y="267" fill="#8B949E">  …       66 more links: every rule, stance, skill, role and workflow, for both runtimes</text>
 <text x="22" y="286"><tspan fill="#D97706">  render  </tspan><tspan fill="#C9D1D9">~/.claude/CLAUDE.personal.md</tspan></text>
 <text x="22" y="305"><tspan fill="#D97706">  vscode  </tspan><tspan fill="#C9D1D9">no user settings file found; skipping (install VS Code, then re-run sync)</tspan></text>
 <text x="22" y="324"><tspan fill="#D97706">  codex   </tspan><tspan fill="#C9D1D9">hooks registered; native hook trust must be accepted in the client</tspan></text>

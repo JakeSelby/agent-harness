@@ -13,7 +13,7 @@ the report is useful to someone who wants the numbers and not the way of working
   a share of nothing. See [usage.md](usage.md#which-rules-fired).
 - You want stance groupings. `--by stance` reads the `dimension: variant` map the CLI resolves,
   so a checkout with no config has one variant per dimension and one group per report.
-- You are already running `harness sync`. Then the hook is installed and the ledger fills
+- You are already running `citizen sync`. Then the hook is installed and the ledger fills
   without another step.
 
 ## When the report alone is the answer
@@ -23,7 +23,7 @@ the report is useful to someone who wants the numbers and not the way of working
   [usage.md](usage.md) for what each grouping means.
 - You are evaluating the measurement before adopting the primitives. The ledger is local, it
   holds no message text, and removing the hook stops it.
-- You are feeding an observability backend. `harness usage export` replays the ledger; see
+- You are feeding an observability backend. `citizen usage export` replays the ledger; see
   [telemetry.md](telemetry.md).
 
 ## The packaged path

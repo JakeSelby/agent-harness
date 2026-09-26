@@ -1,6 +1,6 @@
 # Settings ownership
 
-The native ownership declarations and reconciliation journal bound what `harness sync` may write.
+The native ownership declarations and reconciliation journal bound what `citizen sync` may write.
 `claude/OWNERSHIP.json` records the Claude template fields. Read it before
 changing the template.
 

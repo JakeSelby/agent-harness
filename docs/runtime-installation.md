@@ -23,7 +23,7 @@ explicit acknowledgement. `inherit` preserves native choices. Codex renamed the 
 `approvals_reviewer`, and a client drops a spelling it does not know without a word, so sync asks
 the installed client which name it accepts — from its own protocol schema, or `--strict-config`,
 neither of which starts a model turn — writes that one, and removes the other. A client that
-accepts neither gets no reviewer key, a sync notice and a `harness doctor` finding. Native
+accepts neither gets no reviewer key, a sync notice and a `citizen doctor` finding. Native
 requirements and live
 permission overrides can restrict or supersede defaults; these mappings are not an assertion
 that Claude and Codex permission modes are equivalent.
@@ -33,7 +33,7 @@ and last-applied values before replacement. TOML editing preserves unrelated tab
 TOMLKit is bundled unmodified with its MIT notice, so no global Python package install is
 required. JSON-with-comments editor files are left unchanged with an explicit diagnostic.
 
-`harness diff` detects modified generated content and owned settings. Uninstall restores prior
+`citizen diff` detects modified generated content and owned settings. Uninstall restores prior
 values only when they still match the harness's last write; intervening user changes remain
 with a conflict report and recoverable ownership state. It never deletes a redirected link.
 Concurrent sync/uninstall operations refuse a second writer. Interrupted generated/config
@@ -72,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/JakeSelby/agent-harness/stable/scri
 3. **Configuration.** `bin/harness init --yes` writes `~/.config/agent-harness/config.json` from
    the example, taking the name from `git config user.name`, the handle from a signed-in `gh` and
    the timezone from the system. Any field it cannot answer keeps its example value and is listed
-   on the way out for `harness config set`. An existing config is never rewritten.
+   on the way out for `citizen config set`. An existing config is never rewritten.
 4. **Preview.** `bin/harness install --dry-run`, which writes nothing.
 5. **Next command.** It prints `bin/harness install` and `bin/harness uninstall` and stops. The
    script never runs `install` without `--dry-run`.
@@ -105,11 +105,11 @@ style. Claude Code namespaces them: a plugin skill is `/agent-harness:<name>`.
 
 A marketplace install is a strict subset of `bin/harness install`. It does not give you:
 
-- the ownership journal, `harness diff`, or a restoring `harness uninstall`;
+- the ownership journal, `citizen diff`, or a restoring `citizen uninstall`;
 - stance selection — no rules, no `CLAUDE.md` projection, no personal file;
 - the Codex projection under `~/.agents/skills` and `~/.codex`;
 - hooks, so command grading, the stop gate and the usage feed are all off.
 
 The marketplace path is its own client surface in
 [the compatibility catalog](compatibility.md) and is **unqualified**: no native evidence has been
-recorded for it. `harness doctor` reports which of the two paths is active.
+recorded for it. `citizen doctor` reports which of the two paths is active.

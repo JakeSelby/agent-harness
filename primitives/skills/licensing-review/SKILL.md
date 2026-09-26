@@ -4,7 +4,7 @@ description: Verify a third-party library, asset, model, font, dataset or copied
 ---
 
 The always-on prohibitions live in the selected `licensing` stance. Resolve its shared source
-with `harness stances --json`; runtime projections carry the same policy. This is the procedure.
+with `citizen stances --json`; runtime projections carry the same policy. This is the procedure.
 
 ## Before adopting or upgrading
 

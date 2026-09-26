@@ -1,8 +1,8 @@
 ---
-title: Agent Harness product brief
+title: Model Citizen product brief
 status: final
 created: 2026-09-23
-updated: 2026-09-24
+updated: 2026-09-25
 supersedes: ../brief-agent-harness-2026-09-19/brief.md
 sources:
   - ../../source-ledger.md
@@ -10,11 +10,11 @@ sources:
   - ../../research/
 ---
 
-# Product Brief: Agent Harness
+# Product Brief: Model Citizen
 
 ## Executive summary
 
-Agent Harness is a user-owned layer over the coding agents a developer already runs, today Claude Code and
+Model Citizen is a user-owned layer over the coding agents a developer already runs, today Claude Code and
 Codex. A developer states their working style once, as rules, skills, roles, workflows and switchable
 stances. The harness then:
 - projects that style into each runtime's native configuration;

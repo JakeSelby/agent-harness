@@ -183,8 +183,8 @@ class CommandContentTests(unittest.TestCase):
     def test_land_cleans_up_only_through_the_reversible_commands(self):
         """The refusals are the safety check; a forced form would delete unreviewed work."""
         body = split(COMMANDS / "land.md")[1]
-        self.assertIn("harness worktree remove <name> --merged", body)
-        self.assertIn("harness worktree audit", body)
+        self.assertIn("citizen worktree remove <name> --merged", body)
+        self.assertIn("citizen worktree audit", body)
         self.assertIn("Never force a removal", body)
         self.assertIn("Never `git branch -D`", body)
         self.assertIn("compound command", body)
@@ -201,7 +201,7 @@ class CommandContentTests(unittest.TestCase):
         """A close-out that opens with a merge has skipped the question it exists to ask."""
         body = split(COMMANDS / "close-out.md")[1]
         self.assertIn("Sweep before you change anything", body)
-        self.assertIn("harness worktree audit", body)
+        self.assertIn("citizen worktree audit", body)
         self.assertIn("an empty sweep is a result", body)
 
     def test_close_out_delegates_to_the_workflows_that_already_own_their_steps(self):

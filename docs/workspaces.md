@@ -20,7 +20,7 @@ workspace's folders casually: the session store would appear to vanish.
 
 ## One store per workspace
 
-`harness workspace create <name> <folder…>` writes `<name>.code-workspace` with the folders in
+`citizen workspace create <name> <folder…>` writes `<name>.code-workspace` with the folders in
 the order given (first is root) and the harness checkout appended as a non-root folder unless
 `--no-harness`. It then creates `~/.claude/workspaces/<name>/` and symlinks each folder's
 project key under `~/.claude/projects/` to that store, so the same history and memory follow

@@ -1,6 +1,6 @@
 ---
 name: gatherer
-description: Read-only gathering over files: locate, read, extract and summarize a named list of paths. Offline, so a web dimension goes to an in-session band worker instead. Returns at most 400 words plus a path to the long version. Use for grep fan-outs, bulk read-and-summarize over a bounded scope, and doc lookups. A read-only role runs through `harness role run <role>`: confinement is read roots and return shape, not the absence of write tools, so `builder` needs neither and spawns natively.
+description: Read-only gathering over files: locate, read, extract and summarize a named list of paths. Offline, so a web dimension goes to an in-session band worker instead. Returns at most 400 words plus a path to the long version. Use for grep fan-outs, bulk read-and-summarize over a bounded scope, and doc lookups. A read-only role runs through `citizen role run <role>`: confinement is read roots and return shape, not the absence of write tools, so `builder` needs neither and spawns natively.
 model: opus
 tools: Read, Grep, Glob
 effort: low

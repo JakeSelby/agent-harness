@@ -1,6 +1,8 @@
-<img src="docs/assets/brand/mark.svg" width="48" height="48" alt="The Agent Harness mark: an amber pointer on a dark dial, turned to one position on a warm background.">
+<img src="docs/assets/brand/mark.svg" width="48" height="48" alt="The Model Citizen mark: an amber pointer on a dark dial, turned to one position on a warm background.">
 
-# Agent Harness
+# Model Citizen
+
+Formerly Agent Harness.
 
 [![CI](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/JakeSelby/agent-harness/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -10,13 +12,13 @@
 
 ## The control plane for your coding agents, however you run them.
 
-![Terminal output of `bin/harness sync --dry-run` on a fresh home: the resolved personal stances, then every link, rendered file and setting the sync would create for Claude Code and Codex, ending in "sync complete". Nothing is written.](docs/assets/sync-dry-run.svg)
+![Terminal output of `bin/citizen sync --dry-run` on a fresh home: the resolved personal stances, then every link, rendered file and setting the sync would create for Claude Code and Codex, ending in "sync complete". Nothing is written.](docs/assets/sync-dry-run.svg)
 
-Agent Harness is the layer under your coding agents. You write your rules, skills, roles and stances once, as your own primitives. The harness projects them into Claude Code and Codex, enforces them with hooks, and keeps a ledger of what every session did and spent. It sits under whatever rules library you like and whatever orchestration you run, so you can change how your agents work without changing how you run them.
+Model Citizen is the layer under your coding agents. You write your rules, skills, roles and stances once, as your own primitives. The harness projects them into Claude Code and Codex, enforces them with hooks, and keeps a ledger of what every session did and spent. It sits under whatever rules library you like and whatever orchestration you run, so you can change how your agents work without changing how you run them.
 
 Every file it touches goes in an ownership journal, and uninstall puts things back. The same ledger exports over OTLP to Langfuse, Phoenix or Opik, off by default.
 
-Agent Harness is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
+Model Citizen is not an LLM API gateway, a model provider or a replacement agent runtime. Claude
 Code and Codex remain responsible for model access, native permissions and client behavior.
 
 ## What it does for you
@@ -42,7 +44,7 @@ Sync keeps a journal of what it changed and refuses to overwrite what it does no
 - [Reversible](docs/settings-ownership.md): Sync has a dry run, diff shows drift, an ownership journal records prior and applied values, and uninstall restores what it adopted.
 - [Shared primitives](docs/sync-model.md): Rules, skills, roles and workflows live in one place and sync into each runtime's native settings. Switch one off and sync leaves it out of both.
 - [Same policy on both](docs/runtime-controls.md): A Claude Code spawn and a Codex spawn resolve to the same delegation policy.
-- [Declared integrations](docs/bmad.md): A planning framework declares itself in one descriptor. harness integration check|apply installs its overrides, and the spawn hook confines its review layers.
+- [Declared integrations](docs/bmad.md): A planning framework declares itself in one descriptor. citizen integration check|apply installs its overrides, and the spawn hook confines its review layers.
 - [Honest compatibility](docs/compatibility.md): The catalog says which clients are qualified and where the gaps are: two runtimes today, and the headline does not claim more.
 - [A worktree per agent](primitives/skills/worktree-per-agent): Parallel agents do not step on your checkout or on each other.
 
@@ -72,12 +74,12 @@ Most agent output is a wall of text. This puts the verdict first and the ask whe
 Every project in this field writes instructions and hopes. Here a rule nobody can observe is a rule nobody can prune, and lint says so before the commit lands.
 
 Every rule names a deterministic detector over the agent's own transcript, or says in one line why nothing in a transcript can decide it,
-and lint fails the commit otherwise. `harness usage --rules` then reports how often each rule fired,
+and lint fails the commit otherwise. `citizen usage --rules` then reports how often each rule fired,
 grouped by repository and by the preference variant you had selected at the time.
 
 - [Detector or reason](primitives/rules): Every rule names a deterministic detector over the transcript, or says in one line why nothing in a transcript can decide it. Lint fails the commit otherwise.
-- [Hit rate per rule](docs/usage.md): harness usage --rules reports how often each rule fired, by repository and by the variant you had selected; --by profile splits spend by the profile behind each row.
-- [Cache prefix held](docs/usage.md): harness usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.
+- [Hit rate per rule](docs/usage.md): citizen usage --rules reports how often each rule fired, by repository and by the variant you had selected; --by profile splits spend by the profile behind each row.
+- [Cache prefix held](docs/usage.md): citizen usage --by prefix reports each session's cache-miss ratio and names the turn where it jumped. It measures the prefix; nothing denies a change.
 - [What is detected](claude/hooks/rule-detectors.py): Nineteen deterministic detectors read the transcript: whole-file reads, unverified pushes, secrets in a write, banned openers, non-conventional commits.
 - [Caught in the act](docs/field-scan.md): The instrument has already caught two of this repository's own shipped features doing nothing. Both are filed as issues, not hidden.
 - [Exports where you already look](docs/telemetry.md): The same ledger exports over OTLP, off by default, to Langfuse, Phoenix or Opik, adding the one thing they cannot see: which rule fired.
@@ -87,7 +89,7 @@ grouped by repository and by the preference variant you had selected at the time
 Reasonable developers disagree about testing, autonomy and how much to delegate. Nine axes, each a named choice: three bind to enforcement today, the rest are prose that swaps cleanly.
 
 - [Stance dimensions and variants](primitives/stances): Autonomy, delegation, testing, cost, voice, commits, planning, licensing and build versus buy.
-- [User, project, session](docs/preferences.md): Set a default or pick a mode, override it for one repo, override that for one session, and see which layer set each unit and what measures it with harness selection.
+- [User, project, session](docs/preferences.md): Set a default or pick a mode, override it for one repo, override that for one session, and see which layer set each unit and what measures it with citizen selection.
 - [Write your own](docs/primitive-authoring.md): A new stance dimension is a folder of Markdown files. No fork needed.
 - [See one switch end to end](docs/stance-demo.md): The demo flips delegation and shows what changes in both runtimes.
 - [Autonomy stances](primitives/stances/autonomy): Execute, confirm-writes or ask. The choice sets which shell-command grade stops and asks; it is enforced, not advised.
@@ -332,7 +334,7 @@ and the [sync model](docs/sync-model.md).
   [BMad integration](docs/bmad.md)
 - [Contributing](CONTRIBUTING.md) and the [public reference](https://agent-harness.jakeselby.com)
 
-Agent Harness uses the open-source [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD)
+Model Citizen uses the open-source [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD)
 to structure public product planning, architecture, delivery and release readiness. BMad is a
 trademark of BMad Code, LLC; this project is independent and is not endorsed by BMad Code.
 

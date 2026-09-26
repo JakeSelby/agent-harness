@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """commit-msg hook: refuse a subject that is not a Conventional Commit.
 
-Installed per repository rather than by `harness sync`, because a git hook lives in the
+Installed per repository rather than by `citizen sync`, because a git hook lives in the
 repository it guards. `templates/repo/README.md` carries the install line.
 
 Why a git hook and not a PreToolUse Bash hook: git hands this script the final message

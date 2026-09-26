@@ -6,7 +6,7 @@ rule text literally: there is no variable substitution inside a rule or CLAUDE.m
 Nine stance axes ship, and only three of them bind to enforcement today: `autonomy` sets which
 shell-command grade stops and asks, `delegation` changes how a spawn is routed, and `cost`
 resolves a class, an effort and a soft budget per role. The other six are prose that swaps cleanly
-and acquires no enforced control by being switched. `harness usage --rules --by stance` groups rule
+and acquires no enforced control by being switched. `citizen usage --rules --by stance` groups rule
 hits by the variant in force, so a switch can be checked rather than assumed.
 
 ## Identity
@@ -25,7 +25,7 @@ or `beginner`. It selects one paragraph of the personal file: `expert` skips fun
 knowledge of programming, version control or the command line. It is the only identity field that
 changes behaviour rather than describing you.
 
-`harness init` writes the whole file by asking, and `harness config set identity.name "…"`
+`citizen init` writes the whole file by asking, and `citizen config set identity.name "…"`
 changes one field. Neither needs an editor. Until `name`, `role` and `github` differ from the
 example file, `sync` and `doctor` both say so: what they hold is what the agent believes about
 you, so a config left unedited has it addressing you by the placeholder. `pronouns` and
@@ -50,17 +50,17 @@ this precedence, lowest first:
 
 1. **`default`** — the built-in stance variants, and `on` for every switch.
 2. **`mode:<name>`** — `modes/<name>.json` in a primitive root, for the mode the highest layer
-   names. It sits above a stance `harness init` wrote as a default (`init`); how, and what the
+   names. It sits above a stance `citizen init` wrote as a default (`init`); how, and what the
    shipped modes change, is [modes.md](modes.md).
 3. **`user`** — `~/.config/agent-harness/config.json`.
 4. **`project`** — the file `HARNESS_PROJECT_CONFIG` names.
 5. **`session`** — the file `HARNESS_SESSION_CONFIG` names, then `HARNESS_MODE` and
    `HARNESS_STANCE_*`, which are shorthand for the same layer.
 
-`harness selection --json` prints the result: every unit of every kind with its value, plus a
+`citizen selection --json` prints the result: every unit of every kind with its value, plus a
 `sources` object in the same shape naming the layer that set each one. That output reads back
-unchanged as a session file. `harness stances` stays as the stance-only view;
-`harness config set rules.<name> off` writes one switch, and the same form works for `skills`,
+unchanged as a session file. `citizen stances` stays as the stance-only view;
+`citizen config set rules.<name> off` writes one switch, and the same form works for `skills`,
 `workflows` and `roles`, and for the `hooks` ids in [runtime controls](runtime-controls.md#hook-ids). It refuses a switch that would leave an `on` module depending on an
 `off` one, so switch the dependent off first. What sync does with an `off` unit is in
 [the sync model](sync-model.md).
@@ -93,13 +93,13 @@ dimension.
 | `cost` | `frugal`, `balanced`, `max` | `balanced` |
 | `voice` | `scannable`, `concise`, `answer-card`, `off` | `scannable` |
 
-`harness config set stances.testing off` checks the variant exists before writing, and names
+`citizen config set stances.testing off` checks the variant exists before writing, and names
 the options when it does not.
 
 ### Presets
 
 The defaults above are a professional software workflow, and escaping it meant finding five
-separate opt-outs. `harness init` asks what the work is and uses a preset as the defaults for the
+separate opt-outs. `citizen init` asks what the work is and uses a preset as the defaults for the
 questions that follow; every stance is still asked, so a preset is a starting point, not a lock.
 
 | Preset | Changes from the defaults |
@@ -140,7 +140,7 @@ effort, the fan-out width, whether fast mode and compaction are available, and h
 feed says about spend; its rows set a model class, a reasoning effort and a soft budget in output
 tokens and tool calls for each role and for each of the A, B and C bands, and name the band an
 unnamed spawn is routed to. All of it is data in a JSON sidecar beside the variant's `.md`, and
-`harness stances --json` prints the resolved table with the sidecar each layer came from.
+`citizen stances --json` prints the resolved table with the sidecar each layer came from.
 
 - `frugal` runs the session at low effort, keeps the fan-out narrow, never turns fast mode on,
   ends a task with `/clear`, drops the cheaper bands a class each, and scales every budget down.
@@ -149,7 +149,7 @@ unnamed spawn is routed to. All of it is data in a JSON sidecar beside the varia
 - `max` leaves effort at the model's default, fans out as widely as the task needs, allows fast
   mode and compaction, and marks nothing as over budget.
 
-Select one with `harness config set stances.cost frugal`, or for a single session with
+Select one with `citizen config set stances.cost frugal`, or for a single session with
 `HARNESS_STANCE_COST=frugal claude`. To write your own, put a `.md` and a sidecar in your
 primitive root, `extends` a shipped variant and change only the cells you care about;
 [primitive-authoring.md](primitive-authoring.md) has the worked example and the schema.
@@ -159,7 +159,7 @@ to start a fresh session rather than compact, unless the selected `cost` stance 
 the variant's `compaction` switch is what decides. Under `max` (`compact-allowed`) a compaction
 is the stance working, so the `cache-hygiene/compact` detector does not count it there, and it
 still counts one under `frugal`, `balanced`, `off` or no selection, where the rule stands. A
-session override (`HARNESS_STANCE_COST=max`) lifts the rule for that session only; `harness sync`
+session override (`HARNESS_STANCE_COST=max`) lifts the rule for that session only; `citizen sync`
 never writes it into the user configuration or the global projections.
 
 Two things a variant never wins against. A `role_bindings.<runtime>.<role>` entry in your config
@@ -170,11 +170,11 @@ its budgets.
 A row's budget reaches the work as one sentence `brief-guard` appends to a brief that states no
 spend of its own. It is soft — finish if close, otherwise return — and a variant that prices
 nothing changes no brief. The shipped per-role budgets are the 90-day p75 from
-`harness usage --by role`; the A/B/C band budgets are provisional — the general-purpose
+`citizen usage --by role`; the A/B/C band budgets are provisional — the general-purpose
 distribution at p50, p75 and p90 — until rerouted spawns have measured each band, and the bands
 themselves are a first cut to be re-seeded the same way.
 
-`harness usage` summarises what sessions have actually spent, from a local file with no network
+`citizen usage` summarises what sessions have actually spent, from a local file with no network
 call unless you opt into [exporting it](telemetry.md) — see [usage.md](usage.md). It reports
 dollars as well as tokens, from `policy/prices.json`.
 A `prices` block in `config.json` merges over that file per model id, so you can correct a rate
@@ -232,7 +232,7 @@ default and nothing is inferred: a PreToolUse payload says nothing about whether
 reads or writes, so only you can say which of them are research. Entries that are not non-empty
 strings are ignored, and a glob never reopens a tool the coordinator already governs — `Bash`
 keeps its grades, `Agent` its delegation guard, `WebFetch` its own plan-mode hook. Set it with
-`harness config set plan_allow_tools '["mcp__notes__read_*"]'`.
+`citizen config set plan_allow_tools '["mcp__notes__read_*"]'`.
 
 ## The reasoning behind each stance
 
@@ -355,4 +355,4 @@ subagent brief's return shape, which no variant can carry.
 
 Stances are custom harness primitives, not native provider features. Add dimensions, variants and
 constraints through [the authoring contract](primitive-authoring.md). Inspect effective selections
-and adapter coverage with `harness stances --json`; native restrictions remain authoritative.
+and adapter coverage with `citizen stances --json`; native restrictions remain authoritative.
