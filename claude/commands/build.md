@@ -33,12 +33,12 @@ stop at the local commit, and report the branch as ready to push.
    branch, never pushing to that branch directly. Body: a few bullets on what and why, `Closes
    #N`, and the generated-with line your tool supplies.
 6. **Answer the review bot**, where one runs: a `.coderabbit.yaml`, `greptile.json`, or a bot on
-   past pull requests. A pass is done only when the bot's status on the head commit completes
-   (CodeRabbit: `success: Review completed`); `Review skipped` and the empty review a thread reply
-   creates are not passes. Wait up to fifteen minutes, and say so if none arrives. Each unresolved
-   bot thread is a finding: fix it, rerun the gate and push, or reply why it does not apply, then
-   `resolveReviewThread`. After a fix, ask for one more review (`@coderabbitai review`), then
-   wait again. Two rounds at most; report what remains. A human's thread is never yours to resolve.
+   past pull requests. A pass is done only when its status on the head commit completes
+   (CodeRabbit: `success: Review completed`), not on an empty review from a thread reply. If the
+   status reads skipped or no review starts, request one (`@coderabbitai review`). Wait up to
+   fifteen minutes, and say so if none arrives. Each unresolved bot thread is a finding: fix it,
+   rerun the gate and push, or reply why not, then `resolveReviewThread`. After a fix, ask for
+   one more review and wait again; two rounds at most. A human's thread is never yours to resolve.
 
 Report the outcome in one sentence, with the pull request URL when one was opened, then at most
 five bullets: bot threads answered or still open, a decision taken for the reader, a step left

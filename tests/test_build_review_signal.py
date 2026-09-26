@@ -21,8 +21,15 @@ class ReviewSignalTests(unittest.TestCase):
             step = step_six(path)
             self.assertIn("status on the head commit completes", step, msg=path)
             self.assertIn("`success: Review completed`", step, msg=path)
-            self.assertIn("`Review skipped` and the empty review a thread reply creates are not passes",
-                          step, msg=path)
+            self.assertIn("not on an empty review from a thread reply", step, msg=path)
+
+    def test_a_skipped_or_missing_first_review_is_requested_before_the_wait(self):
+        """Drafts and release titles skip automatic review; waiting alone never gets a pass."""
+        for path in (SOURCE, PROJECTION):
+            step = step_six(path)
+            request = step.index("If the status reads skipped or no review starts, request one "
+                                 "(`@coderabbitai review`).")
+            self.assertLess(request, step.index("Wait up to fifteen minutes"), msg=path)
 
     def test_the_wait_covers_a_slow_pass(self):
         """A requested re-review took about 8.5 minutes, too close to a ten-minute wait."""
