@@ -4,7 +4,7 @@
   "native_type_projection": "labels-only",
   "generated_at": "2026-09-22",
   "next_ids": {
-    "bug": 109,
+    "bug": 110,
     "chore": 80,
     "decision": 14,
     "epic": 21,
@@ -6757,6 +6757,19 @@
       "artifact_path": "_bmad-output/implementation-artifacts/AH-B108.md",
       "parent_bmad_id": null,
       "parent_github_number": null,
+      "lifecycle": "active",
+      "provenance": "authored"
+    },
+    {
+      "bmad_id": "AH-B109",
+      "github_number": 904,
+      "github_url": "https://github.com/JakeSelby/model-citizen/issues/904",
+      "title": "bmad_issue_sync.py new and apply fail with HTTP 307 since the repository rename",
+      "type": "bug",
+      "native_type": "Bug",
+      "artifact_path": "_bmad-output/implementation-artifacts/AH-B109.md",
+      "parent_bmad_id": "AH-E020",
+      "parent_github_number": 875,
       "lifecycle": "active",
       "provenance": "authored"
     }
