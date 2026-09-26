@@ -17,6 +17,12 @@ selected stance through its linked rules; Codex reads the same text in generated
 Use `HARNESS_STANCE_VOICE=scannable bin/harness stances --json` to inspect a session selection.
 Setting an environment variable on a running agent does not itself rewrite its loaded context.
 
+A project or session selection that differs from the synced one reaches the model at the next
+session start: the session hook injects the selected variant's text, within the always-loaded
+budget, and names its file instead when the text does not fit. Keep a variant you expect to select
+per project or per session short, so it arrives as text rather than as a pointer.
+[Synchronization](sync-model.md#project-and-session-stance-selections) gives the budget.
+
 Resolution order, and what a project or session file may carry, is the selection document in
 [preferences](preferences.md#the-selection-document).
 

@@ -79,9 +79,10 @@ class ScriptedHome(MODULE.Home):
     def session(self, prompt, tools=("Agent",), resume=None, timeout=0):
         env = self.env()
         stances = self.data["stances"]
-        override = env.get("HARNESS_PROJECT_CONFIG")
+        override = env.get("HARNESS_PROJECT_CONFIG") or env.get(MODULE.SESSION_VARIABLE)
         sid = "s%s" % len(self.turns)
-        self.turns.append({"prompt": prompt, "cwd": self.project, "override": override, "id": sid})
+        self.turns.append({"prompt": prompt, "cwd": self.project, "override": override, "id": sid,
+                           "session": env.get(MODULE.SESSION_VARIABLE)})
         if prompt == MODULE.VOICE_PROMPT:
             reply = self.voice[stances["voice"]]
         elif prompt == MODULE.PROOF_PROMPT:
@@ -182,6 +183,41 @@ class Cases(unittest.TestCase):
         self.assertIn("closed TAGGED", text)
         self.assertIn("read tagged.md before and after", text)
         self.assertIn("has no variant 'nonesuch'", text)
+
+    def test_custom_stance_observes_the_session_selection(self):
+        home = self.home()
+        text = MODULE.case_custom_stance(home)
+        proof = [t for t in home.turns if t["prompt"] == MODULE.PROOF_PROMPT]
+        session = proof[3]
+        self.assertEqual(session["session"], "plain")
+        self.assertEqual(session["cwd"], home.project)
+        self.assertEqual([t["session"] for t in proof[:3]], [None, None, None])
+        self.assertIn("started with HARNESS_STANCE_PROOF=plain and no project file closed PLAIN", text)
+        self.assertIn("carried the session hook's \"Effective session stance proof=plain\" line", text)
+
+    def test_a_session_selection_the_turn_ignores_fails(self):
+        home = self.home()
+        answer = home.session
+
+        def ignoring(prompt, **kwargs):
+            reply = answer(prompt, **kwargs)
+            if home.turns[-1]["session"]:
+                reply["result"] = "OK\nTAGGED"
+            return reply
+
+        home.session = ignoring
+        with self.assertRaisesRegex(AssertionError, "HARNESS_STANCE_PROOF=plain closed TAGGED"):
+            MODULE.case_custom_stance(home)
+
+    def test_a_plain_session_turn_without_the_hooks_line_is_unverified(self):
+        home = self.home()
+        carried = home.orchestrator_text
+        home.orchestrator_text = lambda sid: "" if [t for t in home.turns if t["id"] == sid][0]["session"] \
+            else carried(sid)
+        with self.assertRaises(MODULE.Unverified) as caught:
+            MODULE.case_custom_stance(home)
+        self.assertIn("did not carry", str(caught.exception))
+        self.assertIn("through the session hook", str(caught.exception))
 
     def test_an_override_the_turn_ignores_fails(self):
         home = self.home(obey_override=False)

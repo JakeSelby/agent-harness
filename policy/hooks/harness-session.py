@@ -92,7 +92,63 @@ def override_lines(config):
     return lines
 
 
-def resolved_overrides(repo, config):
+# Stance text injected at session start is read on every turn, like the always-loaded layer, so
+# it shares that layer's token budget: the cap `citizen lint` enforces less what the sync already
+# made always-loaded. Both figures must equal bin/harness's ALWAYS_LOADED_TOKEN_CAP and
+# CHARS_PER_TOKEN; the tests assert it. The reasoning is in docs/sync-model.md.
+ALWAYS_LOADED_TOKEN_CAP = 12607 // 3 + 620
+CHARS_PER_TOKEN = 4.0
+STANCE_LINKS = "/rules/harness-stances/"
+ROOT_RULE_LINKS = "/rules/harness-roots/"  # a `primitive_roots` rule, linked beside the checkout's
+
+
+def est_tokens(text):
+    return int(round(len(text) / CHARS_PER_TOKEN))
+
+
+def synced_stances(manifest, config):
+    """The selection the last sync linked: its manifest record, else the configuration file."""
+    recorded = ((manifest or {}).get("config") or {}).get("stances")
+    return recorded if isinstance(recorded, dict) else (config or {}).get("stances", {})
+
+
+def synced_tokens(repo, manifest):
+    """Estimated tokens the sync made always-loaded: instructions, rules, root rules and stances."""
+    def read(path):
+        try:
+            return Path(path).read_text(encoding="utf-8")
+        except (OSError, ValueError):
+            return ""
+    record = (manifest or {}).get("config") or {}
+    off = set((record.get("off") or {}).get("rules") or [])
+    claude = Path(repo) / "claude"
+    total = est_tokens(read(claude / "CLAUDE.md"))
+    total += sum(est_tokens(read(p)) for p in sorted((claude / "rules").glob("*.md")) if p.stem not in off)
+    total += sum(est_tokens(read(link.get("target", ""))) for link in (manifest or {}).get("links") or []
+                 if STANCE_LINKS in str(link.get("path", "")) or ROOT_RULE_LINKS in str(link.get("path", "")))
+    return total
+
+
+def fit_stances(entries, budget):
+    """Lines for the differing stances: full text where it fits `budget` tokens, else a pointer.
+
+    `entries` is `[(full, pointer)]`. Every pointer is paid for first, because a pointer is what
+    keeps the selection honest; the budget left then upgrades pointers to full text in order. The
+    joined text is measured, separators included, since that is what the session receives.
+    """
+    lines = [pointer for _, pointer in entries]
+    for index, (full, _) in enumerate(entries):
+        candidate = lines[:index] + [full] + lines[index + 1:]
+        if est_tokens("\n\n".join(candidate)) <= budget:
+            lines = candidate
+    return lines
+
+
+def resolved_overrides(repo, config, manifest=None):
+    """The project or session stance text that differs from the synced selection, within budget.
+
+    Silent when no selection is set or none differs, so an ordinary session pays nothing.
+    """
     module = sibling("posture")
     if not ((module and module.overrides(os.environ)) or os.environ.get("HARNESS_PROJECT_CONFIG")
             or os.environ.get("HARNESS_SESSION_CONFIG") or os.environ.get("HARNESS_MODE")):
@@ -102,8 +158,17 @@ def resolved_overrides(repo, config):
     if out.returncode:
         return ["Harness session stance resolution failed; selections are unverified: " + out.stderr[:1000]]
     choices = json.loads(out.stdout)["stances"]
-    return ["Effective session stance " + name + "=" + value["variant"] + ":\n" + value["behavior"]
-            for name, value in choices.items() if (config or {}).get("stances", {}).get(name) != value["variant"]]
+    synced = synced_stances(manifest, config)
+    entries = []
+    for name, value in choices.items():
+        if synced.get(name) == value["variant"]:
+            continue
+        head = ("Effective session stance " + name + "=" + value["variant"] + " (replaces the synced `"
+                + str(synced.get(name, "unset")) + "` variant for this session)")
+        pointer = (head + ": its text does not fit what is left of the always-loaded budget, so read " + value["source"]
+                   + " and follow it instead of the linked variant.")
+        entries.append((head + ":\n" + value["behavior"], pointer))
+    return fit_stances(entries, ALWAYS_LOADED_TOKEN_CAP - synced_tokens(repo, manifest))
 
 
 def handoff_lines(cwd):
@@ -245,7 +310,7 @@ def main():
         if d:
             lines.append("model-citizen drift: " + d)
     if manifest and manifest.get("repo"):
-        lines.extend(resolved_overrides(manifest["repo"], config))
+        lines.extend(resolved_overrides(manifest["repo"], config, manifest))
     else:
         lines.extend(override_lines(config))
     tool = Path(manifest["repo"]) / "bin" / "harness" if manifest and manifest.get("repo") else None
